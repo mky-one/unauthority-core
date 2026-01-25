@@ -1,0 +1,12 @@
+[package]
+name = "genesis"
+version = "0.1.0"
+edition = "2021" 
+
+# Catatan: Saya ubah edition ke "2021" (standar stabil saat ini). 
+# "2024" mungkin belum didukung penuh oleh compiler Anda kecuali pakai versi nightly.
+
+[dependencies]
+rand = "0.8"      # Library untuk generate angka acak (mock keypair)
+hex = "0.4"       # Library untuk encoding/decoding string Hexadesimal
+sha3 = "0.10"     # Library untuk fungsi hashing Keccak256/SHA3

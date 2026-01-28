@@ -1,12 +1,13 @@
 [workspace]
 resolver = "2"
 
-members = ["crates/uat-core",
+members = [
     "genesis",
-    # Modul lain akan kita aktifkan nanti saat kita membuatnya:
-    # "crates/uat-core",
+    "crates/uat-core",
+    "crates/uat-crypto", 
+    "crates/uat-network", 
+    "crates/uat-node",
     # "crates/uat-consensus",
     # "crates/uat-vm",
     # "crates/uat-p2p",
-    # "crates/uat-crypto",
 ]

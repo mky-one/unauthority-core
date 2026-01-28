@@ -1,46 +1,56 @@
-use rand::Rng; // Import Rng trait agar metode .fill() bisa dipakai
-use sha3::{Digest, Keccak256}; // Import fungsi hashing
+use rand::Rng; 
+use sha3::{Digest, Keccak256}; 
 
-// Struktur data untuk menampung informasi Wallet Dev
+// --- KONFIGURASI PRESISI (ZERO REMAINDER) ---
+// 1 UAT = 100,000,000 Void (VOI)
+const VOID_PER_UAT: u128 = 100_000_000;
+
+// Total Jatah Dev: 1,535,536 UAT dikonversi ke Void
+// 1,535,536 * 100,000,000 = 153,553,600,000,000 VOI
+const DEV_SUPPLY_TOTAL_VOID: u128 = 1_535_536 * VOID_PER_UAT;
+
+// Menggunakan 8 Wallet agar pembagian habis tanpa sisa desimal
+const DEV_WALLET_COUNT: usize = 8;
+
+// Perhitungan Otomatis: 153,553,600,000,000 / 8 = 19,194,200,000,000 VOI
+const ALLOCATION_PER_WALLET_VOID: u128 = DEV_SUPPLY_TOTAL_VOID / (DEV_WALLET_COUNT as u128);
+
+// Struktur data Wallet
 struct DevWallet {
     index: usize,
     address: String,
     private_key: String, 
-    balance: f64,
+    balance_void: u128, // Menyimpan dalam satuan terkecil (Integer)
 }
-
-// Konstanta Supply
-const DEV_SUPPLY_TOTAL: f64 = 1_535_536.0;
-const DEV_WALLET_COUNT: usize = 7;
-const ALLOCATION_PER_WALLET: f64 = 219_362.28;
 
 fn main() {
     println!("============================================================");
-    println!("   UNAUTHORITY (UAT) - GENESIS GENERATOR (SECURE MODE)      ");
-    println!("   Status: CRITICAL - DO NOT SHARE OUTPUT                   ");
+    println!("   UNAUTHORITY (UAT) - GENESIS GENERATOR (PRECISION MODE)   ");
+    println!("   Status: CRITICAL - ZERO REMAINDER PROTOCOL ACTIVE        ");
     println!("============================================================");
-    println!("Generating 7 Dev Wallets using Post-Quantum Secure Schema...");
+    println!("Generating {} Dev Wallets...", DEV_WALLET_COUNT);
+    println!("Allocation per Wallet: {} VOI (Exactly 191,942 UAT)", ALLOCATION_PER_WALLET_VOID);
     println!("------------------------------------------------------------\n");
 
     let mut wallets: Vec<DevWallet> = Vec::new();
-    let mut total_allocated = 0.0;
+    let mut total_allocated_void: u128 = 0;
 
     for i in 1..=DEV_WALLET_COUNT {
-        // 1. Generate Keypair
+        // 1. Generate Keypair Post-Quantum (Mock/Placeholder for now)
         let (priv_key, pub_key) = generate_post_quantum_keys();
         
-        // 2. Derive Address dari Public Key (SHA-3)
+        // 2. Derive Address
         let address = derive_address(&pub_key);
 
         let wallet = DevWallet {
             index: i,
             address,
             private_key: priv_key,
-            balance: ALLOCATION_PER_WALLET,
+            balance_void: ALLOCATION_PER_WALLET_VOID,
         };
 
+        total_allocated_void += ALLOCATION_PER_WALLET_VOID;
         wallets.push(wallet);
-        total_allocated += ALLOCATION_PER_WALLET;
     }
 
     // OUTPUT KE LAYAR
@@ -49,21 +59,25 @@ fn main() {
     }
 
     println!("------------------------------------------------------------");
-    println!("VERIFIKASI SUPLAI:");
-    println!("Target Dev Supply : {} UAT", DEV_SUPPLY_TOTAL);
-    println!("Total Terallokasi : {:.2} UAT", total_allocated);
+    println!("VERIFIKASI SUPLAI (INTEGER CHECK):");
+    println!("Target Supply : {} VOI", DEV_SUPPLY_TOTAL_VOID);
+    println!("Total Allocated: {} VOI", total_allocated_void);
     
-    // Safety check floating point sederhana
-    if (total_allocated - DEV_SUPPLY_TOTAL).abs() < 0.1 {
-        println!("STATUS: [MATCH] - Distribusi Valid.");
+    // Verifikasi Absolut (Tanpa toleransi desimal)
+    if total_allocated_void == DEV_SUPPLY_TOTAL_VOID {
+        println!("STATUS: [MATCH] - Distribusi Sempurna (Zero Remainder).");
     } else {
-        println!("STATUS: [ERROR] - Distribusi Tidak Sesuai!");
+        let diff = if total_allocated_void > DEV_SUPPLY_TOTAL_VOID {
+            total_allocated_void - DEV_SUPPLY_TOTAL_VOID
+        } else {
+            DEV_SUPPLY_TOTAL_VOID - total_allocated_void
+        };
+        println!("STATUS: [ERROR] - Terjadi selisih {} VOI!", diff);
     }
     println!("============================================================");
     println!("INSTRUKSI:");
-    println!("1. Salin Private Key ke penyimpanan dingin (Cold Storage/Paper).");
-    println!("2. Hapus log terminal ini segera setelah backup selesai.");
-    println!("3. Gunakan Address untuk Hard-code di file genesis block.");
+    println!("1. Simpan 8 Private Key ini di lokasi terpisah (Cold Storage).");
+    println!("2. Address akan digunakan untuk 'genesis block' di user chain masing-masing.");
     println!("============================================================");
 }
 
@@ -72,10 +86,7 @@ fn main() {
 fn generate_post_quantum_keys() -> (String, String) {
     let mut rng = rand::thread_rng();
     
-    // PERBAIKAN DI SINI:
-    // Alih-alih rng.gen(), kita buat array kosong lalu diisi (fill).
-    // Ini lebih stabil untuk array ukuran besar (64 bytes).
-    
+    // Menggunakan fill untuk keamanan array 64-byte
     let mut priv_bytes = [0u8; 64]; 
     rng.fill(&mut priv_bytes);
 
@@ -86,20 +97,20 @@ fn generate_post_quantum_keys() -> (String, String) {
 }
 
 fn derive_address(pub_key_hex: &str) -> String {
-    // Menggunakan SHA-3 (Keccak) untuk menghasilkan address dari PubKey
     let mut hasher = Keccak256::new();
     hasher.update(pub_key_hex.as_bytes());
     let result = hasher.finalize();
-    
-    // Ambil 20 byte terakhir
     let hash_hex = hex::encode(result);
     format!("UAT{}", &hash_hex[0..40])
 }
 
 fn print_wallet_info(w: &DevWallet) {
+    // Konversi VOI ke UAT hanya untuk tampilan layar agar mudah dibaca
+    let balance_uat = w.balance_void as f64 / VOID_PER_UAT as f64;
+    
     println!("DOMPET DEV #{}", w.index);
     println!("> Address     : {}", w.address);
-    println!("> Balance     : {} UAT", w.balance);
+    println!("> Balance     : {} VOI ({:.8} UAT)", w.balance_void, balance_uat);
     println!("> PRIVATE KEY : {}", w.private_key); 
     println!("------------------------------------------------------------");
 }

@@ -27,17 +27,34 @@ pub struct Block {
 }
 
 impl Block {
+    // OPTIMASI: Menghapus format! yang lambat, diganti dengan byte-feeding
     pub fn calculate_hash(&self) -> String {
         let mut hasher = Keccak256::new();
-        let data = format!(
-            "{}{}{:?}{}{}",
-            self.account, self.previous, self.block_type, self.amount, self.link
-        );
-        hasher.update(data.as_bytes());
+        
+        hasher.update(self.account.as_bytes());
+        hasher.update(self.previous.as_bytes());
+        
+        // Mengubah enum ke byte untuk hashing cepat
+        let type_byte = match self.block_type {
+            BlockType::Send => 0,
+            BlockType::Receive => 1,
+            BlockType::Change => 2,
+            BlockType::Mint => 3,
+        };
+        hasher.update(&[type_byte]);
+        
+        hasher.update(self.amount.to_le_bytes());
+        hasher.update(self.link.as_bytes());
+        
+        // PENTING: Variabel work (nonce) HARUS ikut di-hash
+        hasher.update(self.work.to_le_bytes());
+        
         hex::encode(hasher.finalize())
     }
 
     pub fn verify_signature(&self) -> bool {
+        if self.signature.is_empty() { return false; }
+        
         let msg_hash = self.calculate_hash();
         let sig_bytes = hex::decode(&self.signature).unwrap_or_default();
         let pk_bytes = hex::decode(&self.account).unwrap_or_default();
@@ -55,6 +72,7 @@ pub struct AccountState {
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Ledger {
     pub accounts: HashMap<String, AccountState>,
+    pub blocks: HashMap<String, Block>, 
     pub distribution: DistributionState,
 }
 
@@ -62,16 +80,27 @@ impl Ledger {
     pub fn new() -> Self {
         Self {
             accounts: HashMap::new(),
+            blocks: HashMap::new(),
             distribution: DistributionState::new(),
         }
     }
 
     pub fn process_block(&mut self, block: &Block) -> Result<String, String> {
-        if !block.verify_signature() {
-            return Err("Invalid Signature!".to_string());
+        let block_hash = block.calculate_hash();
+
+        // VALIDASI POW: 3 Nol untuk keseimbangan Keamanan & Kecepatan
+        if !block_hash.starts_with("000") {
+            return Err("Invalid PoW: Blok tidak memenuhi kriteria anti-spam".to_string());
         }
 
-        let block_hash = block.calculate_hash();
+        if !block.verify_signature() {
+            return Err("Invalid Signature: Verifikasi kunci publik gagal!".to_string());
+        }
+
+        if self.blocks.contains_key(&block_hash) {
+            return Ok(block_hash);
+        }
+
         let mut state = self.accounts.get(&block.account).cloned().unwrap_or(AccountState {
             head: "0".to_string(),
             balance: 0,
@@ -79,21 +108,41 @@ impl Ledger {
         });
 
         if block.previous != state.head {
-            return Err(format!("Chain Error: Expected {}", state.head));
+            return Err(format!(
+                "Chain Error: Urutan blok tidak valid. Diharapkan {}, dapat {}", 
+                state.head, block.previous
+            ));
         }
 
+        // 7. LOGIKA TRANSAKSI BERDASARKAN TIPE BLOK
         match block.block_type {
             BlockType::Mint => {
+                // Tambahkan saldo ke akun peminta
                 state.balance += block.amount;
+                
+                // Validasi dan update supply global
                 if self.distribution.remaining_supply >= block.amount {
                     self.distribution.remaining_supply -= block.amount;
+
+                    let parts: Vec<&str> = block.link.split(':').collect();
+                    if parts.len() >= 4 { 
+                        if let Ok(fiat_price) = parts[3].trim().parse::<u128>() {
+                            self.distribution.total_burned_idr += fiat_price;
+                        }
+                    }
+                    // --------------------------------------------
+                } else {
+                    return Err("Distribution Error: Supply sudah habis!".to_string());
                 }
             }
             BlockType::Send => {
-                if state.balance < block.amount { return Err("Insufficient Funds".to_string()); }
+                if state.balance < block.amount {
+                    return Err("Insufficient Funds: Saldo tidak cukup untuk mengirim".to_string());
+                }
                 state.balance -= block.amount;
             }
             BlockType::Receive => {
+                // Penerima mendapatkan penambahan saldo
                 state.balance += block.amount;
             }
             _ => {}
@@ -101,7 +150,10 @@ impl Ledger {
 
         state.head = block_hash.clone();
         state.block_count += 1;
+        
         self.accounts.insert(block.account.clone(), state);
+        self.blocks.insert(block_hash.clone(), block.clone()); 
+
         Ok(block_hash)
     }
 }

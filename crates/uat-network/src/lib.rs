@@ -46,6 +46,7 @@ impl UatNode {
                     .heartbeat_interval(Duration::from_secs(1)) 
                     .validation_mode(gossipsub::ValidationMode::Strict)
                     .message_id_fn(message_id_fn)
+                    .max_transmit_size(10 * 1024 * 1024)
                     .build()
                     .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
 

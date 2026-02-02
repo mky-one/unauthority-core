@@ -3315,6 +3315,14 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "562d481066bde0658276a35467c4af00bdc6ee726305698a55b86e61d7ad82bb"
 
 [[package]]
+name = "uat-consensus"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "tokio",
+]
+
+[[package]]
 name = "uat-core"
 version = "0.1.0"
 dependencies = [
@@ -3345,6 +3353,7 @@ dependencies = [
  "serde",
  "serde_json",
  "tokio",
+ "uat-consensus",
  "uat-core",
 ]
 

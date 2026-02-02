@@ -8,6 +8,13 @@ use std::error::Error;
 use std::time::Duration;
 use tokio::sync::mpsc;
 
+// Public modules
+pub mod validator_rewards;
+pub mod fee_scaling;
+pub mod p2p_encryption;
+pub mod p2p_integration;
+pub mod slashing_integration;
+
 #[derive(Debug)]
 pub enum NetworkEvent {
     NewBlock(String),

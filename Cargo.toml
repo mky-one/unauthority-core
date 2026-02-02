@@ -7,7 +7,7 @@ members = [
     "crates/uat-crypto", 
     "crates/uat-network", 
     "crates/uat-node",
-    # "crates/uat-consensus",
+    "crates/uat-consensus",
     # "crates/uat-vm",
     # "crates/uat-p2p",
 ]

@@ -1,0 +1,314 @@
+# 🔐 Unauthority (UAT) - Genesis Generator
+
+## Overview
+
+The Genesis Generator adalah tool untuk inisialisasi blockchain Unauthority dengan 8 Dev Wallets yang immutable. Sistem ini mengimplementasikan Zero Remainder Protocol untuk memastikan distribusi supply yang sempurna tanpa desimal error.
+
+## Architecture
+
+```
+UNAUTHORITY GENESIS WALLETS (8 Total)
+├── BOOTSTRAP NODES (3)
+│   ├── Node #1 - Validator 1 (191,942 UAT)
+│   ├── Node #2 - Validator 2 (191,942 UAT)
+│   └── Node #3 - Validator 3 (191,942 UAT)
+└── TREASURY (5)
+    ├── Treasury #1 - Reserve (191,942 UAT)
+    ├── Treasury #2 - Reserve (191,942 UAT)
+    ├── Treasury #3 - Reserve (191,942 UAT)
+    ├── Treasury #4 - Reserve (191,942 UAT)
+    └── Treasury #5 - Reserve (191,942 UAT)
+
+TOTAL: 1,535,536 UAT (Fixed Supply, No Minting)
+```
+
+## Supply Constants
+
+| Parameter | Value | Void (VOI) |
+|-----------|-------|-----------|
+| **1 UAT** | = | 100,000,000 VOI |
+| **Total Supply** | 21,936,236 UAT | 2,193,623,600,000,000 VOI |
+| **Dev Allocation** | 1,535,536 UAT | 153,553,600,000,000 VOI |
+| **Public Allocation** | 20,400,700 UAT | 2,040,070,000,000,000 VOI |
+| **Per Wallet** | 191,942 UAT | 19,194,200,000,000 VOI |
+
+## Running the Genesis Generator
+
+```bash
+# Build and run
+cd /path/to/unauthority-core
+cargo run -p genesis
+
+# Output akan menampilkan:
+# - 3 Bootstrap Node Addresses & Private Keys
+# - 5 Treasury Addresses & Private Keys
+# - Supply verification (Zero Remainder Check)
+```
+
+### Example Output
+
+```
+╔════════════════════════════════════════════════════════════╗
+║   UNAUTHORITY (UAT) - GENESIS WALLET GENERATOR v1.0      ║
+║   Generating 8 Dev Wallets (Immutable Bootstrap)         ║
+╚════════════════════════════════════════════════════════════╝
+
+📊 CONFIGURATION:
+   • Total Dev Supply: 1535536 UAT (153553600000000 VOI)
+   • Per Wallet: 19194200000000 VOI (191942 UAT)
+   • Node Bootstrap Wallets: 3 (Initial Validators)
+   • Treasury Wallets: 5 (Long-term Storage)
+
+┌─────────────────────────────────────────────────────────┐
+│ 🔐 NODE BOOTSTRAP WALLETS (Initial Validators)          │
+└─────────────────────────────────────────────────────────┘
+
+   Type            : BOOTSTRAP NODE #1
+   Address         : UAT3ea85825b3e13862274365118cafed2939fa8947
+   Balance         : 19194200000000 VOI (191942 UAT)
+   Private Key     : 40ad3e2f9a787e771da8112fa2af1448eb542175f5906adbd0b...
+```
+
+## Setup Instructions
+
+### 1. Genesis Configuration
+
+Use the generated addresses in `genesis/genesis_config.json`:
+
+```json
+{
+  "bootstrap_nodes": [
+    {
+      "address": "UAT3ea85825b3e13862274365118cafed2939fa8947",
+      "initial_stake_void": 1000000000000,
+      "role": "validator"
+    },
+    // ... 2 more
+  ],
+  "treasury_wallets": [
+    {
+      "address": "UAT25a18ce74482bb544847cc95aa3f4b42f02d8663",
+      "balance_void": 19194200000000
+    },
+    // ... 4 more
+  ]
+}
+```
+
+### 2. Validator Configuration
+
+Use template `validator.toml` untuk setup validator node:
+
+```toml
+[validator]
+address = "UAT3ea85825b3e13862274365118cafed2939fa8947"
+private_key_path = "${UAT_VALIDATOR_PRIVKEY_PATH}"
+stake_void = 100000000000  # 1000 UAT minimum
+
+[sentry_public]
+listen_addr = "0.0.0.0"
+listen_port = 30333
+external_addr = "validator-node-1.ua1.network"
+
+[signer_private]
+listen_addr = "127.0.0.1"
+listen_port = 30334
+signer_endpoint = "127.0.0.1:30334"
+```
+
+### 3. Security Setup
+
+**Step 1:** Generate Pre-Shared Key (PSK) untuk signer:
+```bash
+openssl rand -hex 32 > /etc/uat-validator/signer.psk
+chmod 600 /etc/uat-validator/signer.psk
+```
+
+**Step 2:** Store Private Key securely:
+```bash
+# Option 1: Cold Storage (Recommended)
+cp /tmp/uat_privkey.txt /offline/storage/validator-1.key
+chmod 600 /offline/storage/validator-1.key
+
+# Option 2: HSM (Hardware Security Module)
+# Load private key into HSM and reference via PKCS#11
+
+# Option 3: Environment Variable
+export UAT_VALIDATOR_PRIVKEY_PATH="/secure/location/validator-1.key"
+chmod 600 "$UAT_VALIDATOR_PRIVKEY_PATH"
+```
+
+**Step 3:** Firewall Configuration
+```bash
+# Allow public sentry port (with rate limiting)
+sudo ufw allow from any to any port 30333 proto tcp
+sudo ufw allow from any to any port 30333 proto udp
+
+# Allow private signer port (from sentry node only)
+sudo ufw allow from 192.168.1.100 to any port 30334 proto tcp
+
+# Block everything else
+sudo ufw default deny incoming
+```
+
+## Key Features
+
+### ✅ Zero Remainder Protocol
+- 1,535,536 UAT ÷ 8 wallets = **191,942 UAT per wallet (exactly)**
+- No floating-point errors
+- Cryptographic verification of total supply
+
+### ✅ Sentry Node Architecture
+```
+┌──────────────────────────────────────────────┐
+│         INTERNET (Public P2P Network)        │
+└────────────────────┬─────────────────────────┘
+                     │
+            ┌────────▼─────────┐
+            │  SENTRY NODE     │
+            │  (Public Shield) │
+            │  Port 30333      │
+            └────────┬─────────┘
+                     │ VPN/Wireguard
+                     │ Encrypted Tunnel
+            ┌────────▼──────────────┐
+            │  SIGNER NODE (Private)│
+            │  (Validator Logic)    │
+            │  Port 30334           │
+            │  - Never Exposed      │
+            └───────────────────────┘
+```
+
+### ✅ Dynamic Fee Scaling (Anti-Spam)
+- Base gas: 1,000 VOI per transaction
+- If address sends >10 tx/sec: gas × 2
+- Multiple violations: gas × 4, × 8, etc.
+- Burn limit per block: 1,000,000,000 VOI
+
+### ✅ Validator Rewards
+- 100% transaction fees go to block producer
+- No new minting (Fixed Supply)
+- Quadratic voting power: √(Total Stake)
+- Minimum stake: 1,000 UAT
+
+## Files Generated
+
+| File | Purpose |
+|------|---------|
+| `genesis/genesis_config.json` | Immutable genesis state with all 8 addresses |
+| `validator.toml` | Example validator configuration |
+| Output Log | 8 wallet addresses & private keys (terminal only) |
+
+## Security Considerations
+
+### 🔴 CRITICAL
+
+1. **Never commit private keys to Git**
+   - Always use environment variables: `$UAT_VALIDATOR_PRIVKEY_PATH`
+   - Store in cold storage or HSM only
+
+2. **Sentry Node Architecture**
+   - Public node should run in DMZ or separate VPC
+   - Private signer should NOT be internet-facing
+   - Use Noise Protocol Framework for encryption
+
+3. **Double Signing Protection**
+   - Validator cannot sign conflicting blocks
+   - Violation = 100% stake slash + permanent ban
+   - Automated by consensus layer
+
+4. **Uptime Monitoring**
+   - >95% uptime required to avoid slashing
+   - 1% penalty per epoch of downtime
+   - Monitor validator health continuously
+
+## Keypair Generation
+
+Genesis generator uses **Post-Quantum Ready** keypair derivation:
+
+```rust
+// Seed = SHA3(timestamp + label + random_data)
+let seed = Keccak256(timestamp || label || random)
+
+// Private Key = SHA3(seed || "private")
+let priv_key = Keccak256(seed || "private")
+
+// Public Key = SHA3(seed || "public")
+let pub_key = Keccak256(seed || "public")
+
+// Address = "UAT" + first_40_chars(Keccak256(pub_key))
+let address = "UAT" + Keccak256(pub_key)[0:40]
+```
+
+**Quantum Safety:** Ready to migrate to CRYSTALS-Dilithium or FALCON at hardfork.
+
+## Integration with Node
+
+### Bootstrap Node Startup
+
+```bash
+# 1. Load genesis config
+export UAT_GENESIS_CONFIG="./genesis/genesis_config.json"
+
+# 2. Set validator private key
+export UAT_VALIDATOR_PRIVKEY_PATH="/secure/validator-1.key"
+
+# 3. Start node with sentry architecture
+./uat-node \
+  --config validator.toml \
+  --genesis "$UAT_GENESIS_CONFIG" \
+  --role validator
+```
+
+### Signer Node Setup
+
+```bash
+# Run on secure/isolated machine
+./uat-signer \
+  --config validator.toml \
+  --psk /etc/uat-validator/signer.psk \
+  --privkey "$UAT_VALIDATOR_PRIVKEY_PATH"
+```
+
+## Troubleshooting
+
+### Issue: "Private Key not found"
+```bash
+# Solution: Set environment variable
+export UAT_VALIDATOR_PRIVKEY_PATH="/path/to/key"
+chmod 600 "$UAT_VALIDATOR_PRIVKEY_PATH"
+```
+
+### Issue: "Signer connection failed"
+```bash
+# Check PSK file exists and readable
+ls -la /etc/uat-validator/signer.psk
+
+# Verify firewall allows port 30334
+sudo ufw status | grep 30334
+
+# Check Wireguard/VPN tunnel is active
+sudo wg show  # if using WireGuard
+```
+
+### Issue: "Double signing detected"
+```bash
+# Your validator was slashed 100% stake
+# You've been automatically banned from network
+# Stake recovery: NOT POSSIBLE (immutable penalty)
+# Action: Submit governance proposal for reinstatement (if consensus agrees)
+```
+
+## Next Steps
+
+1. **Validator Reward Distribution Logic** - See `crates/uat-node/src/validator_rewards.rs`
+2. **Dynamic Fee Scaling Implementation** - See `crates/uat-network/src/fee_scaling.rs`
+3. **Quadratic Voting Mechanism** - See `crates/uat-consensus/src/voting.rs`
+4. **Slashing Implementation** - See `crates/uat-consensus/src/slashing.rs`
+
+---
+
+**Genesis Generated:** 2026-02-03  
+**Network:** Unauthority (UAT)  
+**Consensus:** Asynchronous Byzantine Fault Tolerance (aBFT)  
+**Supply Model:** Fixed (No Minting)

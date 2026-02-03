@@ -1,0 +1,84 @@
+{
+  "name": "unauthority-wallet",
+  "type": "module",
+  "version": "0.1.0",
+  "description": "Unauthority (UAT) Public Wallet - Burn BTC/ETH to mint UAT",
+  "author": "Unauthority Core Team",
+  "license": "MIT",
+  "main": "electron/main.js",
+  "homepage": "./",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "preview": "vite preview",
+    "electron:dev": "concurrently \"npm run dev\" \"wait-on http://localhost:5173 && electron .\"",
+    "electron:build": "npm run build && electron-builder",
+    "electron:build:mac": "npm run build && electron-builder --mac",
+    "electron:build:win": "npm run build && electron-builder --win",
+    "electron:build:linux": "npm run build && electron-builder --linux"
+  },
+  "dependencies": {
+    "axios": "^1.6.5",
+    "base-x": "^5.0.1",
+    "bitcoinjs-lib": "^6.1.5",
+    "bs58check": "^3.0.1",
+    "buffer": "^6.0.3",
+    "events": "^3.3.0",
+    "js-sha256": "^0.11.1",
+    "lucide-react": "^0.321.0",
+    "qrcode.react": "^3.1.0",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "tiny-secp256k1": "^2.2.4",
+    "tweetnacl": "^1.0.3",
+    "zustand": "^4.5.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.5",
+    "@types/react": "^18.2.48",
+    "@types/react-dom": "^18.2.18",
+    "@vitejs/plugin-react": "^4.2.1",
+    "autoprefixer": "^10.4.17",
+    "concurrently": "^8.2.2",
+    "electron": "^28.2.0",
+    "electron-builder": "^24.9.1",
+    "postcss": "^8.4.33",
+    "tailwindcss": "^3.4.1",
+    "typescript": "^5.3.3",
+    "vite": "^5.0.12",
+    "vite-plugin-top-level-await": "^1.6.0",
+    "vite-plugin-wasm": "^3.5.0",
+    "wait-on": "^7.2.0"
+  },
+  "build": {
+    "appId": "com.unauthority.wallet",
+    "productName": "Unauthority Wallet",
+    "directories": {
+      "buildResources": "public"
+    },
+    "files": [
+      "dist/**/*",
+      "electron/**/*"
+    ],
+    "mac": {
+      "category": "public.app-category.finance",
+      "target": [
+        "dmg",
+        "zip"
+      ]
+    },
+    "win": {
+      "target": [
+        "nsis",
+        "portable"
+      ]
+    },
+    "linux": {
+      "target": [
+        "AppImage",
+        "deb"
+      ],
+      "category": "Finance"
+    }
+  }
+}

@@ -8,6 +8,25 @@ members = [
     "crates/uat-network", 
     "crates/uat-node",
     "crates/uat-consensus",
-    # "crates/uat-vm",
+    "crates/uat-vm", "crates/uat-cli",
     # "crates/uat-p2p",
 ]
+
+# Integration tests package
+[package]
+name = "unauthority-integration-tests"
+version = "0.1.0"
+edition = "2021"
+
+[[test]]
+name = "integration_test"
+path = "tests/integration_test.rs"
+harness = true
+
+[dependencies]
+uat-core = { path = "crates/uat-core" }
+uat-crypto = { path = "crates/uat-crypto" }
+uat-network = { path = "crates/uat-network" }
+tokio = { version = "1", features = ["full"] }
+serde_json = "1.0"
+hex = "0.4"

@@ -12,13 +12,16 @@
 **File:** `genesis/src/main.rs`
 
 **Features Implemented:**
-- [x] Generate 8 Dev Wallets (BOOTSTRAP NODES #1-3, TREASURY #1-5)
-- [x] Zero Remainder Protocol (1,535,536 ÷ 8 = 191,942 UAT exactly)
+- [x] Generate 11 Genesis Wallets (8 Dev + 3 Bootstrap Validators)
+- [x] Dev Wallets #1-7: 191,942 UAT each
+- [x] Dev Wallet #8: 188,942 UAT (reduced for bootstrap allocation)
+- [x] Bootstrap Nodes #1-3: 1,000 UAT each (from Dev #8)
+- [x] Zero Remainder Protocol (1,535,536 UAT total)
 - [x] Post-Quantum Safe Keypair Generation (Keccak256 + Random Seed)
 - [x] Address Derivation (format: `UAT` + first 40 chars of hash)
 - [x] Supply Verification (153,553,600,000,000 VOI total)
 - [x] Beautiful Formatted Output to Terminal
-- [x] Separate displays for Bootstrap Nodes vs Treasury Wallets
+- [x] Separate displays for Dev Wallets vs Bootstrap Nodes
 - [x] No decimal errors (all integer math)
 
 **Output Format:**

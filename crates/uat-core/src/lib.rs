@@ -3,6 +3,10 @@ use sha3::{Digest, Keccak256};
 use std::collections::HashMap;
 
 pub mod distribution;
+pub mod bonding_curve;
+pub mod anti_whale;
+pub mod validator_config;
+pub mod oracle_consensus;
 use crate::distribution::DistributionState;
 
 pub const VOID_PER_UAT: u128 = 100_000_000;
@@ -90,11 +94,11 @@ impl Ledger {
 
         // VALIDASI POW: 3 Nol untuk keseimbangan Keamanan & Kecepatan
         if !block_hash.starts_with("000") {
-            return Err("Invalid PoW: Blok tidak memenuhi kriteria anti-spam".to_string());
+            return Err("Invalid PoW: Block does not meet anti-spam criteria".to_string());
         }
 
         if !block.verify_signature() {
-            return Err("Invalid Signature: Verifikasi kunci publik gagal!".to_string());
+            return Err("Invalid Signature: Public key verification failed!".to_string());
         }
 
         if self.blocks.contains_key(&block_hash) {
@@ -109,15 +113,15 @@ impl Ledger {
 
         if block.previous != state.head {
             return Err(format!(
-                "Chain Error: Urutan blok tidak valid. Diharapkan {}, dapat {}", 
+                "Chain Error: Invalid block sequence. Expected {}, got {}", 
                 state.head, block.previous
             ));
         }
 
-        // 7. LOGIKA TRANSAKSI BERDASARKAN TIPE BLOK
+        // 7. TRANSACTION LOGIC BASED ON BLOCK TYPE
         match block.block_type {
             BlockType::Mint => {
-                // Tambahkan saldo ke akun peminta
+                // Add balance to requesting account
                 state.balance += block.amount;
                 
                 // Validasi dan update supply global
@@ -127,7 +131,7 @@ impl Ledger {
                     let parts: Vec<&str> = block.link.split(':').collect();
                     if parts.len() >= 4 { 
                         if let Ok(fiat_price) = parts[3].trim().parse::<u128>() {
-                            self.distribution.total_burned_idr += fiat_price;
+                            self.distribution.total_burned_usd += fiat_price;
                         }
                     }
                     // --------------------------------------------
@@ -137,12 +141,12 @@ impl Ledger {
             }
             BlockType::Send => {
                 if state.balance < block.amount {
-                    return Err("Insufficient Funds: Saldo tidak cukup untuk mengirim".to_string());
+                    return Err("Insufficient Funds: Insufficient balance to send".to_string());
                 }
                 state.balance -= block.amount;
             }
             BlockType::Receive => {
-                // Penerima mendapatkan penambahan saldo
+                // Receiver gets balance addition
                 state.balance += block.amount;
             }
             _ => {}

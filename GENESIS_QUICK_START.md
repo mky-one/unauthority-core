@@ -16,20 +16,23 @@ This will:
 
 ## What Gets Generated
 
-### 8 Immutable Dev Wallets
+### 11 Immutable Genesis Wallets
 
 ```
-BOOTSTRAP NODES (Initial Validators):
-├── Node #1 (191,942 UAT)
-├── Node #2 (191,942 UAT)
-└── Node #3 (191,942 UAT)
+DEV/TREASURY WALLETS (Operations):
+├── Dev #1 (191,942 UAT)
+├── Dev #2 (191,942 UAT)
+├── Dev #3 (191,942 UAT)
+├── Dev #4 (191,942 UAT)
+├── Dev #5 (191,942 UAT)
+├── Dev #6 (191,942 UAT)
+├── Dev #7 (191,942 UAT)
+└── Dev #8 (188,942 UAT) [reduced for bootstrap allocation]
 
-TREASURY WALLETS (Long-term Storage):
-├── Treasury #1 (191,942 UAT)
-├── Treasury #2 (191,942 UAT)
-├── Treasury #3 (191,942 UAT)
-├── Treasury #4 (191,942 UAT)
-└── Treasury #5 (191,942 UAT)
+BOOTSTRAP VALIDATOR NODES (Staking):
+├── Validator #1 (1,000 UAT)
+├── Validator #2 (1,000 UAT)
+└── Validator #3 (1,000 UAT)
 
 TOTAL: 1,535,536 UAT (Fixed, No Minting)
 ```

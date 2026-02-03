@@ -1,0 +1,32 @@
+🗄️  Initializing database...
+✅ Database ready: 0 blocks, 0 accounts, 0.00 MB on disk
+📊 Initializing Prometheus metrics...
+✅ Metrics ready: 45+ endpoints registered
+🆕 Creating new ledger
+🔧 Starting gRPC server on port 50051...
+
+==================================================================
+                 UNAUTHORITY (UAT) ORACLE NODE                   
+==================================================================
+🆔 MY ID        : uat_012ff1f8
+📡 REST API     : http://0.0.0.0:8080
+🔌 gRPC API     : 0.0.0.0:50051 (8 services)
+------------------------------------------------------------------
+📖 PERINTAH:
+   bal                   - Cek saldo
+   whoami                - Cek alamat lengkap
+   history               - Lihat riwayat transaksi (NEW!)
+   burn <eth|btc> <TXID> - Mint UAT dari Burn ETH/BTC
+   send <ID> <AMT>       - Kirim koin
+   supply                - Cek total supply & burn
+   peers                 - List node aktif
+   dial <addr>           - Koneksi manual
+   exit                  - Keluar aplikasi
+------------------------------------------------------------------
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+🚀 gRPC Server STARTED
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   Address: 0.0.0.0:50051
+   Node: uat_f1f8c929
+   Services: 8 core gRPC endpoints
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

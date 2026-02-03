@@ -11,13 +11,13 @@
 
 Genesis Generator untuk Unauthority blockchain telah berhasil diimplementasikan dengan fitur lengkap:
 
-✅ **8 Immutable Dev Wallets** (BOOTSTRAP + TREASURY)  
-✅ **Zero Remainder Protocol** (Perfect Math)  
+✅ **11 Immutable Genesis Wallets** (8 Dev Treasury + 3 Bootstrap Validator Nodes)  
+✅ **Zero Remainder Protocol** (Perfect Math - 1,535,536 UAT exactly)  
+✅ **Bootstrap Allocation Model** (Dev #8 reduced by 3,000 UAT → 3 Validators @ 1,000 UAT each)  
 ✅ **Post-Quantum Ready Keypairs** (Keccak256)  
 ✅ **Sentry Node Architecture** (Security)  
 ✅ **Dynamic Fee Scaling** (Anti-Spam)  
 ✅ **Validator Configuration** (TOML Template)  
-✅ **Genesis Config** (JSON Blueprint)  
 ✅ **Bootstrap Automation** (Bash Script)  
 
 ---
@@ -194,11 +194,12 @@ cargo run -p genesis
 
 ## 🎯 Key Specifications Met
 
-### ✅ Specification #1: 8 Dev Wallets
-- **3 Bootstrap Nodes** for initial validation
-- **5 Treasury Wallets** for long-term storage
-- **Perfect Distribution:** 191,942 UAT per wallet
-- **Total:** 1,535,536 UAT (exactly, no remainder)
+### ✅ Specification #1: 11 Genesis Wallets
+- **8 Dev/Treasury Wallets:**
+  - Dev #1-7: 191,942 UAT each
+  - Dev #8: 188,942 UAT (reduced from 191,942 for bootstrap allocation)
+- **3 Bootstrap Validator Nodes:** 1,000 UAT each (deducted from Dev #8)
+- **Perfect Distribution:** 1,535,536 UAT total (exactly, no remainder)
 
 ### ✅ Specification #2: Private Key Generation
 - **Method:** Keccak256 hash-based derivation

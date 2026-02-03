@@ -1,112 +1,73 @@
 {
-  "genesis_config": {
-    "name": "Unauthority (UAT)",
-    "ticker": "UAT",
-    "network_id": 1,
-    "timestamp": "2026-02-03T00:00:00Z",
-    "description": "Immutable, Permissionless, Decentralized Blockchain"
-  },
+  "network_id": 1,
+  "chain_name": "Unauthority",
+  "ticker": "UAT",
+  "genesis_timestamp": 1770134981,
+  
   "constants": {
-    "void_per_uat": 100000000,
-    "total_supply_uat": 21936236,
     "total_supply_void": 2193623600000000,
-    "dev_supply_uat": 1535536,
     "dev_supply_void": 153553600000000,
-    "public_supply_uat": 20400700,
     "public_supply_void": 2040070000000000,
-    "min_validator_stake_uat": 1000,
-    "min_validator_stake_void": 100000000000
+    "void_per_uat": 100000000
   },
+  
   "bootstrap_nodes": [
     {
-      "node_id": 1,
-      "type": "BOOTSTRAP_NODE",
-      "address": "UAT3ea85825b3e13862274365118cafed2939fa8947",
-      "balance_void": 19194200000000,
-      "initial_stake_void": 1000000000000,
-      "role": "validator"
+      "address": "UATf23318abac8236f256ee3ac0b959779ea7613632",
+      "stake_void": 100000000000,
+      "private_key": "cfb280abb0352b8214f218c2109278121fece7a94bf5aa0a1a67dde41fc344cede320452392a6ee402c61155a63ec7a787f27efc794ee0086c798d6761dd7bc2"
     },
     {
-      "node_id": 2,
-      "type": "BOOTSTRAP_NODE",
-      "address": "UAT2b2e5927789d09bdf25730f9d1c08e3dfba53bbe",
-      "balance_void": 19194200000000,
-      "initial_stake_void": 1000000000000,
-      "role": "validator"
+      "address": "UAT915836b2537c513e2187cb0dcae9476fc0cf51f0",
+      "stake_void": 100000000000,
+      "private_key": "650ab15559dfee4c47c847fb6bc9596c31ca0c2ca17cb4503ecfbd15b78da1abd4cdef376ade0092f96ff45fea525e61f176ee84077cf12f5c741de1745b21f0"
     },
     {
-      "node_id": 3,
-      "type": "BOOTSTRAP_NODE",
-      "address": "UATb06430fc87c1df4855852791a7488d1157c6f8ea",
-      "balance_void": 19194200000000,
-      "initial_stake_void": 1000000000000,
-      "role": "validator"
+      "address": "UAT632052bc2c89c82e0bc067f0de2b0cec9ef1ea84",
+      "stake_void": 100000000000,
+      "private_key": "d29638e73e011f9f6189b97d92f3995faeb042a5dd1deb4b19b7d7a0113c718367d447794feacddb433f7e587ec09688b4fe035d2fe3623835b30498d1dcd42f"
     }
   ],
-  "treasury_wallets": [
+  
+  "dev_accounts": [
     {
-      "treasury_id": 1,
-      "type": "TREASURY",
-      "address": "UAT25a18ce74482bb544847cc95aa3f4b42f02d8663",
-      "balance_void": 19194200000000,
-      "unlock_period_blocks": 1000000,
-      "description": "Treasury Reserve #1"
+      "address": "UAT8865122df28510cc9c5a9d2bf748e3728643e369",
+      "balance_void": 19194200000000
     },
     {
-      "treasury_id": 2,
-      "type": "TREASURY",
-      "address": "UAT4350996f0b1e657de78b0b7073217b0482fe863f",
-      "balance_void": 19194200000000,
-      "unlock_period_blocks": 1000000,
-      "description": "Treasury Reserve #2"
+      "address": "UAT400a61e606fcdeb4b225bb0f77ea849d00644011",
+      "balance_void": 19194200000000
     },
     {
-      "treasury_id": 3,
-      "type": "TREASURY",
-      "address": "UATf528d8fe675449fd5675cd17ed1b07042fcdb58e",
-      "balance_void": 19194200000000,
-      "unlock_period_blocks": 1000000,
-      "description": "Treasury Reserve #3"
+      "address": "UAT9173b2c6a9171caaf21e4ffa572f7a82d964f173",
+      "balance_void": 19194200000000
     },
     {
-      "treasury_id": 4,
-      "type": "TREASURY",
-      "address": "UAT99024e8628bdaf8f2ec495dcb8b095d5bf45d7da",
-      "balance_void": 19194200000000,
-      "unlock_period_blocks": 1000000,
-      "description": "Treasury Reserve #4"
+      "address": "UAT95c1c03aaa25d1b93d6f31e8c5429536fed0870b",
+      "balance_void": 19194200000000
     },
     {
-      "treasury_id": 5,
-      "type": "TREASURY",
-      "address": "UAT49183adb70fe4a8a1575bf15d8e554f00eee3238",
-      "balance_void": 19194200000000,
-      "unlock_period_blocks": 1000000,
-      "description": "Treasury Reserve #5"
+      "address": "UAT028da3a7cac902c345dc6d1075ac6db71508c271",
+      "balance_void": 19194200000000
+    },
+    {
+      "address": "UAT991b5b1024fa4099a7fcb1b30f785d635b1e13f2",
+      "balance_void": 19194200000000
+    },
+    {
+      "address": "UAT54a8b8a9608c51cf1c1ba9d712d0eb0238fd71e6",
+      "balance_void": 19194200000000
+    },
+    {
+      "address": "UAT399641dcd96b2b3de9eb527dedd238ac5f9012f1",
+      "balance_void": 18894200000000
     }
   ],
-  "consensus_params": {
-    "consensus_type": "aBFT",
-    "finality_blocks": 1,
-    "finality_time_seconds": 3,
-    "max_transaction_size_bytes": 1048576,
-    "target_block_time_seconds": 3,
-    "byzantine_fault_tolerance_threshold": 0.33
-  },
-  "economic_params": {
-    "base_gas_price_void": 1000,
-    "max_gas_per_transaction": 10000000,
-    "burn_limit_per_block_void": 1000000000,
-    "dynamic_fee_scaling_enabled": true,
-    "spam_threshold_tx_per_second": 10,
-    "spam_fee_multiplier": 2
-  },
-  "distribution_params": {
-    "proof_of_burn_enabled": true,
-    "accepted_burn_assets": ["BTC", "ETH"],
-    "rejected_burn_assets": ["USDT", "USDC", "XRP"],
-    "bonding_curve_enabled": true,
-    "oracle_type": "decentralized_medianizer",
-    "public_allocation_percentage": 93
+  
+  "consensus": {
+    "type": "aBFT",
+    "min_validators": 3,
+    "block_time_ms": 3000,
+    "finality_threshold": 0.67
   }
 }

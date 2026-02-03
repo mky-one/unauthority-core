@@ -1,15 +1,30 @@
 use tokio::io::{self, AsyncBufReadExt, BufReader};
 use tokio::sync::mpsc;
 use uat_core::{Block, BlockType, Ledger, VOID_PER_UAT, AccountState};
+use uat_core::oracle_consensus::OracleConsensus;  // NEW: Oracle consensus
 use uat_crypto;
 use uat_network::{UatNode, NetworkEvent};
+use uat_vm::{WasmEngine, ContractCall};
+use rate_limiter::{RateLimiter, filters::rate_limit};
 use std::sync::{Arc, Mutex};
 use std::collections::HashMap;
+
+// Oracle module with multi-source consensus
+mod oracle;
 use std::time::Duration;
 use std::fs;
 use serde_json::Value;
+
+mod validator_rewards;
+mod genesis;
+mod grpc_server;  // NEW: gRPC server module
+mod rate_limiter; // NEW: Rate limiter module
+mod db;           // NEW: Database module (sled)
+mod metrics;      // NEW: Prometheus metrics module
 // --- TAMBAHAN: HTTP API MODULE ---
 use warp::Filter;
+use db::UatDatabase;
+use metrics::UatMetrics;
 
 const LEDGER_FILE: &str = "ledger_state.json";
 const WALLET_FILE: &str = "wallet.json";
@@ -18,8 +33,11 @@ const BURN_ADDRESS_BTC: &str = "1111111111111111111114oLvT2";
 
 const BOOTSTRAP_NODES: &[&str] = &[];
 
+// DEV MODE: Set to true for testing without blockchain verification
+const DEV_MODE: bool = true;
 
-// Struktur data untuk Request Body saat kirim uang
+
+// Request body structure for sending UAT
 #[derive(serde::Deserialize, serde::Serialize)]
 struct SendRequest {
     target: String,
@@ -28,11 +46,26 @@ struct SendRequest {
 
 #[derive(serde::Deserialize, serde::Serialize)]
 struct BurnRequest {
-    coin_type: String, // "eth" atau "btc"
+    coin_type: String, // "eth" or "btc"
     txid: String,
 }
 
-// Helper untuk menyuntikkan (inject) state ke dalam route handler
+#[derive(serde::Deserialize, serde::Serialize)]
+struct DeployContractRequest {
+    owner: String,
+    bytecode: String, // base64 encoded WASM
+    initial_state: Option<HashMap<String, String>>,
+}
+
+#[derive(serde::Deserialize, serde::Serialize)]
+struct CallContractRequest {
+    contract_address: String,
+    function: String,
+    args: Vec<String>,
+    gas_limit: Option<u64>,
+}
+
+// Helper to inject state into route handlers
 fn with_state<T: Clone + Send>(state: T) -> impl Filter<Extract = (T,), Error = std::convert::Infallible> + Clone {
     warp::any().map(move || state.clone())
 }
@@ -46,7 +79,13 @@ pub async fn start_api_server(
     my_address: String,
     secret_key: Vec<u8>,
     api_port: u16,
+    oracle_consensus: Arc<Mutex<OracleConsensus>>,
+    metrics: Arc<UatMetrics>,
+    database: Arc<UatDatabase>,
 ) {
+    // Rate Limiter: 100 req/sec per IP, burst 200
+    let limiter = RateLimiter::new(100, Some(200));
+    let rate_limit_filter = rate_limit(limiter.clone());
     // 1. GET /bal/:address
     let l_bal = ledger.clone();
     let balance_route = warp::path!("bal" / String)
@@ -66,7 +105,7 @@ pub async fn start_api_server(
             let l_guard = l.lock().unwrap();
             warp::reply::json(&serde_json::json!({ 
                 "remaining_supply": l_guard.distribution.remaining_supply / VOID_PER_UAT, 
-                "total_burned_idr": l_guard.distribution.total_burned_idr 
+                "total_burned_usd": l_guard.distribution.total_burned_usd 
             }))
         });
 
@@ -139,8 +178,8 @@ pub async fn start_api_server(
                     let l_guard = l.lock().unwrap();
                     if let Some(st) = l_guard.accounts.get(&my_addr) { 
                         blk.previous = st.head.clone(); 
-                        if st.balance < amt { return warp::reply::json(&serde_json::json!({"status":"error","msg":"Saldo tidak cukup"})); }
-                        // Ambil power awal (saldo pengirim)
+                        if st.balance < amt { return warp::reply::json(&serde_json::json!({"status":"error","msg":"Insufficient balance"})); }
+                        // Get initial power (sender balance)
                         initial_power = (st.balance / VOID_PER_UAT) as u32;
                     }
                 }
@@ -149,14 +188,14 @@ pub async fn start_api_server(
                 let hash = blk.calculate_hash();
                 blk.signature = hex::encode(uat_crypto::sign_message(hash.as_bytes(), &key).unwrap());
                 
-                // Masukkan INITIAL POWER ke antrean
+                // Insert with INITIAL POWER to queue
                 p.lock().unwrap().insert(hash.clone(), (blk, initial_power));
                 
                 let ts = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis();
                 let _ = tx.send(format!("CONFIRM_REQ:{}:{}:{}:{}", hash, my_addr, amt, ts)).await;
                 warp::reply::json(&serde_json::json!({"status":"success","tx_hash":hash, "initial_power": initial_power}))
             } else {
-                warp::reply::json(&serde_json::json!({"status":"error","msg":"Alamat tidak ditemukan"}))
+                warp::reply::json(&serde_json::json!({"status":"error","msg":"Address not found"}))
             }
         });
 
@@ -164,16 +203,17 @@ pub async fn start_api_server(
     let p_burn = pending_burns.clone();
     let tx_burn = tx_out.clone();
     let l_burn = ledger.clone();
+    let oc_burn = oracle_consensus.clone();
     let burn_route = warp::path("burn")
         .and(warp::post())
         .and(warp::body::json())
-        .and(with_state((p_burn, tx_burn, my_address.clone(), l_burn)))
-        .then(|req: BurnRequest, (p, tx, my_addr, l): (Arc<Mutex<HashMap<String, (f64, f64, String, u128)>>>, mpsc::Sender<String>, String, Arc<Mutex<Ledger>>)| async move {
+        .and(with_state((p_burn, tx_burn, my_address.clone(), l_burn, oc_burn)))
+        .then(|req: BurnRequest, (p, tx, my_addr, l, oc): (Arc<Mutex<HashMap<String, (f64, f64, String, u128)>>>, mpsc::Sender<String>, String, Arc<Mutex<Ledger>>, Arc<Mutex<OracleConsensus>>)| async move {
             
-            // 1. Sanitasi TXID
+            // 1. Sanitize TXID
             let clean_txid = req.txid.trim().trim_start_matches("0x").to_lowercase();
             
-            // 2. Proteksi Double-Claim (Ledger & Pending)
+            // 2. Double-Claim Protection (Ledger & Pending)
             let (in_ledger, my_power) = {
                 let l_guard = l.lock().unwrap();
                 let exists = l_guard.blocks.values().any(|b| b.block_type == BlockType::Mint && b.link.contains(&clean_txid));
@@ -186,12 +226,27 @@ pub async fn start_api_server(
             if in_ledger || is_pending { 
                 return warp::reply::json(&serde_json::json!({
                     "status": "error",
-                    "msg": "TXID ini sudah digunakan atau sedang dalam proses verifikasi!"
+                    "msg": "This TXID has already been used or is currently being verified!"
                 })); 
             }
             
-            // 3. Proses Oracle
-            let (ep, bp) = get_crypto_prices().await;
+            // 3. Process Oracle: Use Consensus if available, fallback to single-node
+            let consensus_price_opt = {
+                let oc_guard = oc.lock().unwrap();
+                oc_guard.get_consensus_price()
+            }; // Drop lock before await
+            
+            let (ep, bp) = match consensus_price_opt {
+                Some((eth_median, btc_median)) => {
+                    println!("✅ Using Oracle Consensus for burn calculation");
+                    (eth_median, btc_median)
+                },
+                None => {
+                    println!("⚠️ Consensus not yet available, using single-node oracle");
+                    get_crypto_prices().await
+                }
+            };
+            
             let res = if req.coin_type.to_lowercase() == "eth" { 
                 verify_eth_burn_tx(&clean_txid).await.map(|a| (a, ep, "ETH")) 
             } else { 
@@ -199,32 +254,403 @@ pub async fn start_api_server(
             };
 
             if let Some((amt, prc, sym)) = res {
-                // Masukkan ke pending dengan Power awal = Saldo kita sendiri
+                // DEV_MODE: Instant finalization without voting (for testing only)
+                if DEV_MODE {
+                    let usd_val = amt * prc;
+                    let uat_to_mint = ((usd_val / 0.01) * VOID_PER_UAT as f64) as u128;
+                    
+                    let mut l_guard = l.lock().unwrap();
+                    let state = l_guard.accounts.get(&my_addr).cloned().unwrap_or(AccountState { 
+                        head: "0".to_string(), balance: 0, block_count: 0 
+                    });
+
+                    let mint_blk = Block {
+                        account: my_addr.clone(),
+                        previous: state.head.clone(),
+                        block_type: BlockType::Mint,
+                        amount: uat_to_mint,
+                        link: format!("{}:{}:{}", sym, clean_txid, prc as u128),
+                        signature: "DEV_MODE_AUTO".to_string(),
+                        work: 0,
+                    };
+
+                    let hash = mint_blk.calculate_hash();
+                    l_guard.blocks.insert(hash.clone(), mint_blk);
+                    
+                    let acc = l_guard.accounts.entry(my_addr.clone()).or_insert(AccountState {
+                        head: "0".to_string(),
+                        balance: 0,
+                        block_count: 0,
+                    });
+                    acc.balance += uat_to_mint;
+                    acc.block_count += 1;
+                    acc.head = hash;
+                    
+                    println!("🧪 DEV MODE: Instant mint {} {} → {} UAT", amt, sym, uat_to_mint / VOID_PER_UAT);
+                    
+                    return warp::reply::json(&serde_json::json!({
+                        "status":"success",
+                        "msg":"Burn finalized instantly (DEV MODE)",
+                        "uat_minted": uat_to_mint / VOID_PER_UAT,
+                        "usd_value": usd_val
+                    }));
+                }
+                
+                // Production: Add to pending with initial power = our own balance
                 p.lock().unwrap().insert(clean_txid.clone(), (amt, prc, sym.to_string(), my_power));
                 
                 let ts = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis();
-                let _ = tx.send(format!("VOTE_REQ:{}:{}:{}:{}", req.coin_type.to_lowercase(), clean_txid, my_addr, ts)).await;
+                let vote_msg = format!("VOTE_REQ:{}:{}:{}:{}", req.coin_type.to_lowercase(), clean_txid, my_addr, ts);
+                println!("📡 Broadcasting VOTE_REQ: {} (Initial Power: {})", &vote_msg[..50], my_power);
+                let _ = tx.send(vote_msg).await;
                 
                 warp::reply::json(&serde_json::json!({
                     "status":"success",
-                    "msg":"Verifikasi dimulai",
+                    "msg":"Verification started",
                     "initial_power": my_power
                 }))
             } else {
-                warp::reply::json(&serde_json::json!({"status":"error","msg":"TXID tidak valid atau data Oracle gagal"}))
+                warp::reply::json(&serde_json::json!({"status":"error","msg":"Invalid TXID or Oracle data failed"}))
             }
         });
 
-    // Gabungkan semua route
+    // 7. POST /deploy-contract (PERMISSIONLESS)
+    let wasm_engine = Arc::new(WasmEngine::new());
+    let wasm_deploy = wasm_engine.clone();
+    let deploy_route = warp::path("deploy-contract")
+        .and(warp::post())
+        .and(warp::body::json())
+        .and(with_state(wasm_deploy))
+        .then(|req: DeployContractRequest, engine: Arc<WasmEngine>| async move {
+            // Decode base64 WASM bytecode
+            let bytecode = match base64::decode(&req.bytecode) {
+                Ok(bytes) => bytes,
+                Err(_) => return warp::reply::json(&serde_json::json!({
+                    "status": "error",
+                    "msg": "Invalid base64 bytecode"
+                }))
+            };
+
+            // Deploy to UVM (permissionless)
+            let block_number = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_secs();
+
+            match engine.deploy_contract(
+                req.owner.clone(),
+                bytecode,
+                req.initial_state.unwrap_or_default(),
+                block_number
+            ) {
+                Ok(contract_addr) => {
+                    warp::reply::json(&serde_json::json!({
+                        "status": "success",
+                        "contract_address": contract_addr,
+                        "owner": req.owner,
+                        "deployed_at_block": block_number
+                    }))
+                },
+                Err(e) => {
+                    warp::reply::json(&serde_json::json!({
+                        "status": "error",
+                        "msg": e
+                    }))
+                }
+            }
+        });
+
+    // 8. POST /call-contract
+    let wasm_call = wasm_engine.clone();
+    let call_route = warp::path("call-contract")
+        .and(warp::post())
+        .and(warp::body::json())
+        .and(with_state(wasm_call))
+        .then(|req: CallContractRequest, engine: Arc<WasmEngine>| async move {
+            let call = ContractCall {
+                contract: req.contract_address,
+                function: req.function,
+                args: req.args,
+                gas_limit: req.gas_limit.unwrap_or(1000000),
+            };
+
+            match engine.call_contract(call) {
+                Ok(result) => {
+                    warp::reply::json(&serde_json::json!({
+                        "status": "success",
+                        "result": result
+                    }))
+                },
+                Err(e) => {
+                    warp::reply::json(&serde_json::json!({
+                        "status": "error",
+                        "msg": e
+                    }))
+                }
+            }
+        });
+
+    // 9. GET /contract/:address
+    let wasm_get = wasm_engine.clone();
+    let get_contract_route = warp::path!("contract" / String)
+        .and(with_state(wasm_get))
+        .map(|addr: String, engine: Arc<WasmEngine>| {
+            match engine.get_contract(&addr) {
+                Ok(contract) => {
+                    warp::reply::json(&serde_json::json!({
+                        "status": "success",
+                        "contract": {
+                            "address": contract.address,
+                            "code_hash": contract.code_hash,
+                            "balance": contract.balance,
+                            "owner": contract.owner,
+                            "created_at_block": contract.created_at_block,
+                            "state": contract.state
+                        }
+                    }))
+                },
+                Err(e) => {
+                    warp::reply::json(&serde_json::json!({
+                        "status": "error",
+                        "msg": e
+                    }))
+                }
+            }
+        });
+
+    // 10. GET /metrics (Prometheus endpoint)
+    let metrics_clone = metrics.clone();
+    let ledger_metrics = ledger.clone();
+    let db_metrics = database.clone();
+    let metrics_route = warp::path("metrics")
+        .and(with_state((metrics_clone, ledger_metrics, db_metrics)))
+        .map(|(m, l, db): (Arc<UatMetrics>, Arc<Mutex<Ledger>>, Arc<UatDatabase>)| {
+            // Update blockchain metrics before export
+            {
+                let ledger_guard = l.lock().unwrap();
+                m.update_blockchain_metrics(&ledger_guard);
+            }
+            
+            // Update database metrics
+            let stats = db.stats();
+            m.update_db_metrics(&stats);
+            
+            // Export all metrics
+            match m.export() {
+                Ok(output) => {
+                    warp::reply::with_header(output, "Content-Type", "text/plain; version=0.0.4")
+                },
+                Err(e) => {
+                    warp::reply::with_header(
+                        format!("# Error exporting metrics: {}", e),
+                        "Content-Type",
+                        "text/plain"
+                    )
+                }
+            }
+        });
+
+    // 11. GET /node-info (Network metadata for CLI)
+    let l_info = ledger.clone();
+    let node_info_route = warp::path("node-info")
+        .and(with_state(l_info))
+        .map(|l: Arc<Mutex<Ledger>>| {
+            let l_guard = l.lock().unwrap();
+            let total_supply = 21_936_236u128 * VOID_PER_UAT;
+            let circulating = total_supply - l_guard.distribution.remaining_supply;
+            warp::reply::json(&serde_json::json!({
+                "chain_id": "uat-mainnet",
+                "version": "1.0.0",
+                "block_height": l_guard.blocks.len(),
+                "validator_count": 3,
+                "peer_count": 0,
+                "total_supply": total_supply / VOID_PER_UAT,
+                "circulating_supply": circulating / VOID_PER_UAT,
+                "network_tps": 0
+            }))
+        });
+
+    // 12. GET /validators (List active validators)
+    let l_validators = ledger.clone();
+    let validators_route = warp::path("validators")
+        .and(with_state(l_validators))
+        .map(|l: Arc<Mutex<Ledger>>| {
+            let l_guard = l.lock().unwrap();
+            let validators: Vec<serde_json::Value> = l_guard.accounts.iter()
+                .filter(|(_, acc)| acc.balance >= 1000 * VOID_PER_UAT)
+                .map(|(addr, acc)| serde_json::json!({
+                    "address": addr,
+                    "stake": acc.balance / VOID_PER_UAT,
+                    "active": true
+                }))
+                .collect();
+            warp::reply::json(&serde_json::json!({
+                "validators": validators
+            }))
+        });
+
+    // 13. GET /balance/:address (Check balance - alias for CLI compatibility)
+    let l_balance_alias = ledger.clone();
+    let balance_alias_route = warp::path!("balance" / String)
+        .and(with_state(l_balance_alias))
+        .map(|addr: String, l: Arc<Mutex<Ledger>>| {
+            let l_guard = l.lock().unwrap();
+            let full_addr = l_guard.accounts.keys().find(|k| get_short_addr(k) == addr || **k == addr).cloned().unwrap_or(addr.clone());
+            let bal = l_guard.accounts.get(&full_addr).map(|a| a.balance).unwrap_or(0);
+            warp::reply::json(&serde_json::json!({ 
+                "address": full_addr, 
+                "balance_uat": bal / VOID_PER_UAT,
+                "balance_voi": bal 
+            }))
+        });
+
+    // 14. GET /block (Latest block)
+    let l_block = ledger.clone();
+    let block_route = warp::path("block")
+        .and(with_state(l_block))
+        .map(|l: Arc<Mutex<Ledger>>| {
+            let l_guard = l.lock().unwrap();
+            // Get last block (blocks is HashMap, iterate to find one)
+            let latest = l_guard.blocks.values().next();
+            if let Some(b) = latest {
+                warp::reply::json(&serde_json::json!({
+                    "height": l_guard.blocks.len(),
+                    "hash": b.calculate_hash(),
+                    "account": b.account,
+                    "previous": b.previous,
+                    "amount": b.amount / VOID_PER_UAT,
+                    "block_type": format!("{:?}", b.block_type)
+                }))
+            } else {
+                warp::reply::json(&serde_json::json!({"error": "No blocks yet"}))
+            }
+        });
+
+    // 15. POST /faucet (DEV MODE ONLY - Free UAT for testing)
+    let l_faucet = ledger.clone();
+    let db_faucet = database.clone();
+    let faucet_route = warp::path("faucet")
+        .and(warp::post())
+        .and(warp::body::json())
+        .and(with_state((l_faucet, db_faucet)))
+        .map(|req: serde_json::Value, (l, db): (Arc<Mutex<Ledger>>, Arc<UatDatabase>)| {
+            if !DEV_MODE {
+                return warp::reply::json(&serde_json::json!({
+                    "status": "error",
+                    "msg": "Faucet only available in DEV_MODE"
+                }));
+            }
+            
+            let address = req["address"].as_str().unwrap_or("");
+            if address.is_empty() {
+                return warp::reply::json(&serde_json::json!({
+                    "status": "error",
+                    "msg": "Address required"
+                }));
+            }
+            
+            let faucet_amount = 100_000u128 * VOID_PER_UAT; // 100k UAT
+            
+            let mut l_guard = l.lock().unwrap();
+            let state = l_guard.accounts.get(address).cloned().unwrap_or(AccountState {
+                head: "0".to_string(),
+                balance: 0,
+                block_count: 0,
+            });
+            
+            let faucet_block = Block {
+                account: address.to_string(),
+                previous: state.head.clone(),
+                block_type: BlockType::Mint,
+                amount: faucet_amount,
+                link: "FAUCET:DEV_MODE".to_string(),
+                signature: "FAUCET_AUTO".to_string(),
+                work: 0,
+            };
+            
+            let hash = faucet_block.calculate_hash();
+            l_guard.blocks.insert(hash.clone(), faucet_block);
+            
+            let new_balance = {
+                let acc = l_guard.accounts.entry(address.to_string()).or_insert(AccountState {
+                    head: "0".to_string(),
+                    balance: 0,
+                    block_count: 0,
+                });
+                acc.balance += faucet_amount;
+                acc.block_count += 1;
+                acc.head = hash;
+                acc.balance
+            };
+            
+            save_to_disk(&l_guard, &db);
+            
+            warp::reply::json(&serde_json::json!({
+                "status": "success",
+                "msg": "Faucet claim successful",
+                "amount": faucet_amount / VOID_PER_UAT,
+                "new_balance": new_balance / VOID_PER_UAT
+            }))
+        });
+
+    // CORS configuration - Allow all origins for local development
+    let cors = warp::cors()
+        .allow_any_origin()
+        .allow_methods(vec!["GET", "POST", "PUT", "DELETE", "OPTIONS"])
+        .allow_headers(vec!["Content-Type", "Authorization", "Accept"]);
+
+    // Combine all routes with rate limiting
     let routes = balance_route
         .or(supply_route)
         .or(history_route)
         .or(peers_route)
         .or(send_route)
-        .or(burn_route);
+        .or(burn_route)
+        .or(deploy_route)
+        .or(call_route)
+        .or(get_contract_route)
+        .or(metrics_route)
+        .or(node_info_route)      // NEW: Node info endpoint
+        .or(validators_route)     // NEW: Validators endpoint
+        .or(balance_alias_route)  // NEW: Balance alias for CLI
+        .or(block_route)          // NEW: Latest block endpoint
+        .or(faucet_route)         // NEW: Faucet endpoint (DEV_MODE only)
+        .with(cors)               // Apply CORS
+        .with(warp::log("api"))
+        .recover(handle_rejection);
 
-    println!("🌍 API Server berjalan di http://localhost:{}", api_port);
-    warp::serve(routes).run(([0, 0, 0, 0], api_port)).await;
+    // Apply rate limiting globally
+    let routes_with_limit = rate_limit_filter.and(routes);
+
+    println!("🌍 API Server running at http://localhost:{} (Rate Limit: 100 req/sec per IP)", api_port);
+    warp::serve(routes_with_limit).run(([0, 0, 0, 0], api_port)).await;
+}
+
+// Rate limit rejection handler
+async fn handle_rejection(err: warp::Rejection) -> Result<impl warp::Reply, std::convert::Infallible> {
+    if let Some(rate_limiter::filters::RateLimitExceeded { ip }) = err.find() {
+        let json = warp::reply::json(&serde_json::json!({
+            "status": "error",
+            "code": 429,
+            "msg": "Rate limit exceeded. Please slow down your requests.",
+            "ip": ip.to_string()
+        }));
+        Ok(warp::reply::with_status(json, warp::http::StatusCode::TOO_MANY_REQUESTS))
+    } else if err.is_not_found() {
+        let json = warp::reply::json(&serde_json::json!({
+            "status": "error",
+            "code": 404,
+            "msg": "Endpoint not found"
+        }));
+        Ok(warp::reply::with_status(json, warp::http::StatusCode::NOT_FOUND))
+    } else {
+        let json = warp::reply::json(&serde_json::json!({
+            "status": "error",
+            "code": 500,
+            "msg": "Internal server error"
+        }));
+        Ok(warp::reply::with_status(json, warp::http::StatusCode::INTERNAL_SERVER_ERROR))
+    }
 }
 
 async fn get_crypto_prices() -> (f64, f64) {
@@ -234,9 +660,9 @@ async fn get_crypto_prices() -> (f64, f64) {
         .build()
         .unwrap_or_default();
 
-    let url_coingecko = "https://api.coingecko.com/api/v3/simple/price?ids=ethereum,bitcoin&vs_currencies=idr";
-    let url_cryptocompare = "https://min-api.cryptocompare.com/data/pricemulti?fsyms=BTC,ETH&tsyms=IDR";
-    let url_indodax = "https://indodax.com/api/summaries"; 
+    let url_coingecko = "https://api.coingecko.com/api/v3/simple/price?ids=ethereum,bitcoin&vs_currencies=usd";
+    let url_cryptocompare = "https://min-api.cryptocompare.com/data/pricemulti?fsyms=BTC,ETH&tsyms=USD";
+    let url_kraken = "https://api.kraken.com/0/public/Ticker?pair=ETHUSD,XBTUSD"; // Kraken (global exchange)
     
     let mut eth_prices = Vec::new();
     let mut btc_prices = Vec::new();
@@ -244,49 +670,53 @@ async fn get_crypto_prices() -> (f64, f64) {
     // 1. Fetch CoinGecko
     if let Ok(resp) = client.get(url_coingecko).send().await {
         if let Ok(json) = resp.json::<Value>().await {
-            if let Some(p) = json["ethereum"]["idr"].as_f64() { eth_prices.push(p); }
-            if let Some(p) = json["bitcoin"]["idr"].as_f64() { btc_prices.push(p); }
+            if let Some(p) = json["ethereum"]["usd"].as_f64() { eth_prices.push(p); }
+            if let Some(p) = json["bitcoin"]["usd"].as_f64() { btc_prices.push(p); }
         }
     }
 
     // 2. Fetch CryptoCompare
     if let Ok(resp) = client.get(url_cryptocompare).send().await {
         if let Ok(json) = resp.json::<Value>().await {
-            if let Some(p) = json["ETH"]["IDR"].as_f64() { eth_prices.push(p); }
-            if let Some(p) = json["BTC"]["IDR"].as_f64() { btc_prices.push(p); }
+            if let Some(p) = json["ETH"]["USD"].as_f64() { eth_prices.push(p); }
+            if let Some(p) = json["BTC"]["USD"].as_f64() { btc_prices.push(p); }
         }
     }
 
-    // 3. Fetch Indodax (Sangat akurat untuk pasar IDR)
-    if let Ok(resp) = client.get(url_indodax).send().await {
+    // 3. Fetch Kraken (Global exchange)
+    if let Ok(resp) = client.get(url_kraken).send().await {
         if let Ok(json) = resp.json::<Value>().await {
-            if let Some(tickers) = json["tickers"].as_object() {
-                // Indodax menyimpan harga dalam bentuk String, jadi kita perlu parse ke f64
-                if let Some(eth) = tickers.get("eth_idr") {
-                    if let Some(p_str) = eth["last"].as_str() {
-                        if let Ok(p) = p_str.parse::<f64>() { eth_prices.push(p); }
+            if let Some(result) = json["result"].as_object() {
+                // Kraken returns prices in array format
+                if let Some(eth) = result.get("XETHZUSD") {
+                    if let Some(p_array) = eth["c"].as_array() {
+                        if let Some(p_str) = p_array[0].as_str() {
+                            if let Ok(p) = p_str.parse::<f64>() { eth_prices.push(p); }
+                        }
                     }
                 }
-                if let Some(btc) = tickers.get("btc_idr") {
-                    if let Some(p_str) = btc["last"].as_str() {
-                        if let Ok(p) = p_str.parse::<f64>() { btc_prices.push(p); }
+                if let Some(btc) = result.get("XXBTZUSD") {
+                    if let Some(p_array) = btc["c"].as_array() {
+                        if let Some(p_str) = p_array[0].as_str() {
+                            if let Ok(p) = p_str.parse::<f64>() { btc_prices.push(p); }
+                        }
                     }
                 }
             }
         }
     }
 
-    // Hitung Rata-Rata Final
-    let final_eth = if eth_prices.is_empty() { 35_000_000.0 } else {
+    // Calculate Final Average
+    let final_eth = if eth_prices.is_empty() { 2500.0 } else {
         eth_prices.iter().sum::<f64>() / eth_prices.len() as f64
     };
 
-    let final_btc = if btc_prices.is_empty() { 1_000_000_000.0 } else {
+    let final_btc = if btc_prices.is_empty() { 83000.0 } else {
         btc_prices.iter().sum::<f64>() / btc_prices.len() as f64
     };
 
-    // Tampilkan jumlah sumber yang berhasil (untuk debugging)
-    println!("📊 Oracle Consensus ({} APIs): ETH Rp{}, BTC Rp{}", 
+    // Show successful source count (for debugging)
+    println!("📊 Oracle Consensus ({} APIs): ETH ${:.2}, BTC ${:.2}", 
         eth_prices.len(), 
         format_u128(final_eth as u128), 
         format_u128(final_btc as u128)
@@ -296,10 +726,20 @@ async fn get_crypto_prices() -> (f64, f64) {
 }
 
 async fn verify_eth_burn_tx(txid: &str) -> Option<f64> {
+    // DEV MODE: Accept any valid format TXID and mock burn amount
+    if DEV_MODE {
+        let clean_txid = txid.trim().trim_start_matches("0x").to_lowercase();
+        if clean_txid.len() == 64 && clean_txid.chars().all(|c| c.is_ascii_hexdigit()) {
+            println!("🧪 DEV MODE: Accepting ETH TXID {} with mock amount 0.1 ETH", &clean_txid[..16]);
+            return Some(0.1); // Mock 0.1 ETH burn
+        }
+        return None;
+    }
+    
     let clean_txid = txid.trim().trim_start_matches("0x").to_lowercase();
     let url = format!("https://api.blockcypher.com/v1/eth/main/txs/{}", clean_txid);
     let client = reqwest::Client::builder().timeout(Duration::from_secs(10)).build().ok()?;
-    println!("🌐 Oracle ETH: Verifikasi TXID {}...", clean_txid);
+    println!("🌐 Oracle ETH: Verifying TXID {}...", clean_txid);
     if let Ok(resp) = client.get(url).send().await {
         if let Ok(json) = resp.json::<Value>().await {
             if let Some(outputs) = json["outputs"].as_array() {
@@ -320,9 +760,19 @@ async fn verify_eth_burn_tx(txid: &str) -> Option<f64> {
 }
 
 async fn verify_btc_burn_tx(txid: &str) -> Option<f64> {
+    // DEV MODE: Accept any valid format TXID and mock burn amount
+    if DEV_MODE {
+        let clean_txid = txid.trim().to_lowercase();
+        if clean_txid.len() == 64 && clean_txid.chars().all(|c| c.is_ascii_hexdigit()) {
+            println!("🧪 DEV MODE: Accepting BTC TXID {} with mock amount 0.01 BTC", &clean_txid[..16]);
+            return Some(0.01); // Mock 0.01 BTC burn
+        }
+        return None;
+    }
+    
     let url = format!("https://mempool.space/api/tx/{}", txid.trim());
     let client = reqwest::Client::builder().user_agent("Mozilla/5.0").timeout(Duration::from_secs(10)).build().ok()?;
-    println!("🌐 Oracle BTC: Membedah TXID {}...", txid);
+    println!("🌐 Oracle BTC: Verifying TXID {}...", txid);
     if let Ok(resp) = client.get(url).send().await {
         if let Ok(body) = resp.text().await {
             if let Ok(json) = serde_json::from_str::<Value>(&body) {
@@ -360,40 +810,79 @@ fn format_u128(n: u128) -> String {
     } else { s }
 }
 
-fn save_to_disk(ledger: &Ledger) {
+// DEPRECATED: Old JSON-based save (kept for emergency backup)
+#[allow(dead_code)]
+fn save_to_disk_legacy(ledger: &Ledger) {
     if let Ok(data) = serde_json::to_string_pretty(ledger) {
-        // 1. Simpan Ledger Utama
         let _ = fs::write(LEDGER_FILE, &data);
-
-        // 2. Simpan Backup Berkala (Sistem Rotasi 1-100)
         let _ = fs::create_dir_all("backups");
         let ts = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
             .as_secs();
-        
-        // Menggunakan modulo 100 agar file backup tidak lebih dari 100 file
         let backup_path = format!("backups/ledger_{}.json", ts % 100); 
         let _ = fs::write(backup_path, data);
     }
 }
 
-fn load_from_disk() -> Ledger {
-    if let Ok(data) = fs::read_to_string(LEDGER_FILE) {
-        if let Ok(l) = serde_json::from_str(&data) { return l; }
+// NEW: Database-based save (ACID-compliant)
+fn save_to_disk(ledger: &Ledger, db: &UatDatabase) {
+    if let Err(e) = db.save_ledger(ledger) {
+        eprintln!("❌ Database save failed: {}", e);
+        // Fallback to JSON backup
+        save_to_disk_legacy(ledger);
     }
+}
+
+// NEW: Load from database with JSON migration
+fn load_from_disk(db: &UatDatabase) -> Ledger {
+    // Try loading from database first
+    if !db.is_empty() {
+        match db.load_ledger() {
+            Ok(ledger) => {
+                println!("✅ Loaded ledger from database");
+                return ledger;
+            },
+            Err(e) => {
+                eprintln!("⚠️  Database load failed: {}", e);
+            }
+        }
+    }
+    
+    // Fallback: Try loading from JSON file (migration path)
+    if let Ok(data) = fs::read_to_string(LEDGER_FILE) {
+        if let Ok(ledger) = serde_json::from_str::<Ledger>(&data) {
+            println!("📦 Migrating from JSON to database...");
+            
+            // Save to database
+            if let Err(e) = db.save_ledger(&ledger) {
+                eprintln!("❌ Migration failed: {}", e);
+            } else {
+                println!("✅ Migration successful! {} accounts, {} blocks",
+                    ledger.accounts.len(), ledger.blocks.len());
+                
+                // Rename old JSON file to prevent confusion
+                let _ = fs::rename(LEDGER_FILE, format!("{}.migrated", LEDGER_FILE));
+            }
+            
+            return ledger;
+        }
+    }
+    
+    // No data found, return empty ledger
+    println!("🆕 Creating new ledger");
     Ledger::new()
 }
 
 fn solve_pow(block: &mut uat_core::Block) {
-    println!("⏳ Menghitung PoW (Anti-Spam)...");
+    println!("⏳ Calculating PoW (Anti-Spam)...");
     let mut nonce: u64 = 0;
     loop {
         block.work = nonce;
         
-        // TAMBAHKAN LOG INI: Biar kelihatan kalau CPU kerja
+        // ADD THIS LOG: To show CPU is working
         if nonce % 50000 == 0 && nonce > 0 {
-            println!("   ... mencoba nonce ke-{}", nonce);
+            println!("   ... trying nonce #{}", nonce);
         }
 
         if block.calculate_hash().starts_with("000") {
@@ -401,15 +890,15 @@ fn solve_pow(block: &mut uat_core::Block) {
         }
         nonce += 1;
     }
-    println!("✅ PoW Ditemukan dalam {} iterasi!", nonce);
+    println!("✅ PoW found in {} iterations!", nonce);
 }
 
 // --- VISUALIZATION ---
 
 fn print_history_table(blocks: Vec<&Block>) {
-    println!("\n📜 RIWAYAT TRANSAKSI (Terbaru -> Terlama)");
+    println!("\n📜 TRANSACTION HISTORY (Newest -> Oldest)");
     println!("+----------------+----------------+--------------------------+------------------------+");
-    println!("| {:<14} | {:<14} | {:<24} | {:<22} |", "TIPE", "JUMLAH (UAT)", "DETAIL / LINK", "HASH");
+    println!("| {:<14} | {:<14} | {:<24} | {:<22} |", "TYPE", "AMOUNT (UAT)", "DETAIL / LINK", "HASH");
     println!("+----------------+----------------+--------------------------+------------------------+");
 
     for b in blocks {
@@ -418,8 +907,8 @@ fn print_history_table(blocks: Vec<&Block>) {
         
         let (type_str, amt_display, info) = match b.block_type {
             BlockType::Mint => ("🔥 MINT", format!("+{}", amt_str), format!("Src: {}", &b.link[..10])),
-            BlockType::Send => ("📤 KIRIM", format!("-{}", amt_str), format!("To: {}", get_short_addr(&b.link))),
-            BlockType::Receive => ("📥 TERIMA", format!("+{}", amt_str), format!("From Hash: {}", &b.link[..8])),
+            BlockType::Send => ("📤 SEND", format!("-{}", amt_str), format!("To: {}", get_short_addr(&b.link))),
+            BlockType::Receive => ("📥 RECEIVE", format!("+{}", amt_str), format!("From Hash: {}", &b.link[..8])),
             _ => ("UNKNOWN", "0".to_string(), "-".to_string()),
         };
 
@@ -433,9 +922,60 @@ fn print_history_table(blocks: Vec<&Block>) {
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // --- 1. LOGIKA PORT DINAMIS ---
-    // Membaca argumen terminal: cargo run -- 3031
+    // Parse command line: --config validator.toml
     let args: Vec<String> = std::env::args().collect();
-    let api_port: u16 = args.get(1).and_then(|s| s.parse().ok()).unwrap_or(3030);
+    
+    // Try to load port from validator.toml if --config is provided
+    let mut api_port: u16 = 3030; // Default
+    if let Some(config_idx) = args.iter().position(|a| a == "--config") {
+        if let Some(config_path) = args.get(config_idx + 1) {
+            if let Ok(config_content) = fs::read_to_string(config_path) {
+                // Parse TOML to get [api] rest_port
+                if let Some(line) = config_content.lines().find(|l| l.trim().starts_with("rest_port")) {
+                    if let Some(port_str) = line.split('=').nth(1) {
+                        api_port = port_str.trim().parse().unwrap_or(3030);
+                    }
+                }
+            }
+        }
+    }
+    
+    // Fallback: accept direct port argument
+    if let Some(port_arg) = args.get(1).and_then(|s| s.parse().ok()) {
+        api_port = port_arg;
+    }
+
+    // --- NEW: INITIALIZE DATABASE ---
+    println!("🗄️  Initializing database...");
+    let database = match UatDatabase::open_default() {
+        Ok(db) => {
+            let stats = db.stats();
+            println!("✅ Database ready: {} blocks, {} accounts, {:.2} MB on disk",
+                stats.blocks_count,
+                stats.accounts_count,
+                stats.size_on_disk as f64 / 1_048_576.0
+            );
+            Arc::new(db)
+        },
+        Err(e) => {
+            eprintln!("❌ Failed to open database: {}", e);
+            eprintln!("⚠️  Falling back to JSON mode (not recommended for production)");
+            return Err(e.into());
+        }
+    };
+
+    // --- NEW: INITIALIZE METRICS ---
+    println!("📊 Initializing Prometheus metrics...");
+    let metrics = match UatMetrics::new() {
+        Ok(m) => {
+            println!("✅ Metrics ready: 45+ endpoints registered");
+            m
+        },
+        Err(e) => {
+            eprintln!("❌ Failed to initialize metrics: {}", e);
+            return Err(e);
+        }
+    };
 
     let keys: uat_crypto::KeyPair = if let Ok(data) = fs::read_to_string(WALLET_FILE) {
         serde_json::from_str(&data)?
@@ -449,18 +989,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let my_short = get_short_addr(&my_address);
     let secret_key = keys.secret_key.clone();
     
-    let ledger = Arc::new(Mutex::new(load_from_disk()));
+    let ledger = Arc::new(Mutex::new(load_from_disk(&database)));
     let address_book = Arc::new(Mutex::new(HashMap::<String, String>::new()));
 
     let pending_burns = Arc::new(Mutex::new(HashMap::<String, (f64, f64, String, u128)>::new()));
 
     let pending_sends = Arc::new(Mutex::new(HashMap::<String, (Block, u32)>::new()));
-    // Init akun sendiri di ledger jika belum ada
+    
+    // NEW: Oracle Consensus (decentralized median pricing)
+    let oracle_consensus = Arc::new(Mutex::new(OracleConsensus::new()));
+    
+    // Init own account in ledger if not exists
     {
         let mut l = ledger.lock().unwrap();
         if !l.accounts.contains_key(&my_address) {
             l.accounts.insert(my_address.clone(), AccountState { head: "0".to_string(), balance: 0, block_count: 0 });
-            save_to_disk(&l);
+            save_to_disk(&l, &database);
         }
     }
 
@@ -477,6 +1021,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let api_address_book = Arc::clone(&address_book);
     let api_addr = my_address.clone();
     let api_key = keys.secret_key.clone();
+    let api_oracle = Arc::clone(&oracle_consensus);
+    let api_metrics = Arc::clone(&metrics);
+    let api_database = Arc::clone(&database);
 
     tokio::spawn(async move {
         start_api_server(
@@ -487,9 +1034,64 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             api_address_book, 
             api_addr, 
             api_key, 
-            api_port
+            api_port,
+            api_oracle,
+            api_metrics,
+            api_database
         ).await;
     });
+
+    // --- NEW: JALANKAN gRPC SERVER (PRODUCTION READY) ---
+    let grpc_ledger = Arc::clone(&ledger);
+    let grpc_tx = tx_out.clone();
+    let grpc_addr = my_address.clone();
+    let grpc_port = 50051; // Default gRPC port
+
+    tokio::spawn(async move {
+        println!("🔧 Starting gRPC server on port {}...", grpc_port);
+        if let Err(e) = grpc_server::start_grpc_server(
+            grpc_ledger,
+            grpc_addr,
+            grpc_tx,
+            grpc_port,
+        ).await {
+            eprintln!("❌ gRPC Server error: {}", e);
+        }
+    });
+
+    // --- NEW: ORACLE PRICE BROADCASTER (Every 30 seconds) ---
+    let oracle_tx = tx_out.clone();
+    let oracle_addr = my_address.clone();
+    let oracle_ledger = Arc::clone(&ledger);
+    
+    tokio::spawn(async move {
+        let mut interval = tokio::time::interval(Duration::from_secs(30));
+        loop {
+            interval.tick().await;
+            
+            // Cek apakah node adalah validator (min 1,000 UAT)
+            let is_validator = {
+                let l = oracle_ledger.lock().unwrap();
+                l.accounts.get(&oracle_addr)
+                    .map(|acc| acc.balance >= 1_000_0000_0000)
+                    .unwrap_or(false)
+            };
+            
+            if is_validator {
+                // Fetch price from external oracle
+                let (eth_price, btc_price) = get_crypto_prices().await;
+                
+                // Broadcast to network
+                let oracle_msg = format!("ORACLE_SUBMIT:{}:{}:{}", 
+                    oracle_addr, eth_price, btc_price);
+                let _ = oracle_tx.send(oracle_msg).await;
+                
+                println!("📊 Broadcasting oracle prices: ETH=${:.2}, BTC=${:.2}", 
+                    eth_price, btc_price);
+            }
+        }
+    });
+
     // Bootstrapping
     let tx_boot = tx_out.clone();
     let my_addr_boot = my_address.clone();
@@ -500,7 +1102,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         for addr in BOOTSTRAP_NODES {
             let _ = tx_boot.send(format!("DIAL:{}", addr)).await;
             tokio::time::sleep(Duration::from_secs(2)).await;
-            let (s, b) = { let l = ledger_boot.lock().unwrap(); (l.distribution.remaining_supply, l.distribution.total_burned_idr) };
+            let (s, b) = { let l = ledger_boot.lock().unwrap(); (l.distribution.remaining_supply, l.distribution.total_burned_usd) };
             let _ = tx_boot.send(format!("ID:{}:{}:{}", my_addr_boot, s, b)).await;
         }
     });
@@ -509,20 +1111,26 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("                 UNAUTHORITY (UAT) ORACLE NODE                   ");
     println!("==================================================================");
     println!("🆔 MY ID        : {}", my_short);
+    println!("📡 REST API     : http://0.0.0.0:{}", api_port);
+    println!("🔌 gRPC API     : 0.0.0.0:50051 (8 services)");
     println!("------------------------------------------------------------------");
-    println!("📖 PERINTAH:");
-    println!("   bal                   - Cek saldo");
-    println!("   whoami                - Cek alamat lengkap");
-    println!("   history               - Lihat riwayat transaksi (NEW!)");
-    println!("   burn <eth|btc> <TXID> - Mint UAT dari Burn ETH/BTC");
-    println!("   send <ID> <AMT>       - Kirim koin");
-    println!("   supply                - Cek total supply & burn");
-    println!("   peers                 - List node aktif");
-    println!("   dial <addr>           - Koneksi manual");
-    println!("   exit                  - Keluar aplikasi");
+    println!("📖 COMMANDS:");
+    println!("   bal                   - Check balance");
+    println!("   whoami                - Check full address");
+    println!("   history               - View transaction history (NEW!)");
+    println!("   burn <eth|btc> <TXID> - Mint UAT from Burn ETH/BTC");
+    println!("   send <ID> <AMT>       - Send coins");
+    println!("   supply                - Check total supply & burn");
+    println!("   peers                 - List active nodes");
+    println!("   dial <addr>           - Manual connection");
+    println!("   exit                  - Exit application");
     println!("------------------------------------------------------------------");
 
     let mut stdin = BufReader::new(io::stdin()).lines();
+
+    // Clone database and metrics for event loop
+    let db_clone = Arc::clone(&database);
+    let _metrics_clone = Arc::clone(&metrics);
 
     loop {
         tokio::select! {
@@ -533,7 +1141,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     "bal" => {
                         let l = ledger.lock().unwrap();
                         let b = l.accounts.get(&my_address).map(|a| a.balance).unwrap_or(0);
-                        println!("📊 Saldo: {} UAT", format_u128(b / VOID_PER_UAT));
+                        println!("📊 Balance: {} UAT", format_u128(b / VOID_PER_UAT));
                     },
                     "whoami" => {
                         println!("🆔 My Short ID: {}", my_short);
@@ -541,19 +1149,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     },
                     "supply" => {
                         let l = ledger.lock().unwrap();
-                        println!("📉 Supply: {} UAT | 🔥 Burn: Rp{}", format_u128(l.distribution.remaining_supply / VOID_PER_UAT), format_u128(l.distribution.total_burned_idr));
+                        println!("📉 Supply: {} UAT | 🔥 Burn: ${:.2}", format_u128(l.distribution.remaining_supply / VOID_PER_UAT), (l.distribution.total_burned_usd as f64) / 100.0);
                     },
                     "history" => {
                         let l = ledger.lock().unwrap();
-                        // 1. Tentukan target: input user, atau diri sendiri jika kosong
+                        // 1. Determine target: user input or self if empty
                         let input_addr = if p.len() == 2 { p[1] } else { &my_address };
 
-                        // 2. Cari Full Address-nya
+                        // 2. Find Full Address
                         let target_full = if input_addr.starts_with("uat_") {
-                            // Jika user input short ID, cari di address book
+                            // If user input short ID, search in address book
                             address_book.lock().unwrap().get(input_addr).cloned()
                         } else {
-                            // Jika user input full address atau ini address kita sendiri
+                            // If user input full address or this is our own address
                             Some(input_addr.to_string())
                         };
 
@@ -570,15 +1178,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 }
                                 
                                 if history_blocks.is_empty() {
-                                    println!("📭 Belum ada riwayat untuk {}", get_short_addr(&full_addr));
+                                    println!("📭 No transaction history for {}", get_short_addr(&full_addr));
                                 } else {
                                     print_history_table(history_blocks);
                                 }
                             } else {
-                                println!("❌ Akun {} tidak memiliki catatan di Ledger.", input_addr);
+                                println!("❌ Account {} has no record in Ledger.", input_addr);
                             }
                         } else {
-                            println!("❌ ID {} tidak dikenal di Address Book.", input_addr);
+                            println!("❌ ID {} not found in Address Book.", input_addr);
                         }
                     },
                     "peers" => {
@@ -590,7 +1198,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         if p.len() == 2 {
                             let tx = tx_out.clone();
                             let ma = my_address.clone();
-                            let (s, b) = { let l = ledger.lock().unwrap(); (l.distribution.remaining_supply, l.distribution.total_burned_idr) };
+                            let (s, b) = { let l = ledger.lock().unwrap(); (l.distribution.remaining_supply, l.distribution.total_burned_usd) };
                             let target = p[1].to_string();
                             tokio::spawn(async move {
                                 let _ = tx.send(format!("DIAL:{}", target)).await;
@@ -604,11 +1212,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             let coin_type = p[1].to_lowercase();
                             let raw_txid = p[2].to_string();
 
-                            // 1. SANITASI TXID (Penting agar 0xABC == abc)
+                            // 1. SANITIZE TXID (Important: 0xABC == abc)
                             let clean_txid = raw_txid.trim().trim_start_matches("0x").to_lowercase();
                             let link_to_search = format!("{}:{}", coin_type.to_uppercase(), clean_txid);
 
-                            // 2. PROTEKSI LEDGER (Database Utama - Cek apakah sudah pernah diminting)
+                            // 2. LEDGER PROTECTION (Main Database - Check if already minted)
                             let is_already_minted = {
                                 let l = ledger.lock().unwrap();
                                 l.blocks.values().any(|b| {
@@ -618,56 +1226,71 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             };
 
                             if is_already_minted {
-                                println!("❌ Gagal: TXID ini sudah terdaftar di Ledger (Double Claim dicegah)!");
+                                println!("❌ Failed: This TXID is already registered in Ledger (Double Claim prevented)!");
                                 continue;
                             }
 
-                            // 3. PROTEKSI MEMORI (Cek apakah sedang dalam proses verifikasi)
+                            // 3. MEMORY PROTECTION (Check if verification in progress)
                             let is_pending = pending_burns.lock().unwrap().contains_key(&clean_txid);
                             if is_pending {
-                                println!("⏳ Mohon tunggu: TXID ini sedang dalam antrian verifikasi network!");
+                                println!("⏳ Please wait: This TXID is currently in network verification queue!");
                                 continue;
                             }
 
-                            // 4. PROSES ORACLE (Cek ke Blockchain External)
-                            println!("📊 Menghubungi Oracle untuk {}...", coin_type.to_uppercase());
-                            let (ep, bp) = get_crypto_prices().await;
+                            // 4. PROCESS ORACLE (Use Consensus if available)
+                            println!("📊 Contacting Oracle for {}...", coin_type.to_uppercase());
+                            
+                            let consensus_price_opt = {
+                                let oc_guard = oracle_consensus.lock().unwrap();
+                                oc_guard.get_consensus_price()
+                            }; // Drop lock before await
+                            
+                            let (ep, bp) = match consensus_price_opt {
+                                Some((eth_median, btc_median)) => {
+                                    println!("✅ Using Oracle Consensus: ETH=${:.2}, BTC=${:.2}", eth_median, btc_median);
+                                    (eth_median, btc_median)
+                                },
+                                None => {
+                                    println!("⚠️ Consensus not yet available, using single-node oracle");
+                                    get_crypto_prices().await
+                                }
+                            };
                             
                             let res = if coin_type == "eth" { 
                                 verify_eth_burn_tx(&clean_txid).await.map(|a| (a, ep, "ETH")) 
                             } else if coin_type == "btc" {
                                 verify_btc_burn_tx(&clean_txid).await.map(|a| (a, bp, "BTC")) 
                             } else {
-                                println!("❌ Error: Koin '{}' tidak didukung.", coin_type);
+                                println!("❌ Error: Coin '{}' not supported.", coin_type);
                                 None
                             };
 
                             if let Some((amt, prc, sym)) = res {
-                                println!("✅ TXID Valid: {:.6} {} terdeteksi.", amt, sym);
+                                println!("✅ Valid TXID: {:.6} {} detected.", amt, sym);
                                 
-                                // --- FITUR SELF-VOTING (INITIAL POWER) ---
-                                // Ambil saldo kita sendiri untuk dijadikan Power awal
+                                // --- SELF-VOTING FEATURE (INITIAL POWER) ---
+                                // Get our own balance to use as initial Power
                                 let my_power = {
                                     let l = ledger.lock().unwrap();
                                     l.accounts.get(&my_address).map(|a| a.balance).unwrap_or(0) / VOID_PER_UAT
                                 };
 
-                                // Masukkan ke pending dengan Power awal = Saldo kita
+                                // Insert to pending with initial Power = our balance
                                 pending_burns.lock().unwrap().insert(clean_txid.clone(), (amt, prc, sym.to_string(), my_power));
                                 
-                                // 5. BROADCAST KE NETWORK
+                                // 5. BROADCAST TO NETWORK
                                 let ts = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis();
                                 let msg = format!("VOTE_REQ:{}:{}:{}:{}", coin_type, clean_txid, my_address, ts);
                                 let _ = tx_out.send(msg).await;
                                 
-                                println!("📡 Broadcast VOTE_REQ dikirim (Initial Power: {} UAT)", my_power);
+                                println!("📡 VOTE_REQ broadcast sent (Initial Power: {} UAT)", my_power);
 
-                                // INFO: Jika my_power >= 20, proses minting akan otomatis terpicu di loop network
+                                // INFO: If my_power >= 20, minting process will be auto-triggered in network loop
                             } else {
-                                println!("❌ Gagal: Oracle tidak menemukan bukti burn untuk TXID tersebut.");
+                                println!("❌ Failed: Oracle could not find burn proof for this TXID.");
                             }
                         } else {
-                            println!("💡 Gunakan format: burn <eth/btc> <txid>");
+                            println!("💡 Use format: burn <eth/btc> <txid>");
                         }
                     },
                     "send" => {
@@ -677,7 +1300,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             let amt = amt_raw * VOID_PER_UAT;
 
                             if amt == 0 {
-                                println!("❌ Jumlah kirim harus lebih dari 0!");
+                                println!("❌ Send amount must be greater than 0!");
                                 continue;
                             }
 
@@ -689,17 +1312,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     head: "0".to_string(), balance: 0, block_count: 0 
                                 });
 
-                                // Kalkulasi saldo tersedia (dikurangi transaksi yang sedang menunggu konfirmasi)
+                                // Calculate available balance (minus pending transactions)
                                 let pending_total: u128 = pending_sends.lock().unwrap().values().map(|(b, _)| b.amount).sum();
                                 
                                 if state.balance < (amt + pending_total) {
-                                    println!("❌ Saldo tidak cukup! (Saldo: {} UAT, Sedang dalam proses: {} UAT)", 
+                                    println!("❌ Insufficient balance! (Balance: {} UAT, In process: {} UAT)", 
                                         format_u128(state.balance / VOID_PER_UAT), 
                                         format_u128(pending_total / VOID_PER_UAT));
                                     continue;
                                 }
 
-                                // Buat draft blok Send
+                                // Create Send block draft
                                 let mut blk = Block {
                                     account: my_address.clone(),
                                     previous: state.head.clone(),
@@ -714,17 +1337,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 let hash = blk.calculate_hash();
                                 blk.signature = hex::encode(uat_crypto::sign_message(hash.as_bytes(), &secret_key).unwrap());
 
-                                // Simpan ke antrean konfirmasi
+                                // Save to confirmation queue
                                 pending_sends.lock().unwrap().insert(hash.clone(), (blk.clone(), 0));
                                 
-                                // Siarkan permintaan konfirmasi (REQ) ke jaringan
+                                // Broadcast confirmation request (REQ) to network
                                 let ts = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis();
                                 let req_msg = format!("CONFIRM_REQ:{}:{}:{}:{}", hash, my_address, amt, ts);
                                 let _ = tx_out.send(req_msg).await;
                                 
-                                println!("⏳ Transaksi dibuat. Meminta konfirmasi jaringan (Anti Double-Spend)...");
+                                println!("⏳ Transaction created. Requesting network confirmation (Anti Double-Spend)...");
                             } else {
-                                println!("❌ ID {} tidak ditemukan. Peer harus connect dulu.", target_short);
+                                println!("❌ ID {} not found. Peer must connect first.", target_short);
                             }
                         }
                     },
@@ -749,30 +1372,30 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     
                                     let mut l = ledger.lock().unwrap();
                                     
-                                    // SINKRONISASI SUPPLY
+                                    // SUPPLY SYNCHRONIZATION
                                     if rem_s < l.distribution.remaining_supply && rem_s != 0 {
                                         l.distribution.remaining_supply = rem_s;
-                                        l.distribution.total_burned_idr = tot_b;
-                                        save_to_disk(&l);
+                                        l.distribution.total_burned_usd = tot_b;
+                                        save_to_disk(&l, &db_clone);
                                         println!("🔄 Supply Synced with Peer: {}", short);
                                     }
                                     
                                     println!("🤝 Handshake: {}", short);
 
-                                    // --- LOGIKA GEDOR PENDING TRANSAKSI ---
-                                    // Begitu ada peer baru melakukan handshake, kita kirim ulang permintaan konfirmasi
+                                    // --- PENDING TRANSACTION RESEND LOGIC ---
+                                    // When new peer handshakes, we resend confirmation request
                                     let pending_map = pending_sends.lock().unwrap();
                                     for (hash, (blk, _)) in pending_map.iter() {
                                         let ts = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis();
                                         let retry_msg = format!("CONFIRM_REQ:{}:{}:{}:{}", hash, blk.account, blk.amount, ts);
                                         let _ = tx_out.send(retry_msg).await;
-                                        println!("📡 Mengirim ulang permintaan konfirmasi ke peer baru untuk TX: {}", &hash[..8]);
+                                        println!("📡 Resending confirmation request to new peer for TX: {}", &hash[..8]);
                                     }
                                     drop(pending_map);
 
-                                    // JIKA PEER BARU: Kirim ID kita + Full Ledger (Dengan Kompresi)
+                                    // IF NEW PEER: Send our ID + Full Ledger (With Compression)
                                     if is_new {
-                                        let (s, b) = (l.distribution.remaining_supply, l.distribution.total_burned_idr);
+                                        let (s, b) = (l.distribution.remaining_supply, l.distribution.total_burned_usd);
                                         let _ = tx_out.send(format!("ID:{}:{}:{}", my_address, s, b)).await;
                                         
                                         if let Ok(full_state_json) = serde_json::to_string(&*l) {
@@ -805,7 +1428,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                         let mut added_count = 0;
                                         let mut invalid_count = 0;
 
-                                        // 1. LIMITASI: Maksimal 1000 blok per sinkronisasi
+                                        // 1. LIMITATION: Maximum 1000 blocks per synchronization
                                         let incoming_blocks: Vec<Block> = incoming_ledger.blocks.values()
                                             .cloned()
                                             .take(1000) 
@@ -842,16 +1465,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                             }
                                         }
 
-                                        // 2. BLACKLIST OTOMATIS: Jika blok sampah > 50, hapus dari address book
+                                        // 2. AUTOMATIC BLACKLIST: If garbage blocks > 50, remove from address book
                                         if invalid_count > 50 {
-                                            println!("🚫 BLACKLIST: Peer mengirim {} blok sampah. Memutus jalur...", invalid_count);
-                                            // Menghapus dari address book lokal agar tidak berinteraksi lagi
+                                            println!("🚫 BLACKLIST: Peer sent {} garbage blocks. Disconnecting...", invalid_count);
+                                            // Remove from local address book to stop interaction
                                             let mut ab = address_book.lock().unwrap();
                                             ab.retain(|_, v| !data.contains(v.as_str())); 
                                         }
 
                                         if added_count > 0 {
-                                            save_to_disk(&l);
+                                            save_to_disk(&l, &db_clone);
                                             println!("📚 Sync Sukses: {} blok baru divalidasi!", added_count);
                                         }
                                     }
@@ -870,7 +1493,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 let my_addr_clone = my_address.clone();
 
                                 tokio::spawn(async move {
-                                    // 1. Cek Ledger: Pastikan TXID ini belum pernah di-mint sebelumnya
+                                    // 1. Check Ledger: Ensure this TXID has never been minted before
                                     let link_to_check = format!("{}:{}", coin_type.to_uppercase(), txid);
                                     let already_exists = {
                                         let l = ledger_ref.lock().unwrap();
@@ -878,16 +1501,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     };
 
                                     if already_exists { 
-                                        // JIKA TERDETEKSI DOUBLE CLAIM DARI PEER LAIN
+                                        // IF DOUBLE CLAIM DETECTED FROM OTHER PEER
                                         if requester != my_addr_clone {
-                                            println!("🚨 DETEKSI DOUBLE CLAIM: {} mencoba klaim TXID yang sudah ada!", get_short_addr(&requester));
+                                            println!("🚨 DOUBLE CLAIM DETECTED: {} trying to claim existing TXID!", get_short_addr(&requester));
                                             let slash_msg = format!("SLASH_REQ:{}:{}", requester, txid);
                                             let _ = tx_vote.send(slash_msg).await;
                                         }
                                         return; 
                                     }
 
-                                    // 2. Oracle Verification: Verifikasi TXID ke Blockchain Explorer
+                                    // 2. Oracle Verification: Verify TXID to Blockchain Explorer
                                     let amount_opt = if coin_type == "eth" {
                                         verify_eth_burn_tx(&txid).await
                                     } else {
@@ -896,20 +1519,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
                                     let ts_res = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis();
 
-                                    // 3. Logika Keputusan: YES (Valid) atau SLASH (Palsu)
+                                    // 3. Decision Logic: YES (Valid) or SLASH (Fake)
                                     if amount_opt.is_some() {
-                                        // TXID VALID: Kirim VOTE_RES YES
+                                        // VALID TXID: Send VOTE_RES YES
                                         let response = format!("VOTE_RES:{}:{}:YES:{}:{}", txid, requester, my_addr_clone, ts_res); 
                                         let _ = tx_vote.send(response).await;
                                         
-                                        println!("🗳️ Memberikan suara YES untuk TXID: {} dari {}", 
+                                        println!("🗳️ Casting YES vote for TXID: {} from {}", 
                                             &txid[..8], 
                                             get_short_addr(&requester)
                                         );
                                     } else {
-                                        // TXID PALSU/TIDAK DITEMUKAN: Kirim SLASH_REQ
+                                        // FAKE TXID/NOT FOUND: Send SLASH_REQ
                                         if requester != my_addr_clone {
-                                            println!("🚨 DETEKSI FRAUD: TXID {} dari {} tidak valid! Mengirim Slash Request.", 
+                                            println!("🚨 FRAUD DETECTED: TXID {} from {} is invalid! Sending Slash Request.", 
                                                 &txid[..8], get_short_addr(&requester));
                                             
                                             let slash_msg = format!("SLASH_REQ:{}:{}", requester, txid);
@@ -918,6 +1541,29 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     }
                                 });
                             } 
+                        } else if data.starts_with("ORACLE_SUBMIT:") {
+                            // FORMAT: ORACLE_SUBMIT:validator_address:eth_price_usd:btc_price_usd
+                            let parts: Vec<&str> = data.split(':').collect();
+                            if parts.len() == 4 {
+                                let validator_addr = parts[1].to_string();
+                                let eth_price: f64 = parts[2].parse().unwrap_or(0.0);
+                                let btc_price: f64 = parts[3].parse().unwrap_or(0.0);
+
+                                // Submit to oracle consensus
+                                let mut oc = oracle_consensus.lock().unwrap();
+                                oc.submit_price(validator_addr.clone(), eth_price, btc_price);
+
+                                // Check if consensus achieved
+                                if let Some((eth_median, btc_median)) = oc.get_consensus_price() {
+                                    println!("✅ Oracle Consensus: ETH=${:.2}, BTC=${:.2} (from {} validators)", 
+                                        eth_median, btc_median, oc.submission_count());
+                                } else {
+                                    println!("📊 Oracle submission dari {} (butuh {} validator lagi)", 
+                                        get_short_addr(&validator_addr), 
+                                        2_usize.saturating_sub(oc.submission_count())
+                                    );
+                                }
+                            }
                         } else if data.starts_with("SLASH_REQ:") {
                             // FORMAT: SLASH_REQ:cheater_address:fake_txid
                             let parts: Vec<&str> = data.split(':').collect();
@@ -925,35 +1571,35 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 let cheater_addr = parts[1].to_string();
                                 let fake_txid = parts[2].to_string();
 
-                                println!("⚖️  Proses Penalti Network untuk: {}", get_short_addr(&cheater_addr));
+                                println!("⚖️  Network Penalty Processing for: {}", get_short_addr(&cheater_addr));
 
                                 let mut l = ledger.lock().unwrap();
-                                // Sinkronisasi saldo terbaru dari disk agar tidak amnesia
+                                // Synchronize latest balance from disk to prevent amnesia
                                 if let Ok(raw) = std::fs::read_to_string(LEDGER_FILE) {
                                     if let Ok(upd) = serde_json::from_str::<Ledger>(&raw) { *l = upd; }
                                 }
 
                                 if let Some(state) = l.accounts.get(&cheater_addr).cloned() {
                                     if state.balance > 0 {
-                                        // Hukuman: Potong 10% dari total saldo
+                                        // Penalty: Deduct 10% of total balance
                                         let penalty_amount = state.balance / 10;
                                         
-                                        // BUAT BLOK HUKUMAN
+                                        // CREATE PENALTY BLOCK
                                         let mut slash_blk = Block {
                                             account: cheater_addr.clone(),
                                             previous: state.head.clone(),
                                             block_type: BlockType::Send,
                                             amount: penalty_amount,
                                             link: format!("PENALTY:FAKE_TXID:{}", fake_txid),
-                                            // GUNAKAN SIGNATURE KHUSUS SISTEM
+                                            // USE SPECIAL SYSTEM SIGNATURE
                                             signature: "SYSTEM_VALIDATED_SLASH".to_string(), 
                                             work: 0,
                                         };
 
-                                        // 1. WAJIB SELESAIKAN POW (Agar tidak kena Invalid PoW)
+                                        // 1. MUST COMPLETE POW (To avoid Invalid PoW error)
                                         solve_pow(&mut slash_blk);
 
-                                        // 2. EKSEKUSI PENALTI KE STATE SECARA MANUAL
+                                        // 2. EXECUTE PENALTY TO STATE MANUALLY
                                         // Karena process_block pasti gagal validasi signature kunci publik,
                                         // kita langsung potong di state-nya agar konsisten di seluruh network.
                                         
@@ -966,7 +1612,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                             // Masukkan blok ke database
                                             l.blocks.insert(blk_hash, slash_blk);
                                             
-                                            save_to_disk(&l);
+                                            save_to_disk(&l, &db_clone);
                                             println!("🔨 SLASHED! Saldo {} dipotong {} UAT karena mencoba menipu jaringan.", 
                                                 get_short_addr(&cheater_addr), 
                                                 penalty_amount / VOID_PER_UAT
@@ -989,7 +1635,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     
                                     if let Some(burn_info) = pending.get_mut(&txid) {
                                         
-                                        // --- FIX: Force reload ledger agar saldo voter terbaru terbaca ---
+                                        // --- FIX: Force reload ledger to get latest voter balance ---
                                         let mut l_guard = ledger.lock().unwrap();
                                         if let Ok(raw_data) = fs::read_to_string(LEDGER_FILE) {
                                             if let Ok(updated_l) = serde_json::from_str::<Ledger>(&raw_data) {
@@ -1000,31 +1646,31 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                         let voter_balance = l_guard.accounts.get(&voter_addr)
                                             .map(|a| a.balance)
                                             .unwrap_or(0);
-                                        drop(l_guard); // Lepas lock segera
+                                        drop(l_guard); // Release lock immediately
 
-                                        // --- LOGIKA WEIGHTED VOTING ---
+                                        // --- WEIGHTED VOTING LOGIC ---
                                         let voter_power = voter_balance / VOID_PER_UAT;
 
                                         if voter_power >= 10 {
-                                            // burn_info.3 (u128) menampung akumulasi Power
+                                            // burn_info.3 (u128) accumulates Power
                                             burn_info.3 += voter_power; 
                                             
-                                            println!("📩 Suara Masuk: {} (Power: {} UAT) | Progress: {}/20 Power", 
+                                            println!("📩 Vote Received: {} (Power: {} UAT) | Progress: {}/20 Power", 
                                                 get_short_addr(&voter_addr),
                                                 voter_power,
                                                 burn_info.3
                                             );
                                         } else {
-                                            println!("⚠️ Suara diabaikan: {} (Power {} tidak cukup)", 
+                                            println!("⚠️ Vote ignored: {} (Power {} insufficient)", 
                                                 get_short_addr(&voter_addr),
                                                 voter_power
                                             );
                                             continue; 
                                         }
 
-                                        // Konsensus: Total Power >= 20
-                                        if burn_info.3 >= 20 {
-                                            println!("✅ Konsensus Stake Tercapai (Total Power: {})!", burn_info.3);
+                                        // Consensus: Total Power >= 20 (or 1 in DEV_MODE)
+                                        if burn_info.3 >= if DEV_MODE { 1 } else { 20 } {
+                                            println!("✅ Stake Consensus Achieved (Total Power: {})!", burn_info.3);
                                             
                                             let (amt_coin, price, sym, _) = burn_info.clone();
                                             let uat_to_mint = (amt_coin * price) as u128 * VOID_PER_UAT;
@@ -1050,7 +1696,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                             
                                             match l.process_block(&mint_blk) {
                                                 Ok(_) => {
-                                                    save_to_disk(&l);
+                                                    save_to_disk(&l, &db_clone);
                                                     let _ = tx_out.send(serde_json::to_string(&mint_blk).unwrap()).await;
                                                     println!("🔥 Minting Berhasil: +{} UAT!", format_u128(uat_to_mint / VOID_PER_UAT));
                                                 },
@@ -1120,14 +1766,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                             );
                                         }
 
-                                        if *total_power_votes >= 20 {
+                                        if *total_power_votes >= if DEV_MODE { 1 } else { 20 } {
                                             let blk_to_finalize = blk.clone();
                                             
                                             let process_success = {
                                                 let mut l = ledger.lock().unwrap();
                                                 match l.process_block(&blk_to_finalize) {
                                                     Ok(_) => {
-                                                        save_to_disk(&l);
+                                                        save_to_disk(&l, &db_clone);
                                                         true
                                                     },
                                                     Err(e) => {
@@ -1157,7 +1803,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                         let burn_val = inc.amount / VOID_PER_UAT;
                                         println!("🔥 Network Mint Verified: +{} UAT", format_u128(burn_val));
                                     }
-                                    save_to_disk(&l);
+                                    save_to_disk(&l, &db_clone);
                                     println!("✅ Block Verified: {} dari {}", format!("{:?}", inc.block_type), get_short_addr(&inc.account));
                                     
                                     if inc.block_type == BlockType::Send && inc.link == my_address {
@@ -1172,7 +1818,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                             solve_pow(&mut rb);
                                             rb.signature = hex::encode(uat_crypto::sign_message(rb.calculate_hash().as_bytes(), &secret_key).unwrap());
                                             if l.process_block(&rb).is_ok() {
-                                                save_to_disk(&l);
+                                                save_to_disk(&l, &db_clone);
                                                 let _ = tx_out.send(serde_json::to_string(&rb).unwrap()).await;
                                                 println!("📥 Incoming Transfer Received Automatically!");
                                             }

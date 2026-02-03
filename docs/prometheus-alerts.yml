@@ -1,0 +1,222 @@
+# PROMETHEUS ALERT RULES FOR UNAUTHORITY (UAT) NODE
+# Add these rules to your Prometheus configuration
+
+groups:
+  - name: uat_node_alerts
+    interval: 30s
+    rules:
+      # CRITICAL: Node Down
+      - alert: UAT_NodeDown
+        expr: up{job="uat-node"} == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "UAT Node is down"
+          description: "Node {{ $labels.instance }} has been down for more than 2 minutes"
+
+      # CRITICAL: Consensus Failure Rate Too High
+      - alert: UAT_HighConsensusFailureRate
+        expr: rate(uat_consensus_failures_total[5m]) > 0.1
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "High consensus failure rate detected"
+          description: "Consensus failures: {{ $value | humanize }}/sec on {{ $labels.instance }}"
+
+      # CRITICAL: Consensus Latency Exceeds Target
+      - alert: UAT_HighConsensusLatency
+        expr: histogram_quantile(0.95, uat_consensus_latency_seconds) > 3.0
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Consensus latency exceeds 3 seconds (aBFT target)"
+          description: "P95 latency: {{ $value | humanize }}s on {{ $labels.instance }}"
+
+      # WARNING: Low Validator Count
+      - alert: UAT_LowValidatorCount
+        expr: uat_active_validators < 3
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Low number of active validators"
+          description: "Only {{ $value }} validators active (minimum: 3 for BFT)"
+
+      # WARNING: Database Size Growing Rapidly
+      - alert: UAT_DatabaseGrowthAnomaly
+        expr: increase(uat_db_size_bytes[1h]) / 1048576 > 100
+        for: 1h
+        labels:
+          severity: warning
+        annotations:
+          summary: "Database growing unusually fast"
+          description: "DB grew {{ $value | humanize }} MB in last hour on {{ $labels.instance }}"
+
+      # WARNING: High Database Save Latency
+      - alert: UAT_SlowDatabaseSaves
+        expr: histogram_quantile(0.95, uat_db_save_duration_seconds) > 0.1
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Database save operations are slow"
+          description: "P95 save latency: {{ $value | humanize }}s (target: <10ms)"
+
+      # WARNING: High API Error Rate
+      - alert: UAT_HighAPIErrorRate
+        expr: rate(uat_api_errors_total[5m]) / rate(uat_api_requests_total[5m]) > 0.05
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High API error rate detected"
+          description: "{{ $value | humanizePercentage }} of API requests failing"
+
+      # WARNING: Rate Limiting Active
+      - alert: UAT_HighRateLimitRejections
+        expr: rate(uat_rate_limit_rejections_total[5m]) > 10
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High rate of rate limit rejections"
+          description: "{{ $value | humanize }} rejections/sec - possible attack or misconfigured client"
+
+      # INFO: Peer Connectivity Issues
+      - alert: UAT_LowPeerCount
+        expr: uat_connected_peers < 2
+        for: 15m
+        labels:
+          severity: info
+        annotations:
+          summary: "Low peer connectivity"
+          description: "Only {{ $value }} peer(s) connected (recommendation: 5+)"
+
+      # INFO: Oracle Price Outlier
+      - alert: UAT_OraclePriceOutlier
+        expr: rate(uat_oracle_outliers_total[10m]) > 0.2
+        for: 10m
+        labels:
+          severity: info
+        annotations:
+          summary: "Oracle price outliers detected"
+          description: "{{ $value | humanize }} outliers/sec - check oracle node health"
+
+      # CRITICAL: Slashing Event Detected
+      - alert: UAT_SlashingEvent
+        expr: increase(uat_slashing_events_total[5m]) > 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Validator slashing detected!"
+          description: "{{ $value }} slashing event(s) in last 5 minutes on {{ $labels.instance }}"
+
+      # WARNING: PoB Supply Running Low
+      - alert: UAT_LowPoB Supply
+        expr: uat_pob_remaining_supply / 100000000 < 1000000
+        for: 1h
+        labels:
+          severity: warning
+        annotations:
+          summary: "PoB distribution supply running low"
+          description: "Only {{ $value | humanize }} UAT remaining for distribution"
+
+      # INFO: High Smart Contract Activity
+      - alert: UAT_HighContractActivity
+        expr: rate(uat_contract_executions_total[5m]) > 100
+        for: 10m
+        labels:
+          severity: info
+        annotations:
+          summary: "Unusually high smart contract activity"
+          description: "{{ $value | humanize }} contract executions/sec"
+
+      # WARNING: gRPC Error Spike
+      - alert: UAT_gRPCErrorSpike
+        expr: rate(uat_grpc_errors_total[5m]) / rate(uat_grpc_requests_total[5m]) > 0.05
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High gRPC error rate"
+          description: "{{ $value | humanizePercentage }} of gRPC requests failing"
+
+      # CRITICAL: Disk Space Running Out (Database)
+      - alert: UAT_DiskSpaceLow
+        expr: uat_db_size_bytes / (node_filesystem_size_bytes{mountpoint="/"} - node_filesystem_free_bytes{mountpoint="/"}) > 0.8
+        for: 30m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Database consuming >80% of available disk space"
+          description: "DB size: {{ $value | humanizeBytes }} - consider cleanup or expansion"
+
+---
+
+# ALERTMANAGER CONFIGURATION EXAMPLE
+# Configure notification channels for critical alerts
+
+global:
+  resolve_timeout: 5m
+
+route:
+  group_by: ['alertname']
+  group_wait: 10s
+  group_interval: 10s
+  repeat_interval: 12h
+  receiver: 'uat-team'
+  routes:
+    - match:
+        severity: critical
+      receiver: 'uat-critical'
+      continue: true
+    - match:
+        severity: warning
+      receiver: 'uat-warnings'
+
+receivers:
+  - name: 'uat-critical'
+    # Slack webhook for critical alerts
+    slack_configs:
+      - api_url: 'YOUR_SLACK_WEBHOOK_URL'
+        channel: '#uat-alerts-critical'
+        title: '🚨 CRITICAL: {{ .GroupLabels.alertname }}'
+        text: '{{ range .Alerts }}{{ .Annotations.description }}\n{{ end }}'
+    
+    # PagerDuty for 24/7 on-call
+    pagerduty_configs:
+      - service_key: 'YOUR_PAGERDUTY_KEY'
+        severity: 'critical'
+    
+    # Email for redundancy
+    email_configs:
+      - to: 'alerts@unauthority.io'
+        from: 'prometheus@unauthority.io'
+        smarthost: 'smtp.gmail.com:587'
+        auth_username: 'prometheus@unauthority.io'
+        auth_password: 'YOUR_PASSWORD'
+        headers:
+          subject: 'UAT CRITICAL: {{ .GroupLabels.alertname }}'
+
+  - name: 'uat-warnings'
+    slack_configs:
+      - api_url: 'YOUR_SLACK_WEBHOOK_URL'
+        channel: '#uat-alerts'
+        title: '⚠️ Warning: {{ .GroupLabels.alertname }}'
+
+  - name: 'uat-team'
+    slack_configs:
+      - api_url: 'YOUR_SLACK_WEBHOOK_URL'
+        channel: '#uat-monitoring'
+        title: 'UAT Info: {{ .GroupLabels.alertname }}'
+
+inhibit_rules:
+  - source_match:
+      severity: 'critical'
+    target_match:
+      severity: 'warning'
+    equal: ['alertname', 'instance']

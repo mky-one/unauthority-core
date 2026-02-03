@@ -10,3 +10,6 @@ pqcrypto-traits = "0.3"
 rand = "0.8"
 hex = "0.4"
 serde = { version = "1.0", features = ["derive"] }
+age = "0.10"
+secrecy = { version = "0.8", features = ["serde"] }
+zeroize = "1.7"

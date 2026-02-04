@@ -7,6 +7,7 @@ import Dashboard from './components/Dashboard.tsx';
 import BurnInterface from './components/BurnInterface.tsx';
 import SendInterface from './components/SendInterface.tsx';
 import HistoryView from './components/HistoryView.tsx';
+import NetworkSwitcher from './components/NetworkSwitcher.tsx';
 
 type Tab = 'dashboard' | 'burn' | 'send' | 'history';
 
@@ -73,6 +74,9 @@ function App() {
           </div>
           
           <div className="flex items-center space-x-4">
+            {/* Network Switcher */}
+            <NetworkSwitcher />
+            
             <div className="flex items-center space-x-2">
               <div className={`w-2 h-2 rounded-full ${nodeOnline ? 'bg-green-500' : 'bg-red-500'}`}></div>
               <span className="text-sm text-gray-400">

@@ -61,6 +61,7 @@
   "build": {
     "appId": "com.unauthority.wallet",
     "productName": "Unauthority Wallet",
+    "publish": null,
     "directories": {
       "buildResources": "public"
     },

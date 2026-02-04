@@ -296,14 +296,15 @@ impl Faucet {
         1_000_000_000_000 // 10,000 UAT
     }
 
-    async fn send_tokens(&self, to_address: &str, amount: u64) -> Result<String, String> {
+    async fn send_tokens(&self, _to_address: &str, _amount: u64) -> Result<String, String> {
         // In production, create and broadcast actual transaction
         // This would integrate with the node's transaction builder
         
         // Mock implementation
         tokio::time::sleep(Duration::from_millis(100)).await;
         
-        // Simulate occasional failures
+        // Simulate occasional failures (disabled for tests)
+        #[cfg(not(test))]
         if rand::random::<f32>() < 0.05 {
             return Err("Network error".to_string());
         }
@@ -391,11 +392,11 @@ mod tests {
         let faucet = Faucet::new(config);
         
         let request = FaucetRequest {
-            address: "UAT1test123456789".to_string(),
+            address: "UAT1test123456789012345678901234567890".to_string(), // Valid length (40+ chars)
             captcha_token: None,
         };
         
         let response = faucet.request_tokens(request, "192.168.1.1".to_string()).await;
-        assert!(response.success);
+        assert!(response.success, "Expected success but got: {}", response.message);
     }
 }

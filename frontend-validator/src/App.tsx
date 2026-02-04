@@ -9,6 +9,7 @@ import BlocksView from './components/BlocksView';
 import SettingsPanel from './components/SettingsPanel';
 import SendModal from './components/SendModal';
 import SetupWizard from './components/SetupWizard';
+import NetworkSwitcher from './components/NetworkSwitcher';
 
 type Tab = 'dashboard' | 'validators' | 'blocks' | 'settings';
 
@@ -119,6 +120,8 @@ function App() {
           </div>
 
           <div className="flex items-center space-x-4">
+            <NetworkSwitcher />
+            
             <button
               onClick={() => setSendModalOpen(true)}
               disabled={!ownAddress}

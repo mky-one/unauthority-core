@@ -1,0 +1,63 @@
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# SECURITY - VALIDATOR KEYS
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+# Validator private keys (CRITICAL!)
+keys/
+validator_keys/
+*.priv
+*.key
+encrypted_keys/
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# NODE.JS
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+# Dependencies
+node_modules/
+package-lock.json
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# BUILD OUTPUTS
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+# Build outputs
+dist/
+build/
+*.tsbuildinfo
+.vite/
+
+# Electron
+out/
+release-builds/
+release/
+*.dmg
+*.exe
+*.AppImage
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# EDITOR & OS
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+# Logs
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Environment
+.env
+.env.local
+.env.*.local
+

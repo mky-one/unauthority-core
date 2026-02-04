@@ -1,54 +1,165 @@
-# Frontend Installer Build Guide
+# Frontend Installer Build Guide - Multi-Platform Release
 
-Panduan lengkap untuk membuild desktop installer (Electron app) untuk Wallet dan Validator Dashboard.
+## 🎯 3 Cara Build Installer untuk Semua Platform
 
-## Prerequisites
+Ada **3 opsi** untuk build .dmg (macOS), .exe (Windows), dan .AppImage (Linux):
+
+---
+
+## ✅ OPSI 1: GitHub Actions (RECOMMENDED - OTOMATIS)
+
+### Keuntungan:
+- ✅ Build **semua platform sekaligus** (macOS + Windows + Linux)
+- ✅ Tidak perlu 3 komputer berbeda
+- ✅ Otomatis create GitHub Release
+- ✅ **FREE** untuk public repository
+
+### Cara Pakai (Sangat Mudah):
+
+1. **Push code ke GitHub:**
+```bash
+git add .
+git commit -m "feat: Release v1.0.0"
+git push origin main
+```
+
+2. **Create Git Tag (auto-trigger build):**
+```bash
+git tag v1.0.0
+git push origin v1.0.0
+```
+
+3. **GitHub Actions otomatis:**
+   - Build .dmg di macOS runner ✅
+   - Build .exe di Windows runner ✅
+   - Build .AppImage di Linux runner ✅
+   - Create Release + upload files ✅
+
+4. **Download hasil (15-20 menit kemudian):**
+   - Buka: `https://github.com/{username}/unauthority-core/releases/tag/v1.0.0`
+   - Download:
+     - `Unauthority-Wallet-macOS.dmg` (~120 MB)
+     - `Unauthority-Wallet-Windows-Setup.exe` (~100 MB)
+     - `Unauthority-Wallet-Linux.AppImage` (~130 MB)
+
+**File workflow:** `.github/workflows/build-installers.yml` (sudah dibuat)
+
+---
+
+## ⚙️ OPSI 2: Manual Build (Butuh 3 Komputer)
+
+### A. Build .dmg (harus di macOS):
+```bash
+cd frontend-wallet
+npm install
+npm run electron:build
+
+# Output: dist/Unauthority-Wallet-1.0.0.dmg
+```
+
+### B. Build .exe (harus di Windows):
+```powershell
+cd frontend-wallet
+npm install
+npm run electron:build
+
+# Output: dist\Unauthority-Wallet-Setup-1.0.0.exe
+```
+
+**Requirements Windows:**
+- Visual Studio Build Tools
+- Windows 10+ (64-bit)
+
+### C. Build .AppImage (harus di Linux):
+```bash
+cd frontend-wallet
+npm install
+npm run electron:build
+
+# Output: dist/Unauthority-Wallet-1.0.0.AppImage
+```
+
+**Requirements Linux:**
+```bash
+# Ubuntu/Debian
+sudo apt-get install build-essential libgtk-3-0 libnotify4 libnss3 libxss1
+```
+
+---
+
+## 🐳 OPSI 3: Docker Cross-Platform (Advanced)
+
+Build Windows/Linux installer dari macOS menggunakan Docker.
+
+**Pros:** Tidak perlu 3 komputer  
+**Cons:** Setup lebih kompleks, slower build
+
+### Dockerfile sudah tersedia:
+```bash
+# Build Windows .exe di macOS
+docker build -f Dockerfile.windows -t uat-win .
+docker run --rm -v $(pwd)/dist:/app/dist uat-win
+
+# Build Linux .AppImage di macOS
+docker build -f Dockerfile.linux -t uat-linux .
+docker run --rm -v $(pwd)/dist:/app/dist uat-linux
+```
+
+---
+
+## 📊 Perbandingan
+
+| Method | Ease | Speed | Cost | Best For |
+|--------|------|-------|------|----------|
+| **GitHub Actions** | ⭐⭐⭐⭐⭐ | ⭐⭐⭐⭐ | Free | **Production Release** |
+| **Manual 3 PC** | ⭐⭐ | ⭐⭐⭐ | Free | One-time test |
+| **Docker** | ⭐⭐⭐ | ⭐⭐ | Free | Dev/testing |
+
+**REKOMENDASI:** ✅ **GitHub Actions** - Profesional, mudah, cepat.
+
+---
+
+## 🚀 Quick Start (GitHub Actions)
+
+**TL;DR - 2 Command:**
+```bash
+# 1. Tag & push
+git tag v1.0.0 && git push origin v1.0.0
+
+# 2. Wait 20 minutes → Download from:
+# https://github.com/{username}/unauthority-core/releases
+```
+
+**DONE!** Semua installer ready untuk production.
+
+---
+
+## Prerequisites (Hanya untuk Manual Build)
 
 1. **Node.js 18+** dan npm
 2. **Rust 1.75+** (untuk backend)
-3. **Platform-specific requirements:**
+3. **Platform-specific:**
    - **macOS:** Xcode Command Line Tools
    - **Windows:** Visual Studio Build Tools
-   - **Linux:** `fuse`, `libfuse2` untuk AppImage
+   - **Linux:** `fuse`, `libfuse2`
 
-## Quick Build (Automated)
+---
 
-Gunakan script otomatis:
-
-```bash
-cd unauthority-core
-chmod +x scripts/build_installers.sh
-./scripts/build_installers.sh
-```
-
-Menu akan muncul:
-```
-1) Public Wallet Installer
-2) Validator Dashboard Installer  
-3) Both
-```
-
-## Manual Build
+## Manual Build Commands
 
 ### Build Wallet Installer
 
 ```bash
 cd frontend-wallet
-
-# Install dependencies
 npm install
 
-# Build for current platform
+# Current platform
 npm run electron:build
 
-# Or build for specific platform:
+# Specific platform (butuh SDK masing-masing)
 npm run build:mac      # macOS (.dmg)
 npm run build:win      # Windows (.exe)
-npm run build:linux    # Linux (.AppImage, .deb)
-
-# Build for all platforms (requires all SDKs installed)
-npm run build:all
-```
+npm run build:linux    # Linux (.AppImage)
 
 **Output:** `frontend-wallet/dist/`
 

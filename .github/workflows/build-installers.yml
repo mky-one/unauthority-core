@@ -118,7 +118,7 @@ jobs:
       - name: Display structure of downloaded files
         run: ls -R artifacts
 
-      - name: Create Release
+      - name: Create Release and Upload Assets
         uses: softprops/action-gh-release@v1
         with:
           files: |
@@ -130,25 +130,3 @@ jobs:
           generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          asset_name: Unauthority-Wallet-macOS.dmg
-          asset_content_type: application/octet-stream
-
-      - name: Upload Windows installer
-        uses: actions/upload-release-asset@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: windows-installer/*.exe
-          asset_name: Unauthority-Wallet-Windows-Setup.exe
-          asset_content_type: application/octet-stream
-
-      - name: Upload Linux installer
-        uses: actions/upload-release-asset@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: linux-installer/*.AppImage
-          asset_name: Unauthority-Wallet-Linux.AppImage
-          asset_content_type: application/octet-stream

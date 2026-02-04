@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Key, Download, Upload, AlertCircle, CheckCircle2 } from 'lucide-react';
+import { generateWallet, importFromPrivateKey, importFromSeedPhrase } from '../utils/wallet';
 
 interface SetupWizardProps {
   onComplete: (keys: { privateKey: string; publicKey: string }) => void;
@@ -20,19 +21,14 @@ export default function SetupWizard({ onComplete }: SetupWizardProps) {
     }
 
     try {
-      // TODO: Validate and derive public key from private key
-      const response = await fetch('http://localhost:3030/validator/import', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ private_key: privateKey }),
+      setError('');
+      const wallet = importFromPrivateKey(privateKey.trim());
+      onComplete({
+        privateKey: wallet.privateKey,
+        publicKey: wallet.publicKey,
       });
-
-      if (!response.ok) throw new Error('Failed to import key');
-
-      const keys = await response.json();
-      onComplete(keys);
     } catch (err: any) {
-      setError(err.message);
+      setError(err.message || 'Failed to import private key');
     }
   };
 
@@ -44,31 +40,30 @@ export default function SetupWizard({ onComplete }: SetupWizardProps) {
     }
 
     try {
-      const response = await fetch('http://localhost:3030/validator/import-seed', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ seed_phrase: seedPhrase }),
+      setError('');
+      const wallet = importFromSeedPhrase(seedPhrase.trim());
+      onComplete({
+        privateKey: wallet.privateKey,
+        publicKey: wallet.publicKey,
       });
-
-      if (!response.ok) throw new Error('Failed to import seed phrase');
-
-      const keys = await response.json();
-      onComplete(keys);
     } catch (err: any) {
-      setError(err.message);
+      setError(err.message || 'Failed to import seed phrase');
     }
   };
 
   const handleGenerateNew = async () => {
     try {
-      const response = await fetch('http://localhost:3030/validator/generate');
-      if (!response.ok) throw new Error('Failed to generate keys');
-
-      const keys = await response.json();
-      setGeneratedKeys(keys);
+      setError('');
+      const wallet = generateWallet();
+      setGeneratedKeys({
+        seed_phrase: wallet.seedPhrase,
+        private_key: wallet.privateKey,
+        public_key: wallet.publicKey,
+        address: wallet.address,
+      });
       setStep('backup');
     } catch (err: any) {
-      setError(err.message);
+      setError(err.message || 'Failed to generate keys');
     }
   };
 
@@ -77,7 +72,10 @@ export default function SetupWizard({ onComplete }: SetupWizardProps) {
       setError('You must confirm that you have backed up your seed phrase!');
       return;
     }
-    onComplete(generatedKeys);
+    onComplete({
+      privateKey: generatedKeys.private_key,
+      publicKey: generatedKeys.public_key,
+    });
   };
 
   const downloadBackup = () => {

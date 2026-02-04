@@ -57,25 +57,8 @@ export default function WalletSetup() {
           <div className="bg-uat-gray border border-gray-700 rounded-2xl p-8 shadow-2xl">
             {/* UAT Logo */}
             <div className="flex justify-center mb-6">
-              <div className="relative w-32 h-32">
-                {/* Try JPEG first, fallback to SVG, then fallback to icon */}
-                <img 
-                  src="/assets/uat-logo.jpeg" 
-                  alt="UAT Logo" 
-                  className="w-32 h-32 rounded-full object-cover shadow-2xl"
-                  onError={(e) => {
-                    // Try SVG next
-                    (e.target as HTMLImageElement).src = '/assets/uat-logo.svg';
-                    (e.target as HTMLImageElement).onerror = () => {
-                      // SVG failed too, show CSS fallback
-                      (e.target as HTMLImageElement).style.display = 'none';
-                      const fallback = document.createElement('div');
-                      fallback.className = 'w-32 h-32 bg-gradient-to-br from-uat-blue to-uat-cyan rounded-full flex items-center justify-center shadow-2xl';
-                      fallback.innerHTML = '<svg class="w-16 h-16 text-white" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8zm3.5-9c.83 0 1.5-.67 1.5-1.5S16.33 8 15.5 8 14 8.67 14 9.5s.67 1.5 1.5 1.5zm-7 0c.83 0 1.5-.67 1.5-1.5S9.33 8 8.5 8 7 8.67 7 9.5 7.67 11 8.5 11zm3.5 6.5c2.33 0 4.31-1.46 5.11-3.5H6.89c.8 2.04 2.78 3.5 5.11 3.5z"/></svg>';
-                      (e.target as HTMLImageElement).parentElement?.appendChild(fallback);
-                    };
-                  }}
-                />
+              <div className="w-32 h-32 bg-gradient-to-br from-uat-blue to-uat-cyan rounded-full flex items-center justify-center shadow-2xl">
+                <Wallet className="w-16 h-16 text-white" />
               </div>
             </div>
             

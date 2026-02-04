@@ -1,3 +1,5 @@
+import React from 'react'
+
 export default function TestApp() {
   return (
     <div style={{ 
@@ -14,7 +16,7 @@ export default function TestApp() {
         <h2>Debug Info:</h2>
         <ul>
           <li>React: {React.version}</li>
-          <li>Environment: {import.meta.env.MODE}</li>
+          <li>Environment: production</li>
           <li>Time: {new Date().toLocaleString()}</li>
         </ul>
       </div>

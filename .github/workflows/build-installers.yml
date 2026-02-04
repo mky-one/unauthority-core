@@ -17,42 +17,49 @@ jobs:
     runs-on: macos-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Setup Node.js
-        uses: actions/setup-node@v3
+        uses: actions/setup-node@v4
         with:
-          node-version: '18'
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: frontend-wallet/package-lock.json
 
       - name: Install dependencies
         working-directory: frontend-wallet
-        run: npm install
+        run: npm ci
 
       - name: Build macOS installer
         working-directory: frontend-wallet
         run: npm run electron:build
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: false
 
       - name: Upload .dmg artifact
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: macos-installer
           path: frontend-wallet/dist/*.dmg
+          if-no-files-found: error
 
   # Build Windows .exe
   build-windows:
     runs-on: windows-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Setup Node.js
-        uses: actions/setup-node@v3
+        uses: actions/setup-node@v4
         with:
-          node-version: '18'
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: frontend-wallet/package-lock.json
 
       - name: Install dependencies
         working-directory: frontend-wallet
-        run: npm install
+        run: npm ci
 
       - name: Build Windows installer
         working-directory: frontend-wallet
@@ -61,63 +68,68 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Upload .exe artifact
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: windows-installer
           path: frontend-wallet/dist/*.exe
+          if-no-files-found: error
 
   # Build Linux .AppImage
   build-linux:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Setup Node.js
-        uses: actions/setup-node@v3
+        uses: actions/setup-node@v4
         with:
-          node-version: '18'
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: frontend-wallet/package-lock.json
 
       - name: Install dependencies
         working-directory: frontend-wallet
-        run: npm install
+        run: npm ci
 
       - name: Build Linux installer
         working-directory: frontend-wallet
         run: npm run electron:build
 
       - name: Upload .AppImage artifact
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: linux-installer
           path: frontend-wallet/dist/*.AppImage
+          if-no-files-found: error
 
   # Create GitHub Release
   release:
     needs: [build-macos, build-windows, build-linux]
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - name: Download all artifacts
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Display structure of downloaded files
+        run: ls -R artifacts
 
       - name: Create Release
-        id: create_release
-        uses: actions/create-release@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        uses: softprops/action-gh-release@v1
         with:
-          tag_name: ${{ github.ref }}
-          release_name: Release ${{ github.ref }}
+          files: |
+            artifacts/macos-installer/*.dmg
+            artifacts/windows-installer/*.exe
+            artifacts/linux-installer/*.AppImage
           draft: false
           prerelease: false
-
-      - name: Upload macOS installer
-        uses: actions/upload-release-asset@v1
+          generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: macos-installer/*.dmg
           asset_name: Unauthority-Wallet-macOS.dmg
           asset_content_type: application/octet-stream
 

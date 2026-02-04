@@ -1,6 +1,71 @@
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# SECURITY - NEVER COMMIT WALLETS
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+# Wallet files (contains private keys!)
+wallets/
+keys/
+*.wallet
+*.key
+wallet.json
+
+# Local storage backups
+localStorage/
+indexedDB/
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# NODE.JS
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
 node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# BUILD OUTPUTS
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
 dist/
-*.log
-.DS_Store
-.env
+dist-ssr/
 *.local
+.vite/
+
+# Electron build outputs
+out/
+release/
+*.dmg
+*.exe
+*.AppImage
+*.deb
+*.rpm
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# EDITOR
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# TESTING & LOGS
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+coverage/
+.nyc_output/
+*.log
+

@@ -51,8 +51,9 @@ export default function Dashboard({ nodeOnline, oraclePrices }: Props) {
         setTimeout(() => setClaimSuccess(false), 3000);
         // Refresh balance after successful claim
         await fetchBalance(wallet.address);
+        alert('✅ Faucet claimed successfully! +100,000 UAT');
       } else {
-        alert(`Faucet claim failed: ${result.msg || 'Unknown error'}`);
+        alert(`❌ Faucet claim failed: ${result.msg || 'Unknown error'}`);
       }
     } catch (error) {
       console.error('Faucet error:', error);
@@ -169,17 +170,17 @@ export default function Dashboard({ nodeOnline, oraclePrices }: Props) {
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           <div className="bg-uat-gray border border-gray-700 rounded-xl p-6">
             <p className="text-sm text-gray-400 mb-1">Total Supply</p>
-            <p className="text-2xl font-bold">21.936M UAT</p>
+            <p className="text-2xl font-bold">{(nodeInfo.total_supply || 21936236).toLocaleString()} UAT</p>
           </div>
           
           <div className="bg-uat-gray border border-gray-700 rounded-xl p-6">
-            <p className="text-sm text-gray-400 mb-1">Remaining Supply</p>
-            <p className="text-2xl font-bold">{(nodeInfo.remaining_supply / 100_000_000).toLocaleString()} UAT</p>
+            <p className="text-sm text-gray-400 mb-1">Circulating Supply</p>
+            <p className="text-2xl font-bold">{(nodeInfo.circulating_supply || 0).toLocaleString()} UAT</p>
           </div>
           
           <div className="bg-uat-gray border border-gray-700 rounded-xl p-6">
-            <p className="text-sm text-gray-400 mb-1">Total Burned</p>
-            <p className="text-2xl font-bold">${(nodeInfo.total_burned_usd / 100).toLocaleString()}</p>
+            <p className="text-sm text-gray-400 mb-1">Total Burned (BTC/ETH)</p>
+            <p className="text-2xl font-bold">{nodeInfo.total_burned_usd ? `$${(nodeInfo.total_burned_usd / 100).toLocaleString()}` : '$0'}</p>
           </div>
         </div>
       )}

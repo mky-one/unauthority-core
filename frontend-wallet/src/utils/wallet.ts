@@ -186,7 +186,7 @@ export function uatToVoid(uat: number): number {
  */
 export function isValidUATAddress(address: string): boolean {
   if (!address.startsWith(UAT_PREFIX)) return false;
-  if (address.length < 30 || address.length > 40) return false;
+  if (address.length < 20 || address.length > 100) return false;
 
   try {
     const base58Part = address.slice(UAT_PREFIX.length);

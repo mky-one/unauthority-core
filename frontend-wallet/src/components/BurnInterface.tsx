@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Flame, Bitcoin, } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 import { submitBurn } from '../utils/api';
+import { useWalletStore } from '../store/walletStore';
 
 interface Props {
   nodeOnline: boolean;
@@ -9,6 +10,7 @@ interface Props {
 }
 
 export default function BurnInterface({ nodeOnline, oraclePrices }: Props) {
+  const { wallet } = useWalletStore();
   const [coinType, setCoinType] = useState<'btc' | 'eth'>('btc');
   const [txid, setTxid] = useState('');
   const [loading, setLoading] = useState(false);
@@ -24,11 +26,20 @@ export default function BurnInterface({ nodeOnline, oraclePrices }: Props) {
       return;
     }
 
+    if (!wallet) {
+      setResult({ status: 'error', message: 'No wallet found. Please create wallet first.' });
+      return;
+    }
+
     setLoading(true);
     setResult(null);
 
     try {
-      const response = await submitBurn({ coin_type: coinType, txid: txid.trim() });
+      const response = await submitBurn({ 
+        coin_type: coinType, 
+        txid: txid.trim(),
+        recipient_address: wallet.address // Send minted UAT to user's wallet
+      });
       setResult(response);
     } catch (error: any) {
       setResult({ status: 'error', message: error.message });

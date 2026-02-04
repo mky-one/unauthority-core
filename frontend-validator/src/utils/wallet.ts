@@ -142,26 +142,43 @@ export function importFromSeedPhrase(seedPhrase: string): Wallet {
 }
 
 /**
- * Import wallet from private key (64-byte hex string for Ed25519)
- * Ed25519 private key in tweetnacl is 64 bytes: seed (32) + public_key (32)
+ * Import wallet from private key
+ * Accepts:
+ * - 32 bytes (64 hex chars): Seed/private key for Ed25519
+ * - 64 bytes (128 hex chars): Full secret key (seed + public key)
  */
 export function importFromPrivateKey(privateKeyHex: string): Wallet {
   const privateKeyBytes = new Uint8Array(Buffer.from(privateKeyHex, 'hex'));
 
-  if (privateKeyBytes.length !== 64) {
-    throw new Error('Private key must be 64 bytes (128 hex characters) for Ed25519');
+  // Accept both 32 bytes (seed only) and 64 bytes (seed + public key)
+  if (privateKeyBytes.length === 32) {
+    // It's a seed, derive the full keypair
+    const keypair = nacl.sign.keyPair.fromSeed(privateKeyBytes);
+    const publicKey = keypair.publicKey;
+    const secretKey = keypair.secretKey; // This is 64 bytes (seed + public key)
+    const address = createAddress(publicKey);
+
+    return {
+      address,
+      publicKey: Buffer.from(publicKey).toString('hex'),
+      privateKey: Buffer.from(secretKey).toString('hex'), // Return full 64-byte secret key
+      seedPhrase: 'imported-key',
+    };
+  } else if (privateKeyBytes.length === 64) {
+    // It's a full secret key (tweetnacl format)
+    // Extract public key from secret key (last 32 bytes are public key in tweetnacl)
+    const publicKey = privateKeyBytes.slice(32);
+    const address = createAddress(publicKey);
+
+    return {
+      address,
+      publicKey: Buffer.from(publicKey).toString('hex'),
+      privateKey: privateKeyHex,
+      seedPhrase: 'imported-key',
+    };
+  } else {
+    throw new Error('Private key must be 32 bytes (64 hex) or 64 bytes (128 hex) for Ed25519');
   }
-
-  // Extract public key from secret key (last 32 bytes are public key in tweetnacl)
-  const publicKey = privateKeyBytes.slice(32);
-  const address = createAddress(publicKey);
-
-  return {
-    address,
-    publicKey: Buffer.from(publicKey).toString('hex'),
-    privateKey: privateKeyHex,
-    seedPhrase: 'imported-key',
-  };
 }
 
 /**

@@ -3,6 +3,7 @@ import { Copy, Eye, EyeOff, RefreshCw, Gift } from 'lucide-react';
 import { useWalletStore } from '../store/walletStore';
 import { formatBalance } from '../utils/wallet';
 import { getNodeInfo } from '../utils/api';
+import { getCurrentNetwork } from '../config/networks';
 
 interface Props {
   nodeOnline: boolean;
@@ -83,20 +84,22 @@ export default function Dashboard({ nodeOnline, oraclePrices }: Props) {
             >
               <RefreshCw className="w-6 h-6" />
             </button>
-            <button 
-              onClick={claimFaucet}
-              disabled={claiming || !nodeOnline}
-              className={`p-3 rounded-full transition-all ${
-                claimSuccess 
-                  ? 'bg-green-500/30 text-green-400' 
-                  : claiming 
-                  ? 'bg-gray-500/30 cursor-wait' 
-                  : 'bg-white/20 hover:bg-white/30'
-              }`}
-              title={claimSuccess ? 'Claimed!' : claiming ? 'Claiming...' : 'Claim 100,000 UAT (DEV Mode)'}
-            >
-              {claimSuccess ? <span className="text-2xl">✓</span> : <Gift className="w-6 h-6" />}
-            </button>
+            {getCurrentNetwork().faucetEnabled && (
+              <button 
+                onClick={claimFaucet}
+                disabled={claiming || !nodeOnline}
+                className={`p-3 rounded-full transition-all ${
+                  claimSuccess 
+                    ? 'bg-green-500/30 text-green-400' 
+                    : claiming 
+                    ? 'bg-gray-500/30 cursor-wait' 
+                    : 'bg-white/20 hover:bg-white/30'
+                }`}
+                title={claimSuccess ? 'Claimed!' : claiming ? 'Claiming...' : 'Claim 100,000 UAT (Testnet Only)'}
+              >
+                {claimSuccess ? <span className="text-2xl">✓</span> : <Gift className="w-6 h-6" />}
+              </button>
+            )}
           </div>
         </div>
         {claimSuccess && (

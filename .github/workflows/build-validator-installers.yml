@@ -1,0 +1,164 @@
+name: Build Validator Dashboard Installers
+
+on:
+  push:
+    tags:
+      - 'validator-v*.*.*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to build (e.g., 0.1.0)'
+        required: true
+        default: '0.1.0'
+
+jobs:
+  # Build macOS .dmg for Validator
+  build-macos-validator:
+    runs-on: macos-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: frontend-validator/package-lock.json
+
+      - name: Install dependencies
+        working-directory: frontend-validator
+        run: npm ci
+
+      - name: Build macOS Validator installer
+        working-directory: frontend-validator
+        run: npm run electron:build
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: false
+
+      - name: Upload .dmg artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-validator-installer
+          path: frontend-validator/dist/*.dmg
+          if-no-files-found: error
+
+  # Build Windows .exe for Validator
+  build-windows-validator:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: frontend-validator/package-lock.json
+
+      - name: Install dependencies
+        working-directory: frontend-validator
+        run: npm ci
+
+      - name: Build Windows Validator installer
+        working-directory: frontend-validator
+        run: npm run electron:build
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload .exe artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-validator-installer
+          path: frontend-validator/dist/*.exe
+          if-no-files-found: error
+
+  # Build Linux .AppImage for Validator
+  build-linux-validator:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: frontend-validator/package-lock.json
+
+      - name: Install dependencies
+        working-directory: frontend-validator
+        run: npm ci
+
+      - name: Build Linux Validator installer
+        working-directory: frontend-validator
+        run: npm run electron:build
+
+      - name: Upload .AppImage artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-validator-installer
+          path: frontend-validator/dist/*.AppImage
+          if-no-files-found: error
+
+  # Create GitHub Release for Validator
+  release-validator:
+    needs: [build-macos-validator, build-windows-validator, build-linux-validator]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Display structure of downloaded files
+        run: ls -R artifacts
+
+      - name: Create Validator Release and Upload Assets
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            artifacts/macos-validator-installer/*.dmg
+            artifacts/windows-validator-installer/*.exe
+            artifacts/linux-validator-installer/*.AppImage
+          draft: false
+          prerelease: false
+          generate_release_notes: true
+          name: "Unauthority Validator Dashboard ${{ github.ref_name }}"
+          body: |
+            ## Unauthority Validator Dashboard Installer
+            
+            **For node operators who want to run validator nodes.**
+            
+            ### Features:
+            - ✅ Wallet import (private key/seed phrase/generate new)
+            - ✅ Client-side cryptography (keys never leave device)
+            - ✅ Stake management (minimum 1,000 UAT)
+            - ✅ Validator configuration (P2P settings, ports)
+            - ✅ Real-time monitoring (blocks, rewards, network stats)
+            - ✅ Slashing protection (double-signing detection)
+            
+            ### Installation:
+            - **macOS**: Download `.dmg` → Open → Drag to Applications
+            - **Windows**: Download `.exe` → Run installer → Follow wizard
+            - **Linux**: Download `.AppImage` → Make executable → Run
+            
+            ### Requirements:
+            - Minimum stake: 1,000 UAT
+            - Backend node: Must run `uat-node` separately
+            - Network: Stable internet connection
+            - OS: macOS 10.13+, Windows 10+, Ubuntu 18.04+
+            
+            ### Difference from Public Wallet:
+            | Feature | Public Wallet | Validator Dashboard |
+            |---------|---------------|---------------------|
+            | Purpose | Send/receive UAT | Run validator node |
+            | Stake | Not required | 1,000 UAT minimum |
+            | Backend | Optional | Required (uat-node) |
+            | Target User | General public | Node operators |
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

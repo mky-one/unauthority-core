@@ -48,18 +48,67 @@ WALLET_LABELS=(
   "TESTNET_VALIDATOR_NODE_C"
 )
 
-# Generate wallets using Python script
+WALLET_ROLES=(
+  "treasury"
+  "treasury"
+  "treasury"
+  "treasury"
+  "treasury"
+  "treasury"
+  "treasury"
+  "treasury"
+  "validator"
+  "validator"
+  "validator"
+)
+
+WALLET_BALANCES=(
+  "2000000.00000000"  # Treasury 1: 2M UAT
+  "2000000.00000000"  # Treasury 2: 2M UAT
+  "2000000.00000000"  # Treasury 3: 2M UAT
+  "2000000.00000000"  # Treasury 4: 2M UAT
+  "2000000.00000000"  # Treasury 5: 2M UAT
+  "2000000.00000000"  # Treasury 6: 2M UAT
+  "2000000.00000000"  # Treasury 7: 2M UAT
+  "1937000.00000000"  # Treasury 8: 1.937M UAT (reduced to fund validators)
+  "1000.00000000"     # Validator A: 1,000 UAT (minimum stake)
+  "1000.00000000"     # Validator B: 1,000 UAT (minimum stake)
+  "1000.00000000"     # Validator C: 1,000 UAT (minimum stake)
+)
+
+WALLET_DESCRIPTIONS=(
+  "General testing and faucet funding"
+  "Smart contract deployment testing"
+  "Transaction stress testing"
+  "Multi-signature wallet testing"
+  "NFT and token minting testing"
+  "DApp integration testing"
+  "API and SDK testing"
+  "Reserve fund for additional testing needs"
+  "Bootstrap validator node (primary)"
+  "Bootstrap validator node (secondary)"
+  "Bootstrap validator node (tertiary)"
+)
+
+# Generate wallets using Python script with metadata
 echo "⚙️  Generating testnet wallets from deterministic seeds..."
-python3 - <<'PYTHON_SCRIPT' "$OUTPUT_FILE" "${SEED_PHRASES[@]}"
+python3 - <<'PYTHON_SCRIPT' "$OUTPUT_FILE" "${WALLET_LABELS[@]}" "---" "${WALLET_ROLES[@]}" "---" "${WALLET_BALANCES[@]}" "---" "${WALLET_DESCRIPTIONS[@]}" "---" "${SEED_PHRASES[@]}"
 import sys
 import json
-import hashlib
 from mnemonic import Mnemonic
 from nacl.signing import SigningKey
-from nacl.encoding import HexEncoder
 
-output_file = sys.argv[1]
-seed_phrases = sys.argv[2:]
+# Parse arguments
+args = sys.argv[1:]
+output_file = args[0]
+
+# Find separators
+sep_indices = [i for i, x in enumerate(args) if x == "---"]
+labels = args[1:sep_indices[0]]
+roles = args[sep_indices[0]+1:sep_indices[1]]
+balances = args[sep_indices[1]+1:sep_indices[2]]
+descriptions = args[sep_indices[2]+1:sep_indices[3]]
+seed_phrases = args[sep_indices[3]+1:]
 
 # BIP39 Mnemonic
 mnemo = Mnemonic("english")
@@ -67,7 +116,7 @@ mnemo = Mnemonic("english")
 def bytes_to_hex(data):
     return data.hex()
 
-def generate_wallet_from_seed(seed_phrase):
+def generate_wallet_from_seed(seed_phrase, label, role, balance, description, index):
     # Derive seed from mnemonic
     seed = mnemo.to_seed(seed_phrase)
     
@@ -87,24 +136,54 @@ def generate_wallet_from_seed(seed_phrase):
     address = "UAT" + base58.b58encode(verify_key.encode()).decode('utf-8')
     
     return {
-        "seed_phrase": seed_phrase,
-        "private_key": private_key_hex,
+        "index": index,
+        "label": label,
+        "role": role,
+        "genesis_balance_uat": balance,
+        "description": description,
+        "address": address,
         "public_key": public_key_hex,
-        "address": address
+        "private_key": private_key_hex,
+        "seed_phrase": seed_phrase,
+        "network": "testnet",
+        "security_level": "PUBLIC - For Testing Only"
     }
 
 wallets = []
-for i, seed in enumerate(seed_phrases):
-    print(f"  Generating wallet {i+1}/11...", file=sys.stderr)
-    wallet = generate_wallet_from_seed(seed)
-    wallet["index"] = i
+total_supply = 0
+for i in range(len(seed_phrases)):
+    print(f"  Generating wallet {i+1}/11: {labels[i]}...", file=sys.stderr)
+    wallet = generate_wallet_from_seed(
+        seed_phrases[i], 
+        labels[i], 
+        roles[i], 
+        balances[i],
+        descriptions[i],
+        i
+    )
     wallets.append(wallet)
+    total_supply += float(balances[i])
+
+# Add metadata
+output_data = {
+    "network": "TESTNET",
+    "security_warning": "⚠️ PUBLICLY KNOWN WALLETS - NEVER USE IN PRODUCTION",
+    "total_supply_uat": f"{total_supply:.8f}",
+    "total_wallets": len(wallets),
+    "treasury_wallets": sum(1 for w in wallets if w["role"] == "treasury"),
+    "validator_wallets": sum(1 for w in wallets if w["role"] == "validator"),
+    "generated_at": "2026-02-05",
+    "wallets": wallets
+}
 
 # Save to JSON
 with open(output_file, 'w') as f:
-    json.dump(wallets, f, indent=2)
+    json.dump(output_data, f, indent=2)
 
-print(f"✅ Saved {len(wallets)} wallets to {output_file}", file=sys.stderr)
+print(f"✅ Generated {len(wallets)} wallets", file=sys.stderr)
+print(f"   Treasury: {output_data['treasury_wallets']}", file=sys.stderr)
+print(f"   Validators: {output_data['validator_wallets']}", file=sys.stderr)
+print(f"   Total Supply: {total_supply:,.0f} UAT", file=sys.stderr)
 PYTHON_SCRIPT
 
 # Check if Python script succeeded

@@ -1,79 +1,154 @@
-[
-  {
-    "seed_phrase": "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about",
-    "private_key": "5eb00bbddcf069084889a8ab9155568165f5c453ccb85e70811aaed6f6da5fc1",
-    "public_key": "c5785e1865b708938aff8161d573006496663b1aa10834e396dc566869a2c66a",
-    "address": "UATEHqmfkN89RJ7Y33CXM6uCzhVeuywHoJXZZLszBHHZy7o",
-    "index": 0
-  },
-  {
-    "seed_phrase": "zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo wrong",
-    "private_key": "b6a6d8921942dd9806607ebc2750416b289adea669198769f2e15ed926c3aa92",
-    "public_key": "ce4c77de461f82f37823867991aec05cc63c6309a6fce9b8d8abf59481f3ec6c",
-    "address": "UATEtJcedSL6vnFZNPiisiDRNFdisXtXFv7j9qi9wi8KmDd",
-    "index": 1
-  },
-  {
-    "seed_phrase": "test test test test test test test test test test test junk",
-    "private_key": "9dfc3c64c2f8bede1533b6a79f8570e5943e0b8fd1cf77107adf7b72cef42185",
-    "public_key": "e1235cf3d30ae8195bc44dcb5d7afe7d233cdcc0c2250d706180f09f7f64665a",
-    "address": "UATG9r1RYmVnXptzCA2an46rNnHsCAQLvjyM6vR2mo3LpG1",
-    "index": 2
-  },
-  {
-    "seed_phrase": "legal legal legal legal legal legal legal legal legal legal legal legal",
-    "private_key": "1e23fb5ed606b40861b0f104ec0dee523269dfccf69f5d4b3da57c7b9a493562",
-    "public_key": "a279d476a7589c43a851e74fd734efe68d4b2edf775965afeab6d9c353a11b26",
-    "address": "UATBwEo4BfR63MTe6jS2cajXBgsKS7RLnMviv4oAWXyGa69",
-    "index": 3
-  },
-  {
-    "seed_phrase": "art art art art art art art art art art art art",
-    "private_key": "12971afe63ed2703affef70d300484caed7913e5dbcba07fcd92f927029806dc",
-    "public_key": "c37cd5bc149525d09a4c2c04e5030b68c51d9fbd5218b41dca9573ad479422c7",
-    "address": "UATEA6uXibD6w9qhDjiEd3DdS1gRCt3VSgunVpQL9vyN2vz",
-    "index": 4
-  },
-  {
-    "seed_phrase": "work work work work work work work work work work work work",
-    "private_key": "bfa03239d66b567568c7650d38a70d0a325b8b85a5fb95393db87bf79d8119ce",
-    "public_key": "aa80cda95a2182ccd77097662c8407a9ce391a5f816c89bd74afcb7e844d3cbf",
-    "address": "UATCUaDw4sGB85AAHdnwzeRT8cVovQPexjoxMpCXDZmEQfY",
-    "index": 5
-  },
-  {
-    "seed_phrase": "hello hello hello hello hello hello hello hello hello hello hello hello",
-    "private_key": "bd5dd83a9b59993f8f3531cf3057f0db7eacad1387e6db2d626306e5a7e6181b",
-    "public_key": "ea90ca5cb60cbc8eb894530b3552b264445a47c3875896722ae8cb52efe66ee0",
-    "address": "UATGneTNe1jaAVzfxuYEFfdt7Wthod5t2DM5Sw6SM1PA36o",
-    "index": 6
-  },
-  {
-    "seed_phrase": "world world world world world world world world world world world world",
-    "private_key": "c1d0479d22b83df80d487a66620db38600feb4fdbbbd3946cbb2c288f3ffbf5d",
-    "public_key": "ef94a52f828aedb537790da6218077afe00f895a212aa85c722ae514dd5991ff",
-    "address": "UATH8DuLcmEsiDqyxKcPgzHtAJKjLUzT4MV7M7AyXV7KLhL",
-    "index": 7
-  },
-  {
-    "seed_phrase": "node node node node node node node node node node node alpha",
-    "private_key": "b7aa195499bd201eac817b9dd1208df0731b26e983c4b2cacce0cbc5d3469039",
-    "public_key": "803aa89371abb18350434a6a41ff0d3b13bae5dbde009de0137bd3db5290fa94",
-    "address": "UAT9dZ4fZkCyfxH7Gdsje4316PNETotdAzAuc3ZLtGdWcZ1",
-    "index": 8
-  },
-  {
-    "seed_phrase": "node node node node node node node node node node node bravo",
-    "private_key": "bae39d6198ba94d8498d3e5abaa0b4dcaa118aed7f9dffb015ba17294c3ca50f",
-    "public_key": "86c6889c8d462acd50312b22afb526f88c6fc894e3acac89522ba77001eedb9a",
-    "address": "UATA57DWUC23h1j2iBSXUeSJXgwydq9rsMK4M8HC4XgPtGh",
-    "index": 9
-  },
-  {
-    "seed_phrase": "node node node node node node node node node node node charlie",
-    "private_key": "6718ed900fe88738684a9ef13367c946c9875f422fc98db5ce58e04ca209888c",
-    "public_key": "e710a7f2373d3b8ea01fd9f2d2118a8a027f091ddf399ca5afa52737b2726d0b",
-    "address": "UATGYyuiSCmyarLLRXGgKSFCLwhkK1XgMXMSxLYqygNe8MG",
-    "index": 10
-  }
-]
+{
+  "network": "TESTNET",
+  "security_warning": "\u26a0\ufe0f PUBLICLY KNOWN WALLETS - NEVER USE IN PRODUCTION",
+  "total_supply_uat": "15940000.00000000",
+  "total_wallets": 11,
+  "treasury_wallets": 8,
+  "validator_wallets": 3,
+  "generated_at": "2026-02-05",
+  "wallets": [
+    {
+      "index": 0,
+      "label": "TESTNET_TREASURY_1",
+      "role": "treasury",
+      "genesis_balance_uat": "2000000.00000000",
+      "description": "General testing and faucet funding",
+      "address": "UATEHqmfkN89RJ7Y33CXM6uCzhVeuywHoJXZZLszBHHZy7o",
+      "public_key": "c5785e1865b708938aff8161d573006496663b1aa10834e396dc566869a2c66a",
+      "private_key": "5eb00bbddcf069084889a8ab9155568165f5c453ccb85e70811aaed6f6da5fc1",
+      "seed_phrase": "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about",
+      "network": "testnet",
+      "security_level": "PUBLIC - For Testing Only"
+    },
+    {
+      "index": 1,
+      "label": "TESTNET_TREASURY_2",
+      "role": "treasury",
+      "genesis_balance_uat": "2000000.00000000",
+      "description": "Smart contract deployment testing",
+      "address": "UATEtJcedSL6vnFZNPiisiDRNFdisXtXFv7j9qi9wi8KmDd",
+      "public_key": "ce4c77de461f82f37823867991aec05cc63c6309a6fce9b8d8abf59481f3ec6c",
+      "private_key": "b6a6d8921942dd9806607ebc2750416b289adea669198769f2e15ed926c3aa92",
+      "seed_phrase": "zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo wrong",
+      "network": "testnet",
+      "security_level": "PUBLIC - For Testing Only"
+    },
+    {
+      "index": 2,
+      "label": "TESTNET_TREASURY_3",
+      "role": "treasury",
+      "genesis_balance_uat": "2000000.00000000",
+      "description": "Transaction stress testing",
+      "address": "UATG9r1RYmVnXptzCA2an46rNnHsCAQLvjyM6vR2mo3LpG1",
+      "public_key": "e1235cf3d30ae8195bc44dcb5d7afe7d233cdcc0c2250d706180f09f7f64665a",
+      "private_key": "9dfc3c64c2f8bede1533b6a79f8570e5943e0b8fd1cf77107adf7b72cef42185",
+      "seed_phrase": "test test test test test test test test test test test junk",
+      "network": "testnet",
+      "security_level": "PUBLIC - For Testing Only"
+    },
+    {
+      "index": 3,
+      "label": "TESTNET_TREASURY_4",
+      "role": "treasury",
+      "genesis_balance_uat": "2000000.00000000",
+      "description": "Multi-signature wallet testing",
+      "address": "UATBwEo4BfR63MTe6jS2cajXBgsKS7RLnMviv4oAWXyGa69",
+      "public_key": "a279d476a7589c43a851e74fd734efe68d4b2edf775965afeab6d9c353a11b26",
+      "private_key": "1e23fb5ed606b40861b0f104ec0dee523269dfccf69f5d4b3da57c7b9a493562",
+      "seed_phrase": "legal legal legal legal legal legal legal legal legal legal legal legal",
+      "network": "testnet",
+      "security_level": "PUBLIC - For Testing Only"
+    },
+    {
+      "index": 4,
+      "label": "TESTNET_TREASURY_5",
+      "role": "treasury",
+      "genesis_balance_uat": "2000000.00000000",
+      "description": "NFT and token minting testing",
+      "address": "UATEA6uXibD6w9qhDjiEd3DdS1gRCt3VSgunVpQL9vyN2vz",
+      "public_key": "c37cd5bc149525d09a4c2c04e5030b68c51d9fbd5218b41dca9573ad479422c7",
+      "private_key": "12971afe63ed2703affef70d300484caed7913e5dbcba07fcd92f927029806dc",
+      "seed_phrase": "art art art art art art art art art art art art",
+      "network": "testnet",
+      "security_level": "PUBLIC - For Testing Only"
+    },
+    {
+      "index": 5,
+      "label": "TESTNET_TREASURY_6",
+      "role": "treasury",
+      "genesis_balance_uat": "2000000.00000000",
+      "description": "DApp integration testing",
+      "address": "UATCUaDw4sGB85AAHdnwzeRT8cVovQPexjoxMpCXDZmEQfY",
+      "public_key": "aa80cda95a2182ccd77097662c8407a9ce391a5f816c89bd74afcb7e844d3cbf",
+      "private_key": "bfa03239d66b567568c7650d38a70d0a325b8b85a5fb95393db87bf79d8119ce",
+      "seed_phrase": "work work work work work work work work work work work work",
+      "network": "testnet",
+      "security_level": "PUBLIC - For Testing Only"
+    },
+    {
+      "index": 6,
+      "label": "TESTNET_TREASURY_7",
+      "role": "treasury",
+      "genesis_balance_uat": "2000000.00000000",
+      "description": "API and SDK testing",
+      "address": "UATGneTNe1jaAVzfxuYEFfdt7Wthod5t2DM5Sw6SM1PA36o",
+      "public_key": "ea90ca5cb60cbc8eb894530b3552b264445a47c3875896722ae8cb52efe66ee0",
+      "private_key": "bd5dd83a9b59993f8f3531cf3057f0db7eacad1387e6db2d626306e5a7e6181b",
+      "seed_phrase": "hello hello hello hello hello hello hello hello hello hello hello hello",
+      "network": "testnet",
+      "security_level": "PUBLIC - For Testing Only"
+    },
+    {
+      "index": 7,
+      "label": "TESTNET_TREASURY_8",
+      "role": "treasury",
+      "genesis_balance_uat": "1937000.00000000",
+      "description": "Reserve fund for additional testing needs",
+      "address": "UATH8DuLcmEsiDqyxKcPgzHtAJKjLUzT4MV7M7AyXV7KLhL",
+      "public_key": "ef94a52f828aedb537790da6218077afe00f895a212aa85c722ae514dd5991ff",
+      "private_key": "c1d0479d22b83df80d487a66620db38600feb4fdbbbd3946cbb2c288f3ffbf5d",
+      "seed_phrase": "world world world world world world world world world world world world",
+      "network": "testnet",
+      "security_level": "PUBLIC - For Testing Only"
+    },
+    {
+      "index": 8,
+      "label": "TESTNET_VALIDATOR_NODE_A",
+      "role": "validator",
+      "genesis_balance_uat": "1000.00000000",
+      "description": "Bootstrap validator node (primary)",
+      "address": "UAT9dZ4fZkCyfxH7Gdsje4316PNETotdAzAuc3ZLtGdWcZ1",
+      "public_key": "803aa89371abb18350434a6a41ff0d3b13bae5dbde009de0137bd3db5290fa94",
+      "private_key": "b7aa195499bd201eac817b9dd1208df0731b26e983c4b2cacce0cbc5d3469039",
+      "seed_phrase": "node node node node node node node node node node node alpha",
+      "network": "testnet",
+      "security_level": "PUBLIC - For Testing Only"
+    },
+    {
+      "index": 9,
+      "label": "TESTNET_VALIDATOR_NODE_B",
+      "role": "validator",
+      "genesis_balance_uat": "1000.00000000",
+      "description": "Bootstrap validator node (secondary)",
+      "address": "UATA57DWUC23h1j2iBSXUeSJXgwydq9rsMK4M8HC4XgPtGh",
+      "public_key": "86c6889c8d462acd50312b22afb526f88c6fc894e3acac89522ba77001eedb9a",
+      "private_key": "bae39d6198ba94d8498d3e5abaa0b4dcaa118aed7f9dffb015ba17294c3ca50f",
+      "seed_phrase": "node node node node node node node node node node node bravo",
+      "network": "testnet",
+      "security_level": "PUBLIC - For Testing Only"
+    },
+    {
+      "index": 10,
+      "label": "TESTNET_VALIDATOR_NODE_C",
+      "role": "validator",
+      "genesis_balance_uat": "1000.00000000",
+      "description": "Bootstrap validator node (tertiary)",
+      "address": "UATGYyuiSCmyarLLRXGgKSFCLwhkK1XgMXMSxLYqygNe8MG",
+      "public_key": "e710a7f2373d3b8ea01fd9f2d2118a8a027f091ddf399ca5afa52737b2726d0b",
+      "private_key": "6718ed900fe88738684a9ef13367c946c9875f422fc98db5ce58e04ca209888c",
+      "seed_phrase": "node node node node node node node node node node node charlie",
+      "network": "testnet",
+      "security_level": "PUBLIC - For Testing Only"
+    }
+  ]
+}

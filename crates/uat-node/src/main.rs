@@ -21,10 +21,12 @@ mod grpc_server;  // NEW: gRPC server module
 mod rate_limiter; // NEW: Rate limiter module
 mod db;           // NEW: Database module (sled)
 mod metrics;      // NEW: Prometheus metrics module
+mod faucet;       // NEW: Testnet faucet module
 // --- TAMBAHAN: HTTP API MODULE ---
 use warp::Filter;
 use db::UatDatabase;
 use metrics::UatMetrics;
+use faucet::{Faucet, FaucetConfig, FaucetRequest};
 
 const LEDGER_FILE: &str = "ledger_state.json";
 const WALLET_FILE: &str = "wallet.json";

@@ -124,76 +124,28 @@ source node_data/validator-3/.env && cargo run -p uat-node -- --config node_data
 
 ## 🏗️ Architecture
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│              UNAUTHORITY (UAT) NETWORK                      │
-│                  The Sovereign Machine                      │
-└─────────────────────────────────────────────────────────────┘
-         │
-         ├─────────────── GENESIS (11 Wallets)
-         │                ├─ 8 Dev/Treasury Wallets
-         │                │  ├─ Dev #1-7: 191,942 UAT each
-         │                │  └─ Dev #8: 188,942 UAT (reduced)
-         │                └─ 3 Bootstrap Validators
-         │                   ├─ Validator-1: 1,000 UAT
-         │                   ├─ Validator-2: 1,000 UAT
-         │                   └─ Validator-3: 1,000 UAT
-         │
-         ├─────────────── CONSENSUS (aBFT)
-         │                ├─ Asynchronous Byzantine Fault Tolerance
-         │                ├─ <3 second finality
-         │                ├─ 1/3 + 1 Byzantine threshold
-         │                └─ Quadratic voting (√Stake)
-         │
-         ├─────────────── NETWORK SECURITY
-         │                ├─ Sentry Node Architecture
-         │                │  ├─ Public: DDoS shield (Port 30333+)
-         │                │  └─ Private: Validator signing (Port 30331+)
-         │                ├─ P2P Encryption (Noise Protocol)
-         │                ├─ IP Blacklisting & Rate Limiting
-         │                └─ Connection Tracking
-         │
-         ├─────────────── ANTI-WHALE MECHANISMS
-         │                ├─ Dynamic Fee Scaling (x2, x4, x8)
-         │                ├─ Burn Limits per Block (10 UAT max via PoB)
-         │                ├─ Quadratic Voting (prevents whale dominance)
-         │                └─ Spam Detection (10 tx/sec threshold)
-         │
-         ├─────────────── SMART CONTRACTS (UVM)
-         │                ├─ WASM-based execution
-         │                ├─ Permissionless deployment
-         │                ├─ Multi-language support
-         │                │  ├─ Rust
-         │                │  ├─ C++
-         │                │  ├─ Go
-         │                │  └─ AssemblyScript
-         │                ├─ Real WASM runtime (wasmer 4.3)
-         │                └─ Gas metering (5 VOI per instruction)
-         │
-         ├─────────────── ECONOMIC SECURITY
-         │                ├─ Fixed Supply (21.936M UAT)
-         │                ├─ No Inflation (zero minting post-genesis)
-         │                ├─ Transaction Fees → Validators (100%)
-         │                ├─ Validator Rewards = Gas collected
-         │                ├─ Proof-of-Burn Distribution (PoB)
-         │                │  ├─ Accept: BTC, ETH (decentralized)
-         │                │  └─ Reject: USDT, USDC, XRP (centralized)
-         │                └─ Bonding Curve (scarcity increases price)
-         │
-         └─────────────── APIS
-                          ├─ REST API (13 endpoints)
-                          │  ├─ /balance
-                          │  ├─ /send
-                          │  ├─ /burn
-                          │  ├─ /deploy-contract
-                          │  ├─ /call-contract
-                          │  └─ ...
-                          └─ gRPC (8 services)
-                             ├─ GetBalance
-                             ├─ GetAccount
-                             ├─ SendTransaction
-                             └─ ...
-```
+### Network Layer
+- **Consensus:** aBFT (Asynchronous Byzantine Fault Tolerance)
+- **Finality:** < 3 seconds
+- **Security:** Sentry node architecture + P2P encryption (Noise Protocol)
+- **Voting:** Quadratic (√Stake) - prevents whale dominance
+
+### Economic Layer
+- **Supply:** 21,936,236 UAT (fixed, no inflation)
+- **Distribution:** 93% public via Proof-of-Burn (BTC/ETH only)
+- **Fees:** Dynamic scaling (x2, x4, x8) for spam prevention
+- **Rewards:** 100% gas fees to validators
+
+### Smart Contract Layer (UVM)
+- **Runtime:** WASM-based (wasmer 4.3)
+- **Languages:** Rust, C++, Go, AssemblyScript
+- **Deployment:** Permissionless
+- **Gas:** 5 VOI per instruction
+
+### API Layer
+- **REST:** 13 endpoints (`/balance`, `/send`, `/deploy-contract`, etc.)
+- **gRPC:** 8 services for high-performance clients
+- **Rate Limiting:** 100 req/sec per IP
 
 ---
 
@@ -201,75 +153,26 @@ source node_data/validator-3/.env && cargo run -p uat-node -- --config node_data
 
 ```
 unauthority-core/
-├── genesis/                          # Genesis generator (11 wallets)
-│   ├── src/main.rs                  # Generates 8 dev + 3 bootstrap nodes
-│   ├── Cargo.toml                   # Dependencies (rand, sha3, chrono, serde_json)
-│   └── genesis_config.json          # Output: immutable state
-│
-├── crates/                          # Modular architecture
-│   ├── uat-core/                   # Ledger, accounts, supply
-│   │   ├── src/
-│   │   │   ├── lib.rs              # Core types & ledger
-│   │   │   ├── distribution.rs     # PoB distribution logic
-│   │   │   └── validator_config.rs # TOML/env config loading
-│   │   └── Cargo.toml
-│   │
-│   ├── uat-crypto/                # Post-quantum cryptography
-│   │   ├── src/lib.rs             # Keypair generation, signing
-│   │   └── Cargo.toml             # pqcrypto-dilithium
-│   │
-│   ├── uat-network/               # P2P, fee scaling, encryption
-│   │   └── Cargo.toml
-│   │
-│   ├── uat-node/                 # Main validator node
-│   │   ├── src/
-│   │   │   ├── main.rs           # Entry point, 13 REST endpoints
-│   │   │   ├── validator_rewards.rs  # Gas fee distribution
-│   │   │   ├── genesis.rs        # Genesis loading
-│   │   │   ├── oracle.rs         # Oracle consensus
-│   │   │   ├── sentry.rs         # Sentry + Validator node
-│   │   │   └── grpc_api.rs       # gRPC services (8 methods)
-│   │   └── Cargo.toml
-│   │
-│   ├── uat-consensus/            # aBFT Byzantine consensus
-│   │   └── Cargo.toml            # Asynchronous BFT impl
-│   │
-│   └── uat-vm/                   # WASM smart contracts
-│       ├── src/lib.rs            # WasmEngine with real wasmer
-│       └── Cargo.toml            # wasmer 4.3, cranelift
-│
-├── scripts/
-│   ├── setup_validators.sh        # Auto-configure 3 validators
-│   ├── verify_genesis.sh          # Verify 11-wallet structure
-│   ├── start_validator.sh         # Start individual validator
-│   └── bootstrap_genesis.sh       # One-command setup
-│
-├── node_data/                     # Validator node directories
-│   ├── validator-1/               # Bootstrap Node #1 (1,000 UAT)
-│   │   ├── blockchain/
-│   │   ├── logs/
-│   │   ├── validator.toml         # Config with unique address
-│   │   ├── private_key.hex        # Validator signing key
-│   │   ├── genesis_config.json    # Copy from genesis
-│   │   └── .env                   # Environment variables
-│   ├── validator-2/               # Bootstrap Node #2 (1,000 UAT)
-│   │   └── ...
-│   └── validator-3/               # Bootstrap Node #3 (1,000 UAT)
-│       └── ...
-│
-├── docs/                          # Documentation
-│   └── WHITEPAPER.md
-│
-├── api_docs/                      # API documentation
-│   └── API_REFERENCE.md           # REST + gRPC endpoints
-│
-├── Cargo.toml                     # Workspace manifest
-├── Cargo.lock                     # Dependency lock file
-├── README.md                      # This file
-├── LICENSE                        # MIT License
-├── GENESIS_IMPLEMENTATION_REPORT.md
-├── GENESIS_QUICK_START.md
-└── TASK_1_GENESIS_COMPLETION.md
+├── crates/                     # Rust workspace
+│   ├── uat-core/              # Blockchain core (ledger, accounts, supply)
+│   ├── uat-crypto/            # Post-quantum cryptography
+│   ├── uat-consensus/         # aBFT consensus implementation
+│   ├── uat-network/           # P2P networking + encryption
+│   ├── uat-vm/                # Smart contract engine (WASM)
+│   ├── uat-node/              # Full node (REST API + gRPC)
+│   └── uat-cli/               # Command-line interface
+├── genesis/                    # Genesis generator (11 wallets)
+├── frontend-validator/         # Validator dashboard (Electron)
+├── frontend-wallet/            # Public wallet (Electron)
+├── examples/contracts/         # Smart contract examples
+├── docs/                       # Documentation
+├── api_docs/                   # API reference
+├── scripts/                    # Deployment scripts
+├── node_data/                  # Validator data directories
+│   ├── validator-1/           # Bootstrap node #1 (1,000 UAT)
+│   ├── validator-2/           # Bootstrap node #2 (1,000 UAT)
+│   └── validator-3/           # Bootstrap node #3 (1,000 UAT)
+└── Cargo.toml                  # Workspace manifest
 ```
 
 ---

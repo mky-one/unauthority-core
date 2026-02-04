@@ -40,6 +40,7 @@ const DEV_MODE: bool = true;
 // Request body structure for sending UAT
 #[derive(serde::Deserialize, serde::Serialize)]
 struct SendRequest {
+    from: Option<String>,  // Sender address (if empty, use node's address)
     target: String,
     amount: u128,
 }
@@ -48,6 +49,7 @@ struct SendRequest {
 struct BurnRequest {
     coin_type: String, // "eth" or "btc"
     txid: String,
+    recipient_address: Option<String>, // Address to receive minted UAT (optional, defaults to sender)
 }
 
 #[derive(serde::Deserialize, serde::Serialize)]
@@ -135,16 +137,18 @@ pub async fn start_api_server(
                         if let Some(blk) = l_guard.blocks.get(&curr) {
                             history.push(serde_json::json!({
                                 "hash": curr,
-                                "type": format!("{:?}", blk.block_type),
+                                "from": if blk.block_type == BlockType::Send { blk.account.clone() } else { "SYSTEM".to_string() },
+                                "to": if blk.block_type == BlockType::Receive { blk.account.clone() } else { blk.link.clone() },
                                 "amount": (blk.amount as f64 / VOID_PER_UAT as f64),
-                                "link": blk.link
+                                "timestamp": 0, // TODO: Add real timestamp
+                                "type": format!("{:?}", blk.block_type).to_lowercase()
                             }));
                             curr = blk.previous.clone();
                         } else { break; }
                     }
                 }
             }
-            warp::reply::json(&history)
+            warp::reply::json(&serde_json::json!({"transactions": history}))
         });
 
     // 4. GET /peers
@@ -165,22 +169,36 @@ pub async fn start_api_server(
         .and(warp::body::json())
         .and(with_state((l_send, tx_send, p_send, my_address.clone(), secret_key.clone())))
         .then(|req: SendRequest, (l, tx, p, my_addr, key): (Arc<Mutex<Ledger>>, mpsc::Sender<String>, Arc<Mutex<HashMap<String, (Block, u32)>>>, String, Vec<u8>)| async move {
+            // Determine sender: use req.from if provided, otherwise node's address
+            let sender_addr = req.from.clone().unwrap_or(my_addr.clone());
+            
+            // For now, only allow sending from node's own address (security)
+            // TODO: Implement frontend signing for user wallets
+            if sender_addr != my_addr {
+                return warp::reply::json(&serde_json::json!({
+                    "status": "error",
+                    "msg": "Sending from external addresses not yet supported. Please use node's address."
+                }));
+            }
+            
             let target_addr = {
                 let l_guard = l.lock().unwrap();
                 l_guard.accounts.keys().find(|k| get_short_addr(k) == req.target || **k == req.target).cloned()
             };
             if let Some(target) = target_addr {
                 let amt = req.amount * VOID_PER_UAT;
-                let mut blk = Block { account: my_addr.clone(), previous: "0".to_string(), block_type: BlockType::Send, amount: amt, link: target, signature: "".to_string(), work: 0 };
+                let mut blk = Block { account: sender_addr.clone(), previous: "0".to_string(), block_type: BlockType::Send, amount: amt, link: target, signature: "".to_string(), work: 0 };
                 
                 let mut initial_power: u32 = 0;
                 {
                     let l_guard = l.lock().unwrap();
-                    if let Some(st) = l_guard.accounts.get(&my_addr) { 
+                    if let Some(st) = l_guard.accounts.get(&sender_addr) { 
                         blk.previous = st.head.clone(); 
                         if st.balance < amt { return warp::reply::json(&serde_json::json!({"status":"error","msg":"Insufficient balance"})); }
                         // Get initial power (sender balance)
                         initial_power = (st.balance / VOID_PER_UAT) as u32;
+                    } else {
+                        return warp::reply::json(&serde_json::json!({"status":"error","msg":"Sender account not found"}));
                     }
                 }
                 
@@ -192,7 +210,7 @@ pub async fn start_api_server(
                 p.lock().unwrap().insert(hash.clone(), (blk, initial_power));
                 
                 let ts = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis();
-                let _ = tx.send(format!("CONFIRM_REQ:{}:{}:{}:{}", hash, my_addr, amt, ts)).await;
+                let _ = tx.send(format!("CONFIRM_REQ:{}:{}:{}:{}", hash, sender_addr, amt, ts)).await;
                 warp::reply::json(&serde_json::json!({"status":"success","tx_hash":hash, "initial_power": initial_power}))
             } else {
                 warp::reply::json(&serde_json::json!({"status":"error","msg":"Address not found"}))
@@ -259,13 +277,16 @@ pub async fn start_api_server(
                     let usd_val = amt * prc;
                     let uat_to_mint = ((usd_val / 0.01) * VOID_PER_UAT as f64) as u128;
                     
+                    // Get recipient address from request, fallback to sender if not provided
+                    let recipient = req.recipient_address.as_ref().unwrap_or(&my_addr).clone();
+                    
                     let mut l_guard = l.lock().unwrap();
-                    let state = l_guard.accounts.get(&my_addr).cloned().unwrap_or(AccountState { 
+                    let state = l_guard.accounts.get(&recipient).cloned().unwrap_or(AccountState { 
                         head: "0".to_string(), balance: 0, block_count: 0 
                     });
 
                     let mint_blk = Block {
-                        account: my_addr.clone(),
+                        account: recipient.clone(),
                         previous: state.head.clone(),
                         block_type: BlockType::Mint,
                         amount: uat_to_mint,
@@ -277,7 +298,7 @@ pub async fn start_api_server(
                     let hash = mint_blk.calculate_hash();
                     l_guard.blocks.insert(hash.clone(), mint_blk);
                     
-                    let acc = l_guard.accounts.entry(my_addr.clone()).or_insert(AccountState {
+                    let acc = l_guard.accounts.entry(recipient.clone()).or_insert(AccountState {
                         head: "0".to_string(),
                         balance: 0,
                         block_count: 0,
@@ -286,13 +307,14 @@ pub async fn start_api_server(
                     acc.block_count += 1;
                     acc.head = hash;
                     
-                    println!("🧪 DEV MODE: Instant mint {} {} → {} UAT", amt, sym, uat_to_mint / VOID_PER_UAT);
+                    println!("🧪 DEV MODE: Instant mint {} {} → {} UAT to {}", amt, sym, uat_to_mint / VOID_PER_UAT, recipient);
                     
                     return warp::reply::json(&serde_json::json!({
                         "status":"success",
                         "msg":"Burn finalized instantly (DEV MODE)",
                         "uat_minted": uat_to_mint / VOID_PER_UAT,
-                        "usd_value": usd_val
+                        "usd_value": usd_val,
+                        "recipient": recipient
                     }));
                 }
                 
@@ -470,23 +492,64 @@ pub async fn start_api_server(
             }))
         });
 
-    // 12. GET /validators (List active validators)
+    // 12. GET /validators (List active validators - DEV_MODE aggregates from all nodes)
     let l_validators = ledger.clone();
     let validators_route = warp::path("validators")
         .and(with_state(l_validators))
-        .map(|l: Arc<Mutex<Ledger>>| {
-            let l_guard = l.lock().unwrap();
-            let validators: Vec<serde_json::Value> = l_guard.accounts.iter()
-                .filter(|(_, acc)| acc.balance >= 1000 * VOID_PER_UAT)
-                .map(|(addr, acc)| serde_json::json!({
-                    "address": addr,
-                    "stake": acc.balance / VOID_PER_UAT,
-                    "active": true
-                }))
-                .collect();
-            warp::reply::json(&serde_json::json!({
-                "validators": validators
-            }))
+        .and_then(|l: Arc<Mutex<Ledger>>| async move {
+            // Get local validators (collect quickly then drop lock)
+            let local_validators: Vec<serde_json::Value> = {
+                let l_guard = l.lock().unwrap();
+                l_guard.accounts.iter()
+                    .filter(|(_, acc)| acc.balance >= 1000 * VOID_PER_UAT)
+                    .map(|(addr, acc)| serde_json::json!({
+                        "address": addr,
+                        "stake": acc.balance / VOID_PER_UAT,
+                        "is_active": true,
+                        "active": true,
+                        "uptime_percentage": 99.9
+                    }))
+                    .collect()
+            }; // Lock dropped here
+            
+            // DEV_MODE: Aggregate from all 3 bootstrap nodes
+            let mut all_validators = local_validators.clone();
+            
+            if DEV_MODE {
+                let client = reqwest::Client::new();
+                let bootstrap_ports = vec![3031, 3032]; // Skip self to avoid circular call
+                
+                for port in bootstrap_ports {
+                    match client.get(format!("http://localhost:{}/validators", port))
+                        .timeout(std::time::Duration::from_millis(500))
+                        .send()
+                        .await {
+                        Ok(resp) => {
+                            match resp.json::<serde_json::Value>().await {
+                                Ok(data) => {
+                                    if let Some(vals) = data["validators"].as_array() {
+                                        for v in vals {
+                                            // Deduplicate by address
+                                            if let Some(addr) = v["address"].as_str() {
+                                                if !all_validators.iter().any(|existing| 
+                                                    existing["address"].as_str() == Some(addr)) {
+                                                    all_validators.push(v.clone());
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                                Err(e) => eprintln!("Failed to parse response from port {}: {}", port, e),
+                            }
+                        }
+                        Err(e) => eprintln!("Failed to connect to port {}: {}", port, e),
+                    }
+                }
+            }
+            
+            Ok::<_, warp::Rejection>(warp::reply::json(&serde_json::json!({
+                "validators": all_validators
+            })))
         });
 
     // 13. GET /balance/:address (Check balance - alias for CLI compatibility)
@@ -499,6 +562,7 @@ pub async fn start_api_server(
             let bal = l_guard.accounts.get(&full_addr).map(|a| a.balance).unwrap_or(0);
             warp::reply::json(&serde_json::json!({ 
                 "address": full_addr, 
+                "balance": bal / VOID_PER_UAT,  // Changed from balance_uat
                 "balance_uat": bal / VOID_PER_UAT,
                 "balance_voi": bal 
             }))
@@ -593,6 +657,39 @@ pub async fn start_api_server(
             }))
         });
 
+    // 16. GET /blocks/recent (Recent blocks for validator dashboard)
+    let l_blocks = ledger.clone();
+    let blocks_recent_route = warp::path!("blocks" / "recent")
+        .and(with_state(l_blocks))
+        .map(|l: Arc<Mutex<Ledger>>| {
+            let l_guard = l.lock().unwrap();
+            let blocks: Vec<serde_json::Value> = l_guard.blocks.iter()
+                .take(10) // Last 10 blocks
+                .map(|(hash, b)| serde_json::json!({
+                    "hash": hash,
+                    "height": l_guard.blocks.len(), // Simplified
+                    "timestamp": 0, // TODO: Add timestamp to Block struct
+                    "transactions_count": 1,
+                    "account": b.account,
+                    "amount": b.amount / VOID_PER_UAT
+                }))
+                .collect();
+            warp::reply::json(&serde_json::json!({
+                "blocks": blocks
+            }))
+        });
+    
+    // 17. GET /whoami (Get node's internal signing address)
+    let whoami_route = warp::path("whoami")
+        .and(with_state(my_address.clone()))
+        .map(|addr: String| {
+            warp::reply::json(&serde_json::json!({
+                "address": addr,
+                "short": get_short_addr(&addr),
+                "format": "hex-encoded"
+            }))
+        });
+
     // CORS configuration - Allow all origins for local development
     let cors = warp::cors()
         .allow_any_origin()
@@ -615,6 +712,8 @@ pub async fn start_api_server(
         .or(balance_alias_route)  // NEW: Balance alias for CLI
         .or(block_route)          // NEW: Latest block endpoint
         .or(faucet_route)         // NEW: Faucet endpoint (DEV_MODE only)
+        .or(blocks_recent_route)  // NEW: Recent blocks endpoint
+        .or(whoami_route)         // NEW: Node's signing address endpoint
         .with(cors)               // Apply CORS
         .with(warp::log("api"))
         .recover(handle_rejection);
@@ -947,10 +1046,28 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // --- NEW: INITIALIZE DATABASE ---
     println!("🗄️  Initializing database...");
-    let database = match UatDatabase::open_default() {
+    // AUTO-DETECT NODE ID from port or environment variable
+    let node_id = std::env::var("UAT_NODE_ID").unwrap_or_else(|_| {
+        match api_port {
+            3030 => "validator-1".to_string(),
+            3031 => "validator-2".to_string(),
+            3032 => "validator-3".to_string(),
+            _ => format!("node-{}", api_port),
+        }
+    });
+    
+    println!("🆔 Node ID: {}", node_id);
+    println!("📂 Data directory: node_data/{}/", node_id);
+    
+    // Create node-specific database path (CRITICAL: Multi-node isolation)
+    let db_path = format!("node_data/{}/uat_database", node_id);
+    std::fs::create_dir_all(&format!("node_data/{}", node_id))?;
+    
+    let database = match UatDatabase::open(&db_path) {
         Ok(db) => {
             let stats = db.stats();
-            println!("✅ Database ready: {} blocks, {} accounts, {:.2} MB on disk",
+            println!("✅ Database opened: {}", db_path);
+            println!("   {} blocks, {} accounts, {:.2} MB on disk",
                 stats.blocks_count,
                 stats.accounts_count,
                 stats.size_on_disk as f64 / 1_048_576.0
@@ -958,7 +1075,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             Arc::new(db)
         },
         Err(e) => {
-            eprintln!("❌ Failed to open database: {}", e);
+            eprintln!("❌ Failed to open database at {}: {}", db_path, e);
             eprintln!("⚠️  Falling back to JSON mode (not recommended for production)");
             return Err(e.into());
         }
@@ -977,11 +1094,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     };
 
-    let keys: uat_crypto::KeyPair = if let Ok(data) = fs::read_to_string(WALLET_FILE) {
+    // Use node-specific wallet file path
+    let wallet_path = format!("node_data/{}/wallet.json", &node_id);
+    let keys: uat_crypto::KeyPair = if let Ok(data) = fs::read_to_string(&wallet_path) {
         serde_json::from_str(&data)?
     } else {
         let new_k = uat_crypto::generate_keypair();
-        fs::write(WALLET_FILE, serde_json::to_string(&new_k)?)?;
+        fs::create_dir_all(format!("node_data/{}", &node_id))?;
+        fs::write(&wallet_path, serde_json::to_string(&new_k)?)?;
+        println!("🔑 Generated new keypair for {}", node_id);
         new_k
     };
 
@@ -1003,8 +1124,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     {
         let mut l = ledger.lock().unwrap();
         if !l.accounts.contains_key(&my_address) {
-            l.accounts.insert(my_address.clone(), AccountState { head: "0".to_string(), balance: 0, block_count: 0 });
+            // DEV_MODE: Give each new node 1000 UAT initial balance for testing
+            let initial_balance = if DEV_MODE { 1000 * VOID_PER_UAT } else { 0 };
+            l.accounts.insert(my_address.clone(), AccountState { 
+                head: "0".to_string(), 
+                balance: initial_balance, 
+                block_count: 0 
+            });
             save_to_disk(&l, &database);
+            if DEV_MODE && initial_balance > 0 {
+                println!("🎁 DEV_MODE: Node initialized with 1000 UAT balance");
+            }
         }
     }
 
@@ -1045,7 +1175,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let grpc_ledger = Arc::clone(&ledger);
     let grpc_tx = tx_out.clone();
     let grpc_addr = my_address.clone();
-    let grpc_port = 50051; // Default gRPC port
+    let grpc_port = api_port + 20000; // Dynamic gRPC port (REST+20000)
 
     tokio::spawn(async move {
         println!("🔧 Starting gRPC server on port {}...", grpc_port);

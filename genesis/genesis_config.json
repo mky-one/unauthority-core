@@ -2,72 +2,89 @@
   "network_id": 1,
   "chain_name": "Unauthority",
   "ticker": "UAT",
-  "genesis_timestamp": 1770134981,
-  
-  "constants": {
-    "total_supply_void": 2193623600000000,
-    "dev_supply_void": 153553600000000,
-    "public_supply_void": 2040070000000000,
-    "void_per_uat": 100000000
-  },
-  
+  "genesis_timestamp": 1770228087,
+  "total_supply_void": 153553600000000,
+  "dev_supply_void": 153553600000000,
   "bootstrap_nodes": [
     {
-      "address": "UATf23318abac8236f256ee3ac0b959779ea7613632",
+      "address": "UAT9e6ed5183acbb802aba83e31420c6dc96d976405",
       "stake_void": 100000000000,
-      "private_key": "cfb280abb0352b8214f218c2109278121fece7a94bf5aa0a1a67dde41fc344cede320452392a6ee402c61155a63ec7a787f27efc794ee0086c798d6761dd7bc2"
+      "seed_phrase": "shield letter tuna dice father duck damp debris bring twice salon risk beyond lady panther hood predict agent tip quantum verb school power humble",
+      "private_key": "421112a7d7592c450adce58e8450f069c9f5592599e0772a953ee423007d7208da0706145497daba260276cce8e7e7104cd7a90a1bc19e25066821a6008bf3d2",
+      "public_key": "9dea64818e5bd2d58f5c41c768e9d1abe68423ccaae6873aa33f177a531aa083"
     },
     {
-      "address": "UAT915836b2537c513e2187cb0dcae9476fc0cf51f0",
+      "address": "UAT3f8ff6ffc3e9161964b5ff4cf288b87e99c456fe",
       "stake_void": 100000000000,
-      "private_key": "650ab15559dfee4c47c847fb6bc9596c31ca0c2ca17cb4503ecfbd15b78da1abd4cdef376ade0092f96ff45fea525e61f176ee84077cf12f5c741de1745b21f0"
+      "seed_phrase": "penalty around link tip cactus high moon actual universe input across purse funny fine thank explain piece library eternal blind like excuse emotion foil",
+      "private_key": "9daf3e3c5e77c570e26baaedb7587c14428c1c94b6b598e0bb8f4d2ec688ceb2d6f0f0971e210a8edfd41956fca47faf6fa70910b42651dedd08134fb3e0dc05",
+      "public_key": "7624d01a7decdbe445d96951a8fc21f7fbb913eb25c10b69c1d4f8b60f701215"
     },
     {
-      "address": "UAT632052bc2c89c82e0bc067f0de2b0cec9ef1ea84",
+      "address": "UAT5ceec6abc34d36c0671282ad7cc2ce6632fabe97",
       "stake_void": 100000000000,
-      "private_key": "d29638e73e011f9f6189b97d92f3995faeb042a5dd1deb4b19b7d7a0113c718367d447794feacddb433f7e587ec09688b4fe035d2fe3623835b30498d1dcd42f"
+      "seed_phrase": "siege apple unlock mystery museum sunny train chimney expect domain capital spring they arm brave hub online visual cube glare slight mixture mass jungle",
+      "private_key": "8f8feefa53d61fa3ed3ebfa2f7223792afff7e35e0da3c20aedbc58d252794313313beb4448c6d89ce235533f082f31862389804577a6717b5d3620733056137",
+      "public_key": "c6f27212edd6c7af9fe773ae46f0a31c5635aefa4ae76f1c989f8a820796cf39"
     }
   ],
-  
   "dev_accounts": [
     {
-      "address": "UAT8865122df28510cc9c5a9d2bf748e3728643e369",
-      "balance_void": 19194200000000
+      "address": "UAT0d15ab29bb71ff7d37b298fb65db95773a5ee8fd",
+      "balance_void": 19194200000000,
+      "seed_phrase": "fine dove kid need prevent express theory river gift empty life palm clinic reject word mountain brief face purse junior swarm blouse vast leave",
+      "private_key": "2e3ee15b3d97a92723612318f72e9ca79e3bf38cdb310314ff3bda5cc308c0e8701072498acf0d929f2f52c2b85cafc7dfbde4f366fe9d15690392c72e96100d",
+      "public_key": "b468de667c8604cd4e0590494766f4550a0fe8366d45b29c6567c66672bcd2fb"
     },
     {
-      "address": "UAT400a61e606fcdeb4b225bb0f77ea849d00644011",
-      "balance_void": 19194200000000
+      "address": "UAT387d447f008fae00f012877b8ffbb49e0aadddd7",
+      "balance_void": 19194200000000,
+      "seed_phrase": "climb island rabbit borrow luggage sunny prepare they grant sister garden elder open current fancy onion rose sort hard sure palm ribbon beef process",
+      "private_key": "a8dce71526aca441d141e777a3dca2368e4cc23d1a12fc9f328f6daa47aa6f89b226ed15fecbfc45409e651d1f167ecb4f0a0e71acc1671bc01ca1a554dd17c1",
+      "public_key": "7a5ba5f8cf2f5d8ccf1bd747b207907000f54d10ff69dd401ac190092dead902"
     },
     {
-      "address": "UAT9173b2c6a9171caaf21e4ffa572f7a82d964f173",
-      "balance_void": 19194200000000
+      "address": "UAT6c3e75604beac45a398fc0740048d0f63b7f32f4",
+      "balance_void": 19194200000000,
+      "seed_phrase": "borrow source doctor behave this merge cry fatigue patch volcano feel balcony card save merry fall visit run spike egg ribbon vapor bargain bus",
+      "private_key": "cba2a4009676ccf8f579779518fc5513551c1012e932ab350954a14a0b3d429b1089827a48c780f86a0c017f246f60b56fea0982800a60eadee2ea8499e41975",
+      "public_key": "2981dc3ca4b75992db54dcf6c1ff76c0277689f5eac564bdcebb433d3af5deaa"
     },
     {
-      "address": "UAT95c1c03aaa25d1b93d6f31e8c5429536fed0870b",
-      "balance_void": 19194200000000
+      "address": "UAT0d746cac55d2dcda857ae12fcc488f39be3b8fd7",
+      "balance_void": 19194200000000,
+      "seed_phrase": "taxi pelican brother base ill liar tonight piece apart climb frog holiday account waste hidden notable badge sad slide kit brass tunnel mechanic humble",
+      "private_key": "ed88112a3112ae163b3242ca2944edb722cd3ab65ebbeef0867d208c9655bf21b36b54bf04c943f5a4c74cea14d897e15365e467971d0c5651cd48718a8c6821",
+      "public_key": "2dac82335c82b12384b677edf633ec6c080970e120eddef95c6734e0b8f655af"
     },
     {
-      "address": "UAT028da3a7cac902c345dc6d1075ac6db71508c271",
-      "balance_void": 19194200000000
+      "address": "UAT7ef6dac48d229bb79fdaa709a8767aeeb5ff210f",
+      "balance_void": 19194200000000,
+      "seed_phrase": "glory feel secret analyst surge ecology mobile diesel luxury picnic stock seminar method nominee pause farm protect garment invest glimpse exchange tell raw boost",
+      "private_key": "67e5eae985ea8e5b9ad77645dbfaf2b896dd04b2953479d13490461fb6f5df08e3bca9d7f8862af8331dd1041c1ade37ecb1c547b76c29869a9513482eaf8a2c",
+      "public_key": "deed28a5ca3660d85464880dd4f5ad6bba3c06c2de920c0808ea0a4843c5f56a"
     },
     {
-      "address": "UAT991b5b1024fa4099a7fcb1b30f785d635b1e13f2",
-      "balance_void": 19194200000000
+      "address": "UATb7a65d8b9c17d93f6ba8c78cd03303748c13114d",
+      "balance_void": 19194200000000,
+      "seed_phrase": "author sibling fragile wine crisp spend already cruel concert reward alone neck because burger genius achieve clay clog elephant coral label agree federal pass",
+      "private_key": "3e05b744156d167634c951feb9a9b6da598610e6ad64efc1898611ab2062a866fc7cc20e8294a0ae552c9a5fc5f3f822b1a0f4911cbd097aaf6c2371ebfff6f4",
+      "public_key": "c6a43e182959c2b403395cc0abc3c62cb19c25dcdcc545d283e09035db114ae0"
     },
     {
-      "address": "UAT54a8b8a9608c51cf1c1ba9d712d0eb0238fd71e6",
-      "balance_void": 19194200000000
+      "address": "UATf3a58b99cbc300ac95e7bbc124113d845cafc4a8",
+      "balance_void": 19194200000000,
+      "seed_phrase": "skull spare bullet decade hawk ranch animal budget warrior much enter army fashion use atom travel purity lamp oak act early material section crouch",
+      "private_key": "fe5409deccdd5fc2da1783c32f0d398dd063579e905cecbf8d9b85689913d5ecf04eccd8c3aabda56f4abbc6dad5e47c7490f0bbb265d1517333abd99bd6d1da",
+      "public_key": "1a777077e76781c344e94cd55a816a2632dd32a87cf5488e511898bb41d6d850"
     },
     {
-      "address": "UAT399641dcd96b2b3de9eb527dedd238ac5f9012f1",
-      "balance_void": 18894200000000
+      "address": "UAT87bceff9f5b03d59f3ba27567173867e435afa3b",
+      "balance_void": 18894200000000,
+      "seed_phrase": "canyon desert kid claw delay vapor lady emerge accident credit flip diagram method radar must issue icon echo window inflict wrestle brisk force ripple",
+      "private_key": "ab08480f6b92d9d2fba4a823ea214942873e1d7f06f5d7dccefc04042278440b95a7db6e9f4eaea9d904fea9626b2c82b20aa04b87fee796f486fd3308e4b2f0",
+      "public_key": "4529f66dfc427a09c40c38e1343d41058080d4985b110cbe20b8bf64e50d279e"
     }
   ],
-  
-  "consensus": {
-    "type": "aBFT",
-    "min_validators": 3,
-    "block_time_ms": 3000,
-    "finality_threshold": 0.67
-  }
+  "security_notice": "⚠️ CRITICAL: This file contains private keys! Store in encrypted cold storage. NEVER commit to public repository!"
 }

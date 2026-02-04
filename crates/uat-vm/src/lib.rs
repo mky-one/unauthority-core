@@ -4,6 +4,9 @@ use std::sync::{Arc, Mutex};
 use wasmer::{Store, Module, Instance, Value, imports};
 use wasmer_compiler_cranelift::Cranelift;
 
+// Oracle module for exchange price feeds
+pub mod oracle_connector;
+
 /// Unauthority Virtual Machine (UVM)
 /// Executes WebAssembly smart contracts with permissionless deployment
 

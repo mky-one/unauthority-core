@@ -1,0 +1,1 @@
+scripts/install_validator.sh

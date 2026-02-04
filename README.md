@@ -1,77 +1,72 @@
-# Unauthority (UAT) - The Sovereign Machine
+# 🔗 Unauthority (UAT) - The Sovereign Machine
 
-> 100% Immutable, Permissionless, and Decentralized Blockchain  
-> Zero Admin Keys • Fixed Supply • Asynchronous Byzantine Fault Tolerance
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![Rust](https://img.shields.io/badge/Rust-1.75+-orange.svg)](https://www.rust-lang.org/)
+[![Tests](https://img.shields.io/badge/Tests-Passing-brightgreen.svg)]()
 
-[![Build Status](https://img.shields.io/badge/build-passing-brightgreen)]()
-[![Consensus](https://img.shields.io/badge/consensus-aBFT-blue)]()
-[![Supply](https://img.shields.io/badge/supply-21.936M%20UAT-orange)]()
-[![License](https://img.shields.io/badge/license-MIT-green)]()
+**A truly decentralized, permissionless blockchain with zero admin keys, instant finality, and post-quantum security.**
 
 ---
 
-## ⚠️ MAJOR UPDATE: USD Migration (Feb 4, 2026)
+## 🎯 Key Features
 
-**Reason:** Identity preservation & economic viability  
-**Status:** ✅ COMPLETE
-
-All IDR (Indonesian Rupiah) references have been replaced with USD (US Dollar) to:
-1. **Preserve Anonymity**: Remove geographic fingerprints (Bitcoin-style anonymous launch)
-2. **Improve Economics**: 1 UAT = $0.01 (155x more expensive to attack than Rp1 = $0.000065)
-3. **Global Appeal**: USD = universal standard vs regional currency
-
-**Breaking Changes:**
-- REST API: `total_burned_idr` → `total_burned_usd`
-- gRPC: `eth_price_idr` → `eth_price_usd`, `btc_price_idr` → `btc_price_usd`
-- Oracle: Indodax (Indonesian exchange) removed, Kraken (global) added
-
-**Details:** See [USD_MIGRATION.md](USD_MIGRATION.md)
+- **100% Immutable** - No admin keys, no pause function, no upgradability
+- **< 3 Second Finality** - Asynchronous Byzantine Fault Tolerance (aBFT)
+- **Post-Quantum Ready** - CRYSTALS-Dilithium signature support
+- **Fixed Supply** - 21,936,236 UAT (no inflation, ever)
+- **Proof-of-Burn Distribution** - 93% public allocation via BTC/ETH burning
+- **Smart Contracts** - WASM-based Unauthority Virtual Machine (UVM)
+- **Anti-Whale Economics** - Quadratic voting + dynamic fee scaling
 
 ---
 
-## 🎉 NEW: Public Wallet (Feb 4, 2026)
+## 📊 Quick Stats
 
-**✅ COMPLETE** - Full-featured Electron Desktop App for burning BTC/ETH to mint UAT!
-
-### Features
-- 🔑 Create/import HD wallet (12-word seed phrase)
-- 🔥 Burn BTC/ETH with QR codes
-- 💸 Send/receive UAT (<3 sec finality)
-- 📊 Real-time balance & oracle prices
-- 📜 Transaction history
-- 🔒 100% local, 100% private (no server)
-
-### Quick Start
-```bash
-cd frontend-wallet
-npm install
-npm run dev
-# Opens at http://localhost:5173
-```
-
-**Full Documentation:** [frontend-wallet/README.md](frontend-wallet/README.md)  
-**Setup Guide:** [WALLET_COMPLETE.md](WALLET_COMPLETE.md)
+| Metric | Value |
+|--------|-------|
+| **Total Supply** | 21,936,236 UAT (fixed) |
+| **Dev Allocation** | 7% (1,535,536 UAT) |
+| **Public Distribution** | 93% (20,400,700 UAT via PoB) |
+| **Consensus** | aBFT with slashing |
+| **Block Time** | ~1 second |
+| **Finality** | < 3 seconds |
+| **Min Validator Stake** | 1,000 UAT |
 
 ---
 
 ## 🚀 Quick Start
 
-### 1. Generate Genesis (11 Wallets)
-```bash
-cargo run -p genesis
-```
-**Output:** 8 Dev Wallets + 3 Bootstrap Validator Nodes with private keys
+### For Users (Public Wallet)
 
-### 2. Setup Validators
 ```bash
-bash scripts/setup_validators.sh
-```
-**Creates:** validator-{1,2,3}/ directories with unique configs
+# Download desktop app from GitHub Releases
+# macOS: Unauthority-Wallet.dmg
+# Windows: Unauthority-Wallet-Setup.exe
+# Linux: Unauthority-Wallet.AppImage
 
-### 3. Start Network
+# Or run from source:
+cd frontend-wallet
+npm install
+npm run dev
+```
+
+### For Validators
+
 ```bash
-# Terminal 1
-source node_data/validator-1/.env && cargo run -p uat-node -- --config node_data/validator-1/validator.toml
+# 1. Build backend
+cargo build --release --bin uat-node
+
+# 2. Generate genesis (bootstrap nodes only)
+cd genesis && cargo run --release
+
+# 3. Start validator
+./start.sh
+
+# 4. Open dashboard
+cd frontend-validator
+npm install && npm run dev
+# Visit: http://localhost:5173
+```
 
 # Terminal 2
 source node_data/validator-2/.env && cargo run -p uat-node -- --config node_data/validator-2/validator.toml

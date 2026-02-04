@@ -1,5 +1,5 @@
 🗄️  Initializing database...
-✅ Database ready: 0 blocks, 1 accounts, 0.50 MB on disk
+✅ Database ready: 0 blocks, 0 accounts, 0.00 MB on disk
 📊 Initializing Prometheus metrics...
 ✅ Metrics ready: 45+ endpoints registered
 🆕 Creating new ledger
@@ -22,28 +22,36 @@
    dial <addr>           - Manual connection
    exit                  - Exit application
 ------------------------------------------------------------------
-🔧 Starting gRPC server on port 50051...
+🔧 Starting gRPC server on port 23030...
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 🚀 gRPC Server STARTED
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-   Address: 0.0.0.0:50051
+   Address: 0.0.0.0:23030
    Node: uat_407756b8
    Services: 8 core gRPC endpoints
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 🌍 API Server running at http://localhost:3030 (Rate Limit: 100 req/sec per IP)
-📍 Node mendengarkan di: /ip4/127.0.0.1/tcp/65174
-📍 Node mendengarkan di: /ip4/192.168.1.8/tcp/65174
-🤝 Connected to: PeerId("12D3KooWPMQvd9YtJhLYKHn5T6R1DqxptDMBbYDWntECcFtycgrX")
-🤝 Connected to: PeerId("12D3KooWPMQvd9YtJhLYKHn5T6R1DqxptDMBbYDWntECcFtycgrX")
-🤝 Connected to: PeerId("12D3KooWQRk9EpgH3VXwAiKx9d6ybRCaaJxHjkzHg2m9tzkUmTJq")
+📍 Node mendengarkan di: /ip4/127.0.0.1/tcp/55221
+📍 Node mendengarkan di: /ip4/192.168.1.8/tcp/55221
+🤝 Connected to: PeerId("12D3KooW9vF19mRgGvyqN25ogWZ3bHBXZVk9pnMSfPmqQ7aKcsLb")
+🤝 Connected to: PeerId("12D3KooW9vF19mRgGvyqN25ogWZ3bHBXZVk9pnMSfPmqQ7aKcsLb")
+🤝 Connected to: PeerId("12D3KooWP2k2rDxs9ArW7KJcEF5neqPfQixkGcfcHJzSjDHDtx1o")
+🤝 Connected to: PeerId("12D3KooWP2k2rDxs9ArW7KJcEF5neqPfQixkGcfcHJzSjDHDtx1o")
 ⚠️  Insufficient oracle submissions: 0 (need ≥2)
 ⚠️ Consensus not yet available, using single-node oracle
-📊 Oracle Consensus (2 APIs): ETH $2., BTC $75
-🧪 DEV MODE: Accepting BTC TXID 459ccd6fe488b0f8 with mock amount 0.01 BTC
-🧪 DEV MODE: Instant mint 0.01 BTC → 75642 UAT
-📊 Oracle Consensus (2 APIs): ETH $2., BTC $75
-📊 Broadcasting oracle prices: ETH=$2232.57, BTC=$75680.76
-📊 Oracle Consensus (2 APIs): ETH $2., BTC $75
-📊 Broadcasting oracle prices: ETH=$2232.24, BTC=$75692.93
-📊 Oracle Consensus (2 APIs): ETH $2., BTC $75
-📊 Broadcasting oracle prices: ETH=$2232.39, BTC=$75709.78
+📊 Oracle Consensus (2 APIs): ETH $2., BTC $76
+⚠️  Insufficient oracle submissions: 0 (need ≥2)
+⚠️ Consensus not yet available, using single-node oracle
+📊 Oracle Consensus (2 APIs): ETH $2., BTC $76
+🧪 DEV MODE: Accepting BTC TXID a1b2c3d4e5f67890 with mock amount 0.01 BTC
+🧪 DEV MODE: Instant mint 0.01 BTC → 76101 UAT to UATUserWallet123TestAddress
+⚠️  Insufficient oracle submissions: 0 (need ≥2)
+⚠️ Consensus not yet available, using single-node oracle
+📊 Oracle Consensus (2 APIs): ETH $2., BTC $76
+⚠️  Insufficient oracle submissions: 0 (need ≥2)
+⚠️ Consensus not yet available, using single-node oracle
+📊 Oracle Consensus (2 APIs): ETH $2., BTC $76
+🧪 DEV MODE: Accepting BTC TXID deadbeef01234567 with mock amount 0.01 BTC
+🧪 DEV MODE: Instant mint 0.01 BTC → 76123 UAT to UATTest_User_Wallet_1770165608
+🤝 Connected to: PeerId("12D3KooW9vF19mRgGvyqN25ogWZ3bHBXZVk9pnMSfPmqQ7aKcsLb")
+🤝 Connected to: PeerId("12D3KooWP2k2rDxs9ArW7KJcEF5neqPfQixkGcfcHJzSjDHDtx1o")

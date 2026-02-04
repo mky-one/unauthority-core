@@ -1,0 +1,1 @@
+scripts/launch_3_validators.sh

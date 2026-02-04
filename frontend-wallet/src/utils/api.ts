@@ -6,6 +6,13 @@
 import axios from 'axios';
 
 const API_BASE = 'http://localhost:3030';
+const API_TIMEOUT = 3000; // 3 seconds
+
+// Create axios instance with timeout
+const api = axios.create({
+  baseURL: API_BASE,
+  timeout: API_TIMEOUT,
+});
 
 export interface Balance {
   balance: number;
@@ -24,6 +31,7 @@ export interface NodeInfo {
 export interface BurnRequest {
   coin_type: 'btc' | 'eth';
   txid: string;
+  recipient_address?: string; // Optional: address to receive minted UAT
 }
 
 export interface BurnResponse {
@@ -54,7 +62,7 @@ export interface Transaction {
  */
 export async function getBalance(address: string): Promise<number> {
   try {
-    const response = await axios.get(`${API_BASE}/balance/${address}`);
+    const response = await api.get(`/balance/${address}`);
     return response.data.balance || 0;
   } catch (error) {
     console.error('Failed to fetch balance:', error);
@@ -67,7 +75,7 @@ export async function getBalance(address: string): Promise<number> {
  */
 export async function getNodeInfo(): Promise<NodeInfo | null> {
   try {
-    const response = await axios.get(`${API_BASE}/node-info`);
+    const response = await api.get('/node-info');
     return response.data;
   } catch (error) {
     console.error('Failed to fetch node info:', error);
@@ -107,7 +115,7 @@ export async function sendTransaction(request: SendRequest): Promise<any> {
  */
 export async function getHistory(address: string): Promise<Transaction[]> {
   try {
-    const response = await axios.get(`${API_BASE}/history/${address}`);
+    const response = await api.get(`/account/${address}`);
     return response.data.transactions || [];
   } catch (error) {
     console.error('Failed to fetch history:', error);

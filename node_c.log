@@ -1,5 +1,5 @@
 🗄️  Initializing database...
-✅ Database ready: 0 blocks, 1 accounts, 0.50 MB on disk
+✅ Database ready: 0 blocks, 0 accounts, 0.00 MB on disk
 📊 Initializing Prometheus metrics...
 ✅ Metrics ready: 45+ endpoints registered
 🆕 Creating new ledger
@@ -8,6 +8,7 @@
                  UNAUTHORITY (UAT) ORACLE NODE                   
 ==================================================================
 🆔 MY ID        : uat_46b42164
+🌍 API Server running at http://localhost:3032 (Rate Limit: 100 req/sec per IP)
 📡 REST API     : http://0.0.0.0:3032
 🔌 gRPC API     : 0.0.0.0:50051 (8 services)
 ------------------------------------------------------------------
@@ -22,28 +23,18 @@
    dial <addr>           - Manual connection
    exit                  - Exit application
 ------------------------------------------------------------------
-🔧 Starting gRPC server on port 50051...
+🔧 Starting gRPC server on port 23032...
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 🚀 gRPC Server STARTED
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-   Address: 0.0.0.0:50051
+   Address: 0.0.0.0:23032
    Node: uat_21644fa2
    Services: 8 core gRPC endpoints
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-🌍 API Server running at http://localhost:3032 (Rate Limit: 100 req/sec per IP)
-❌ gRPC Server error: transport error
-📍 Node mendengarkan di: /ip4/127.0.0.1/tcp/65191
-📍 Node mendengarkan di: /ip4/192.168.1.8/tcp/65191
-🤝 Connected to: PeerId("12D3KooWPMQvd9YtJhLYKHn5T6R1DqxptDMBbYDWntECcFtycgrX")
-🤝 Connected to: PeerId("12D3KooWSpS1GMxmzAdSWXnJBM2kSvmDyncJwbbYLo3LvPi9vu1S")
-🤝 Connected to: PeerId("12D3KooWPMQvd9YtJhLYKHn5T6R1DqxptDMBbYDWntECcFtycgrX")
-🤝 Connected to: PeerId("12D3KooWSpS1GMxmzAdSWXnJBM2kSvmDyncJwbbYLo3LvPi9vu1S")
-📊 Oracle submission from 55a3407756b8: ETH=$2232.57, BTC=$75680.76
-⚠️  Insufficient oracle submissions: 1 (need ≥2)
-📊 Oracle submission dari uat_55a34077 (butuh 1 validator lagi)
-📊 Oracle submission from 55a3407756b8: ETH=$2232.24, BTC=$75692.93
-⚠️  Insufficient oracle submissions: 1 (need ≥2)
-📊 Oracle submission dari uat_55a34077 (butuh 1 validator lagi)
-📊 Oracle submission from 55a3407756b8: ETH=$2232.39, BTC=$75709.78
-⚠️  Insufficient oracle submissions: 1 (need ≥2)
-📊 Oracle submission dari uat_55a34077 (butuh 1 validator lagi)
+📍 Node mendengarkan di: /ip4/127.0.0.1/tcp/55241
+📍 Node mendengarkan di: /ip4/192.168.1.8/tcp/55241
+🤝 Connected to: PeerId("12D3KooWSoHCEmRQaf6sFwd5HQzPQARVfHN4h8ELeEfeaVCtzte5")
+🤝 Connected to: PeerId("12D3KooW9vF19mRgGvyqN25ogWZ3bHBXZVk9pnMSfPmqQ7aKcsLb")
+🤝 Connected to: PeerId("12D3KooWSoHCEmRQaf6sFwd5HQzPQARVfHN4h8ELeEfeaVCtzte5")
+🤝 Connected to: PeerId("12D3KooW9vF19mRgGvyqN25ogWZ3bHBXZVk9pnMSfPmqQ7aKcsLb")
+🤝 Connected to: PeerId("12D3KooWSoHCEmRQaf6sFwd5HQzPQARVfHN4h8ELeEfeaVCtzte5")

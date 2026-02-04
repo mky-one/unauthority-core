@@ -3,7 +3,14 @@
   "type": "module",
   "version": "0.1.0",
   "description": "Unauthority (UAT) Public Wallet - Burn BTC/ETH to mint UAT",
-  "author": "Unauthority Core Team",
+  "author": {
+    "name": "Unauthority Core Team",
+    "email": "dev@unauthority.io"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/unauthoritymky-6236/unauthority-core"
+  },
   "license": "MIT",
   "main": "electron/main.js",
   "homepage": "./",

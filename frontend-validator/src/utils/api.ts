@@ -343,7 +343,7 @@ export interface BurnRequest {
 // Get recent blocks
 export async function getRecentBlocks(): Promise<Block[]> {
   try {
-    const response = await fetchWithTimeout(`${getApiUrl()}/blocks`);
+    const response = await fetchWithTimeout(`${getApiUrl()}/blocks/recent`);
     if (!response.ok) return [];
     const data = await response.json();
     return Array.isArray(data) ? data : (data.blocks || []);

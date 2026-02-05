@@ -31,17 +31,17 @@ torsocks curl http://fhljoiopyz2eflttc7o5qwfj6l6skhtlkjpn4r6yw4atqpy2azydnnqd.on
 
 DAEMON INFO:
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Tor PID: 33610
+Tor PID: 25101
 Tor Config: /Users/moonkey-code/.tor-unauthority/torrc
 Tor Logs: /Users/moonkey-code/.tor-unauthority/tor.log
 Hidden Service Dir: /Users/moonkey-code/.tor-unauthority/hidden_service
 
 MAINTAINER:
 Keep both running in background:
-1. Tor daemon (PID 33610)
+1. Tor daemon (PID 25101)
 2. UAT node (localhost:3030)
 
 To stop:
-kill 33610
+kill 25101
 
-Generated: Thu Feb  5 07:56:14 WIB 2026
+Generated: Thu Feb  5 23:54:08 WIB 2026

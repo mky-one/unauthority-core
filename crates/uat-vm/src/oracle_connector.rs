@@ -40,7 +40,6 @@ pub trait PriceOracle {
 pub struct ExchangeOracle {
     price_feeds: HashMap<String, ExchangePrice>,
     last_update: u64,
-    update_interval_secs: u64,
 }
 
 impl ExchangeOracle {
@@ -48,7 +47,6 @@ impl ExchangeOracle {
         Self {
             price_feeds: HashMap::new(),
             last_update: 0,
-            update_interval_secs: 60, // Update every 60 seconds
         }
     }
     

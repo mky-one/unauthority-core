@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react';
-import { Activity, Users, Box, Settings, Send } from 'lucide-react';
+import { Activity, Users, Box, Settings, Send, LogOut, RefreshCw } from 'lucide-react';
 import { useValidatorStore } from './store/validatorStore';
 import { getNodeInfo, getValidators, checkNodeConnection } from './utils/api';
-import { isConfigured } from './utils/keyManager';
+import { isConfigured, clearKeys } from './utils/keyManager';
 import Dashboard from './components/Dashboard';
 import ValidatorsList from './components/ValidatorsList';
 import BlocksView from './components/BlocksView';
@@ -18,36 +18,38 @@ function App() {
   const [activeTab, setActiveTab] = useState<Tab>('dashboard');
   const [sendModalOpen, setSendModalOpen] = useState(false);
   const [showSetupWizard, setShowSetupWizard] = useState(!isConfigured());
-  const [isNodeStarting, setIsNodeStarting] = useState(false);
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
-  const handleSetupComplete = async (keys: { privateKey: string; publicKey: string }) => {
-    setIsNodeStarting(true);
-    
-    try {
-      // Start validator node with provided keys
-      const response = await fetch('http://localhost:3030/validator/start', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          public_key: keys.publicKey,
-          private_key: keys.privateKey,
-        }),
-      });
+  const handleSetupComplete = async () => {
+    // Keys are already saved by SetupWizard component via keyManager.storeKeys()
+    // Just close the setup wizard and show the dashboard
+    setShowSetupWizard(false);
+  };
 
-      if (!response.ok) {
-        throw new Error('Failed to start validator node');
+  const handleLogout = () => {
+    if (confirm('Are you sure you want to logout? You will need your password to login again.')) {
+      clearKeys();
+      setShowSetupWizard(true);
+    }
+  };
+
+  const handleRefresh = async () => {
+    setIsRefreshing(true);
+    const online = await checkNodeConnection();
+    setConnected(online);
+
+    if (online) {
+      const info = await getNodeInfo();
+      if (info) {
+        setNodeInfo(info);
+        updateTimestamp();
       }
 
-      // Wait for node to initialize
-      await new Promise(resolve => setTimeout(resolve, 3000));
-      
-      setShowSetupWizard(false);
-      setIsNodeStarting(false);
-    } catch (error) {
-      console.error('Failed to start node:', error);
-      alert('Failed to start validator node. Please try again.');
-      setIsNodeStarting(false);
+      const validators = await getValidators();
+      setValidators(validators);
     }
+    
+    setTimeout(() => setIsRefreshing(false), 500);
   };
 
   useEffect(() => {
@@ -79,22 +81,7 @@ function App() {
   }, [setNodeInfo, setValidators, setConnected, updateTimestamp]);
 
   if (showSetupWizard) {
-    return (
-      <>
-        <SetupWizard onComplete={handleSetupComplete} />
-        {isNodeStarting && (
-          <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50">
-            <div className="bg-gray-800 rounded-lg p-8 max-w-md">
-              <div className="animate-spin rounded-full h-16 w-16 border-t-2 border-blue-500 mx-auto mb-4"></div>
-              <p className="text-white text-center text-lg font-semibold">Starting Validator Node...</p>
-              <p className="text-gray-400 text-center text-sm mt-2">
-                This may take a few seconds. Connecting to network...
-              </p>
-            </div>
-          </div>
-        )}
-      </>
-    );
+    return <SetupWizard onComplete={handleSetupComplete} />;
   }
 
   const tabs = [
@@ -123,12 +110,29 @@ function App() {
             <NetworkSwitcher />
             
             <button
+              onClick={handleRefresh}
+              disabled={isRefreshing}
+              className="flex items-center space-x-2 bg-gray-700 hover:bg-gray-600 disabled:opacity-50 text-white font-medium px-3 py-2 rounded-lg transition-colors"
+              title="Refresh data"
+            >
+              <RefreshCw className={`w-4 h-4 ${isRefreshing ? 'animate-spin' : ''}`} />
+            </button>
+            
+            <button
               onClick={() => setSendModalOpen(true)}
               disabled={!ownAddress}
               className="flex items-center space-x-2 bg-gradient-to-r from-uat-blue to-uat-cyan hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed text-white font-medium px-4 py-2 rounded-lg transition-opacity"
             >
               <Send className="w-4 h-4" />
               <span>Send</span>
+            </button>
+            
+            <button
+              onClick={handleLogout}
+              className="flex items-center space-x-2 bg-red-600 hover:bg-red-500 text-white font-medium px-3 py-2 rounded-lg transition-colors"
+              title="Logout"
+            >
+              <LogOut className="w-4 h-4" />
             </button>
             
             <div className="flex items-center space-x-2">

@@ -1,32 +1,35 @@
 import { useState } from 'react';
 import { Key, Download, Upload, AlertCircle, CheckCircle2 } from 'lucide-react';
 import { generateWallet, importFromPrivateKey, importFromSeedPhrase } from '../utils/wallet';
+import { storeKeys } from '../utils/keyManager';
 
 interface SetupWizardProps {
   onComplete: (keys: { privateKey: string; publicKey: string }) => void;
 }
 
 export default function SetupWizard({ onComplete }: SetupWizardProps) {
-  const [step, setStep] = useState<'choose' | 'import' | 'generate' | 'backup'>('choose');
+  const [step, setStep] = useState<'choose' | 'import' | 'generate' | 'backup' | 'password'>('choose');
   const [privateKey, setPrivateKey] = useState('');
   const [seedPhrase, setSeedPhrase] = useState('');
   const [generatedKeys, setGeneratedKeys] = useState<any>(null);
   const [backupConfirmed, setBackupConfirmed] = useState(false);
   const [error, setError] = useState('');
+  const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [pendingWallet, setPendingWallet] = useState<any>(null);
 
   const handleImportPrivateKey = async () => {
-    if (!privateKey || privateKey.length < 64) {
-      setError('Invalid private key. Must be 64+ characters hex string.');
+    const trimmedKey = privateKey.trim();
+    if (!trimmedKey || (trimmedKey.length !== 64 && trimmedKey.length !== 128)) {
+      setError('Invalid private key. Must be 64 characters (32-byte seed) or 128 characters (64-byte full key).');
       return;
     }
 
     try {
       setError('');
-      const wallet = importFromPrivateKey(privateKey.trim());
-      onComplete({
-        privateKey: wallet.privateKey,
-        publicKey: wallet.publicKey,
-      });
+      const wallet = importFromPrivateKey(trimmedKey);
+      setPendingWallet(wallet);
+      setStep('password');
     } catch (err: any) {
       setError(err.message || 'Failed to import private key');
     }
@@ -42,12 +45,34 @@ export default function SetupWizard({ onComplete }: SetupWizardProps) {
     try {
       setError('');
       const wallet = importFromSeedPhrase(seedPhrase.trim());
-      onComplete({
-        privateKey: wallet.privateKey,
-        publicKey: wallet.publicKey,
-      });
+      setPendingWallet(wallet);
+      setStep('password');
     } catch (err: any) {
       setError(err.message || 'Failed to import seed phrase');
+    }
+  };
+
+  const handleSetPassword = () => {
+    if (!password || password.length < 8) {
+      setError('Password must be at least 8 characters');
+      return;
+    }
+    if (password !== confirmPassword) {
+      setError('Passwords do not match');
+      return;
+    }
+
+    try {
+      setError('');
+      // Store encrypted keys in localStorage
+      storeKeys(pendingWallet.privateKey, pendingWallet.publicKey, pendingWallet.address, password);
+      
+      onComplete({
+        privateKey: pendingWallet.privateKey,
+        publicKey: pendingWallet.publicKey,
+      });
+    } catch (err: any) {
+      setError(err.message || 'Failed to store keys');
     }
   };
 
@@ -193,7 +218,73 @@ export default function SetupWizard({ onComplete }: SetupWizardProps) {
                 disabled={!privateKey && !seedPhrase}
                 className="flex-1 px-6 py-3 bg-blue-600 hover:bg-blue-500 text-white rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                Import & Start Node
+                Continue
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Password Setup */}
+        {step === 'password' && (
+          <div className="space-y-6">
+            <div className="text-center mb-6">
+              <div className="inline-flex items-center justify-center w-16 h-16 bg-blue-500/20 rounded-full mb-4">
+                <Key className="w-8 h-8 text-blue-400" />
+              </div>
+              <h2 className="text-2xl font-bold text-white mb-2">Secure Your Keys</h2>
+              <p className="text-gray-400">Create a password to encrypt your validator keys</p>
+            </div>
+
+            {error && (
+              <div className="p-4 bg-red-500/10 border border-red-500/50 rounded-lg">
+                <div className="flex items-center gap-2 text-red-400">
+                  <AlertCircle className="w-5 h-5" />
+                  <p className="text-sm">{error}</p>
+                </div>
+              </div>
+            )}
+
+            <div>
+              <label className="block text-white font-medium mb-2">Password (min 8 characters)</label>
+              <input
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="Enter password..."
+                className="w-full px-4 py-3 bg-gray-700 border border-gray-600 rounded-lg text-white placeholder-gray-500 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/50 outline-none"
+              />
+            </div>
+
+            <div>
+              <label className="block text-white font-medium mb-2">Confirm Password</label>
+              <input
+                type="password"
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+                placeholder="Re-enter password..."
+                className="w-full px-4 py-3 bg-gray-700 border border-gray-600 rounded-lg text-white placeholder-gray-500 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/50 outline-none"
+              />
+            </div>
+
+            <div className="p-4 bg-blue-500/10 border border-blue-500/50 rounded-lg">
+              <p className="text-blue-300 text-sm">
+                💡 <strong>Tip:</strong> This password encrypts your keys locally. You'll need it every time you start the validator dashboard.
+              </p>
+            </div>
+
+            <div className="flex gap-4">
+              <button
+                onClick={() => setStep('import')}
+                className="flex-1 px-6 py-3 bg-gray-700 hover:bg-gray-600 text-white rounded-lg transition-colors"
+              >
+                Back
+              </button>
+              <button
+                onClick={handleSetPassword}
+                disabled={!password || !confirmPassword}
+                className="flex-1 px-6 py-3 bg-blue-600 hover:bg-blue-500 text-white rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Secure & Continue
               </button>
             </div>
           </div>

@@ -26,9 +26,10 @@
     "build:all": "npm run build && electron-builder --mac --win --linux"
   },
   "dependencies": {
+    "@scure/bip39": "^2.0.1",
     "axios": "^1.6.5",
-    "base-x": "^5.0.1",
     "bitcoinjs-lib": "^6.1.5",
+    "bs58": "^6.0.0",
     "bs58check": "^3.0.1",
     "buffer": "^6.0.3",
     "events": "^3.3.0",

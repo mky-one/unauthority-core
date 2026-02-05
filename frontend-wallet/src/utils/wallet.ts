@@ -5,11 +5,10 @@
  */
 
 import nacl from 'tweetnacl';
-import { sha256 } from 'js-sha256';
-import base58 from 'base-x';
+import bs58 from 'bs58';
+import { mnemonicToSeedSync } from '@scure/bip39';
 
 const UAT_PREFIX = 'UAT';
-const BS58 = base58('123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz');
 
 export interface Wallet {
   address: string;
@@ -54,20 +53,18 @@ function generateMnemonic(): string {
 }
 
 /**
- * Derive Ed25519 keypair from seed phrase using SHA256
- * Simple key derivation: SHA256(seed_phrase) → Ed25519 keypair
+ * Derive Ed25519 keypair from seed phrase using BIP39 (same as genesis generator)
+ * Compatible with Python's mnemonic.to_seed()
  */
 function deriveFromSeed(seedPhrase: string): { publicKey: Uint8Array; secretKey: Uint8Array } {
-  // Hash seed phrase to get 32 bytes for Ed25519 seed
-  const hashHex = sha256(seedPhrase);
-  const seed = new Uint8Array(Buffer.from(hashHex, 'hex'));
-
-  if (seed.length !== 32) {
-    throw new Error('Invalid seed length for Ed25519');
-  }
+  // Use BIP39 mnemonicToSeed (same as Python genesis generator)
+  const seed = mnemonicToSeedSync(seedPhrase, ''); // No passphrase
+  
+  // Use first 32 bytes as Ed25519 seed
+  const seed32 = seed.slice(0, 32);
 
   // Generate keypair from seed (tweetnacl format)
-  const keyPair = nacl.sign.keyPair.fromSeed(seed);
+  const keyPair = nacl.sign.keyPair.fromSeed(seed32);
   return {
     publicKey: keyPair.publicKey,
     secretKey: keyPair.secretKey,
@@ -75,32 +72,12 @@ function deriveFromSeed(seedPhrase: string): { publicKey: Uint8Array; secretKey:
 }
 
 /**
- * Create UAT address from public key
- * Format: "UAT" + Base58(version_byte + pubkey_hash + checksum)
- * version_byte = 0x00
- * pubkey_hash = SHA256(public_key)
- * checksum = first_4_bytes(SHA256(SHA256(version + hash)))
+ * Create UAT address from public key (Genesis-compatible format)
+ * Format: "UAT" + Base58(PublicKey) - SIMPLE, no checksum
  */
 function createAddress(publicKey: Uint8Array): string {
-  // Hash public key: SHA256(publicKey)
-  const hashHex = sha256(Buffer.from(publicKey));
-  const hashBytes = Buffer.from(hashHex, 'hex');
-
-  // Create version + hash payload
-  const withVersion = Buffer.alloc(hashBytes.length + 1);
-  withVersion[0] = 0x00; // Version byte for UAT
-  hashBytes.copy(withVersion, 1);
-
-  // Compute checksum: SHA256(SHA256(version + hash))
-  const checksum1Hex = sha256(withVersion);
-  const checksum2Hex = sha256(Buffer.from(checksum1Hex, 'hex'));
-  const checksumBytes = Buffer.from(checksum2Hex, 'hex').slice(0, 4);
-
-  // Combine: version + hash + checksum
-  const fullAddress = Buffer.concat([withVersion, checksumBytes]);
-
-  // Base58 encode and add UAT prefix
-  const base58Address = BS58.encode(fullAddress);
+  // Simple Base58 encoding (same as Python genesis generator)
+  const base58Address = bs58.encode(Buffer.from(publicKey));
   return UAT_PREFIX + base58Address;
 }
 
@@ -165,12 +142,12 @@ export function importFromPrivateKey(privateKeyHex: string): Wallet {
 }
 
 /**
- * Format balance from VOI to UAT
- * 1 UAT = 100,000,000 VOI (same as Bitcoin satoshi model)
+ * Format balance for display
+ * Balance is already in UAT from API (balance_uat field)
  */
-export function formatBalance(voidBalance: number): string {
-  const uat = voidBalance / 100_000_000;
-  return uat.toFixed(8).replace(/\.?0+$/, '');
+export function formatBalance(uatBalance: number): string {
+  // Balance is already in UAT, just format it
+  return uatBalance.toFixed(2).replace(/\.?0+$/, '');
 }
 
 /**
@@ -190,9 +167,52 @@ export function isValidUATAddress(address: string): boolean {
 
   try {
     const base58Part = address.slice(UAT_PREFIX.length);
-    BS58.decode(base58Part);
+    bs58.decode(base58Part);
     return true;
   } catch {
     return false;
   }
+}
+
+/**
+ * Hash block data (same as backend)
+ * Format: account + previous + block_type + amount + link
+ */
+export async function hashBlock(
+  account: string,
+  previous: string,
+  blockType: string,
+  amount: number,
+  link: string
+): Promise<string> {
+  const data = `${account}${previous}${blockType}${amount}${link}`;
+  
+  // Simple SHA-256 hash
+  const encoder = new TextEncoder();
+  const buffer = await crypto.subtle.digest('SHA-256', encoder.encode(data));
+  const hashArray = Array.from(new Uint8Array(buffer));
+  return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
+/**
+ * Sign transaction (client-side signing for security)
+ * Returns signature as hex string
+ */
+export async function signTransaction(
+  privateKeyHex: string,
+  account: string,
+  previous: string,
+  blockType: string,
+  amount: number,
+  link: string
+): Promise<string> {
+  // Hash block data
+  const hash = await hashBlock(account, previous, blockType, amount, link);
+  
+  // Sign with private key
+  const privateKeyBytes = new Uint8Array(Buffer.from(privateKeyHex, 'hex'));
+  const messageBytes = new Uint8Array(Buffer.from(hash, 'utf-8'));
+  const signature = nacl.sign.detached(messageBytes, privateKeyBytes);
+  
+  return Buffer.from(signature).toString('hex');
 }

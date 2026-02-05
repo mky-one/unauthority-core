@@ -18,9 +18,9 @@ export default function Dashboard({ nodeOnline, oraclePrices }: Props) {
   const [claiming, setClaiming] = useState(false);
   const [claimSuccess, setClaimSuccess] = useState(false);
 
-  // Calculate USD value (1 UAT = $0.01)
-  const usdValue = (balance / 100000000) * 0.01;
-  console.log('USD Value:', usdValue, 'Oracle Prices:', oraclePrices);
+  // Balance is already in UAT (not VOI), so use directly
+  const usdValue = balance * 0.01; // 1 UAT = $0.01
+  console.log('Balance (UAT):', balance, 'USD Value:', usdValue, 'Oracle Prices:', oraclePrices);
 
   useEffect(() => {
     if (nodeOnline) {

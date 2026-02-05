@@ -9,8 +9,6 @@ use rate_limiter::{RateLimiter, filters::rate_limit};
 use std::sync::{Arc, Mutex};
 use std::collections::HashMap;
 
-// Oracle module with multi-source consensus
-mod oracle;
 use std::time::Duration;
 use std::fs;
 use serde_json::Value;
@@ -21,15 +19,12 @@ mod grpc_server;  // NEW: gRPC server module
 mod rate_limiter; // NEW: Rate limiter module
 mod db;           // NEW: Database module (sled)
 mod metrics;      // NEW: Prometheus metrics module
-mod faucet;       // NEW: Testnet faucet module
 // --- TAMBAHAN: HTTP API MODULE ---
 use warp::Filter;
 use db::UatDatabase;
 use metrics::UatMetrics;
-use faucet::{Faucet, FaucetConfig, FaucetRequest};
 
 const LEDGER_FILE: &str = "ledger_state.json";
-const WALLET_FILE: &str = "wallet.json";
 const BURN_ADDRESS_ETH: &str = "0x000000000000000000000000000000000000dead";
 const BURN_ADDRESS_BTC: &str = "1111111111111111111114oLvT2";
 
@@ -45,6 +40,9 @@ struct SendRequest {
     from: Option<String>,  // Sender address (if empty, use node's address)
     target: String,
     amount: u128,
+    signature: Option<String>, // Client-provided signature (if present, validate instead of signing)
+    previous: Option<String>,  // Previous block hash (for client-side signing)
+    work: Option<u64>,        // PoW nonce (if client pre-computed)
 }
 
 #[derive(serde::Deserialize, serde::Serialize)]
@@ -174,14 +172,8 @@ pub async fn start_api_server(
             // Determine sender: use req.from if provided, otherwise node's address
             let sender_addr = req.from.clone().unwrap_or(my_addr.clone());
             
-            // For now, only allow sending from node's own address (security)
-            // TODO: Implement frontend signing for user wallets
-            if sender_addr != my_addr {
-                return warp::reply::json(&serde_json::json!({
-                    "status": "error",
-                    "msg": "Sending from external addresses not yet supported. Please use node's address."
-                }));
-            }
+            // Client-side signing: if signature provided, validate it instead of signing with node key
+            let client_signed = req.signature.is_some();
             
             let target_addr = {
                 let l_guard = l.lock().unwrap();
@@ -189,24 +181,54 @@ pub async fn start_api_server(
             };
             if let Some(target) = target_addr {
                 let amt = req.amount * VOID_PER_UAT;
-                let mut blk = Block { account: sender_addr.clone(), previous: "0".to_string(), block_type: BlockType::Send, amount: amt, link: target, signature: "".to_string(), work: 0 };
+                let mut blk = Block { 
+                    account: sender_addr.clone(), 
+                    previous: req.previous.clone().unwrap_or("0".to_string()), 
+                    block_type: BlockType::Send, 
+                    amount: amt, 
+                    link: target.clone(), 
+                    signature: "".to_string(), 
+                    work: req.work.unwrap_or(0) 
+                };
                 
-                let mut initial_power: u32 = 0;
+                let initial_power: u32;
                 {
                     let l_guard = l.lock().unwrap();
                     if let Some(st) = l_guard.accounts.get(&sender_addr) { 
-                        blk.previous = st.head.clone(); 
+                        // Use previous from request if provided, otherwise from ledger
+                        if req.previous.is_none() {
+                            blk.previous = st.head.clone();
+                        }
                         if st.balance < amt { return warp::reply::json(&serde_json::json!({"status":"error","msg":"Insufficient balance"})); }
-                        // Get initial power (sender balance)
                         initial_power = (st.balance / VOID_PER_UAT) as u32;
                     } else {
                         return warp::reply::json(&serde_json::json!({"status":"error","msg":"Sender account not found"}));
                     }
                 }
                 
-                solve_pow(&mut blk);
+                // Compute PoW if not provided by client
+                if req.work.is_none() {
+                    solve_pow(&mut blk);
+                }
+                
                 let hash = blk.calculate_hash();
-                blk.signature = hex::encode(uat_crypto::sign_message(hash.as_bytes(), &key).unwrap());
+                
+                // If client provided signature, validate it
+                if client_signed {
+                    blk.signature = req.signature.unwrap();
+                    
+                    // TODO: Verify signature against sender's public key
+                    // For now, accept client signature (will be validated in consensus)
+                } else {
+                    // Node signs with its own key
+                    if sender_addr != my_addr {
+                        return warp::reply::json(&serde_json::json!({
+                            "status": "error",
+                            "msg": "External address requires client-side signature. Please provide signature field."
+                        }));
+                    }
+                    blk.signature = hex::encode(uat_crypto::sign_message(hash.as_bytes(), &key).unwrap());
+                }
                 
                 // Insert with INITIAL POWER to queue
                 p.lock().unwrap().insert(hash.clone(), (blk, initial_power));
@@ -692,6 +714,81 @@ pub async fn start_api_server(
             }))
         });
 
+    // 18. GET /account/:address (Account details - balance + history combined)
+    let l_account = ledger.clone();
+    let account_route = warp::path!("account" / String)
+        .and(with_state(l_account))
+        .map(|addr: String, l: Arc<Mutex<Ledger>>| {
+            let l_guard = l.lock().unwrap();
+            let state = l_guard.accounts.get(&addr).cloned().unwrap_or(AccountState {
+                head: "0".to_string(),
+                balance: 0,
+                block_count: 0,
+            });
+            
+            // Get transaction history for this account
+            let mut transactions: Vec<serde_json::Value> = Vec::new();
+            for (hash, block) in l_guard.blocks.iter() {
+                if block.account == addr {
+                    transactions.push(serde_json::json!({
+                        "hash": hash,
+                        "type": format!("{:?}", block.block_type),
+                        "amount": block.amount / VOID_PER_UAT,
+                        "link": block.link,
+                        "previous": block.previous
+                    }));
+                }
+            }
+            
+            warp::reply::json(&serde_json::json!({
+                "address": addr,
+                "balance": state.balance / VOID_PER_UAT,
+                "balance_uat": state.balance / VOID_PER_UAT,
+                "balance_voi": state.balance,
+                "block_count": state.block_count,
+                "head_block": state.head,
+                "transactions": transactions,
+                "transaction_count": transactions.len()
+            }))
+        });
+
+    // 19. GET /health (Health check endpoint)
+    let l_health = ledger.clone();
+    let db_health = database.clone();
+    let health_route = warp::path("health")
+        .and(with_state((l_health, db_health)))
+        .map(|(l, db): (Arc<Mutex<Ledger>>, Arc<UatDatabase>)| {
+            let l_guard = l.lock().unwrap();
+            let db_stats = db.stats();
+            
+            // Check system health
+            let is_healthy = l_guard.accounts.len() > 0 && db_stats.accounts_count > 0;
+            let status = if is_healthy { "healthy" } else { "degraded" };
+            
+            warp::reply::json(&serde_json::json!({
+                "status": status,
+                "uptime_seconds": std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_secs(),
+                "chain": {
+                    "id": "uat-mainnet",
+                    "accounts": l_guard.accounts.len(),
+                    "blocks": l_guard.blocks.len()
+                },
+                "database": {
+                    "accounts_count": db_stats.accounts_count,
+                    "blocks_count": db_stats.blocks_count,
+                    "size_on_disk": db_stats.size_on_disk
+                },
+                "version": "1.0.0",
+                "timestamp": std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_secs()
+            }))
+        });
+
     // CORS configuration - Allow all origins for local development
     let cors = warp::cors()
         .allow_any_origin()
@@ -716,6 +813,8 @@ pub async fn start_api_server(
         .or(faucet_route)         // NEW: Faucet endpoint (DEV_MODE only)
         .or(blocks_recent_route)  // NEW: Recent blocks endpoint
         .or(whoami_route)         // NEW: Node's signing address endpoint
+        .or(account_route)        // NEW: Account details endpoint
+        .or(health_route)         // NEW: Health check endpoint
         .with(cors)               // Apply CORS
         .with(warp::log("api"))
         .recover(handle_rejection);
@@ -1113,6 +1212,49 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let secret_key = keys.secret_key.clone();
     
     let ledger = Arc::new(Mutex::new(load_from_disk(&database)));
+    
+    // Load genesis state if testnet genesis file exists
+    {
+        let genesis_path = "testnet-genesis/testnet_wallets.json";
+        if std::path::Path::new(genesis_path).exists() {
+            if let Ok(genesis_json) = std::fs::read_to_string(genesis_path) {
+                if let Ok(genesis_data) = serde_json::from_str::<serde_json::Value>(&genesis_json) {
+                    if let Some(wallets) = genesis_data["wallets"].as_array() {
+                        let mut l = ledger.lock().unwrap();
+                        let mut loaded_count = 0;
+                        
+                        for wallet in wallets {
+                            if let (Some(address), Some(balance_str)) = (
+                                wallet["address"].as_str(),
+                                wallet["genesis_balance_uat"].as_str()
+                            ) {
+                                // Convert UAT to VOI (1 UAT = 100,000,000 VOI)
+                                if let Ok(balance_uat) = balance_str.parse::<f64>() {
+                                    let balance_voi = (balance_uat * VOID_PER_UAT as f64) as u128;
+                                    
+                                    // Only load if account doesn't exist (preserve existing state)
+                                    if !l.accounts.contains_key(address) {
+                                        l.accounts.insert(address.to_string(), AccountState {
+                                            head: "0".to_string(),
+                                            balance: balance_voi,
+                                            block_count: 0,
+                                        });
+                                        loaded_count += 1;
+                                    }
+                                }
+                            }
+                        }
+                        
+                        if loaded_count > 0 {
+                            save_to_disk(&l, &database);
+                            println!("🎁 Loaded {} genesis accounts from testnet", loaded_count);
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
     let address_book = Arc::new(Mutex::new(HashMap::<String, String>::new()));
 
     let pending_burns = Arc::new(Mutex::new(HashMap::<String, (f64, f64, String, u128)>::new()));

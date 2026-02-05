@@ -189,3 +189,15 @@ export function downloadBackup(seedPhrase: string, privateKey: string, publicKey
   
   URL.revokeObjectURL(url);
 }
+
+/**
+ * Clear all stored keys (logout)
+ */
+export function clearKeys(): void {
+  localStorage.removeItem(STORAGE_KEY);
+  sessionPassword = null;
+  if (sessionTimeout) {
+    clearTimeout(sessionTimeout);
+    sessionTimeout = null;
+  }
+}

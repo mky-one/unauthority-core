@@ -1,85 +1,54 @@
 /**
- * Unauthority REST API Client (IMPROVED with Error Handling & Retry Logic)
- * Connects to node with automatic reconnection and user-friendly errors
- * 
- * SUPPORTS DYNAMIC ENDPOINT CHANGES FOR REMOTE TESTNET
+ * Unauthority REST API Client with Timeout & Error Handling
+ * REMOTE TESTNET READY - No more stuck loading!
  */
 
-import axios, { AxiosError, AxiosInstance } from 'axios';
+const API_TIMEOUT = 10000; // 10 seconds
 
-const API_TIMEOUT = 10000; // 10 seconds for remote connections
-const MAX_RETRIES = 2;
+interface FetchOptions extends RequestInit {
+  timeout?: number;
+}
 
-// Get API base from localStorage (dynamic, changes when user updates settings)
-export const getApiBase = (): string => {
-  if (typeof window !== 'undefined') {
-    return localStorage.getItem('api_base') || 'http://localhost:3030';
-  }
-  return 'http://localhost:3030';
-};
+async function fetchWithTimeout(
+  url: string,
+  options: FetchOptions = {}
+): Promise<Response> {
+  const { timeout = API_TIMEOUT, ...fetchOptions } = options;
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeout);
 
-export const setApiBase = (url: string) => {
-  if (typeof window !== 'undefined') {
-    // Normalize URL - remove trailing slashes
-    const normalizedUrl = url.replace(/\/+$/, '');
-    localStorage.setItem('api_base', normalizedUrl);
-    console.log('[API] Endpoint updated to:', normalizedUrl);
-  }
-};
-
-// Export alias for consistency
-export const getApiBaseUrl = getApiBase;
-
-// Create axios instance dynamically (gets current endpoint each time)
-const createApiClient = (): AxiosInstance => {
-  const client = axios.create({
-    timeout: API_TIMEOUT,
-    headers: {
-      'Content-Type': 'application/json',
-    },
-  });
-
-  // Request interceptor - set baseURL dynamically
-  client.interceptors.request.use((config) => {
-    config.baseURL = getApiBase();
-    return config;
-  });
-
-  // Response interceptor for retry logic
-  client.interceptors.response.use(
-    (response) => response,
-    async (error: AxiosError) => {
-      const config = error.config as any;
-      
-      // Initialize retry count
-      if (!config || config.__retryCount === undefined) {
-        config.__retryCount = 0;
-      }
-      
-      // Retry on network errors or 5xx errors
-      const shouldRetry = 
-        (!error.response && error.code !== 'ECONNABORTED') || // Network error
-        (error.response && error.response.status >= 500); // Server error
-      
-      if (config.__retryCount < MAX_RETRIES && shouldRetry) {
-        config.__retryCount += 1;
-        
-        // Exponential backoff
-        const delay = Math.min(1000 * Math.pow(2, config.__retryCount - 1), 3000);
-        console.log(`[API] Retrying request (${config.__retryCount}/${MAX_RETRIES}) after ${delay}ms...`);
-        
-        await new Promise(resolve => setTimeout(resolve, delay));
-        return client.request(config);
-      }
-      
-      return Promise.reject(error);
+  try {
+    const response = await fetch(url, {
+      ...fetchOptions,
+      signal: controller.signal,
+      headers: {
+        'Content-Type': 'application/json',
+        ...fetchOptions.headers,
+      },
+    });
+    clearTimeout(timeoutId);
+    return response;
+  } catch (error: any) {
+    clearTimeout(timeoutId);
+    if (error.name === 'AbortError') {
+      throw new Error('Request timeout - node may be offline');
     }
-  );
+    throw error;
+  }
+}
 
-  return client;
-};
+export function getApiUrl(): string {
+  return localStorage.getItem('uat_api_url') || 'http://localhost:3030';
+}
 
-const api = createApiClient();
+export function setApiUrl(url: string): void {
+  const normalized = url.replace(/\/+$/, '');
+  localStorage.setItem('uat_api_url', normalized);
+}
+
+export const getApiBase = getApiUrl;
+export const setApiBase = setApiUrl;
+export const getApiBaseUrl = getApiUrl;
 
 // Type definitions
 export interface Balance {
@@ -205,38 +174,29 @@ export function handleApiError(error: any): ApiError {
   };
 }
 
-/**
- * Get account balance
- */
 export async function getBalance(address: string): Promise<number> {
   try {
-    const response = await api.get<Balance>(`/balance/${address}`);
-    // Return UAT amount
-    return response.data.balance_uat || 0;
-  } catch (error) {
-    const apiError = handleApiError(error);
-    console.error('[API] Failed to fetch balance:', apiError.message);
-    
-    // Return 0 for 404 (address not found = zero balance)
-    if (apiError.code === 'HTTP_404') {
-      return 0;
+    const response = await fetchWithTimeout(`${getApiUrl()}/balance/${address}`);
+    if (!response.ok) {
+      if (response.status === 404) return 0;
+      throw new Error(`HTTP ${response.status}`);
     }
-    
-    throw apiError;
+    const data = await response.json();
+    return (data.balance || data.balance_uat || 0) / 100_000_000;
+  } catch (error) {
+    console.error('Failed to get balance:', error);
+    return 0;
   }
 }
 
-/**
- * Get node info
- */
-export async function getNodeInfo(): Promise<NodeInfo> {
+export async function getNodeInfo(): Promise<NodeInfo | null> {
   try {
-    const response = await api.get<NodeInfo>('/node-info');
-    return response.data;
+    const response = await fetchWithTimeout(`${getApiUrl()}/node-info`);
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    return await response.json();
   } catch (error) {
-    const apiError = handleApiError(error);
-    console.error('[API] Failed to fetch node info:', apiError.message);
-    throw apiError;
+    console.error('Failed to get node info:', error);
+    return null;
   }
 }
 
@@ -249,17 +209,42 @@ export async function sendTransaction(request: SendRequest): Promise<SendRespons
     return response.data;
   } catch (error) {
     const apiError = handleApiError(error);
-    console.error('[API] Failed to send transaction:', apiError.message);
-    throw apiError;
-  }
-}
-
-/**
- * Submit burn transaction
- */
-export async function submitBurn(request: BurnRequest): Promise<BurnResponse> {
+export async function sendTransaction(
+  from: string,
+  to: string,
+  amount: number
+): Promise<SendResult> {
   try {
-    const response = await api.post<BurnResponse>('/burn', request);
+    const microAmount = Math.floor(amount * 100_000_000);
+
+    const response = await fetchWithTimeout(`${getApiUrl()}/send`, {
+      method: 'POST',
+      body: JSON.stringify({
+        from,
+        target: to,
+        amount: microAmount,
+      }),
+    });
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      return {
+        success: false,
+        message: data.message || data.msg || `Send failed: ${response.status}`,
+      };
+    }
+
+    return {
+      success: true,
+      txHash: data.tx_hash,
+      message: data.message || data.msg || 'Transaction successful',
+    };
+  } catch (error: any) {
+    return {
+      success: false,
+      message: error.message || 'Network error',
+    } = await api.post<BurnResponse>('/burn', request);
     return response.data;
   } catch (error) {
     const apiError = handleApiError(error);
@@ -282,17 +267,14 @@ export async function getHistory(address: string): Promise<Transaction[]> {
     const response = await api.get<{ transactions: Transaction[] }>(`/history/${address}`);
     return response.data.transactions || [];
   } catch (error) {
-    const apiError = handleApiError(error);
-    console.error('[API] Failed to fetch history:', apiError.message);
-    return [];
-  }
-}
-
-/**
- * Claim testnet tokens from faucet
- */
-export async function claimFaucet(address: string): Promise<FaucetResponse> {
+export async function getHistory(address: string): Promise<Transaction[]> {
   try {
+    const response = await fetchWithTimeout(`${getApiUrl()}/history/${address}`);
+    if (!response.ok) return [];
+    const data = await response.json();
+    return Array.isArray(data) ? data : (data.transactions || []);
+  } catch (error) {
+    console.error('Failed to get history:', error
     const response = await api.post<FaucetResponse>('/faucet', { address });
     return response.data;
   } catch (error) {
@@ -300,69 +282,87 @@ export async function claimFaucet(address: string): Promise<FaucetResponse> {
     console.error('[API] Failed to claim faucet:', apiError.message);
     
     return {
-      status: 'error',
-      error: apiError.message,
+export async function requestFaucet(address: string): Promise<FaucetResult> {
+  try {
+    const response = await fetchWithTimeout(`${getApiUrl()}/faucet`, {
+      method: 'POST',
+      body: JSON.stringify({ address }),
+    });
+
+    const data = await response.json();
+
+export async function getValidators(): Promise<Validator[]> {
+  try {
+    const response = await fetchWithTimeout(`${getApiUrl()}/validators`);
+    if (!response.ok) return [];
+    const data = await response.json();
+    return Array.isArray(data) ? data : (data.validators || []);
+  } catch (error) {
+    console.error('Failed to get validators:', error
+      amount: data.amount,
+      txHash: data.tx_hash,
     };
-  }
-}
-
-/**
- * Check node health
- */
-export async function checkNodeConnection(): Promise<boolean> {
-  try {
-    const baseUrl = getApiBase();
-    console.log('[API] Checking node connection at:', baseUrl);
-    const response = await api.get('/node-info', { timeout: 5000 });
-    console.log('[API] Node connection successful:', response.status);
-    return response.status === 200;
   } catch (error: any) {
-    console.error('[API] Node connection failed:', error.message);
-    return false;
-  }
-}
-
-/**
- * Get validators list
- */
-export async function getValidators(): Promise<any[]> {
+    return {
+      success: false,
+export async function getLatestBlock(): Promise<Block | null> {
   try {
-    const response = await api.get('/validators');
-    return response.data.validators || [];
+    const response = await fetchWithTimeout(`${getApiUrl()}/block`);
+    if (!response.ok) return null;
+    return await response.json();
   } catch (error) {
-    const apiError = handleApiError(error);
-    console.error('[API] Failed to fetch validators:', apiError.message);
-    return [];
+    console.error('Failed to get latest block:', error);
+    return null;
   }
 }
 
-/**
- * Get recent blocks
- */
-export async function getRecentBlocks(): Promise<any[]> {
-  try {
-    const response = await api.get('/blocks/recent');
-    return response.data.blocks || [];
-  } catch (error) {
-    const apiError = handleApiError(error);
-    console.error('[API] Failed to fetch blocks:', apiError.message);
-    return [];
-  }
+// Types
+export interface NodeInfo {
+  chain_id: string;
+  node_address?: string;
+  block_height: number;
+  peers_count?: number;
+  peer_count?: number;
+  is_validator?: boolean;
+  network?: string;
+  chain_name?: string;
 }
 
-/**
- * Export current API base URL
- */
-export function getCurrentApiUrl(): string {
-  return getApiBase();
+export interface Transaction {
+  hash: string;
+  from: string;
+  to: string;
+  amount: number;
+  timestamp: number;
+  tx_type: string;
 }
 
-/**
- * Test connection to a specific endpoint (without changing current)
- */
-export async function testEndpoint(url: string): Promise<{ success: boolean; message: string; data?: any }> {
-  try {
-    const normalizedUrl = url.replace(/\/+$/, '');
+export interface FaucetResult {
+  success: boolean;
+  message: string;
+  amount?: number;
+  txHash?: string;
+}
+
+export interface SendResult {
+  success: boolean;
+  message: string;
+  txHash?: string;
+}
+
+export interface Validator {
+  address: string;
+  stake: number;
+  voting_power?: number;
+  is_active: boolean;
+}
+
+export interface Block {
+  height: number;
+  hash: string;
+  prev_hash?: string;
+  timestamp: number;
+  transactions?: Transaction[]; const normalizedUrl = url.replace(/\/+$/, '');
     const response = await fetch(`${normalizedUrl}/node-info`, {
       method: 'GET',
       headers: { 'Content-Type': 'application/json' },

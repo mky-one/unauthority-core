@@ -27,43 +27,26 @@
 
 ## 📦 Installation
 
-### 📱 Desktop Wallet (Public Users)
+### 📱 Desktop Wallet & Validator (Public Users)
 
 **Download Pre-built Releases:**
-- 🍎 **macOS:** [Download Wallet DMG](https://github.com/unauthoritymky-6236/unauthority-core/releases/latest)
-- 🪟 **Windows:** [Download Wallet EXE](https://github.com/unauthoritymky-6236/unauthority-core/releases/latest)
-- 🐧 **Linux:** [Download Wallet AppImage](https://github.com/unauthoritymky-6236/unauthority-core/releases/latest)
+- 🍎 **macOS:** [Download DMG](https://github.com/unauthoritymky-6236/unauthority-core/releases/latest)
+- 🪟 **Windows:** [Download ZIP](https://github.com/unauthoritymky-6236/unauthority-core/releases/latest)
+- 🐧 **Linux:** [Download tar.gz](https://github.com/unauthoritymky-6236/unauthority-core/releases/latest)
 
 **Or Build from Source:**
 ```bash
 git clone https://github.com/unauthoritymky-6236/unauthority-core.git
-cd unauthority-core/frontend-wallet
-npm install
-npm run build
 
-# Run in browser
-npm run dev
-# Visit: http://localhost:5173
+# Build Wallet
+cd unauthority-core/flutter_wallet
+flutter pub get
+flutter build macos --release  # or windows/linux
 
-# Or package as desktop app
-npm run package:mac    # macOS
-npm run package:win    # Windows
-npm run package:linux  # Linux
-```
-
-### 🔧 Validator Dashboard
-
-**Download Pre-built Releases:**
-- 🍎 **macOS:** [Download Validator DMG](https://github.com/unauthoritymky-6236/unauthority-core/releases/latest)
-- 🪟 **Windows:** [Download Validator EXE](https://github.com/unauthoritymky-6236/unauthority-core/releases/latest)
-- 🐧 **Linux:** [Download Validator AppImage](https://github.com/unauthoritymky-6236/unauthority-core/releases/latest)
-
-**Or Build from Source:**
-```bash
-cd frontend-validator
-npm install
-npm run build
-npm run dev  # Visit: http://localhost:5174
+# Build Validator Dashboard
+cd ../flutter_validator
+flutter pub get
+flutter build macos --release  # or windows/linux
 ```
 
 ---

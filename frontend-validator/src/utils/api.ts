@@ -1,13 +1,53 @@
-import axios from 'axios';
+/**
+ * Unauthority Validator Dashboard API Client
+ * REMOTE TESTNET READY - No more stuck loading!
+ */
 
-const API_BASE = 'http://localhost:3030';
-const API_TIMEOUT = 3000; // 3 seconds
+const API_TIMEOUT = 10000; // 10 seconds
 
-// Create axios instance with timeout
-const api = axios.create({
-  baseURL: API_BASE,
-  timeout: API_TIMEOUT,
-});
+interface FetchOptions extends RequestInit {
+  timeout?: number;
+}
+
+async function fetchWithTimeout(
+  url: string,
+  options: FetchOptions = {}
+): Promise<Response> {
+  const { timeout = API_TIMEOUT, ...fetchOptions } = options;
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeout);
+
+  try {
+    const response = await fetch(url, {
+      ...fetchOptions,
+      signal: controller.signal,
+      headers: {
+        'Content-Type': 'application/json',
+        ...fetchOptions.headers,
+      },
+    });
+    clearTimeout(timeoutId);
+    return response;
+  } catch (error: any) {
+    clearTimeout(timeoutId);
+    if (error.name === 'AbortError') {
+      throw new Error('Request timeout - node may be offline');
+    }
+    throw error;
+  }
+}
+
+export function getApiUrl(): string {
+  return localStorage.getItem('uat_api_url') || 'http://localhost:3030';
+}
+
+export function setApiUrl(url: string): void {
+  const normalized = url.replace(/\/+$/, '');
+  localStorage.setItem('uat_api_url', normalized);
+}
+
+export const getApiBase = getApiUrl;
+export const setApiBase = setApiUrl;
 
 export interface NodeInfo {
   chain_id: string;
@@ -42,8 +82,9 @@ export interface Block {
 
 export async function getNodeInfo(): Promise<NodeInfo | null> {
   try {
-    const response = await api.get('/node-info');
-    return response.data;
+    const response = await fetchWithTimeout(`${getApiUrl()}/node-info`);
+    if (!response.ok) return null;
+    return await response.json();
   } catch (error) {
     console.error('Failed to fetch node info:', error);
     return null;
@@ -52,8 +93,9 @@ export async function getNodeInfo(): Promise<NodeInfo | null> {
 
 export async function getBalance(address: string): Promise<Balance | null> {
   try {
-    const response = await api.get(`/balance/${address}`);
-    return response.data;
+    const response = await fetchWithTimeout(`${getApiUrl()}/balance/${address}`);
+    if (!response.ok) return null;
+    return await response.json();
   } catch (error) {
     console.error('Failed to fetch balance:', error);
     return null;
@@ -62,8 +104,10 @@ export async function getBalance(address: string): Promise<Balance | null> {
 
 export async function getValidators(): Promise<ValidatorInfo[]> {
   try {
-    const response = await api.get('/validators');
-    return response.data.validators || [];
+    const response = await fetchWithTimeout(`${getApiUrl()}/validators`);
+    if (!response.ok) return [];
+    const data = await response.json();
+    return Array.isArray(data) ? data : (data.validators || []);
   } catch (error) {
     console.error('Failed to fetch validators:', error);
     return [];
@@ -72,8 +116,10 @@ export async function getValidators(): Promise<ValidatorInfo[]> {
 
 export async function getRecentBlocks(): Promise<Block[]> {
   try {
-    const response = await api.get('/blocks/recent');
-    return response.data.blocks || [];
+    const response = await fetchWithTimeout(`${getApiUrl()}/block`);
+    if (!response.ok) return [];
+    const data = await response.json();
+    return data ? [data] : [];
   } catch (error) {
     console.error('Failed to fetch blocks:', error);
     return [];

@@ -5,11 +5,13 @@ import '../models/account.dart';
 class ApiService {
   static const String defaultOnionUrl =
       'http://fhljoiopyz2eflttc7o5qwfj6l6skhtlkjpn4r6yw4atqpy2azydnnqd.onion';
+  static const String defaultLocalUrl = 'http://localhost:3030';
 
   late String baseUrl;
 
   ApiService({String? customUrl}) {
-    baseUrl = customUrl ?? defaultOnionUrl;
+    // Default to localhost for testing (change to defaultOnionUrl for production with Tor)
+    baseUrl = customUrl ?? defaultLocalUrl;
   }
 
   // Node Info
@@ -82,11 +84,7 @@ class ApiService {
     final response = await http.post(
       Uri.parse('$baseUrl/send'),
       headers: {'Content-Type': 'application/json'},
-      body: json.encode({
-        'from': from,
-        'target': to,
-        'amount': amount,
-      }),
+      body: json.encode({'from': from, 'target': to, 'amount': amount}),
     );
 
     final data = json.decode(response.body);

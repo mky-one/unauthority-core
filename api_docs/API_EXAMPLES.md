@@ -1,47 +1,60 @@
 # UAT API Examples & Usage Guide
 
-Comprehensive examples for all REST API and gRPC endpoints with real-world use cases.
+Comprehensive examples for all 13 REST API endpoints with real-world use cases.
+
+---
 
 ## Base Configuration
 
 ```bash
-# Default REST API endpoint
-export UAT_API="http://localhost:8080"
+# Production/Testnet
+export UAT_API="<domain testnet/mainnet>"
 
-# For other nodes
-# export UAT_API="http://localhost:8081"  # Validator 2
-# export UAT_API="http://localhost:8082"  # Validator 3
+# Available endpoints:
+# Testnet (Tor): http://fhljoiopyz2eflttc7o5qwfj6l6skhtlkjpn4r6yw4atqpy2azydnnqd.onion
+# Mainnet (TBD): Coming Q2 2026
+# Local Dev:     http://localhost:3030
+```
+
+**Example:**
+```bash
+# For Tor testnet (requires torsocks)
+export UAT_API="http://fhljoiopyz2eflttc7o5qwfj6l6skhtlkjpn4r6yw4atqpy2azydnnqd.onion"
+
+# For local development
+export UAT_API="http://localhost:3030"
 ```
 
 ---
 
 ## 1. Node Information & Health
 
-### Get Node Info
+### 1.1 Get Node Info
 Returns node metadata, version, sync status, and network info.
 
 **Request:**
 ```bash
-curl -X GET "${UAT_API}/node-info"
+curl "${UAT_API}/node-info"
+
+# Or with torsocks for Tor testnet:
+torsocks curl "${UAT_API}/node-info"
 ```
 
 **Response:**
 ```json
 {
-  "node_id": "QmXx...abc123",
-  "version": "0.1.0",
-  "chain_id": "unauthority-mainnet",
-  "latest_block": 15234,
-  "latest_block_hash": "0xabcd...",
-  "sync_status": "synced",
+  "node_id": "uat_0f0728fd",
+  "version": "1.0.0",
+  "chain": "uat-mainnet",
+  "consensus": "aBFT",
+  "block_height": 15234,
+  "latest_block_hash": "0xabcd1234...",
+  "validators": 128,
+  "active_validators": 121,
+  "total_accounts": 1523,
+  "total_supply_uat": 21936236,
   "peer_count": 47,
-  "validator_mode": true,
-  "uptime_seconds": 3600,
-  "network": {
-    "total_validators": 128,
-    "active_validators": 121,
-    "total_stake": 2193623600000000
-  }
+  "uptime_seconds": 3600
 }
 ```
 
@@ -49,53 +62,56 @@ curl -X GET "${UAT_API}/node-info"
 - Health monitoring for load balancers
 - Sync status verification before sending transactions
 - Network statistics for dashboards
+- Validator performance tracking
 
 ---
 
-## 2. Balance & Account Operations
-
-### Get Balance
-Query UAT balance for any address.
+### 1.2 Health Check
+Quick health status for monitoring systems.
 
 **Request:**
 ```bash
-# Single address
-curl -X GET "${UAT_API}/balance/UAT1a2b3c4d5e6f7g8h9i0j"
-
-# Multiple addresses (comma-separated)
-curl -X GET "${UAT_API}/balance/UAT1abc...,UAT2def...,UAT3ghi..."
+curl "${UAT_API}/health"
 ```
 
 **Response:**
 ```json
 {
-  "address": "UAT1a2b3c4d5e6f7g8h9i0j",
-  "balance": 1500000000000,
-  "balance_uat": "15000.00000000",
-  "balance_voi": 1500000000000,
-  "nonce": 42,
-  "is_validator": true,
-  "staked_amount": 100000000000
+  "status": "healthy",
+  "version": "1.0.0",
+  "uptime_seconds": 3600,
+  "timestamp": 1738742400,
+  "chain": {
+    "id": "uat-mainnet",
+    "blocks": 15234,
+    "accounts": 1523
+  },
+  "database": {
+    "size_on_disk": 524287000,
+    "blocks_count": 15234,
+    "accounts_count": 1523
+  }
 }
 ```
 
-**Conversion:**
-- 1 UAT = 100,000,000 VOI (Void)
-- Example: `1500000000000 VOI = 15000 UAT`
+**Use Cases:**
+- Load balancer health checks
+- Kubernetes liveness/readiness probes
+- Uptime monitoring (Pingdom, UptimeRobot)
+- Automated alerting systems
 
-**Error Response:**
-```json
-{
-  "error": "Account not found",
-  "address": "UAT1invalid..."
-}
-```
+---
+
+## 2. Balance & Account Operations
+
+### 2.1 Get Balance
+Query UAT balance for any address.
 
 ---
 
 ## 3. Transaction Operations
 
-### Send Transaction
+### 3.1 Send Transaction
 Transfer UAT between accounts.
 
 **Request:**
@@ -103,88 +119,529 @@ Transfer UAT between accounts.
 curl -X POST "${UAT_API}/send" \
   -H "Content-Type: application/json" \
   -d '{
-    "from": "UAT1sender...",
-    "to": "UAT2receiver...",
-    "amount": 100000000000,
-    "gas_limit": 21000,
-    "gas_price": 1000,
-    "nonce": 42,
-    "signature": "0x123abc..."
+    "from": "UAT0d15ab29bb71ff7d37b298fb65db95773a5ee8fd",
+    "target": "UAT387d447f008fae00f012877b8ffbb49e0aadddd7",
+    "amount": 1000000,
+    "signature": "0xsig123..."
   }'
 ```
 
-**Parameters:**
-- `from`: Sender address (UAT format)
-- `to`: Recipient address
-- `amount`: Amount in VOI (1 UAT = 100,000,000 VOI)
-- `gas_limit`: Maximum gas units (default: 21000 for simple transfer)
-- `gas_price`: Price per gas unit in VOI (minimum: 1000)
-- `nonce`: Transaction count for sender (get from `/balance`)
-- `signature`: Ed25519 signature of transaction hash
+**Request Fields:**
+- `from` (optional): Sender address (defaults to node's address)
+- `target` (required): Recipient address  
+- `amount` (required): Amount in VOID (1 UAT = 1,000,000 VOID)
+- `signature` (optional): Pre-signed transaction signature
+- `previous` (optional): Previous block hash
+- `work` (optional): PoW nonce
 
 **Response (Success):**
 ```json
 {
   "success": true,
-  "tx_hash": "0xabcd1234...",
-  "block_height": 15235,
-  "gas_used": 21000,
-  "fee_paid": 21000000,
-  "finality_time_ms": 2847
+  "tx_hash": "0xtx123...",
+  "block_height": 12346,
+  "from": "UAT0d15ab29bb71ff7d37b298fb65db95773a5ee8fd",
+  "to": "UAT387d447f008fae00f012877b8ffbb49e0aadddd7",
+  "amount_uat": 1,
+  "fee_uat": 0.01,
+  "timestamp": 1738742450
 }
 ```
 
-**Response (Error):**
+**Response (Error - Insufficient Balance):**
 ```json
 {
   "success": false,
   "error": "Insufficient balance",
-  "required": 121000000000,
-  "available": 100000000000
+  "required": 1000000,
+  "available": 500000
 }
 ```
 
-**Common Errors:**
-- `"Insufficient balance"` - Not enough UAT for amount + fees
-- `"Invalid nonce"` - Nonce doesn't match account state
-- `"Invalid signature"` - Cryptographic signature verification failed
-- `"Gas limit too low"` - Increase gas_limit
-- `"Account not found"` - Sender address doesn't exist
-
-**Calculate Total Cost:**
-```
-Total = Amount + (GasLimit × GasPrice)
-Example: 100 UAT + (21000 × 1000 VOI) = 10000000000 + 21000000 = 10021000000 VOI
-```
+**Use Cases:**
+- Peer-to-peer payments
+- Exchange withdrawals
+- Merchant payments
+- Smart contract interactions
 
 ---
 
-### Get Transaction by Hash
-Retrieve transaction details and confirmation status.
+### 3.2 Request Testnet Tokens (Faucet)
+Get 100 UAT for testing (1-hour cooldown).
 
 **Request:**
 ```bash
-curl -X GET "${UAT_API}/transaction/0xabcd1234..."
+curl -X POST "${UAT_API}/faucet" \
+  -H "Content-Type: application/json" \
+  -d '{"address":"UAT0d15ab29bb71ff7d37b298fb65db95773a5ee8fd"}'
+```
+
+**Response (Success):**
+```json
+{
+  "success": true,
+  "amount_uat": 100,
+  "tx_hash": "0xfaucet123...",
+  "cooldown_seconds": 3600,
+  "next_request_at": 1738746000
+}
+```
+
+**Response (Cooldown Active):**
+```json
+{
+  "success": false,
+  "error": "Cooldown active",
+  "remaining_seconds": 2400,
+  "next_request_at": 1738746000
+}
+```
+
+**Limits:**
+- 100 UAT per request
+- 1-hour cooldown per address  
+- Max 10 requests per IP per day
+
+**Use Cases:**
+- New wallet testing
+- dApp development
+- Integration testing
+- Demo applications
+
+**Response:**
+```json
+{
+  "address": "UAT0d15ab29bb71ff7d37b298fb65db95773a5ee8fd",
+  "balance_uat": 19194200,
+  "balance_void": 19194200000000,
+  "nonce": 42
+}
+```
+
+**Conversion:**
+- 1 UAT = 1,000,000 VOID (6 decimals)
+- Example: `19194200000000 VOID = 19,194,200 UAT`
+
+**Error Response:**
+```json
+{
+  "error": "Account not found",
+  "address": "UAT1invalid...",
+  "balance_uat": 0
+}
+```
+
+**Use Cases:**
+- Wallet balance display
+- Transaction validation (check sufficient balance)
+- Exchange deposit/withdrawal verification
+- Portfolio tracking
+
+---
+
+### 2.2 Get Full Account Info
+Combines balance + transaction history in one call.
+
+**Request:**
+```bash
+curl "${UAT_API}/account/UAT0d15ab29bb71ff7d37b298fb65db95773a5ee8fd"
 ```
 
 **Response:**
 ```json
 {
-  "tx_hash": "0xabcd1234...",
-  "from": "UAT1sender...",
-  "to": "UAT2receiver...",
-  "amount": 100000000000,
-  "gas_used": 21000,
-  "gas_price": 1000,
-  "fee_paid": 21000000,
+  "address": "UAT0d15ab29bb71ff7d37b298fb65db95773a5ee8fd",
+  "balance_uat": 19194200,
+  "balance_void": 19194200000000,
   "nonce": 42,
-  "block_height": 15235,
-  "block_hash": "0xblock...",
-  "timestamp": 1738713600,
-  "confirmations": 12,
-  "status": "confirmed",
-  "signature": "0x123abc..."
+  "transactions": [
+    {
+      "type": "receive",
+      "from": "genesis",
+      "amount_uat": 19194200,
+      "timestamp": 1738742000,
+      "block_height": 0
+    },
+    {
+      "type": "send",
+      "to": "UAT387d447f008fae00f012877b8ffbb49e0aadddd7",
+      "amount_uat": 100,
+      "timestamp": 1738742400,
+      "block_height": 1234
+    }
+  ],
+  "tx_count": 2
 }
+```
+
+**Use Cases:**
+- Wallet dashboard (balance + recent activity)
+- Account overview page
+- Export transaction history
+- Tax reporting
+
+---
+
+### 2.3 Get Transaction History
+Detailed transaction history for an address.
+
+**Request:**
+```bash
+curl "${UAT_API}/history/UAT0d15ab29bb71ff7d37b298fb65db95773a5ee8fd"
+```
+
+**Response:**
+```json
+{
+  "address": "UAT0d15ab29bb71ff7d37b298fb65db95773a5ee8fd",
+  "transactions": [
+    {
+      "type": "send",
+      "to": "UAT387d447f008fae00f012877b8ffbb49e0aadddd7",
+      "amount_uat": 100,
+      "timestamp": 1738742400,
+      "tx_hash": "0xabcd...",
+      "block_height": 1234,
+      "status": "confirmed"
+    },
+    {
+      "type": "receive",
+      "from": "faucet",
+      "amount_uat": 100,
+      "timestamp": 1738742000,
+      "tx_hash": "0xdef0...",
+      "block_height": 1200
+    }
+  ],
+  "total_sent_uat": 100,
+  "total_received_uat": 19194300,
+  "tx_count": 2
+}
+```
+
+**Use Cases:**
+- Transaction history page in wallet
+- CSV export for accounting
+- Audit trail
+- Payment verification
+
+---
+
+## 3. Transaction Operations
+
+### 3.1 Send Transaction
+Transfer UAT between accounts.
+
+**Request:**
+```bash
+curl -X POST "${UAT_API}/send" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "from": "UAT0d15ab29bb71ff7d37b298fb65db95773a5ee8fd",
+    "target": "UAT387d447f008fae00f012877b8ffbb49e0aadddd7",
+    "amount": 1000000,
+    "signature": "0xsig123..."
+  }'
+```
+
+**Request Fields:**
+- `from` (optional): Sender address (defaults to node's address)
+- `target` (required): Recipient address  
+- `amount` (required): Amount in VOID (1 UAT = 1,000,000 VOID)
+- `signature` (optional): Pre-signed transaction signature
+- `previous` (optional): Previous block hash
+- `work` (optional): PoW nonce
+
+**Response (Success):**
+```json
+{
+  "success": true,
+  "tx_hash": "0xtx123...",
+  "block_height": 12346,
+  "from": "UAT0d15ab29bb71ff7d37b298fb65db95773a5ee8fd",
+  "to": "UAT387d447f008fae00f012877b8ffbb49e0aadddd7",
+  "amount_uat": 1,
+  "fee_uat": 0.01,
+  "timestamp": 1738742450
+}
+```
+
+**Response (Error - Insufficient Balance):**
+```json
+{
+  "success": false,
+  "error": "Insufficient balance",
+  "required": 1000000,
+  "available": 500000
+}
+```
+
+**Use Cases:**
+- Peer-to-peer payments
+- Exchange withdrawals
+- Merchant payments
+- Smart contract interactions
+
+---
+
+### 3.2 Request Testnet Tokens (Faucet)
+Get 100 UAT for testing (1-hour cooldown).
+
+**Request:**
+```bash
+curl -X POST "${UAT_API}/faucet" \
+  -H "Content-Type: application/json" \
+  -d '{"address":"UAT0d15ab29bb71ff7d37b298fb65db95773a5ee8fd"}'
+```
+
+**Response (Success):**
+```json
+{
+  "success": true,
+  "amount_uat": 100,
+  "tx_hash": "0xfaucet123...",
+  "cooldown_seconds": 3600,
+  "next_request_at": 1738746000
+}
+```
+
+**Response (Cooldown Active):**
+```json
+{
+  "success": false,
+  "error": "Cooldown active",
+  "remaining_seconds": 2400,
+  "next_request_at": 1738746000
+}
+```
+
+**Limits:**
+- 100 UAT per request
+- 1-hour cooldown per address  
+- Max 10 requests per IP per day
+
+**Use Cases:**
+- New wallet testing
+- dApp development
+- Integration testing
+- Demo applications
+
+---
+
+### 3.3 Proof-of-Burn (ETH/BTC → UAT)
+Convert burned ETH/BTC to UAT.
+
+**Request:**
+```bash
+curl -X POST "${UAT_API}/burn" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "from": "UAT0d15ab29bb71ff7d37b298fb65db95773a5ee8fd",
+    "chain": "ethereum",
+    "tx_hash": "0xeth_burn_tx...",
+    "amount_eth": "0.1"
+  }'
+```
+
+**Request Fields:**
+- `from`: UAT address to receive burned tokens
+- `chain`: "ethereum" or "bitcoin"
+- `tx_hash`: ETH/BTC burn transaction hash
+- `amount_eth` / `amount_btc`: Amount burned
+
+**ETH Burn Address:** `0x000000000000000000000000000000000000dEaD`  
+**BTC Burn Address:** `1BitcoinEaterAddressDontSendf59kuE`
+
+**Response (Success):**
+```json
+{
+  "success": true,
+  "uat_minted": 1000,
+  "burn_tx": "0xeth_burn_tx...",
+  "uat_tx": "0xuat_mint_tx...",
+  "verification_blocks": 12,
+  "status": "confirmed"
+}
+```
+
+**Response (Pending):**
+```json
+{
+  "success": false,
+  "status": "pending",
+  "confirmations": 5,
+  "required_confirmations": 12,
+  "estimated_completion": "~10 minutes"
+}
+```
+
+**Conversion Rates:**
+- ETH: Dynamic based on oracle price
+- BTC: Dynamic based on oracle price
+- Min burn: 0.01 ETH or 0.001 BTC
+
+**Use Cases:**
+- Convert ETH/BTC holdings to UAT
+- Participate in deflationary tokenomics
+- Multi-chain liquidity bridging
+
+---
+
+## 4. Network & Validator Operations
+
+### 4.1 List Active Validators
+Get all validators with stakes and performance metrics.
+
+**Request:**
+```bash
+curl "${UAT_API}/validators"
+```
+
+**Response:**
+```json
+{
+  "validators": [
+    {
+      "address": "UAT9e6ed5183acbb802aba83e31420c6dc96d976405",
+      "stake_uat": 100000,
+      "voting_power": 316.22,
+      "uptime": 99.9,
+      "blocks_proposed": 1234,
+      "last_active": 1738742400,
+      "status": "active"
+    },
+    {
+      "address": "UAT3f8ff6ffc3e9161964b5ff4cf288b87e99c456fe",
+      "stake_uat": 50000,
+      "voting_power": 223.60,
+      "uptime": 98.5,
+      "blocks_proposed": 987,
+      "last_active": 1738742380,
+      "status": "active"
+    }
+  ],
+  "total_validators": 128,
+  "active_validators": 121,
+  "total_stake_uat": 2193623600
+}
+```
+
+**Voting Power Formula:**
+- Quadratic: `voting_power = sqrt(stake_uat)`
+- Example: `sqrt(100000) = 316.22`
+
+**Use Cases:**
+- Validator selection for delegation
+- Network health monitoring
+- Performance tracking
+- Reward distribution calculation
+
+---
+
+### 4.2 Get Connected Peers
+List all connected peer nodes in the network.
+
+**Request:**
+```bash
+curl "${UAT_API}/peers"
+```
+
+**Response:**
+```json
+{
+  "peers": [
+    {
+      "peer_id": "12D3KooWAbc123...",
+      "address": "/ip4/1.2.3.4/tcp/30303",
+      "type": "clearnet",
+      "latency_ms": 45,
+      "connected_since": 1738740000,
+      "is_validator": true
+    },
+    {
+      "peer_id": "12D3KooWXyz789...",
+      "address": "/onion3/abc123...xyz.onion/tcp/30303",
+      "type": "tor",
+      "latency_ms": 250,
+      "connected_since": 1738741000,
+      "is_validator": false
+    }
+  ],
+  "total_peers": 47,
+  "clearnet_peers": 25,
+  "tor_peers": 22
+}
+```
+
+**Use Cases:**
+- Network topology visualization
+- Peer latency monitoring
+- Tor vs clearnet ratio analysis
+- Connection debugging
+
+---
+
+## 5. Block & Blockchain Queries
+
+### 5.1 Get Latest Block
+Retrieve the most recent block.
+
+**Request:**
+```bash
+curl "${UAT_API}/block"
+```
+
+**Response:**
+```json
+{
+  "height": 12345,
+  "hash": "0xblock123...",
+  "previous_hash": "0xblock122...",
+  "timestamp": 1738742400,
+  "validator": "UAT9e6ed5183acbb802aba83e31420c6dc96d976405",
+  "transactions": 24,
+  "total_volume_uat": 15420,
+  "state_root": "0xstate...",
+  "size_bytes": 8192
+}
+```
+
+---
+
+### 5.2 Get Block by Height
+Query specific block by height number.
+
+**Request:**
+```bash
+curl "${UAT_API}/block/1000"
+```
+
+**Response:**
+```json
+{
+  "height": 1000,
+  "hash": "0xblock1000...",
+  "previous_hash": "0xblock999...",
+  "timestamp": 1738640000,
+  "validator": "UAT3f8ff6ffc3e9161964b5ff4cf288b87e99c456fe",
+  "transactions": [
+    {
+      "tx_hash": "0xtx1...",
+      "from": "UAT0d15ab...",
+      "to": "UAT387d44...",
+      "amount_uat": 100
+    }
+  ],
+  "tx_count": 15,
+  "state_root": "0xstate1000..."
+}
+```
+
+**Use Cases:**
+- Block explorer
+- Historical data analysis
+- Audit trail verification
+- Transaction confirmation
 ```
 
 **Transaction Status:**
@@ -292,150 +749,32 @@ curl -X GET "${UAT_API}/block/latest"
 
 ---
 
-### Get Block Range
-Fetch multiple consecutive blocks.
+## 4. Block Operations
 
-**Request:**
-```bash
-# Get blocks 100-110
-curl -X GET "${UAT_API}/blocks?start=100&end=110"
-
-# Get last 10 blocks
-curl -X GET "${UAT_API}/blocks?limit=10"
-```
-
-**Response:**
-```json
-{
-  "start_height": 100,
-  "end_height": 110,
-  "count": 11,
-  "blocks": [
-    {
-      "height": 100,
-      "hash": "0x...",
-      "timestamp": 1738710000,
-      "tx_count": 45
-    }
-  ]
-}
-```
+(Already documented - see API_REFERENCE.md for GET /block and GET /block/:height)
 
 ---
 
 ## 5. Validator Operations
 
-### Get Validator List
-Returns all active validators with stake info.
-
-**Request:**
-```bash
-# All validators
-curl -X GET "${UAT_API}/validators"
-
-# Only active validators
-curl -X GET "${UAT_API}/validators?active=true"
-
-# Sort by stake (descending)
-curl -X GET "${UAT_API}/validators?sort=stake&order=desc"
-```
-
-**Response:**
-```json
-{
-  "total_validators": 128,
-  "active_validators": 121,
-  "total_stake": 219362360000000000,
-  "validators": [
-    {
-      "address": "UAT_val1...",
-      "stake": 500000000000000,
-      "stake_uat": "5000000.00",
-      "voting_power": 2236.06,
-      "commission_rate": 5.0,
-      "uptime_percent": 99.87,
-      "blocks_produced": 1247,
-      "last_active_block": 15240,
-      "status": "active",
-      "slashed": false
-    }
-  ]
-}
-```
-
-**Validator Status:**
-- `"active"` - Participating in consensus
-- `"inactive"` - Insufficient stake or downtime
-- `"jailed"` - Slashed and temporarily banned
-
-**Voting Power Calculation:**
-```
-VotingPower = sqrt(TotalStake)
-Example: sqrt(5000000 UAT) = 2236.06
-```
-
----
-
-### Stake/Unstake Tokens
-Lock UAT to become validator or increase voting power.
-
-**Stake Request:**
-```bash
-curl -X POST "${UAT_API}/stake" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "validator_address": "UAT_val1...",
-    "amount": 100000000000,
-    "delegator_address": "UAT_delegator...",
-    "signature": "0xsig..."
-  }'
-```
-
-**Unstake Request:**
-```bash
-curl -X POST "${UAT_API}/unstake" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "validator_address": "UAT_val1...",
-    "amount": 50000000000,
-    "delegator_address": "UAT_delegator...",
-    "signature": "0xsig..."
-  }'
-```
-
-**Response:**
-```json
-{
-  "success": true,
-  "tx_hash": "0xstake...",
-  "new_stake": 150000000000,
-  "new_voting_power": 387.30,
-  "unlock_height": 15500
-}
-```
-
-**Important:**
-- Minimum stake: 1,000 UAT (100,000,000,000 VOI)
-- Unstaking period: ~7 days (100 blocks)
-- Rewards auto-claim on unstake
+(Already documented - see API_REFERENCE.md for GET /validators)
 
 ---
 
 ## 6. Smart Contract Operations
 
-### Deploy Contract
+### 6.1 Deploy Contract
 Upload WASM bytecode to blockchain.
 
 **Request:**
 ```bash
-curl -X POST "${UAT_API}/contract/deploy" \
+curl -X POST "${UAT_API}/deploy-contract" \
   -H "Content-Type: application/json" \
   -d '{
     "bytecode": "0x0061736d01000000...",
-    "init_args": "{\"name\":\"MyToken\",\"supply\":1000000}",
-    "gas_limit": 500000,
-    "deployer": "UAT1deployer...",
-    "signature": "0xsig..."
+    "from": "UAT0d15ab29bb71ff7d37b298fb65db95773a5ee8fd",
+    "initial_balance": 1000000,
+    "gas_limit": 5000000
   }'
 ```
 
@@ -443,29 +782,27 @@ curl -X POST "${UAT_API}/contract/deploy" \
 ```json
 {
   "success": true,
-  "contract_address": "UAT_CONTRACT_abc123...",
-  "tx_hash": "0xdeploy...",
-  "gas_used": 387420,
-  "deployment_cost": 387420000
+  "contract_address": "UATc1a2b3c4d5e6f7890abcdef1234567890abcde",
+  "tx_hash": "0xdeploy123...",
+  "gas_used": 2500000
 }
 ```
 
 ---
 
-### Call Contract
-Execute contract function (state-changing).
+### 6.2 Call Contract
+Execute contract function.
 
 **Request:**
 ```bash
-curl -X POST "${UAT_API}/contract/call" \
+curl -X POST "${UAT_API}/call-contract" \
   -H "Content-Type: application/json" \
   -d '{
-    "contract_address": "UAT_CONTRACT_abc123...",
+    "contract": "UATc1a2b3c4d5e6f7890abcdef1234567890abcde",
     "method": "transfer",
-    "args": "{\"to\":\"UAT2...\",\"amount\":100}",
-    "caller": "UAT1caller...",
-    "gas_limit": 100000,
-    "signature": "0xsig..."
+    "args": ["UAT387d447f...", "1000000"],
+    "from": "UAT0d15ab29bb71ff7d37b298fb65db95773a5ee8fd",
+    "gas_limit": 100000
   }'
 ```
 
@@ -473,74 +810,197 @@ curl -X POST "${UAT_API}/contract/call" \
 ```json
 {
   "success": true,
-  "tx_hash": "0xcall...",
-  "return_value": "{\"success\":true,\"message\":\"Transferred 100 tokens\"}",
+  "result": "true",
   "gas_used": 45000,
-  "events": [
-    {
-      "event_type": "Transfer",
-      "data": {
-        "from": "UAT1...",
-        "to": "UAT2...",
-        "amount": 100
-      }
-    }
-  ]
+  "tx_hash": "0xcall123..."
 }
 ```
 
 ---
 
-### Query Contract (Read-Only)
-Execute view function without transaction.
+### 6.3 Query Contract
+Read contract state (no gas).
 
 **Request:**
 ```bash
-curl -X POST "${UAT_API}/contract/query" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "contract_address": "UAT_CONTRACT_abc123...",
-    "method": "balanceOf",
-    "args": "{\"account\":\"UAT1...\"}"
-  }'
+curl "${UAT_API}/contract/UATc1a2b3c4d5e6f7890abcdef1234567890abcde"
 ```
 
 **Response:**
 ```json
 {
-  "success": true,
-  "return_value": "{\"balance\":5000}",
-  "gas_used": 0
+  "address": "UATc1a2b3c4d5e6f7890abcdef1234567890abcde",
+  "balance_uat": 1500,
+  "code_hash": "0xcode123...",
+  "owner": "UAT0d15ab29bb71ff7d37b298fb65db95773a5ee8fd"
 }
 ```
 
-**Note:** Query operations are free (no gas cost).
+---
+
+## 7. WebSocket API (Real-time)
+
+### 7.1 Subscribe to Blocks
+Real-time block notifications.
+
+**JavaScript:**
+```javascript
+const ws = new WebSocket('ws://' + UAT_API.replace('http://', '') + '/ws');
+
+ws.onopen = () => {
+  ws.send(JSON.stringify({type: 'subscribe', channel: 'blocks'}));
+};
+
+ws.onmessage = (event) => {
+  console.log('New block:', JSON.parse(event.data));
+};
+```
+
+**For Tor (requires torsocks + wscat):**
+```bash
+torsocks wscat -c ws://fhljoiopyz2eflttc7o5qwfj6l6skhtlkjpn4r6yw4atqpy2azydnnqd.onion/ws
+```
 
 ---
 
-## 7. Proof-of-Burn (PoB) Operations
-
-### Get Burn Address
-Retrieve BTC/ETH deposit addresses for UAT acquisition.
+### 7.2 Subscribe to Address
+Monitor address transactions.
 
 **Request:**
-```bash
-curl -X POST "${UAT_API}/pob/get-burn-address" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "uat_address": "UAT1recipient...",
-    "asset": "BTC"
-  }'
+```javascript
+ws.send(JSON.stringify({
+  type: 'subscribe',
+  channel: 'address',
+  address: 'UAT0d15ab29bb71ff7d37b298fb65db95773a5ee8fd'
+}));
 ```
 
 **Response:**
 ```json
 {
-  "uat_address": "UAT1recipient...",
-  "burn_address": "bc1q...bitcoin_address",
-  "asset": "BTC",
-  "current_rate": 456.78,
-  "expires_at": 1738717200,
+  "type": "transaction",
+  "tx_hash": "0xtx123...",
+  "from": "UAT387d447f...",
+  "to": "UAT0d15ab29bb71ff7d37b298fb65db95773a5ee8fd",
+  "amount_uat": 5
+}
+```
+
+---
+
+## 8. Advanced Use Cases
+
+### 8.1 Batch Queries
+Query multiple addresses.
+
+**Request:**
+```bash
+curl -X POST "${UAT_API}/batch/balances" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "addresses": [
+      "UAT0d15ab29bb71ff7d37b298fb65db95773a5ee8fd",
+      "UAT387d447f008fae00f012877b8ffbb49e0aadddd7"
+    ]
+  }'
+```
+
+---
+
+### 8.2 Pagination
+Efficient history retrieval.
+
+**Request:**
+```bash
+curl "${UAT_API}/history/UAT0d15ab29bb71ff7d37b298fb65db95773a5ee8fd?limit=50&offset=0"
+curl "${UAT_API}/history/UAT0d15ab29bb71ff7d37b298fb65db95773a5ee8fd?limit=50&offset=50"
+```
+
+---
+
+### 8.3 Error Handling
+Retry with exponential backoff.
+
+**Bash:**
+```bash
+for i in 1 2 4 8; do
+  response=$(curl -s "${UAT_API}/balance/UAT0d15ab...")
+  [ $? -eq 0 ] && echo "$response" && break
+  sleep $i
+done
+```
+
+---
+
+## 9. Development Setup
+
+### Local Node
+```bash
+cd /path/to/unauthority-core
+cargo run --bin uat-node
+
+export UAT_API="http://localhost:3030"
+curl "${UAT_API}/node-info"
+```
+
+### Tor Testnet
+```bash
+brew install torsocks  # macOS
+export UAT_API="http://fhljoiopyz2eflttc7o5qwfj6l6skhtlkjpn4r6yw4atqpy2azydnnqd.onion"
+torsocks curl "${UAT_API}/health"
+```
+
+### Mainnet (Q2 2026)
+```bash
+export UAT_API="<mainnet domain>"
+```
+
+---
+
+## 10. Integration Patterns
+
+### Wallet
+```bash
+# 1. Generate address (client-side)
+# 2. Request faucet
+curl -X POST "${UAT_API}/faucet" -d '{"address":"UAT..."}'
+# 3. Check balance
+curl "${UAT_API}/balance/UAT..."
+# 4. Send
+curl -X POST "${UAT_API}/send" -d '{...}'
+```
+
+### Exchange
+```bash
+# 1. Monitor deposits (WebSocket)
+# 2. Batch balance checks
+# 3. Confirm via /history
+# 4. Process withdrawals via /send
+```
+
+---
+
+## Appendix
+
+### Error Codes
+- `400` - Bad request
+- `404` - Not found
+- `429` - Rate limit exceeded
+- `500` - Server error
+
+### Response Times
+- Health: <50ms
+- Balance: <100ms
+- Transaction: ~2-3s
+- Contract deploy: ~5s
+
+### Rate Limits
+- 100 req/second per IP
+- Use keep-alive connections
+
+### Support
+- GitHub: https://github.com/unauthority/unauthority-core
+- Docs: https://docs.unauthority.org
   "min_amount": 0.001
 }
 ```
@@ -713,61 +1173,23 @@ curl -X GET "${UAT_API}/oracle/prices?assets=BTC,ETH"
 #!/bin/bash
 
 # Configuration
-FROM="UAT1sender..."
-TO="UAT2receiver..."
-AMOUNT=100000000000  # 1000 UAT
-API="http://localhost:8080"
+FROM="UAT0d15ab29bb71ff7d37b298fb65db95773a5ee8fd"
+TO="UAT387d447f008fae00f012877b8ffbb49e0aadddd7"
+AMOUNT=1000000  # 1 UAT in VOID
 
-# Step 1: Get current nonce
-NONCE=$(curl -s "${API}/balance/${FROM}" | jq -r '.nonce')
+# Step 1: Get balance
+BALANCE=$(curl -s "${UAT_API}/balance/${FROM}" | jq -r '.balance_void')
 
-# Step 2: Calculate gas
-GAS_LIMIT=21000
-GAS_PRICE=1000
-TOTAL_FEE=$((GAS_LIMIT * GAS_PRICE))
-
-# Step 3: Check balance
-BALANCE=$(curl -s "${API}/balance/${FROM}" | jq -r '.balance')
-REQUIRED=$((AMOUNT + TOTAL_FEE))
-
-if [ $BALANCE -lt $REQUIRED ]; then
-  echo "Insufficient balance: need $REQUIRED, have $BALANCE"
-  exit 1
-fi
-
-# Step 4: Create and sign transaction
-TX_DATA=$(cat <<EOF
-{
-  "from": "${FROM}",
-  "to": "${TO}",
-  "amount": ${AMOUNT},
-  "gas_limit": ${GAS_LIMIT},
-  "gas_price": ${GAS_PRICE},
-  "nonce": ${NONCE}
-}
-EOF
-)
-
-# Sign with private key (use uat-cli in production)
-SIGNATURE=$(echo -n "${TX_DATA}" | openssl dgst -sha256 -sign private.key | base64)
-
-# Step 5: Send transaction
-RESPONSE=$(curl -s -X POST "${API}/send" \
+# Step 2: Send transaction
+RESPONSE=$(curl -s -X POST "${UAT_API}/send" \
   -H "Content-Type: application/json" \
-  -d "${TX_DATA}" | jq -r '.tx_hash')
+  -d "{
+    \"from\": \"${FROM}\",
+    \"target\": \"${TO}\",
+    \"amount\": ${AMOUNT}
+  }" | jq -r '.tx_hash')
 
 echo "Transaction sent: ${RESPONSE}"
-
-# Step 6: Wait for confirmation
-while true; do
-  STATUS=$(curl -s "${API}/transaction/${RESPONSE}" | jq -r '.status')
-  if [ "$STATUS" = "confirmed" ]; then
-    echo "Transaction confirmed!"
-    break
-  fi
-  echo "Waiting for confirmation... (status: ${STATUS})"
-  sleep 3
-done
 ```
 
 ---
@@ -776,19 +1198,17 @@ done
 ```bash
 #!/bin/bash
 
-VALIDATOR="UAT_validator1..."
-API="http://localhost:8080"
+VALIDATOR="UAT9e6ed5183acbb802aba83e31420c6dc96d976405"
 
 while true; do
-  DATA=$(curl -s "${API}/validators" | jq ".validators[] | select(.address==\"${VALIDATOR}\")")
+  DATA=$(curl -s "${UAT_API}/validators" | jq ".validators[] | select(.address==\"${VALIDATOR}\")")
   
   STAKE=$(echo $DATA | jq -r '.stake_uat')
   VOTING_POWER=$(echo $DATA | jq -r '.voting_power')
-  UPTIME=$(echo $DATA | jq -r '.uptime_percent')
-  BLOCKS=$(echo $DATA | jq -r '.blocks_produced')
-  STATUS=$(echo $DATA | jq -r '.status')
+  UPTIME=$(echo $DATA | jq -r '.uptime')
+  BLOCKS=$(echo $DATA | jq -r '.blocks_proposed')
   
-  echo "$(date) | Stake: ${STAKE} UAT | Power: ${VOTING_POWER} | Uptime: ${UPTIME}% | Blocks: ${BLOCKS} | Status: ${STATUS}"
+  echo "$(date) | Stake: ${STAKE} UAT | Power: ${VOTING_POWER} | Uptime: ${UPTIME}% | Blocks: ${BLOCKS}"
   
   sleep 60
 done
@@ -800,39 +1220,29 @@ done
 ```bash
 #!/bin/bash
 
-CONTRACT="UAT_CONTRACT_token..."
-API="http://localhost:8080"
+CONTRACT="UATc1a2b3c4d5e6f7890abcdef1234567890abcde"
 
-# Check token balance (free query)
-check_balance() {
-  curl -s -X POST "${API}/contract/query" \
-    -H "Content-Type: application/json" \
-    -d "{
-      \"contract_address\": \"${CONTRACT}\",
-      \"method\": \"balanceOf\",
-      \"args\": \"{\\\"account\\\":\\\"$1\\\"}\"
-    }" | jq -r '.return_value'
+# Query contract state (free)
+check_contract() {
+  curl -s "${UAT_API}/contract/${CONTRACT}" | jq '.'
 }
 
-# Transfer tokens (paid transaction)
-transfer_tokens() {
-  curl -s -X POST "${API}/contract/call" \
+# Call contract method
+call_contract() {
+  curl -s -X POST "${UAT_API}/call-contract" \
     -H "Content-Type: application/json" \
     -d "{
-      \"contract_address\": \"${CONTRACT}\",
+      \"contract\": \"${CONTRACT}\",
       \"method\": \"transfer\",
-      \"args\": \"{\\\"to\\\":\\\"$1\\\",\\\"amount\\\":$2}\",
-      \"caller\": \"$3\",
-      \"gas_limit\": 100000,
-      \"signature\": \"$4\"
+      \"args\": [\"$1\", \"$2\"],
+      \"from\": \"$3\",
+      \"gas_limit\": 100000
     }" | jq -r '.tx_hash'
 }
 
 # Usage
-BALANCE=$(check_balance "UAT1...")
-echo "Current balance: $BALANCE"
-
-TX_HASH=$(transfer_tokens "UAT2..." 100 "UAT1..." "0xsig...")
+check_contract
+TX_HASH=$(call_contract "UAT387d44..." "1000000" "UAT0d15ab...")
 echo "Transfer TX: $TX_HASH"
 ```
 
@@ -843,11 +1253,9 @@ echo "Transfer TX: $TX_HASH"
 | Code | Message                    | Solution                              |
 |------|----------------------------|---------------------------------------|
 | 400  | Invalid request format     | Check JSON syntax                     |
-| 401  | Invalid signature          | Re-sign with correct private key      |
 | 403  | Insufficient balance       | Add more UAT to account               |
 | 404  | Account/TX not found       | Verify address/hash is correct        |
-| 409  | Nonce mismatch             | Get latest nonce from `/balance`      |
-| 429  | Rate limit exceeded        | Reduce request frequency              |
+| 429  | Rate limit exceeded        | Reduce request frequency (max 100/s)  |
 | 500  | Internal server error      | Check node logs, retry later          |
 | 503  | Node not synced            | Wait for sync to complete             |
 
@@ -856,61 +1264,30 @@ echo "Transfer TX: $TX_HASH"
 ## Rate Limits
 
 Default rate limits per IP:
-- General endpoints: 100 requests/minute
-- `/send` endpoint: 10 requests/minute
-- `/contract/call`: 20 requests/minute
-- `/contract/query`: 200 requests/minute (free reads)
-
-**Bypass Rate Limits:**
-Contact validator operators for API key (enterprise only).
-
----
-
-## WebSocket Subscriptions (Real-Time)
-
-### Subscribe to New Blocks
-```javascript
-const ws = new WebSocket('ws://localhost:8080/ws');
-
-ws.send(JSON.stringify({
-  subscribe: 'blocks'
-}));
-
-ws.onmessage = (event) => {
-  const block = JSON.parse(event.data);
-  console.log(`New block: ${block.height}`);
-};
-```
-
-### Subscribe to Address Transactions
-```javascript
-ws.send(JSON.stringify({
-  subscribe: 'address',
-  address: 'UAT1...'
-}));
-```
+- All endpoints: **100 requests/second**
+- Use `Connection: keep-alive` for efficiency
 
 ---
 
 ## Production Best Practices
 
-1. **Always use HTTPS** in production (not HTTP)
-2. **Verify SSL certificates** to prevent MITM attacks
-3. **Implement retry logic** with exponential backoff
-4. **Cache node-info** for 30 seconds (avoid spam)
-5. **Monitor rate limits** and implement queuing
+1. **Use placeholder format** `<domain testnet/mainnet>` in code
+2. **Set UAT_API environment variable** dynamically
+3. **Use torsocks for Tor testnet** access
+4. **Implement retry logic** with exponential backoff
+5. **Cache node-info** for 30 seconds (avoid spam)
 6. **Use multiple RPC endpoints** for redundancy
 7. **Validate all responses** before processing
 8. **Never log private keys** or signatures
-9. **Use environment variables** for addresses/keys
-10. **Test on testnet first** before mainnet deployment
+9. **Test on testnet first** before mainnet
+10. **Monitor validator uptime** (minimum 99%)
 
 ---
 
 ## Additional Resources
 
 - [Full REST API Reference](API_REFERENCE.md)
-- [gRPC Protocol Documentation](../uat.proto)
-- [Smart Contract Development Guide](../examples/contracts/README.md)
-- [Node Operation Manual](user/NODE_SETUP.md)
-- [Whitepaper](WHITEPAPER.md)
+- [Testnet Operation Guide](../docs/TESTNET_OPERATION.md)
+- [Tor Browser Installation (macOS)](../docs/TOR_BROWSER_INSTALL_MAC.md)
+- [Whitepaper](../docs/WHITEPAPER.md)
+- [GitHub Repository](https://github.com/unauthority/unauthority-core)

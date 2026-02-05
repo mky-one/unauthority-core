@@ -7,6 +7,8 @@ pub mod bonding_curve;
 pub mod anti_whale;
 pub mod validator_config;
 pub mod oracle_consensus;
+pub mod mempool;
+pub mod websocket;
 use crate::distribution::DistributionState;
 
 pub const VOID_PER_UAT: u128 = 100_000_000;
@@ -28,6 +30,8 @@ pub struct Block {
     pub link: String,
     pub signature: String,
     pub work: u64,
+    pub nonce: u64,  // Transaction nonce for replay protection
+    pub timestamp: u64, // Block timestamp
 }
 
 impl Block {
@@ -53,6 +57,10 @@ impl Block {
         // PENTING: Variabel work (nonce) HARUS ikut di-hash
         hasher.update(self.work.to_le_bytes());
         
+        // Add transaction nonce and timestamp for replay protection
+        hasher.update(self.nonce.to_le_bytes());
+        hasher.update(self.timestamp.to_le_bytes());
+        
         hex::encode(hasher.finalize())
     }
 
@@ -67,6 +75,7 @@ impl Block {
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
+    pub nonce: u64,  // Account nonce for replay protection
 pub struct AccountState {
     pub head: String,
     pub balance: u128,

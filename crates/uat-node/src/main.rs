@@ -19,6 +19,8 @@ mod grpc_server;  // NEW: gRPC server module
 mod rate_limiter; // NEW: Rate limiter module
 mod db;           // NEW: Database module (sled)
 mod metrics;      // NEW: Prometheus metrics module
+mod backup;       // NEW: Backup module
+mod websocket_server; // NEW: WebSocket module
 // --- TAMBAHAN: HTTP API MODULE ---
 use warp::Filter;
 use db::UatDatabase;
@@ -324,7 +326,7 @@ pub async fn start_api_server(
                     
                     let acc = l_guard.accounts.entry(recipient.clone()).or_insert(AccountState {
                         head: "0".to_string(),
-                        balance: 0,
+                        balance: 0, nonce: 0,
                         block_count: 0,
                     });
                     acc.balance += uat_to_mint;
@@ -642,7 +644,7 @@ pub async fn start_api_server(
             let mut l_guard = l.lock().unwrap();
             let state = l_guard.accounts.get(address).cloned().unwrap_or(AccountState {
                 head: "0".to_string(),
-                balance: 0,
+                balance: 0, nonce: 0,
                 block_count: 0,
             });
             
@@ -662,7 +664,7 @@ pub async fn start_api_server(
             let new_balance = {
                 let acc = l_guard.accounts.entry(address.to_string()).or_insert(AccountState {
                     head: "0".to_string(),
-                    balance: 0,
+                    balance: 0, nonce: 0,
                     block_count: 0,
                 });
                 acc.balance += faucet_amount;
@@ -722,7 +724,7 @@ pub async fn start_api_server(
             let l_guard = l.lock().unwrap();
             let state = l_guard.accounts.get(&addr).cloned().unwrap_or(AccountState {
                 head: "0".to_string(),
-                balance: 0,
+                balance: 0, nonce: 0,
                 block_count: 0,
             });
             
@@ -1337,6 +1339,35 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let oracle_tx = tx_out.clone();
     let oracle_addr = my_address.clone();
     let oracle_ledger = Arc::clone(&ledger);
+    
+    // --- NEW: WEBSOCKET SERVER (Real-time updates) ---
+    let ws_port = api_port + 1000; // WebSocket port = REST+1000 (e.g., 4030 for REST 3030)
+    let ws_subscription_manager = Arc::new(uat_core::websocket::WsSubscriptionManager::new());
+    let ws_manager_clone = Arc::clone(&ws_subscription_manager);
+    
+    tokio::spawn(async move {
+        println!("🔌 Starting WebSocket server on port {}...", ws_port);
+        if let Err(e) = websocket_server::start_websocket_server(ws_port, ws_manager_clone).await {
+            eprintln!("❌ WebSocket Server error: {}", e);
+        }
+    });
+    
+    // --- NEW: AUTOMATED BACKUP SYSTEM ---
+    let backup_config = backup::BackupConfig {
+        source_dir: std::path::PathBuf::from(format!("node_data/{}", node_id)),
+        backup_dir: std::path::PathBuf::from(format!("backups/{}", node_id)),
+        interval_secs: 3600, // Backup every 1 hour
+        max_backups: 24,     // Keep 24 backups (1 day of hourly backups)
+        compress: true,
+    };
+    
+    let backup_manager = backup::BackupManager::new(backup_config);
+    tokio::spawn(async move {
+        println!("💾 Starting automated backup system (hourly)...");
+        if let Err(e) = backup_manager.start().await {
+            eprintln!("❌ Backup system error: {}", e);
+        }
+    });
     
     tokio::spawn(async move {
         let mut interval = tokio::time::interval(Duration::from_secs(30));
@@ -2069,7 +2100,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         } else if let Ok(inc) = serde_json::from_str::<Block>(&data) {
                             let mut l = ledger.lock().unwrap();
                             if !l.accounts.contains_key(&inc.account) {
-                                l.accounts.insert(inc.account.clone(), AccountState { head: "0".to_string(), balance: 0, block_count: 0 });
+                                l.accounts.insert(inc.account.clone(), AccountState { head: "0".to_string(), balance: 0, block_count: 0, nonce: 0 });
                             }
                             match l.process_block(&inc) {
                                 Ok(block_hash) => {
@@ -2082,7 +2113,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     
                                     if inc.block_type == BlockType::Send && inc.link == my_address {
                                         if !l.accounts.contains_key(&my_address) {
-                                            l.accounts.insert(my_address.clone(), AccountState { head: "0".to_string(), balance: 0, block_count: 0 });
+                                            l.accounts.insert(my_address.clone(), AccountState { head: "0".to_string(), balance: 0, block_count: 0, nonce: 0 });
                                         }
                                         if let Some(state) = l.accounts.get(&my_address).cloned() {
                                             let mut rb = Block {

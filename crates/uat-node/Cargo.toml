@@ -18,14 +18,19 @@ uat-core = { path = "../uat-core" }
 uat-crypto = { path = "../uat-crypto" }
 uat-network = { path = "../uat-network" }
 uat-vm = { path = "../uat-vm" }
-
-# gRPC dependencies (NEW)
-tonic = "0.12"
-prost = "0.13"
 chrono = "0.4"
 sled = "0.34.7"
 prometheus = { version = "0.14.0", features = ["process"] }
-rand = "0.8"  # For faucet rate limiting
+rand = "0.8"
+tar = "0.4"
+
+# gRPC dependencies
+tonic = "0.12"
+prost = "0.13"
+
+# WebSocket dependencies
+tokio-tungstenite = "0.21"
+futures-util = "0.3"
 
 [build-dependencies]
 tonic-build = "0.12"

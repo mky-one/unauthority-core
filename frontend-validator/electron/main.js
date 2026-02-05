@@ -23,6 +23,22 @@ function createWindow() {
     titleBarStyle: 'hiddenInset',
   });
 
+  // Configure Tor SOCKS proxy for .onion URLs (same as Bitcoin Core)
+  // Tries common Tor ports: 9150 (Tor Browser), 9050 (Tor daemon)
+  mainWindow.webContents.session.setProxy({
+    proxyRules: 'socks5://127.0.0.1:9150',
+    proxyBypassRules: 'localhost,127.0.0.1'
+  }).catch(() => {
+    // Fallback to Tor daemon port if Tor Browser proxy fails
+    mainWindow.webContents.session.setProxy({
+      proxyRules: 'socks5://127.0.0.1:9050',
+      proxyBypassRules: 'localhost,127.0.0.1'
+    }).catch((err) => {
+      console.warn('Tor proxy not available:', err.message);
+      console.warn('Please ensure Tor Browser is running or install Tor daemon');
+    });
+  });
+
   // Load app
   if (process.env.NODE_ENV === 'development' || !app.isPackaged) {
     mainWindow.loadURL('http://localhost:5174');

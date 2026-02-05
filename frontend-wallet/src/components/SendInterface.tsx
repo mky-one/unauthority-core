@@ -45,7 +45,8 @@ export default function SendInterface({ nodeOnline }: Props) {
 
     try {
       // Get current account state for previous hash
-      const accountData = await fetch(`http://localhost:3030/account/${wallet!.address}`);
+      const { getApiUrl } = await import('../utils/api');
+      const accountData = await fetch(`${getApiUrl()}/account/${wallet!.address}`);
       const accountJson = await accountData.json();
       const previous = accountJson.head || '0';
       

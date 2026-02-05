@@ -15,9 +15,14 @@ interface NetworkPreset {
 
 const NETWORK_PRESETS: NetworkPreset[] = [
   {
+    name: 'Remote Testnet',
+    url: 'http://fhljoiopyz2eflttc7o5qwfj6l6skhtlkjpn4r6yw4atqpy2azydnnqd.onion',
+    description: 'UAT Testnet via Tor (default)',
+  },
+  {
     name: 'Local Testnet',
     url: 'http://localhost:3030',
-    description: 'Your local node (default)',
+    description: 'Your local node',
   },
   {
     name: 'Ngrok Remote',
@@ -80,7 +85,7 @@ export default function Settings() {
   };
 
   const handleReset = () => {
-    setEndpoint('http://localhost:3030');
+    setEndpoint('http://fhljoiopyz2eflttc7o5qwfj6l6skhtlkjpn4r6yw4atqpy2azydnnqd.onion');
     setSaved(false);
     setTestResult(null);
   };

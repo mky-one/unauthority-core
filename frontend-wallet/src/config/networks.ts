@@ -16,19 +16,19 @@ export const NETWORKS: Record<string, Network> = {
     id: 'testnet',
     name: 'UAT Testnet',
     chainId: 'uat-testnet',
-    rpcUrl: 'http://localhost:3030',
-    explorerUrl: 'http://localhost:3030/explorer',
+    rpcUrl: 'http://fhljoiopyz2eflttc7o5qwfj6l6skhtlkjpn4r6yw4atqpy2azydnnqd.onion',
+    explorerUrl: 'http://fhljoiopyz2eflttc7o5qwfj6l6skhtlkjpn4r6yw4atqpy2azydnnqd.onion/explorer',
     faucetEnabled: true,
-    description: 'Local testnet for development and testing'
+    description: 'Remote testnet via Tor hidden service'
   },
   mainnet: {
     id: 'mainnet',
     name: 'UAT Mainnet',
     chainId: 'uat-mainnet',
-    rpcUrl: 'https://rpc.unauthority.io',
-    explorerUrl: 'https://explorer.unauthority.io',
+    rpcUrl: 'http://localhost:3030',
+    explorerUrl: 'http://localhost:3030/explorer',
     faucetEnabled: false,
-    description: 'Production network with real UAT tokens'
+    description: 'Local mainnet node (coming Q2 2026)'
   }
 };
 

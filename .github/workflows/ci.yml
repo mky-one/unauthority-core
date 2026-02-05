@@ -2,7 +2,7 @@ name: CI/CD Pipeline
 
 on:
   push:
-    branches: [ main, develop, mky-finishing ]
+    branches: [ develop, mky-* ]
   pull_request:
     branches: [ main, develop ]
 

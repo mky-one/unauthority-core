@@ -3,7 +3,8 @@ name: Build Installers (Multi-Platform)
 on:
   push:
     tags:
-      - 'v*.*.*'
+      - 'v*.*.*-dev'
+      - 'v*.*.*-beta'
   workflow_dispatch:
     inputs:
       version:

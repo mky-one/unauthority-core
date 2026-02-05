@@ -3,7 +3,7 @@ name: Release Installers
 on:
   push:
     tags:
-      - 'v*.*.*'
+      - 'v*.*.*-production'
   workflow_dispatch:
     inputs:
       version:

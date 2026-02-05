@@ -2,7 +2,7 @@ name: Build Frontends
 
 on:
   push:
-    branches: [ main, develop ]
+    branches: [ develop, mky-* ]
     paths:
       - 'frontend-wallet/**'
       - 'frontend-validator/**'

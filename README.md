@@ -7,7 +7,8 @@
 
 **A truly decentralized, permissionless blockchain with zero admin keys, instant finality, and post-quantum security.**
 
-🌐 **Testnet Live:** `http://fhljoiopyz2eflttc7o5qwfj6l6skhtlkjpn4r6yw4atqpy2azydnnqd.onion` (Tor Required)
+🌐 **Testnet Live:** `http://fhljoiopyz2eflttc7o5qwfj6l6skhtlkjpn4r6yw4atqpy2azydnnqd.onion` (Tor Required)  
+📖 **Testnet Guide:** [How to Run Testnet](docs/TESTNET_OPERATION.md)
 
 ---
 

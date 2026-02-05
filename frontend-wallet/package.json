@@ -81,7 +81,11 @@
       ],
       "identity": null,
       "hardenedRuntime": false,
-      "gatekeeperAssess": false
+      "gatekeeperAssess": false,
+      "notarize": false,
+      "extendInfo": {
+        "LSUIElement": false
+      }
     },
     "win": {
       "target": [

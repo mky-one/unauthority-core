@@ -1,4 +1,4 @@
-import { app, BrowserWindow } from 'electron';
+import { app, BrowserWindow, shell } from 'electron';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { dirname } from 'path';
@@ -6,23 +6,43 @@ import { dirname } from 'path';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
+let mainWindow;
+
 function createWindow() {
-  const win = new BrowserWindow({
-    width: 1200,
-    height: 800,
+  mainWindow = new BrowserWindow({
+    width: 1400,
+    height: 900,
+    minWidth: 1000,
+    minHeight: 700,
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
     },
     backgroundColor: '#0a0e27',
+    icon: path.join(__dirname, '../public/icon.png'),
+    titleBarStyle: 'hiddenInset',
   });
 
-  if (process.env.NODE_ENV === 'development') {
-    win.loadURL('http://localhost:5174');
-    win.webContents.openDevTools();
+  // Load app
+  if (process.env.NODE_ENV === 'development' || !app.isPackaged) {
+    mainWindow.loadURL('http://localhost:5174');
+    mainWindow.webContents.openDevTools();
   } else {
-    win.loadFile(path.join(__dirname, '../dist/index.html'));
+    mainWindow.loadFile(path.join(__dirname, '../dist/index.html'));
   }
+
+  // Open external links in browser
+  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
+    if (url.startsWith('http')) {
+      shell.openExternal(url);
+      return { action: 'deny' };
+    }
+    return { action: 'allow' };
+  });
+
+  mainWindow.on('closed', () => {
+    mainWindow = null;
+  });
 }
 
 app.whenReady().then(createWindow);

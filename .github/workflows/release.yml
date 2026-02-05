@@ -1,0 +1,314 @@
+name: Release Installers
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version (e.g., 1.0.0)'
+        required: true
+        default: '1.0.0'
+
+env:
+  NODE_VERSION: '20'
+
+jobs:
+  # ════════════════════════════════════════════════════════════════════════════════
+  # WALLET BUILDS
+  # ════════════════════════════════════════════════════════════════════════════════
+  
+  wallet-macos:
+    name: 💳 Wallet - macOS
+    runs-on: macos-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Install dependencies
+        working-directory: frontend-wallet
+        run: npm ci
+
+      - name: Build
+        working-directory: frontend-wallet
+        run: npm run electron:build
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: false
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: wallet-macos
+          path: |
+            frontend-wallet/dist/*.dmg
+            frontend-wallet/dist/*.zip
+          if-no-files-found: warn
+
+  wallet-windows:
+    name: 💳 Wallet - Windows
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Install dependencies
+        working-directory: frontend-wallet
+        run: npm ci
+
+      - name: Build
+        working-directory: frontend-wallet
+        run: npm run electron:build
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: wallet-windows
+          path: |
+            frontend-wallet/dist/*.exe
+          if-no-files-found: warn
+
+  wallet-linux:
+    name: 💳 Wallet - Linux
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Install dependencies
+        working-directory: frontend-wallet
+        run: npm ci
+
+      - name: Build
+        working-directory: frontend-wallet
+        run: npm run electron:build
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: wallet-linux
+          path: |
+            frontend-wallet/dist/*.AppImage
+            frontend-wallet/dist/*.deb
+          if-no-files-found: warn
+
+  # ════════════════════════════════════════════════════════════════════════════════
+  # VALIDATOR DASHBOARD BUILDS
+  # ════════════════════════════════════════════════════════════════════════════════
+  
+  validator-macos:
+    name: 🖥️ Validator - macOS
+    runs-on: macos-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Install dependencies
+        working-directory: frontend-validator
+        run: npm ci
+
+      - name: Build
+        working-directory: frontend-validator
+        run: npm run electron:build
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: false
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: validator-macos
+          path: |
+            frontend-validator/dist/*.dmg
+            frontend-validator/dist/*.zip
+          if-no-files-found: warn
+
+  validator-windows:
+    name: 🖥️ Validator - Windows
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Install dependencies
+        working-directory: frontend-validator
+        run: npm ci
+
+      - name: Build
+        working-directory: frontend-validator
+        run: npm run electron:build
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: validator-windows
+          path: |
+            frontend-validator/dist/*.exe
+          if-no-files-found: warn
+
+  validator-linux:
+    name: 🖥️ Validator - Linux
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Install dependencies
+        working-directory: frontend-validator
+        run: npm ci
+
+      - name: Build
+        working-directory: frontend-validator
+        run: npm run electron:build
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: validator-linux
+          path: |
+            frontend-validator/dist/*.AppImage
+            frontend-validator/dist/*.deb
+          if-no-files-found: warn
+
+  # ════════════════════════════════════════════════════════════════════════════════
+  # CREATE GITHUB RELEASE
+  # ════════════════════════════════════════════════════════════════════════════════
+  
+  release:
+    name: 📦 Create Release
+    needs:
+      - wallet-macos
+      - wallet-windows
+      - wallet-linux
+      - validator-macos
+      - validator-windows
+      - validator-linux
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts/
+
+      - name: List artifacts
+        run: |
+          echo "=== Downloaded Artifacts ==="
+          find artifacts -type f -name "*.dmg" -o -name "*.exe" -o -name "*.AppImage" -o -name "*.deb" -o -name "*.zip" | sort
+
+      - name: Get version
+        id: version
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "version=${{ github.event.inputs.version }}" >> $GITHUB_OUTPUT
+            echo "tag=v${{ github.event.inputs.version }}" >> $GITHUB_OUTPUT
+          else
+            TAG="${GITHUB_REF#refs/tags/}"
+            echo "tag=$TAG" >> $GITHUB_OUTPUT
+            echo "version=${TAG#v}" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version.outputs.tag }}
+          name: Unauthority v${{ steps.version.outputs.version }}
+          draft: false
+          prerelease: false
+          generate_release_notes: true
+          body: |
+            # 🚀 Unauthority v${{ steps.version.outputs.version }}
+            
+            ## 📥 Downloads
+            
+            ### 💳 Wallet (For Users)
+            Download the wallet to send/receive UAT and interact with the blockchain.
+            
+            | Platform | Download |
+            |----------|----------|
+            | 🍎 macOS | `Unauthority-Wallet-*.dmg` |
+            | 🪟 Windows | `Unauthority-Wallet-Setup-*.exe` |
+            | 🐧 Linux | `Unauthority-Wallet-*.AppImage` |
+            
+            ### 🖥️ Validator Dashboard (For Node Operators)
+            Download to monitor and manage your validator node.
+            
+            | Platform | Download |
+            |----------|----------|
+            | 🍎 macOS | `Unauthority-Validator-*.dmg` |
+            | 🪟 Windows | `Unauthority-Validator-Setup-*.exe` |
+            | 🐧 Linux | `Unauthority-Validator-*.AppImage` |
+            
+            ---
+            
+            ## 🌐 Quick Start - Remote Testnet
+            
+            ### If you're running the testnet:
+            ```bash
+            ./scripts/start_remote_testnet.sh
+            ```
+            Share the Ngrok URL with your friends!
+            
+            ### If you're joining a friend's testnet:
+            1. Download & install the Wallet above
+            2. Open wallet → Settings → API Endpoint
+            3. Paste your friend's Ngrok URL
+            4. Click "Test" → "Save & Reconnect"
+            5. Create wallet → Request from Faucet (100 UAT)
+            6. Start testing! 🎉
+            
+            ---
+            
+            📖 [Documentation](https://github.com/${{ github.repository }}/blob/main/README.md)
+            
+          files: |
+            artifacts/**/*.dmg
+            artifacts/**/*.exe
+            artifacts/**/*.AppImage
+            artifacts/**/*.deb
+            artifacts/**/*.zip
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

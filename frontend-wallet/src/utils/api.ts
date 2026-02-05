@@ -1,12 +1,17 @@
 /**
  * Unauthority REST API Client (IMPROVED with Error Handling & Retry Logic)
  * Connects to node with automatic reconnection and user-friendly errors
+ * 
+ * SUPPORTS DYNAMIC ENDPOINT CHANGES FOR REMOTE TESTNET
  */
 
 import axios, { AxiosError, AxiosInstance } from 'axios';
 
-// Get API base from environment or localStorage
-const getApiBase = (): string => {
+const API_TIMEOUT = 10000; // 10 seconds for remote connections
+const MAX_RETRIES = 2;
+
+// Get API base from localStorage (dynamic, changes when user updates settings)
+export const getApiBase = (): string => {
   if (typeof window !== 'undefined') {
     return localStorage.getItem('api_base') || 'http://localhost:3030';
   }
@@ -15,22 +20,32 @@ const getApiBase = (): string => {
 
 export const setApiBase = (url: string) => {
   if (typeof window !== 'undefined') {
-    localStorage.setItem('api_base', url);
+    // Normalize URL - remove trailing slashes
+    const normalizedUrl = url.replace(/\/+$/, '');
+    localStorage.setItem('api_base', normalizedUrl);
+    console.log('[API] Endpoint updated to:', normalizedUrl);
   }
 };
 
-const API_BASE = getApiBase();
-const API_TIMEOUT = 5000; // 5 seconds
-const MAX_RETRIES = 3;
+// Export alias for consistency
+export const getApiBaseUrl = getApiBase;
 
-// Create axios instance with interceptors
+// Create axios instance dynamically (gets current endpoint each time)
 const createApiClient = (): AxiosInstance => {
   const client = axios.create({
-    baseURL: API_BASE,
     timeout: API_TIMEOUT,
+    headers: {
+      'Content-Type': 'application/json',
+    },
   });
 
-  // Add request interceptor for retry logic
+  // Request interceptor - set baseURL dynamically
+  client.interceptors.request.use((config) => {
+    config.baseURL = getApiBase();
+    return config;
+  });
+
+  // Response interceptor for retry logic
   client.interceptors.response.use(
     (response) => response,
     async (error: AxiosError) => {
@@ -50,7 +65,7 @@ const createApiClient = (): AxiosInstance => {
         config.__retryCount += 1;
         
         // Exponential backoff
-        const delay = Math.min(1000 * Math.pow(2, config.__retryCount - 1), 5000);
+        const delay = Math.min(1000 * Math.pow(2, config.__retryCount - 1), 3000);
         console.log(`[API] Retrying request (${config.__retryCount}/${MAX_RETRIES}) after ${delay}ms...`);
         
         await new Promise(resolve => setTimeout(resolve, delay));
@@ -296,8 +311,9 @@ export async function claimFaucet(address: string): Promise<FaucetResponse> {
  */
 export async function checkNodeConnection(): Promise<boolean> {
   try {
-    console.log('[API] Checking node connection at:', API_BASE);
-    const response = await api.get('/node-info', { timeout: 3000 });
+    const baseUrl = getApiBase();
+    console.log('[API] Checking node connection at:', baseUrl);
+    const response = await api.get('/node-info', { timeout: 5000 });
     console.log('[API] Node connection successful:', response.status);
     return response.status === 200;
   } catch (error: any) {
@@ -337,6 +353,39 @@ export async function getRecentBlocks(): Promise<any[]> {
 /**
  * Export current API base URL
  */
-export function getApiBaseUrl(): string {
-  return API_BASE;
+export function getCurrentApiUrl(): string {
+  return getApiBase();
+}
+
+/**
+ * Test connection to a specific endpoint (without changing current)
+ */
+export async function testEndpoint(url: string): Promise<{ success: boolean; message: string; data?: any }> {
+  try {
+    const normalizedUrl = url.replace(/\/+$/, '');
+    const response = await fetch(`${normalizedUrl}/node-info`, {
+      method: 'GET',
+      headers: { 'Content-Type': 'application/json' },
+      signal: AbortSignal.timeout(8000),
+    });
+
+    if (response.ok) {
+      const data = await response.json();
+      return {
+        success: true,
+        message: `Connected to ${data.chain_name || 'UAT'} (Block #${data.block_height || 0})`,
+        data,
+      };
+    } else {
+      return {
+        success: false,
+        message: `HTTP Error: ${response.status}`,
+      };
+    }
+  } catch (error: any) {
+    return {
+      success: false,
+      message: error.name === 'TimeoutError' ? 'Connection timeout' : (error.message || 'Network error'),
+    };
+  }
 }

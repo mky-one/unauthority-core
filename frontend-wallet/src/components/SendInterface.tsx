@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Send, AlertCircle } from 'lucide-react';
 import { useWalletStore } from '../store/walletStore';
 import { sendTransaction } from '../utils/api';
-import { isValidUATAddress, formatBalance, uatToVoid } from '../utils/wallet';
+import { isValidUATAddress, formatBalance, signTransaction } from '../utils/wallet';
 
 interface Props {
   nodeOnline: boolean;
@@ -35,8 +35,8 @@ export default function SendInterface({ nodeOnline }: Props) {
       return;
     }
 
-    const amountVoid = uatToVoid(amountNum);
-    if (amountVoid > balance) {
+    // Balance is already in UAT, compare directly
+    if (amountNum > balance) {
       setResult({ status: 'error', message: 'Insufficient balance' });
       return;
     }
@@ -44,10 +44,39 @@ export default function SendInterface({ nodeOnline }: Props) {
     setLoading(true);
 
     try {
-      const response = await sendTransaction({
+      // Get current account state for previous hash
+      const accountData = await fetch(`http://localhost:3030/account/${wallet!.address}`);
+      const accountJson = await accountData.json();
+      const previous = accountJson.head || '0';
+      
+      // Convert UAT to VOI for block amount
+      const amountVoi = Math.floor(amountNum * 100_000_000);
+      
+      // Sign transaction client-side
+      const signature = await signTransaction(
+        wallet!.privateKey,
+        wallet!.address,
+        previous,
+        'Send',
+        amountVoi,
+        recipient.trim()
+      );
+      
+      console.log('Signing transaction:', {
         from: wallet!.address,
         to: recipient.trim(),
-        amount: amountVoid,
+        amount: amountNum,
+        previous,
+        signature: signature.slice(0, 16) + '...'
+      });
+      
+      // Send signed transaction to backend
+      const response = await sendTransaction({
+        from: wallet!.address,
+        target: recipient.trim(),
+        amount: amountNum,
+        signature,
+        previous,
       });
       
       console.log('Transaction sent:', response);
@@ -61,6 +90,7 @@ export default function SendInterface({ nodeOnline }: Props) {
       setRecipient('');
       setAmount('');
     } catch (error: any) {
+      console.error('Send error:', error);
       setResult({ status: 'error', message: error.message });
     } finally {
       setLoading(false);

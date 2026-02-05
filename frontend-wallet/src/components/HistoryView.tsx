@@ -80,7 +80,7 @@ export default function HistoryView() {
                       }`}>
                         {tx.type.toUpperCase()}
                       </span>
-                      <span className="text-xs text-gray-500">{formatDate(tx.timestamp)}</span>
+                      <span className="text-xs text-gray-500">{formatDate(tx.timestamp || 0)}</span>
                     </div>
 
                     <div className="grid grid-cols-2 gap-4 text-sm">

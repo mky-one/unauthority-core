@@ -2,9 +2,9 @@
   "network": "TESTNET",
   "security_warning": "\u26a0\ufe0f PUBLICLY KNOWN WALLETS - NEVER USE IN PRODUCTION",
   "total_supply_uat": "15940000.00000000",
-  "total_wallets": 11,
+  "total_wallets": 12,
   "treasury_wallets": 8,
-  "validator_wallets": 3,
+  "validator_wallets": 4,
   "generated_at": "2026-02-05",
   "wallets": [
     {
@@ -102,7 +102,7 @@
       "index": 7,
       "label": "TESTNET_TREASURY_8",
       "role": "treasury",
-      "genesis_balance_uat": "1937000.00000000",
+      "genesis_balance_uat": "1936000.00000000",
       "description": "Reserve fund for additional testing needs",
       "address": "UATH8DuLcmEsiDqyxKcPgzHtAJKjLUzT4MV7M7AyXV7KLhL",
       "public_key": "ef94a52f828aedb537790da6218077afe00f895a212aa85c722ae514dd5991ff",
@@ -147,6 +147,19 @@
       "public_key": "e710a7f2373d3b8ea01fd9f2d2118a8a027f091ddf399ca5afa52737b2726d0b",
       "private_key": "6718ed900fe88738684a9ef13367c946c9875f422fc98db5ce58e04ca209888c",
       "seed_phrase": "node node node node node node node node node node node charlie",
+      "network": "testnet",
+      "security_level": "PUBLIC - For Testing Only"
+    },
+    {
+      "index": 11,
+      "label": "TESTNET_VALIDATOR_NODE_D",
+      "role": "validator",
+      "genesis_balance_uat": "1000.00000000",
+      "description": "Bootstrap validator node (quaternary) - BFT Complete",
+      "address": "UAT7ESTVzthcEDyx5HYWtgrPgNipUZh6tA3tYWpfeYhFArh",
+      "public_key": "5c9774cec6bfbc340cb372afa6c964a6de47959cf440bed9c2e00755d550c3d6",
+      "private_key": "f6e9b31bf3c7214732f8812fbac0557e586e7da00f69467be9e8919f90c74790",
+      "seed_phrase": "node node node node node node node node node node node delta",
       "network": "testnet",
       "security_level": "PUBLIC - For Testing Only"
     }

@@ -32,6 +32,7 @@ SEED_PHRASES=(
   "node node node node node node node node node node node alpha"
   "node node node node node node node node node node node bravo"
   "node node node node node node node node node node node charlie"
+  "node node node node node node node node node node node delta"
 )
 
 WALLET_LABELS=(
@@ -46,6 +47,7 @@ WALLET_LABELS=(
   "TESTNET_VALIDATOR_NODE_A"
   "TESTNET_VALIDATOR_NODE_B"
   "TESTNET_VALIDATOR_NODE_C"
+  "TESTNET_VALIDATOR_NODE_D"
 )
 
 WALLET_ROLES=(
@@ -60,6 +62,7 @@ WALLET_ROLES=(
   "validator"
   "validator"
   "validator"
+  "validator"
 )
 
 WALLET_BALANCES=(
@@ -70,10 +73,11 @@ WALLET_BALANCES=(
   "2000000.00000000"  # Treasury 5: 2M UAT
   "2000000.00000000"  # Treasury 6: 2M UAT
   "2000000.00000000"  # Treasury 7: 2M UAT
-  "1937000.00000000"  # Treasury 8: 1.937M UAT (reduced to fund validators)
+  "1936000.00000000"  # Treasury 8: 1.936M UAT (reduced to fund 4 validators)
   "1000.00000000"     # Validator A: 1,000 UAT (minimum stake)
   "1000.00000000"     # Validator B: 1,000 UAT (minimum stake)
   "1000.00000000"     # Validator C: 1,000 UAT (minimum stake)
+  "1000.00000000"     # Validator D: 1,000 UAT (minimum stake) - NEW!
 )
 
 WALLET_DESCRIPTIONS=(
@@ -88,10 +92,11 @@ WALLET_DESCRIPTIONS=(
   "Bootstrap validator node (primary)"
   "Bootstrap validator node (secondary)"
   "Bootstrap validator node (tertiary)"
+  "Bootstrap validator node (quaternary) - BFT Complete"
 )
 
 # Generate wallets using Python script with metadata
-echo "⚙️  Generating testnet wallets from deterministic seeds..."
+echo "⚙️  Generating genesis wallets from deterministic seeds..."
 python3 - <<'PYTHON_SCRIPT' "$OUTPUT_FILE" "${WALLET_LABELS[@]}" "---" "${WALLET_ROLES[@]}" "---" "${WALLET_BALANCES[@]}" "---" "${WALLET_DESCRIPTIONS[@]}" "---" "${SEED_PHRASES[@]}"
 import sys
 import json
@@ -184,6 +189,8 @@ print(f"✅ Generated {len(wallets)} wallets", file=sys.stderr)
 print(f"   Treasury: {output_data['treasury_wallets']}", file=sys.stderr)
 print(f"   Validators: {output_data['validator_wallets']}", file=sys.stderr)
 print(f"   Total Supply: {total_supply:,.0f} UAT", file=sys.stderr)
+bft_status = 'YES (4 validators)' if output_data['validator_wallets'] >= 4 else 'NO (need 4+ validators)'
+print(f"   BFT Safe: {bft_status}", file=sys.stderr)
 PYTHON_SCRIPT
 
 # Check if Python script succeeded
@@ -407,8 +414,12 @@ A: Yes! Use "Generate New Wallet" in the app. But these pre-made ones are conven
 **Security Level:** PUBLIC (Zero - For Testing Only)
 EOF
 
+echo "✅ Genesis wallets generated successfully!"
 echo ""
-echo "✅ Testnet wallets generated successfully!"
+echo "📊 Summary:"
+echo "   Total Wallets: 12 (8 Treasury + 4 Validators)"
+echo "   Total Supply: 15,940,000 UAT"
+echo "   BFT Status: ✅ Safe (4 validators for Byzantine Fault Tolerance)"
 echo ""
 echo "📁 Files created:"
 echo "   - $OUTPUT_FILE"

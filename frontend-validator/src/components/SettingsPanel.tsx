@@ -22,9 +22,9 @@ export default function SettingsPanel() {
     try {
       const whoami = await getWhoami();
       if (whoami) {
-        setLocalAddress(whoami.address);
-        setOwnAddress(whoami.address);
-        alert(`✅ Node address fetched: ${whoami.short}`);
+        setLocalAddress(whoami.address || '');
+        setOwnAddress(whoami.address || '');
+        alert(`✅ Node address fetched: ${whoami.short || whoami.address || 'Unknown'}`);
       } else {
         alert('❌ Failed to fetch node address');
       }

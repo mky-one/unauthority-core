@@ -19,7 +19,7 @@ export default function Dashboard() {
   const stats = [
     {
       label: 'Total Supply',
-      value: `${nodeInfo.total_supply.toLocaleString()} UAT`,
+      value: `${(nodeInfo.total_supply || 0).toLocaleString()} UAT`,
       icon: HardDrive,
       color: 'text-blue-400',
     },

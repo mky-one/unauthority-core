@@ -1,5 +1,5 @@
 /**
- * Unauthority Validator Dashboard API Client
+ * Unauthority REST API Client with Timeout & Error Handling
  * REMOTE TESTNET READY - No more stuck loading!
  */
 
@@ -48,130 +48,325 @@ export function setApiUrl(url: string): void {
 
 export const getApiBase = getApiUrl;
 export const setApiBase = setApiUrl;
+export const getApiBaseUrl = getApiUrl;
 
-export interface NodeInfo {
-  chain_id: string;
-  version: string;
-  total_supply: number;
-  circulating_supply: number;
-  validator_count: number;
-  peer_count: number;
-  block_height: number;
-  network_tps: number;
+export async function healthCheck(): Promise<boolean> {
+  try {
+    const response = await fetchWithTimeout(`${getApiUrl()}/health`, {
+      timeout: 5000,
+    });
+    return response.ok;
+  } catch (error) {
+    console.error('Health check failed:', error);
+    return false;
+  }
 }
 
-export interface Balance {
-  address: string;
-  balance_void: number;
-  balance_uat: number;
-}
-
-export interface ValidatorInfo {
-  address: string;
-  stake: number;
-  is_active: boolean;
-  uptime_percentage: number;
-}
-
-export interface Block {
-  hash: string;
-  height: number;
-  timestamp: number;
-  transactions_count: number;
+export async function checkNodeConnection(): Promise<boolean> {
+  return healthCheck();
 }
 
 export async function getNodeInfo(): Promise<NodeInfo | null> {
   try {
     const response = await fetchWithTimeout(`${getApiUrl()}/node-info`);
-    if (!response.ok) return null;
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
     return await response.json();
   } catch (error) {
-    console.error('Failed to fetch node info:', error);
+    console.error('Failed to get node info:', error);
     return null;
   }
 }
 
-export async function getBalance(address: string): Promise<Balance | null> {
+export async function getBalance(address: string): Promise<number> {
   try {
     const response = await fetchWithTimeout(`${getApiUrl()}/balance/${address}`);
-    if (!response.ok) return null;
-    return await response.json();
+    if (!response.ok) {
+      if (response.status === 404) return 0;
+      throw new Error(`HTTP ${response.status}`);
+    }
+    const data = await response.json();
+    return (data.balance || data.balance_uat || 0) / 100_000_000;
   } catch (error) {
-    console.error('Failed to fetch balance:', error);
-    return null;
+    console.error('Failed to get balance:', error);
+    return 0;
   }
 }
 
-export async function getValidators(): Promise<ValidatorInfo[]> {
+export async function getHistory(address: string): Promise<Transaction[]> {
+  try {
+    const response = await fetchWithTimeout(`${getApiUrl()}/history/${address}`);
+    if (!response.ok) return [];
+    const data = await response.json();
+    return Array.isArray(data) ? data : (data.transactions || []);
+  } catch (error) {
+    console.error('Failed to get history:', error);
+    return [];
+  }
+}
+
+export async function requestFaucet(address: string): Promise<FaucetResult> {
+  try {
+    const response = await fetchWithTimeout(`${getApiUrl()}/faucet`, {
+      method: 'POST',
+      body: JSON.stringify({ address }),
+    });
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      return {
+        success: false,
+        message: data.message || data.msg || `Request failed: ${response.status}`,
+      };
+    }
+
+    return {
+      success: true,
+      message: data.message || data.msg || 'Faucet claim successful',
+      amount: data.amount,
+      txHash: data.tx_hash,
+    };
+  } catch (error: any) {
+    return {
+      success: false,
+      message: error.message || 'Network error',
+    };
+  }
+}
+
+export const claimFaucet = requestFaucet;
+
+export async function sendTransaction(
+  from: string,
+  to: string,
+  amount: number
+): Promise<SendResult> {
+  try {
+    const microAmount = Math.floor(amount * 100_000_000);
+
+    const response = await fetchWithTimeout(`${getApiUrl()}/send`, {
+      method: 'POST',
+      body: JSON.stringify({
+        from,
+        target: to,
+        amount: microAmount,
+      }),
+    });
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      return {
+        success: false,
+        message: data.message || data.msg || `Send failed: ${response.status}`,
+      };
+    }
+
+    return {
+      success: true,
+      txHash: data.tx_hash,
+      message: data.message || data.msg || 'Transaction successful',
+    };
+  } catch (error: any) {
+    return {
+      success: false,
+      message: error.message || 'Network error',
+    };
+  }
+}
+
+export async function getValidators(): Promise<Validator[]> {
   try {
     const response = await fetchWithTimeout(`${getApiUrl()}/validators`);
     if (!response.ok) return [];
     const data = await response.json();
     return Array.isArray(data) ? data : (data.validators || []);
   } catch (error) {
-    console.error('Failed to fetch validators:', error);
+    console.error('Failed to get validators:', error);
     return [];
   }
 }
 
-export async function getRecentBlocks(): Promise<Block[]> {
+export async function getLatestBlock(): Promise<Block | null> {
   try {
     const response = await fetchWithTimeout(`${getApiUrl()}/block`);
-    if (!response.ok) return [];
-    const data = await response.json();
-    return data ? [data] : [];
+    if (!response.ok) return null;
+    return await response.json();
   } catch (error) {
-    console.error('Failed to fetch blocks:', error);
-    return [];
+    console.error('Failed to get latest block:', error);
+    return null;
   }
 }
 
-export async function checkNodeConnection(): Promise<boolean> {
+// Test connection to a specific endpoint
+export async function testEndpoint(url: string): Promise<{ success: boolean; message: string; data?: any }> {
   try {
-    const info = await getNodeInfo();
-    return info !== null;
-  } catch {
-    return false;
-  }
-}
+    const normalizedUrl = url.replace(/\/+$/, '');
+    const response = await fetchWithTimeout(`${normalizedUrl}/health`, {
+      timeout: 8000,
+    });
 
-export interface SendRequest {
-  from: string;
-  to: string;
-  amount: number;
-}
-
-export interface SendResponse {
-  success: boolean;
-  hash?: string;
-  error?: string;
-}
-
-export async function sendTransaction(request: SendRequest): Promise<SendResponse> {
-  try {
-    const response = await api.post('/send', request);
-    return response.data;
+    if (response.ok) {
+      const data = await response.json();
+      return {
+        success: true,
+        message: `Connected successfully`,
+        data,
+      };
+    } else {
+      return {
+        success: false,
+        message: `HTTP Error: ${response.status}`,
+      };
+    }
   } catch (error: any) {
-    console.error('Failed to send transaction:', error);
     return {
       success: false,
-      error: error.response?.data?.error || error.message || 'Unknown error',
+      message: error.message.includes('timeout') ? 'Connection timeout' : 'Network error',
     };
   }
 }
 
-export interface WhoamiResponse {
-  address: string;
-  short: string;
-  format: string;
+// Submit burn transaction (Proof-of-burn: ETH/BTC -> UAT)
+export async function submitBurn(request: BurnRequest): Promise<BurnResponse> {
+  try {
+    const response = await fetchWithTimeout(`${getApiUrl()}/burn`, {
+      method: 'POST',
+      body: JSON.stringify(request),
+    });
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      return {
+        status: 'error',
+        error: data.message || data.error || `Burn failed: ${response.status}`,
+      };
+    }
+
+    return {
+      status: 'success',
+      ...data,
+    };
+  } catch (error: any) {
+    return {
+      status: 'error',
+      error: error.message || 'Network error',
+    };
+  }
 }
 
-export async function getWhoami(): Promise<WhoamiResponse | null> {
+// Types
+export interface NodeInfo {
+  chain_id: string;
+  node_address?: string;
+  address?: string;
+  short?: string;
+  block_height: number;
+  peers_count?: number;
+  peer_count?: number;
+  is_validator?: boolean;
+  network?: string;
+  chain_name?: string;
+  eth_price_usd?: number;
+  btc_price_usd?: number;
+  total_supply?: number;
+  version?: string;
+  network_tps?: number;
+}
+
+export interface Transaction {
+  hash: string;
+  from: string;
+  to: string;
+  amount: number;
+  timestamp: number;
+  tx_type: string;
+  type?: string;
+}
+
+export interface FaucetResult {
+  success: boolean;
+  message: string;
+  amount?: number;
+  txHash?: string;
+  status?: string;
+  amount_uat?: number;
+  error?: string;
+  msg?: string;
+}
+
+export interface SendResult {
+  success: boolean;
+  message: string;
+  txHash?: string;
+  hash?: string;
+  error?: string;
+}
+
+export interface Validator {
+  address: string;
+  stake: number;
+  voting_power?: number;
+  is_active: boolean;
+}
+
+export interface Block {
+  height: number;
+  hash: string;
+  prev_hash?: string;
+  timestamp: number;
+  transactions?: Transaction[];
+  transactions_count?: number;
+}
+
+export interface BurnRequest {
+  asset: string;
+  coin_type: string;
+  amount: number;
+  txid: string;
+  proof: string;
+  uat_address: string;
+  recipient_address: string;
+}
+
+// Get recent blocks
+export async function getRecentBlocks(): Promise<Block[]> {
   try {
-    const response = await api.get('/whoami');
-    return response.data;
+    const response = await fetchWithTimeout(`${getApiUrl()}/blocks`);
+    if (!response.ok) return [];
+    const data = await response.json();
+    return Array.isArray(data) ? data : (data.blocks || []);
   } catch (error) {
-    console.error('Failed to fetch whoami:', error);
+    console.error('Failed to get recent blocks:', error);
+    return [];
+  }
+}
+
+// Get validator info
+export async function getWhoami(): Promise<NodeInfo | null> {
+  try {
+    const response = await fetchWithTimeout(`${getApiUrl()}/whoami`);
+    if (!response.ok) return null;
+    return await response.json();
+  } catch (error) {
+    console.error('Failed to get whoami:', error);
     return null;
   }
+}
+
+// Validator info alias
+export interface ValidatorInfo {
+  address: string;
+  stake: number;
+  voting_power?: number;
+  is_active: boolean;
+  uptime_percentage?: number;
+}
+
+export interface BurnResponse {
+  status: string;
+  error?: string;
+  tx_hash?: string;
+  amount_uat?: number;
 }

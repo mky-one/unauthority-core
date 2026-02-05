@@ -71,13 +71,11 @@ export default function SendInterface({ nodeOnline }: Props) {
       });
       
       // Send signed transaction to backend
-      const response = await sendTransaction({
-        from: wallet!.address,
-        target: recipient.trim(),
-        amount: amountNum,
-        signature,
-        previous,
-      });
+      const response = await sendTransaction(
+        wallet!.address,
+        recipient.trim(),
+        amountNum
+      );
       
       console.log('Transaction sent:', response);
 

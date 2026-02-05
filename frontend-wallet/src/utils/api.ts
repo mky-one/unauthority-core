@@ -50,128 +50,31 @@ export const getApiBase = getApiUrl;
 export const setApiBase = setApiUrl;
 export const getApiBaseUrl = getApiUrl;
 
-// Type definitions
-export interface Balance {
-  balance_void: number;
-  balance_uat: number;
-  address: string;
-}
-
-export interface NodeInfo {
-  node_address: string;
-  network_id: number;
-  chain_name: string;
-  total_supply_void: number;
-  remaining_supply_void: number;
-  total_burned_idr: number;
-  validator_count: number;
-  block_height: number;
-  peer_count: number;
-  eth_price_usd?: number;
-  btc_price_usd?: number;
-}
-
-export interface SendRequest {
-  from?: string;
-  target: string;
-  amount: number; // UAT amount
-  signature?: string;
-  previous?: string;
-  work?: number;
-}
-
-export interface SendResponse {
-  status: 'success' | 'error';
-  tx_hash?: string;
-  initial_power?: number;
-  msg?: string;
-  error?: string;
-}
-
-export interface BurnRequest {
-  coin_type: 'btc' | 'eth';
-  txid: string;
-  recipient_address?: string;
-}
-
-export interface BurnResponse {
-  status: 'success' | 'error';
-  tx_hash?: string;
-  minted_uat?: number;
-  initial_power?: number;
-  msg?: string;
-  error?: string;
-}
-
-export interface Transaction {
-  hash?: string;
-  from: string;
-  to: string;
-  amount: number; // UAT amount
-  timestamp?: number;
-  type: string;
-}
-
-export interface FaucetResponse {
-  status: 'success' | 'error';
-  amount_uat?: number;
-  msg?: string;
-  error?: string;
-}
-
-export interface ApiError {
-  message: string;
-  code: string;
-  details?: any;
-}
-
-// Error handler
-export function handleApiError(error: any): ApiError {
-  if (axios.isAxiosError(error)) {
-    if (error.response) {
-      // Server responded with error status
-      const statusCode = error.response.status;
-      let message = error.response.data?.msg || error.response.data?.error || 'Server error';
-      
-      switch (statusCode) {
-        case 400:
-          message = `Bad Request: ${message}`;
-          break;
-        case 403:
-          message = `Forbidden: ${message}`;
-          break;
-        case 404:
-          message = `Not Found: ${message}`;
-          break;
-        case 429:
-          message = `Rate Limited: ${message}`;
-          break;
-        case 500:
-          message = `Server Error: ${message}`;
-          break;
-        case 503:
-          message = 'Service Unavailable: Node is syncing or offline';
-          break;
-      }
-      
-      return {
-        message,
-        code: `HTTP_${statusCode}`,
-        details: error.response.data,
-      };
-    } else if (error.request) {
-      // Network error (node offline)
-      return {
-        message: 'Cannot connect to node. Make sure the backend is running and accessible.',
-        code: 'NETWORK_ERROR',
-      };
-    }
+export async function healthCheck(): Promise<boolean> {
+  try {
+    const response = await fetchWithTimeout(`${getApiUrl()}/health`, {
+      timeout: 5000,
+    });
+    return response.ok;
+  } catch (error) {
+    console.error('Health check failed:', error);
+    return false;
   }
-  
-  return {
-    message: error.message || 'Unknown error occurred',
-    code: 'UNKNOWN_ERROR',
-  };
+}
+
+export async function checkNodeConnection(): Promise<boolean> {
+  return healthCheck();
+}
+
+export async function getNodeInfo(): Promise<NodeInfo | null> {
+  try {
+    const response = await fetchWithTimeout(`${getApiUrl()}/node-info`);
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    return await response.json();
+  } catch (error) {
+    console.error('Failed to get node info:', error);
+    return null;
+  }
 }
 
 export async function getBalance(address: string): Promise<number> {
@@ -189,26 +92,50 @@ export async function getBalance(address: string): Promise<number> {
   }
 }
 
-export async function getNodeInfo(): Promise<NodeInfo | null> {
+export async function getHistory(address: string): Promise<Transaction[]> {
   try {
-    const response = await fetchWithTimeout(`${getApiUrl()}/node-info`);
-    if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    return await response.json();
+    const response = await fetchWithTimeout(`${getApiUrl()}/history/${address}`);
+    if (!response.ok) return [];
+    const data = await response.json();
+    return Array.isArray(data) ? data : (data.transactions || []);
   } catch (error) {
-    console.error('Failed to get node info:', error);
-    return null;
+    console.error('Failed to get history:', error);
+    return [];
   }
 }
 
-/**
- * Send transaction
- */
-export async function sendTransaction(request: SendRequest): Promise<SendResponse> {
+export async function requestFaucet(address: string): Promise<FaucetResult> {
   try {
-    const response = await api.post<SendResponse>('/send', request);
-    return response.data;
-  } catch (error) {
-    const apiError = handleApiError(error);
+    const response = await fetchWithTimeout(`${getApiUrl()}/faucet`, {
+      method: 'POST',
+      body: JSON.stringify({ address }),
+    });
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      return {
+        success: false,
+        message: data.message || data.msg || `Request failed: ${response.status}`,
+      };
+    }
+
+    return {
+      success: true,
+      message: data.message || data.msg || 'Faucet claim successful',
+      amount: data.amount,
+      txHash: data.tx_hash,
+    };
+  } catch (error: any) {
+    return {
+      success: false,
+      message: error.message || 'Network error',
+    };
+  }
+}
+
+export const claimFaucet = requestFaucet;
+
 export async function sendTransaction(
   from: string,
   to: string,
@@ -244,52 +171,9 @@ export async function sendTransaction(
     return {
       success: false,
       message: error.message || 'Network error',
-    } = await api.post<BurnResponse>('/burn', request);
-    return response.data;
-  } catch (error) {
-    const apiError = handleApiError(error);
-    console.error('[API] Failed to submit burn:', apiError.message);
-    
-    // Return error response format
-    return {
-      status: 'error',
-      error: apiError.message,
     };
   }
 }
-
-/**
- * Get transaction history
- */
-export async function getHistory(address: string): Promise<Transaction[]> {
-  try {
-    // Try /history/{address} first (if exists)
-    const response = await api.get<{ transactions: Transaction[] }>(`/history/${address}`);
-    return response.data.transactions || [];
-  } catch (error) {
-export async function getHistory(address: string): Promise<Transaction[]> {
-  try {
-    const response = await fetchWithTimeout(`${getApiUrl()}/history/${address}`);
-    if (!response.ok) return [];
-    const data = await response.json();
-    return Array.isArray(data) ? data : (data.transactions || []);
-  } catch (error) {
-    console.error('Failed to get history:', error
-    const response = await api.post<FaucetResponse>('/faucet', { address });
-    return response.data;
-  } catch (error) {
-    const apiError = handleApiError(error);
-    console.error('[API] Failed to claim faucet:', apiError.message);
-    
-    return {
-export async function requestFaucet(address: string): Promise<FaucetResult> {
-  try {
-    const response = await fetchWithTimeout(`${getApiUrl()}/faucet`, {
-      method: 'POST',
-      body: JSON.stringify({ address }),
-    });
-
-    const data = await response.json();
 
 export async function getValidators(): Promise<Validator[]> {
   try {
@@ -298,13 +182,11 @@ export async function getValidators(): Promise<Validator[]> {
     const data = await response.json();
     return Array.isArray(data) ? data : (data.validators || []);
   } catch (error) {
-    console.error('Failed to get validators:', error
-      amount: data.amount,
-      txHash: data.tx_hash,
-    };
-  } catch (error: any) {
-    return {
-      success: false,
+    console.error('Failed to get validators:', error);
+    return [];
+  }
+}
+
 export async function getLatestBlock(): Promise<Block | null> {
   try {
     const response = await fetchWithTimeout(`${getApiUrl()}/block`);
@@ -313,6 +195,64 @@ export async function getLatestBlock(): Promise<Block | null> {
   } catch (error) {
     console.error('Failed to get latest block:', error);
     return null;
+  }
+}
+
+// Test connection to a specific endpoint
+export async function testEndpoint(url: string): Promise<{ success: boolean; message: string; data?: any }> {
+  try {
+    const normalizedUrl = url.replace(/\/+$/, '');
+    const response = await fetchWithTimeout(`${normalizedUrl}/health`, {
+      timeout: 8000,
+    });
+
+    if (response.ok) {
+      const data = await response.json();
+      return {
+        success: true,
+        message: `Connected successfully`,
+        data,
+      };
+    } else {
+      return {
+        success: false,
+        message: `HTTP Error: ${response.status}`,
+      };
+    }
+  } catch (error: any) {
+    return {
+      success: false,
+      message: error.message.includes('timeout') ? 'Connection timeout' : 'Network error',
+    };
+  }
+}
+
+// Submit burn transaction (Proof-of-burn: ETH/BTC -> UAT)
+export async function submitBurn(request: BurnRequest): Promise<BurnResponse> {
+  try {
+    const response = await fetchWithTimeout(`${getApiUrl()}/burn`, {
+      method: 'POST',
+      body: JSON.stringify(request),
+    });
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      return {
+        status: 'error',
+        error: data.message || data.error || `Burn failed: ${response.status}`,
+      };
+    }
+
+    return {
+      status: 'success',
+      ...data,
+    };
+  } catch (error: any) {
+    return {
+      status: 'error',
+      error: error.message || 'Network error',
+    };
   }
 }
 
@@ -326,6 +266,8 @@ export interface NodeInfo {
   is_validator?: boolean;
   network?: string;
   chain_name?: string;
+  eth_price_usd?: number;
+  btc_price_usd?: number;
 }
 
 export interface Transaction {
@@ -335,6 +277,7 @@ export interface Transaction {
   amount: number;
   timestamp: number;
   tx_type: string;
+  type?: string;
 }
 
 export interface FaucetResult {
@@ -342,6 +285,10 @@ export interface FaucetResult {
   message: string;
   amount?: number;
   txHash?: string;
+  status?: string;
+  amount_uat?: number;
+  error?: string;
+  msg?: string;
 }
 
 export interface SendResult {
@@ -362,30 +309,22 @@ export interface Block {
   hash: string;
   prev_hash?: string;
   timestamp: number;
-  transactions?: Transaction[]; const normalizedUrl = url.replace(/\/+$/, '');
-    const response = await fetch(`${normalizedUrl}/node-info`, {
-      method: 'GET',
-      headers: { 'Content-Type': 'application/json' },
-      signal: AbortSignal.timeout(8000),
-    });
+  transactions?: Transaction[];
+}
 
-    if (response.ok) {
-      const data = await response.json();
-      return {
-        success: true,
-        message: `Connected to ${data.chain_name || 'UAT'} (Block #${data.block_height || 0})`,
-        data,
-      };
-    } else {
-      return {
-        success: false,
-        message: `HTTP Error: ${response.status}`,
-      };
-    }
-  } catch (error: any) {
-    return {
-      success: false,
-      message: error.name === 'TimeoutError' ? 'Connection timeout' : (error.message || 'Network error'),
-    };
-  }
+export interface BurnRequest {
+  asset: string;
+  coin_type: string;
+  amount: number;
+  txid: string;
+  proof: string;
+  uat_address: string;
+  recipient_address: string;
+}
+
+export interface BurnResponse {
+  status: string;
+  error?: string;
+  tx_hash?: string;
+  amount_uat?: number;
 }

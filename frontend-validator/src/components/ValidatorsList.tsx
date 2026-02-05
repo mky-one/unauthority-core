@@ -85,7 +85,7 @@ export default function ValidatorsList() {
                     </span>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
-                    <span className="text-sm text-gray-300">{validator.uptime_percentage.toFixed(2)}%</span>
+                    <span className="text-sm text-gray-300">{(validator.uptime_percentage || 0).toFixed(2)}%</span>
                   </td>
                 </tr>
               );

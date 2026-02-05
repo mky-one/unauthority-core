@@ -752,7 +752,35 @@ pub async fn start_api_server(
             }))
         });
 
-    // 19. GET /health (Health check endpoint)
+    // 19. GET / (Root endpoint - API welcome)
+    let root_route = warp::path::end()
+        .map(|| {
+            warp::reply::json(&serde_json::json!({
+                "name": "Unauthority (UAT) Blockchain API",
+                "version": "1.0.0",
+                "network": "mainnet",
+                "description": "Decentralized blockchain with Proof-of-Burn consensus",
+                "endpoints": {
+                    "health": "GET /health - Health check",
+                    "node_info": "GET /node-info - Node information",
+                    "balance": "GET /balance/{address} - Account balance",
+                    "account": "GET /account/{address} - Account details + history",
+                    "history": "GET /history/{address} - Transaction history",
+                    "validators": "GET /validators - Active validators",
+                    "peers": "GET /peers - Connected peers",
+                    "block": "GET /block - Latest block",
+                    "block_height": "GET /block/{height} - Block at height",
+                    "whoami": "GET /whoami - Node's signing address",
+                    "faucet": "POST /faucet {address} - Claim testnet tokens (DEV_MODE)",
+                    "send": "POST /send {from, target, amount} - Send transaction",
+                    "burn": "POST /burn {chain, tx_hash} - Proof-of-burn mint"
+                },
+                "docs": "https://github.com/unauthoritymky-6236/unauthority-core",
+                "status": "operational"
+            }))
+        });
+
+    // 20. GET /health (Health check endpoint)
     let l_health = ledger.clone();
     let db_health = database.clone();
     let health_route = warp::path("health")
@@ -796,7 +824,8 @@ pub async fn start_api_server(
         .allow_headers(vec!["Content-Type", "Authorization", "Accept"]);
 
     // Combine all routes with rate limiting
-    let routes = balance_route
+    let routes = root_route            // Root endpoint (must be first!)
+        .or(balance_route)
         .or(supply_route)
         .or(history_route)
         .or(peers_route)

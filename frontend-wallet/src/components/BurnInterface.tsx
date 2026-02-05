@@ -35,9 +35,13 @@ export default function BurnInterface({ nodeOnline, oraclePrices }: Props) {
     setResult(null);
 
     try {
-      const response = await submitBurn({ 
-        coin_type: coinType, 
+      const response = await submitBurn({
+        asset: coinType,
+        coin_type: coinType,
+        amount: 0.01, // Default amount for now
         txid: txid.trim(),
+        proof: txid.trim(), // Using txid as proof for now
+        uat_address: wallet.address,
         recipient_address: wallet.address // Send minted UAT to user's wallet
       });
       setResult(response);

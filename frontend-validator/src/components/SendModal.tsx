@@ -40,14 +40,10 @@ export default function SendModal({ isOpen, onClose, fromAddress }: SendModalPro
     setLoading(true);
 
     try {
-      const result = await sendTransaction({
-        from: fromAddress,
-        to: toAddress,
-        amount: amountNum,
-      });
+      const result = await sendTransaction(fromAddress, toAddress, parseFloat(amount));
 
       if (result.success) {
-        setSuccess(`Transaction sent successfully! Hash: ${result.hash}`);
+        setSuccess(`Transaction sent successfully! Hash: ${result.txHash || result.hash}`);
         setToAddress('');
         setAmount('');
         setTimeout(() => {
@@ -55,7 +51,7 @@ export default function SendModal({ isOpen, onClose, fromAddress }: SendModalPro
           setSuccess('');
         }, 3000);
       } else {
-        setError(result.error || 'Transaction failed');
+        setError(result.message || result.error || 'Transaction failed');
       }
     } catch (err: any) {
       setError(err.message || 'Unknown error occurred');

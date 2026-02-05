@@ -72,13 +72,13 @@ export default function HistoryView() {
                   <div className="flex-1">
                     <div className="flex items-center space-x-2 mb-2">
                       <span className={`px-2 py-1 rounded text-xs font-semibold ${
-                        tx.type === 'send'
+                        tx.type === 'send' || tx.tx_type === 'send'
                           ? 'bg-red-500/20 text-red-400'
-                          : tx.type === 'receive'
+                          : tx.type === 'receive' || tx.tx_type === 'receive'
                           ? 'bg-green-500/20 text-green-400'
                           : 'bg-orange-500/20 text-orange-400'
                       }`}>
-                        {tx.type.toUpperCase()}
+                        {(tx.type || tx.tx_type || 'transaction').toUpperCase()}
                       </span>
                       <span className="text-xs text-gray-500">{formatDate(tx.timestamp || 0)}</span>
                     </div>
@@ -102,9 +102,9 @@ export default function HistoryView() {
 
                   <div className="text-right ml-4">
                     <p className={`text-xl font-bold ${
-                      tx.type === 'receive' ? 'text-green-400' : 'text-red-400'
+                      (tx.type === 'receive' || tx.tx_type === 'receive') ? 'text-green-400' : 'text-red-400'
                     }`}>
-                      {tx.type === 'receive' ? '+' : '-'}{formatBalance(tx.amount)} UAT
+                      {(tx.type === 'receive' || tx.tx_type === 'receive') ? '+' : '-'}{formatBalance(tx.amount)} UAT
                     </p>
                     <p className="text-xs text-gray-500 mt-1">
                       ≈ ${(parseFloat(formatBalance(tx.amount)) * 0.01).toFixed(2)}

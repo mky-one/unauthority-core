@@ -28,6 +28,27 @@ node_c_data/
 validator-*/
 *.db
 *.sled
+
+# Testing & Development logs
+*.log
+node*.log
+validator*.log
+wallet*.log
+production_test_results.log
+tor_setup.log
+start.log
+
+# Development documentation (internal only)
+*_REPORT.md
+*_STATUS.md
+BUILD_SUCCESS.md
+FINAL_COMPLETION_REPORT.md
+TESTNET_STATUS.md
+GITHUB_BUILD_STATUS.md
+docs/internal/
+docs/developer/
+testnet-genesis/QUICKSTART_TESTING.md
+testnet-genesis/README_TESTNET.md
 uat_database/
 
 # Environment variables

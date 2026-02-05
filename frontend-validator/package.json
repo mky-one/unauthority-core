@@ -4,6 +4,10 @@
   "version": "0.1.0",
   "description": "Unauthority Validator Dashboard - Monitor & manage validator nodes",
   "author": "Unauthority Core Team",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/unauthoritymky-6236/unauthority-core"
+  },
   "license": "MIT",
   "main": "electron/main.js",
   "homepage": "./",
@@ -16,7 +20,10 @@
     "build:mac": "npm run build && electron-builder --mac",
     "build:win": "npm run build && electron-builder --win",
     "build:linux": "npm run build && electron-builder --linux",
-    "build:all": "npm run build && electron-builder --mac --win --linux"
+    "build:all": "npm run build && electron-builder --mac --win --linux",
+    "package:linux": "npm run build && electron-builder --linux",
+    "package:mac": "npm run build && electron-builder --mac",
+    "package:win": "npm run build && electron-builder --win"
   },
   "dependencies": {
     "@types/crypto-js": "^4.2.2",
@@ -69,6 +76,7 @@
     "linux": {
       "target": "AppImage",
       "category": "Development"
-    }
+    },
+    "publish": null
   }
 }

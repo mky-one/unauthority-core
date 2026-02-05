@@ -38,12 +38,22 @@ async function fetchWithTimeout(
 }
 
 export function getApiUrl(): string {
-  return localStorage.getItem('uat_api_url') || 'http://localhost:3030';
+  // Check for manual override first
+  const manualUrl = localStorage.getItem('uat_api_url_override');
+  if (manualUrl) return manualUrl;
+  
+  // Use network-based configuration
+  const savedNetwork = localStorage.getItem('uat_network') || 'testnet';
+  const networks = {
+    testnet: 'http://fhljoiopyz2eflttc7o5qwfj6l6skhtlkjpn4r6yw4atqpy2azydnnqd.onion',
+    mainnet: 'http://localhost:3030'
+  };
+  return networks[savedNetwork as keyof typeof networks] || networks.testnet;
 }
 
 export function setApiUrl(url: string): void {
   const normalized = url.replace(/\/+$/, '');
-  localStorage.setItem('uat_api_url', normalized);
+  localStorage.setItem('uat_api_url_override', normalized);
 }
 
 export const getApiBase = getApiUrl;

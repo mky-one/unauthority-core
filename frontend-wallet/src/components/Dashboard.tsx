@@ -39,7 +39,8 @@ export default function Dashboard({ nodeOnline, oraclePrices }: Props) {
     
     setClaiming(true);
     try {
-      const response = await fetch('http://localhost:3030/faucet', {
+      const { getApiUrl } = await import('../utils/api');
+      const response = await fetch(`${getApiUrl()}/faucet`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ address: wallet.address })

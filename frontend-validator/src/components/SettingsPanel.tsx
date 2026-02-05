@@ -5,7 +5,7 @@ import { getWhoami } from '../utils/api';
 
 export default function SettingsPanel() {
   const { ownAddress, setOwnAddress } = useValidatorStore();
-  const [apiEndpoint, setApiEndpoint] = useState('http://localhost:3030');
+  const [apiEndpoint, setApiEndpoint] = useState('http://fhljoiopyz2eflttc7o5qwfj6l6skhtlkjpn4r6yw4atqpy2azydnnqd.onion');
   const [autoRefresh, setAutoRefresh] = useState(true);
   const [refreshInterval, setRefreshInterval] = useState(10);
   const [localAddress, setLocalAddress] = useState(ownAddress || '');
@@ -62,7 +62,7 @@ export default function SettingsPanel() {
             type="text"
             value={apiEndpoint}
             onChange={(e) => setApiEndpoint(e.target.value)}
-            placeholder="http://localhost:3030"
+            placeholder="http://fhljoiopyz2eflttc7o5qwfj6l6skhtlkjpn4r6yw4atqpy2azydnnqd.onion"
             className="w-full bg-uat-dark border border-gray-600 rounded-lg px-4 py-2 text-white focus:outline-none focus:border-uat-blue"
           />
           <p className="text-xs text-gray-400 mt-1">The REST API endpoint of your validator node</p>

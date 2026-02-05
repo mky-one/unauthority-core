@@ -16,24 +16,31 @@ http://fhljoiopyz2eflttc7o5qwfj6l6skhtlkjpn4r6yw4atqpy2azydnnqd.onion
 Testnet sudah running 24/7 di Tor. Kamu hanya perlu connect:
 
 #### **A. Via Tor Browser (Paling Mudah)**
-1. Download [Tor Browser](https://www.torproject.org)
-2. Buka Wallet Desktop/Web
-3. Go to **Settings** → **Network**
-4. Masukkan: `http://fhljoiopyz2eflttc7o5qwfj6l6skhtlkjpn4r6yw4atqpy2azydnnqd.onion`
-5. Klik **Test Connection** → **Save & Reconnect**
+1. **Download Tor Browser:** https://www.torproject.org/download/
+   - 🍎 macOS: [Complete Installation Guide](TOR_BROWSER_INSTALL_MAC.md)
+   - 🪟 Windows: Download EXE, run installer
+   - 🐧 Linux: Download tarball, extract, run `./start-tor-browser.desktop`
+2. **Launch Tor Browser** → Wait for "Connected to Tor network"
+3. **Open Wallet** (desktop app or web)
+4. Go to **Settings** → **Network**
+5. Masukkan: `http://fhljoiopyz2eflttc7o5qwfj6l6skhtlkjpn4r6yw4atqpy2azydnnqd.onion`
+6. Klik **Test Connection** → **Save & Reconnect**
 
 #### **B. Via CLI (Developer)**
 ```bash
-# Install Tor
+# Install Tor daemon (for CLI access)
 brew install tor  # macOS
 sudo apt install tor  # Linux
-# Windows: Download Tor Expert Bundle
+# Windows: Download Tor Expert Bundle from torproject.org
 
-# Test koneksi
+# Start Tor daemon
+tor &
+
+# Test .onion connection (via local node or testnet)
 torsocks curl http://fhljoiopyz2eflttc7o5qwfj6l6skhtlkjpn4r6yw4atqpy2azydnnqd.onion/node-info
 
-# Response:
-# {"node_id":"UAT...","version":"1.0.0","chain":"Unauthority",...}
+# Expected Response:
+# {"node_id":"uat_...","version":"1.0.0","chain":"uat-mainnet",...}
 ```
 
 ---
@@ -112,24 +119,33 @@ cat ~/.tor-unauthority/hidden_service/hostname
 
 ### **Check Node Status**
 ```bash
-# Local node
+# Via Tor (.onion address)
+torsocks curl http://fhljoiopyz2eflttc7o5qwfj6l6skhtlkjpn4r6yw4atqpy2azydnnqd.onion/health
+# {"status":"healthy","version":"1.0.0","chain":{"id":"uat-mainnet"}}
+
+# Local node (if running own node)
 curl http://localhost:3030/health
 # {"status":"healthy","version":"1.0.0"}
-
-# Testnet via Tor
-torsocks curl http://fhljoiopyz2eflttc7o5qwfj6l6skhtlkjpn4r6yw4atqpy2azydnnqd.onion/health
 ```
 
 ### **Check Peers**
 ```bash
+# Via Tor testnet
+torsocks curl http://fhljoiopyz2eflttc7o5qwfj6l6skhtlkjpn4r6yw4atqpy2azydnnqd.onion/peers
+# [{"address":"uat_...","type":"tor","latency_ms":250}]
+
+# Local node
 curl http://localhost:3030/peers
-# [{"address":"...","type":"tor","latency_ms":250}]
 ```
 
 ### **Get Balance**
 ```bash
-curl http://localhost:3030/balance/UAT0d15ab29bb71ff7d37b298fb65db95773a5ee8fd
+# Via Tor testnet
+torsocks curl http://fhljoiopyz2eflttc7o5qwfj6l6skhtlkjpn4r6yw4atqpy2azydnnqd.onion/balance/UAT0d15ab29bb71ff7d37b298fb65db95773a5ee8fd
 # {"address":"UAT...","balance_uat":19194200}
+
+# Local node
+curl http://localhost:3030/balance/YOUR_ADDRESS
 ```
 
 ---
@@ -157,14 +173,21 @@ node test_bip39.js
 3. Tunggu 1-2 detik
 4. Check balance di **Dashboard**
 
-**Via API:**
+**Via API (Tor testnet):**
 ```bash
-curl -X POST http://localhost:3030/faucet \
+torsocks curl -X POST http://fhljoiopyz2eflttc7o5qwfj6l6skhtlkjpn4r6yw4atqpy2azydnnqd.onion/faucet \
   -H "Content-Type: application/json" \
   -d '{"address":"UAT_YOUR_ADDRESS_HERE"}'
 
 # Response:
 # {"success":true,"amount_uat":100,"cooldown_seconds":3600}
+```
+
+**Via API (Local node):**
+```bash
+curl -X POST http://localhost:3030/faucet \
+  -H "Content-Type: application/json" \
+  -d '{"address":"UAT_YOUR_ADDRESS_HERE"}'
 ```
 
 **Limits:**

@@ -213,3 +213,18 @@ debug_*.log
 
 # GitHub workflows
 !.github/
+
+# Dev-only documentation (not for public repo)
+**/INSTALLER_*.md
+**/FAQ_*.md
+**/LAUNCH_GUIDE.md
+**/WALLET_COMPLETE.md
+**/TESTNET_VS_MAINNET.md
+**/REMOTE_TESTNET_GUIDE.md
+**/AUDITOR_CODE_WALKTHROUGH.md
+**/SECURITY_AUDIT_PREPARATION.md
+**/ECONOMIC_SECURITY_REVIEW.md
+**/ATTACK_SURFACE_ANALYSIS.md
+**/KNOWN_RISKS_AND_MITIGATIONS.md
+**/STATUS.sh
+**/QUICKSTART.sh

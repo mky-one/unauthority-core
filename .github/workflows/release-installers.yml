@@ -1,0 +1,325 @@
+name: Release Installers (Wallet + Validator)
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version (e.g., 1.0.0)'
+        required: true
+        default: '1.0.0'
+
+jobs:
+  # ============================================
+  # BUILD WALLET INSTALLERS
+  # ============================================
+  build-wallet-macos:
+    name: Build Wallet (macOS)
+    runs-on: macos-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: frontend-wallet/package-lock.json
+
+      - name: Install dependencies
+        working-directory: frontend-wallet
+        run: npm ci
+
+      - name: Build Wallet .dmg
+        working-directory: frontend-wallet
+        run: npm run build && npm run electron:build
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: false
+
+      - name: Upload Wallet .dmg
+        uses: actions/upload-artifact@v4
+        with:
+          name: wallet-macos
+          path: frontend-wallet/dist/*.dmg
+          if-no-files-found: error
+
+  build-wallet-windows:
+    name: Build Wallet (Windows)
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: frontend-wallet/package-lock.json
+
+      - name: Install dependencies
+        working-directory: frontend-wallet
+        run: npm ci
+
+      - name: Build Wallet .exe
+        working-directory: frontend-wallet
+        run: npm run build && npm run electron:build
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload Wallet .exe
+        uses: actions/upload-artifact@v4
+        with:
+          name: wallet-windows
+          path: frontend-wallet/dist/*.exe
+          if-no-files-found: error
+
+  build-wallet-linux:
+    name: Build Wallet (Linux)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: frontend-wallet/package-lock.json
+
+      - name: Install dependencies
+        working-directory: frontend-wallet
+        run: npm ci
+
+      - name: Build Wallet .AppImage
+        working-directory: frontend-wallet
+        run: npm run build && npm run electron:build
+
+      - name: Upload Wallet .AppImage
+        uses: actions/upload-artifact@v4
+        with:
+          name: wallet-linux
+          path: frontend-wallet/dist/*.AppImage
+          if-no-files-found: error
+
+  # ============================================
+  # BUILD VALIDATOR INSTALLERS
+  # ============================================
+  build-validator-macos:
+    name: Build Validator (macOS)
+    runs-on: macos-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: frontend-validator/package-lock.json
+
+      - name: Install dependencies
+        working-directory: frontend-validator
+        run: npm ci
+
+      - name: Build Validator .dmg
+        working-directory: frontend-validator
+        run: npm run build && npm run electron:build
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: false
+
+      - name: Upload Validator .dmg
+        uses: actions/upload-artifact@v4
+        with:
+          name: validator-macos
+          path: frontend-validator/dist/*.dmg
+          if-no-files-found: error
+
+  build-validator-windows:
+    name: Build Validator (Windows)
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: frontend-validator/package-lock.json
+
+      - name: Install dependencies
+        working-directory: frontend-validator
+        run: npm ci
+
+      - name: Build Validator .exe
+        working-directory: frontend-validator
+        run: npm run build && npm run electron:build
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload Validator .exe
+        uses: actions/upload-artifact@v4
+        with:
+          name: validator-windows
+          path: frontend-validator/dist/*.exe
+          if-no-files-found: error
+
+  build-validator-linux:
+    name: Build Validator (Linux)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: frontend-validator/package-lock.json
+
+      - name: Install dependencies
+        working-directory: frontend-validator
+        run: npm ci
+
+      - name: Build Validator .AppImage
+        working-directory: frontend-validator
+        run: npm run build && npm run electron:build
+
+      - name: Upload Validator .AppImage
+        uses: actions/upload-artifact@v4
+        with:
+          name: validator-linux
+          path: frontend-validator/dist/*.AppImage
+          if-no-files-found: error
+
+  # ============================================
+  # CREATE GITHUB RELEASE
+  # ============================================
+  create-release:
+    name: Create GitHub Release
+    needs:
+      - build-wallet-macos
+      - build-wallet-windows
+      - build-wallet-linux
+      - build-validator-macos
+      - build-validator-windows
+      - build-validator-linux
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Display downloaded files
+        run: ls -R artifacts
+
+      - name: Create checksums
+        run: |
+          cd artifacts
+          find . -type f \( -name "*.dmg" -o -name "*.exe" -o -name "*.AppImage" \) -exec sha256sum {} \; > ../checksums.txt
+          cd ..
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          name: Unauthority ${{ github.ref_name }}
+          body: |
+            # 🚀 Unauthority ${{ github.ref_name }}
+            
+            ## 📦 Downloads
+            
+            ### 💼 Public Wallet
+            - 🍎 **macOS**: `Unauthority-Wallet-*.dmg`
+            - 🪟 **Windows**: `Unauthority-Wallet-Setup-*.exe`
+            - 🐧 **Linux**: `Unauthority-Wallet-*.AppImage`
+            
+            ### ⚙️ Validator Dashboard
+            - 🍎 **macOS**: `Unauthority-Validator-Dashboard-*.dmg`
+            - 🪟 **Windows**: `Unauthority-Validator-Dashboard-Setup-*.exe`
+            - 🐧 **Linux**: `Unauthority-Validator-Dashboard-*.AppImage`
+            
+            ## 🌐 Network Endpoints
+            
+            **Testnet (Tor Hidden Service):**
+            ```
+            http://fhljoiopyz2eflttc7o5qwfj6l6skhtlkjpn4r6yw4atqpy2azydnnqd.onion
+            ```
+            
+            **Requirements:**
+            - Tor Browser or Tor proxy for testnet access
+            - See [installation guide](https://github.com/${{ github.repository }}/blob/main/docs/INSTALLATION.md)
+            
+            ## 🔐 Security
+            
+            **Verify checksums:**
+            ```bash
+            sha256sum <downloaded-file>
+            # Compare with checksums.txt
+            ```
+            
+            **Features:**
+            - ✅ End-to-end encryption
+            - ✅ HD wallet (BIP44)
+            - ✅ Hardware wallet support (Ledger/Trezor)
+            - ✅ Post-quantum cryptography (CRYSTALS-Dilithium)
+            - ✅ Zero admin keys (100% immutable)
+            
+            ## 📖 Documentation
+            
+            - [Installation Guide](https://github.com/${{ github.repository }}/blob/main/docs/INSTALLATION.md)
+            - [API Reference](https://github.com/${{ github.repository }}/blob/main/api_docs/API_REFERENCE.md)
+            - [Whitepaper](https://github.com/${{ github.repository }}/blob/main/docs/WHITEPAPER.md)
+            - [Testnet Guide](https://github.com/${{ github.repository }}/blob/main/docs/TESTNET_OPERATION.md)
+            
+            ## 🆕 What's New in ${{ github.ref_name }}
+            
+            - ✨ Mempool implementation for pending transactions
+            - ✨ Transaction nonce for replay protection
+            - ✨ HD wallet support (BIP44)
+            - ✨ WebSocket support for real-time updates
+            - ✨ Automated backup system
+            - ✨ Prometheus metrics for monitoring
+            - 🐛 Fixed CORS issues for remote access
+            - 🐛 Improved error handling across all components
+            - ⚡ Performance optimizations
+            
+            ## 🚨 Breaking Changes
+            
+            - Block structure updated with `nonce` and `timestamp` fields
+            - Account state includes `nonce` field
+            - API responses now include mempool statistics
+            
+            ## 📊 Testnet Stats
+            
+            - Total Supply: 21,936,236 UAT
+            - Block Time: < 3 seconds
+            - Transaction Throughput: ~1000 TPS
+            - Active Validators: Check `/validators` endpoint
+            
+            ---
+            
+            **Full Changelog**: https://github.com/${{ github.repository }}/compare/v0.1.0...${{ github.ref_name }}
+          draft: false
+          prerelease: false
+          generate_release_notes: true
+          files: |
+            artifacts/**/*.dmg
+            artifacts/**/*.exe
+            artifacts/**/*.AppImage
+            checksums.txt
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -11,6 +11,8 @@ use age::{Encryptor, Decryptor};
 use secrecy::Secret;
 use std::io::{Read, Write};
 
+pub mod hd_wallet;
+
 #[derive(Debug)]
 pub enum CryptoError {
     InvalidKey,

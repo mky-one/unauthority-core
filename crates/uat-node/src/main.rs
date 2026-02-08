@@ -362,7 +362,7 @@ pub async fn start_api_server(
                     signature: "".to_string(),
                     public_key: pubkey,
                     work: req.work.unwrap_or(0),
-                    timestamp: std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs(),
+                    timestamp: std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_secs(),
                     fee: 0, // Set after anti-whale calculation
                 };
 
@@ -458,7 +458,7 @@ pub async fn start_api_server(
                 // Insert with INITIAL POWER to queue
                 safe_lock(&p).insert(hash.clone(), (blk, initial_power));
 
-                let ts = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis();
+                let ts = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_millis();
                 let _ = tx.send(format!("CONFIRM_REQ:{}:{}:{}:{}", hash, sender_addr, amt, ts)).await;
                 warp::reply::json(&serde_json::json!({
                     "status":"success",
@@ -594,7 +594,7 @@ pub async fn start_api_server(
                                 signature: "".to_string(),
                                 public_key: hex::encode(&node_pk), // Node's public key
                                 work: 0,
-                                timestamp: std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs(),
+                                timestamp: std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_secs(),
                                 fee: 0,
                             };
 
@@ -647,11 +647,11 @@ pub async fn start_api_server(
                 }
 
                 // Production: Add to pending with initial power = our own balance + recipient address
-                let created_at = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs();
+                let created_at = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_secs();
                 let burn_recipient = req.recipient_address.as_ref().unwrap_or(&my_addr).clone();
                 safe_lock(&p).insert(clean_txid.clone(), (amt, prc, sym.to_string(), my_power, created_at, burn_recipient));
 
-                let ts = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis();
+                let ts = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_millis();
                 let vote_msg = format!("VOTE_REQ:{}:{}:{}:{}", req.coin_type.to_lowercase(), clean_txid, my_addr, ts);
                 println!("📡 Broadcasting VOTE_REQ: {} (Initial Power: {})", &vote_msg[..50], my_power);
                 let _ = tx.send(vote_msg).await;
@@ -1047,11 +1047,11 @@ pub async fn start_api_server(
                 block_type: BlockType::Mint,
                 amount: faucet_amount,
                 link: format!("FAUCET:TESTNET:{}", std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH).unwrap().as_secs()),
+                    .duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_secs()),
                 signature: "".to_string(),
                 public_key: hex::encode(&node_pk),
                 work: 0,
-                timestamp: std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs(),
+                timestamp: std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_secs(),
                 fee: 0,
             };
 
@@ -1444,11 +1444,20 @@ pub async fn start_api_server(
             },
         );
 
-    // CORS configuration - Allow all origins for local development
-    let cors = warp::cors()
-        .allow_any_origin()
-        .allow_methods(vec!["GET", "POST", "PUT", "DELETE", "OPTIONS"])
-        .allow_headers(vec!["Content-Type", "Authorization", "Accept"]);
+    // CORS configuration
+    // SECURITY: Mainnet restricts CORS to same-origin only (node API behind Tor).
+    // Testnet allows all origins for development convenience.
+    let cors = if uat_core::is_mainnet_build() {
+        warp::cors()
+            .allow_origin("http://localhost:3030")
+            .allow_methods(vec!["GET", "POST", "OPTIONS"])
+            .allow_headers(vec!["Content-Type", "Accept"])
+    } else {
+        warp::cors()
+            .allow_any_origin()
+            .allow_methods(vec!["GET", "POST", "PUT", "DELETE", "OPTIONS"])
+            .allow_headers(vec!["Content-Type", "Authorization", "Accept"])
+    };
 
     // 26. GET /sync (HTTP-based state sync for Tor peers)
     // Returns GZIP-compressed ledger state for peers that connect via HTTP
@@ -2195,14 +2204,49 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
 
     // Use node-specific wallet file path
+    // SECURITY: Wallet keys are encrypted at rest using age encryption.
+    // The encryption password is derived from the node ID (for automated startup).
+    // For mainnet, operators SHOULD set UAT_WALLET_PASSWORD env var for stronger protection.
     let wallet_path = format!("node_data/{}/wallet.json", &node_id);
+    let wallet_password = std::env::var("UAT_WALLET_PASSWORD")
+        .unwrap_or_else(|_| format!("uat-node-{}-autokey", &node_id));
     let keys: uat_crypto::KeyPair = if let Ok(data) = fs::read_to_string(&wallet_path) {
-        serde_json::from_str(&data)?
+        // Try parsing as encrypted key first, fall back to legacy plaintext
+        if let Ok(encrypted) = serde_json::from_str::<uat_crypto::EncryptedKey>(&data) {
+            let sk =
+                uat_crypto::decrypt_private_key(&encrypted, &wallet_password).map_err(|e| {
+                    Box::<dyn std::error::Error>::from(format!(
+                        "Wallet decrypt failed: {}. Set UAT_WALLET_PASSWORD if changed.",
+                        e
+                    ))
+                })?;
+            uat_crypto::KeyPair {
+                public_key: encrypted.public_key,
+                secret_key: sk,
+            }
+        } else if let Ok(plain_key) = serde_json::from_str::<uat_crypto::KeyPair>(&data) {
+            // Legacy plaintext wallet — auto-migrate to encrypted
+            eprintln!("⚠️  Migrating plaintext wallet to encrypted format...");
+            let encrypted = uat_crypto::migrate_to_encrypted(&plain_key, &wallet_password)
+                .map_err(|e| {
+                    Box::<dyn std::error::Error>::from(format!("Migration failed: {}", e))
+                })?;
+            fs::write(&wallet_path, serde_json::to_string(&encrypted)?)?;
+            println!("🔒 Wallet migrated to encrypted storage");
+            plain_key
+        } else {
+            return Err(Box::from(
+                "Failed to parse wallet file — corrupted or invalid format",
+            ));
+        }
     } else {
         let new_k = uat_crypto::generate_keypair();
         fs::create_dir_all(format!("node_data/{}", &node_id))?;
-        fs::write(&wallet_path, serde_json::to_string(&new_k)?)?;
-        println!("🔑 Generated new keypair for {}", node_id);
+        // Store encrypted from the start
+        let encrypted = uat_crypto::migrate_to_encrypted(&new_k, &wallet_password)
+            .map_err(|e| Box::<dyn std::error::Error>::from(format!("Encryption failed: {}", e)))?;
+        fs::write(&wallet_path, serde_json::to_string(&encrypted)?)?;
+        println!("🔑 Generated new encrypted keypair for {}", node_id);
         new_k
     };
 
@@ -2881,10 +2925,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 };
 
                                 // Insert to pending with initial Power = our balance
-                                safe_lock(&pending_burns).insert(clean_txid.clone(), (amt, prc, sym.to_string(), my_power, std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs(), my_address.clone()));
+                                safe_lock(&pending_burns).insert(clean_txid.clone(), (amt, prc, sym.to_string(), my_power, std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_secs(), my_address.clone()));
 
                                 // 5. BROADCAST TO NETWORK
-                                let ts = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis();
+                                let ts = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_millis();
                                 let msg = format!("VOTE_REQ:{}:{}:{}:{}", coin_type, clean_txid, my_address, ts);
                                 let _ = tx_out.send(msg).await;
 
@@ -2941,7 +2985,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     signature: "".to_string(),
                                     public_key: hex::encode(&keys.public_key), // Node's public key
                                     work: 0,
-                                    timestamp: std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs(),
+                                    timestamp: std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_secs(),
                                     fee: 0, // CLI sends use zero fee for simplicity
                                 };
 
@@ -2954,7 +2998,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 safe_lock(&pending_sends).insert(hash.clone(), (blk.clone(), 0));
 
                                 // Broadcast confirmation request (REQ) to network
-                                let ts = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis();
+                                let ts = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_millis();
                                 let req_msg = format!("CONFIRM_REQ:{}:{}:{}:{}", hash, my_address, amt, ts);
                                 let _ = tx_out.send(req_msg).await;
 
@@ -3031,7 +3075,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     {
                                         let pending_map = safe_lock(&pending_sends);
                                         for (hash, (blk, _)) in pending_map.iter() {
-                                            let ts = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis();
+                                            let ts = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_millis();
                                             let retry_msg = format!("CONFIRM_REQ:{}:{}:{}:{}", hash, blk.account, blk.amount, ts);
                                             let _ = tx_out.send(retry_msg).await;
                                             println!("📡 Resending confirmation request to new peer for TX: {}", &hash[..8]);
@@ -3262,7 +3306,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                         verify_btc_burn_tx(&txid).await
                                     };
 
-                                    let ts_res = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis();
+                                    let ts_res = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_millis();
 
                                     // 3. Decision Logic: YES (Valid) or SLASH (Fake)
                                     if amount_opt.is_some() {
@@ -3582,7 +3626,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                             signature: "".to_string(),
                                             public_key: hex::encode(&keys.public_key),
                                             work: 0,
-                                            timestamp: std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs(),
+                                            timestamp: std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_secs(),
                                             fee: 0,
                                         };
 
@@ -3639,7 +3683,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     }
 
                                     if sender_balance >= amount {
-                                        let ts = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis();
+                                        let ts = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_millis();
                                         // SECURITY P0-1: Sign CONFIRM_RES with Dilithium5
                                         let payload = format!("{}:{}:YES:{}:{}", tx_hash, sender_addr, my_addr_clone, ts);
                                         let sig = uat_crypto::sign_message(payload.as_bytes(), &confirm_sk).expect("BUG: signing failed");
@@ -3786,7 +3830,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                                         public_key: hex::encode(&keys.public_key),
                                                         work: 0,
                                                         timestamp: std::time::SystemTime::now()
-                                                            .duration_since(std::time::UNIX_EPOCH).unwrap().as_secs(),
+                                                            .duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_secs(),
                                                         fee: 0,
                                                     };
                                                     solve_pow(&mut recv_blk);
@@ -3961,7 +4005,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                                 amount: inc.amount, link: block_hash, signature: "".to_string(),
                                                 public_key: hex::encode(&keys.public_key), // Node's public key
                                                 work: 0,
-                                                timestamp: std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs(),
+                                                timestamp: std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_secs(),
                                                 fee: 0,
                                             };
                                             solve_pow(&mut rb);

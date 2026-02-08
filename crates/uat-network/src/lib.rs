@@ -1,7 +1,7 @@
 use libp2p::{
     futures::StreamExt,
     gossipsub, mdns, noise,
-    swarm::{NetworkBehaviour, SwarmEvent},
+    swarm::{behaviour::toggle::Toggle, NetworkBehaviour, SwarmEvent},
     tcp, yamux,
 };
 use std::error::Error;
@@ -27,7 +27,8 @@ pub enum NetworkEvent {
 #[derive(NetworkBehaviour)]
 pub struct UatBehaviour {
     pub gossipsub: gossipsub::Behaviour,
-    pub mdns: mdns::tokio::Behaviour,
+    /// mDNS is disabled when Tor is enabled to prevent LAN presence leaks.
+    pub mdns: Toggle<mdns::tokio::Behaviour>,
 }
 
 pub struct UatNode;
@@ -88,10 +89,17 @@ impl UatNode {
                     gossipsub_config,
                 )?;
 
-                let mdns = mdns::tokio::Behaviour::new(
-                    mdns::Config::default(),
-                    key.public().to_peer_id(),
-                )?;
+                // SECURITY: mDNS leaks node presence on LAN via multicast UDP.
+                // When Tor is enabled, disable mDNS to preserve anonymity.
+                let mdns = if tor_config.enabled {
+                    println!("🔒 mDNS disabled (Tor mode — prevents LAN presence leak)");
+                    Toggle::from(None)
+                } else {
+                    Toggle::from(Some(mdns::tokio::Behaviour::new(
+                        mdns::Config::default(),
+                        key.public().to_peer_id(),
+                    )?))
+                };
 
                 Ok(UatBehaviour { gossipsub, mdns })
             })?

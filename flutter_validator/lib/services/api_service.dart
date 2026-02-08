@@ -44,12 +44,11 @@ class ApiService {
 
     // Configure SOCKS5 proxy for .onion domains using socks5_proxy package
     // Tor Browser uses port 9150, tor daemon uses 9050
-    // Try 9150 first (Tor Browser), fallback to 9050 (tor daemon)
     SocksTCPClient.assignToHttpClient(
       httpClient,
       [
         ProxySettings(InternetAddress.loopbackIPv4, 9150), // Tor Browser
-       // ProxySettings(InternetAddress.loopbackIPv4, 9050), // Fallback: tor daemon
+        ProxySettings(InternetAddress.loopbackIPv4, 9050), // Fallback: tor daemon
       ],
     );
 
@@ -57,7 +56,7 @@ class ApiService {
     httpClient.connectionTimeout = Duration(seconds: 30);
     httpClient.idleTimeout = Duration(seconds: 30);
 
-    print('✅ Tor SOCKS5 proxy configured (localhost:9150 - Tor Browser)');
+    print('✅ Tor SOCKS5 proxy configured (localhost:9150/9050)');
     return IOClient(httpClient);
   }
 

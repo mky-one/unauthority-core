@@ -74,7 +74,7 @@ enum WalletCommands {
     Export {
         /// Wallet name
         name: String,
-        
+
         /// Output file path
         #[arg(short, long)]
         output: PathBuf,
@@ -84,7 +84,7 @@ enum WalletCommands {
     Import {
         /// Input file path
         input: PathBuf,
-        
+
         /// Wallet name
         #[arg(short, long)]
         name: String,
@@ -98,7 +98,7 @@ enum ValidatorCommands {
         /// Amount in UAT (minimum 1000)
         #[arg(short, long)]
         amount: u64,
-        
+
         /// Wallet name
         #[arg(short, long)]
         wallet: String,
@@ -149,11 +149,11 @@ enum TxCommands {
         /// Recipient address
         #[arg(short, long)]
         to: String,
-        
+
         /// Amount in UAT
         #[arg(short, long)]
         amount: u64,
-        
+
         /// Sender wallet name
         #[arg(short, long)]
         from: String,
@@ -202,10 +202,24 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 fn print_banner() {
-    println!("{}", "╔═══════════════════════════════════════════════╗".cyan());
-    println!("{}", "║      UNAUTHORITY (UAT) - CLI v0.1.0           ║".cyan().bold());
-    println!("{}", "║   Permissionless | Immutable | Decentralized  ║".cyan());
-    println!("{}", "╚═══════════════════════════════════════════════╝".cyan());
+    println!(
+        "{}",
+        "╔═══════════════════════════════════════════════╗".cyan()
+    );
+    println!(
+        "{}",
+        "║      UNAUTHORITY (UAT) - CLI v0.1.0           ║"
+            .cyan()
+            .bold()
+    );
+    println!(
+        "{}",
+        "║   Permissionless | Immutable | Decentralized  ║".cyan()
+    );
+    println!(
+        "{}",
+        "╚═══════════════════════════════════════════════╝".cyan()
+    );
     println!();
 }
 

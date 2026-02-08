@@ -1,6 +1,6 @@
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // UNAUTHORITY (UAT) - SLASHING MODULE INTEGRATION
-// 
+//
 // Bridges the slashing consensus module with the node's block processing logic
 // - Tracks validator signatures for double-signing detection
 // - Monitors uptime and participation
@@ -8,20 +8,14 @@
 // - Maintains validator safety profiles across the network
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use serde::{Serialize, Deserialize};
 
 /// Re-export slashing types for convenience
 pub use uat_consensus::slashing::{
-    ValidatorSafetyProfile,
-    ValidatorStatus,
-    SlashEvent,
-    ViolationType,
-    DOUBLE_SIGNING_SLASH_PERCENT,
-    DOWNTIME_SLASH_PERCENT,
-    DOWNTIME_THRESHOLD_BLOCKS,
-    DOWNTIME_WINDOW_BLOCKS,
-    MIN_UPTIME_PERCENT,
+    SlashEvent, ValidatorSafetyProfile, ValidatorStatus, ViolationType,
+    DOUBLE_SIGNING_SLASH_PERCENT, DOWNTIME_SLASH_PERCENT, DOWNTIME_THRESHOLD_BLOCKS,
+    DOWNTIME_WINDOW_BLOCKS, MIN_UPTIME_PERCENT,
 };
 
 /// Manages validator slashing state across the network
@@ -29,16 +23,16 @@ pub use uat_consensus::slashing::{
 pub struct SlashingManager {
     /// Per-validator safety profiles
     pub validator_profiles: HashMap<String, ValidatorSafetyProfile>,
-    
+
     /// Current block height (for tracking participation)
     pub current_block_height: u64,
-    
+
     /// Validators currently banned from consensus
     pub banned_validators: Vec<String>,
-    
+
     /// Total UAT slashed across network (audit trail)
     pub total_network_slash_void: u128,
-    
+
     /// Flag to enable/disable slashing enforcement
     pub enforcement_enabled: bool,
 }
@@ -80,7 +74,8 @@ impl SlashingManager {
 
     /// Check if validator is banned from consensus
     pub fn is_validator_banned(&self, validator_address: &str) -> bool {
-        self.banned_validators.contains(&validator_address.to_string())
+        self.banned_validators
+            .contains(&validator_address.to_string())
     }
 
     /// Check if validator can participate in consensus
@@ -109,18 +104,22 @@ impl SlashingManager {
         if let Some(profile) = self.validator_profiles.get_mut(validator_address) {
             // Check for double-signing (same block height, different signature)
             for sig_record in &profile.recent_signatures {
-                if sig_record.block_height == block_height && sig_record.signature_hash != signature_hash {
+                if sig_record.block_height == block_height
+                    && sig_record.signature_hash != signature_hash
+                {
                     // DOUBLE SIGNING DETECTED!
                     return Err("DOUBLE_SIGNING_DETECTED".to_string());
                 }
             }
 
             // Add signature to recent records
-            profile.recent_signatures.push_back(uat_consensus::slashing::SignatureRecord {
-                block_height,
-                signature_hash,
-                timestamp,
-            });
+            profile
+                .recent_signatures
+                .push_back(uat_consensus::slashing::SignatureRecord {
+                    block_height,
+                    signature_hash,
+                    timestamp,
+                });
 
             // Keep only last 1000 signatures
             if profile.recent_signatures.len() > 1000 {
@@ -174,7 +173,10 @@ impl SlashingManager {
             profile.slash_history.push(slash_event.clone());
 
             // Add to banned list
-            if !self.banned_validators.contains(&validator_address.to_string()) {
+            if !self
+                .banned_validators
+                .contains(&validator_address.to_string())
+            {
                 self.banned_validators.push(validator_address.to_string());
             }
 
@@ -248,12 +250,14 @@ impl SlashingManager {
         if let Some(profile) = self.validator_profiles.get_mut(validator_address) {
             // Only check if we have a full observation window
             if profile.total_blocks_observed < DOWNTIME_WINDOW_BLOCKS {
-                profile.total_blocks_observed = block_height.saturating_sub(profile.total_blocks_observed as u64) as u64;
+                profile.total_blocks_observed =
+                    block_height.saturating_sub(profile.total_blocks_observed);
                 return None;
             }
 
             // Update observation window
-            profile.total_blocks_observed = block_height.saturating_sub(profile.total_blocks_observed as u64) as u64;
+            profile.total_blocks_observed =
+                block_height.saturating_sub(profile.total_blocks_observed);
 
             // Calculate uptime percentage
             let uptime_percent = if profile.total_blocks_observed > 0 {
@@ -265,7 +269,9 @@ impl SlashingManager {
             // If uptime below minimum threshold, slash
             if uptime_percent < MIN_UPTIME_PERCENT {
                 let _ = profile; // Release mutable borrow before calling slash_downtime
-                if let Ok(slash_event) = self.slash_downtime(validator_address, block_height, current_stake_void) {
+                if let Ok(slash_event) =
+                    self.slash_downtime(validator_address, block_height, current_stake_void)
+                {
                     return Some(slash_event);
                 }
             }
@@ -301,7 +307,10 @@ impl SlashingManager {
     }
 
     /// Get mutable safety profile for a validator
-    pub fn get_profile_mut(&mut self, validator_address: &str) -> Option<&mut ValidatorSafetyProfile> {
+    pub fn get_profile_mut(
+        &mut self,
+        validator_address: &str,
+    ) -> Option<&mut ValidatorSafetyProfile> {
         self.validator_profiles.get_mut(validator_address)
     }
 
@@ -328,8 +337,9 @@ impl SlashingManager {
         let total_validators = self.validator_profiles.len();
         let active_validators = self.get_active_validators().len();
         let banned_validators = self.get_all_banned_validators().len();
-        
-        let total_violations = self.validator_profiles
+
+        let total_violations = self
+            .validator_profiles
             .values()
             .map(|p| p.violation_count as u64)
             .sum();
@@ -381,7 +391,7 @@ mod tests {
     fn test_register_validator() {
         let mut manager = SlashingManager::new();
         manager.register_validator("validator1".to_string());
-        
+
         assert!(manager.validator_profiles.contains_key("validator1"));
         assert!(manager.can_validate("validator1"));
     }
@@ -406,8 +416,10 @@ mod tests {
         let mut manager = SlashingManager::new();
         manager.register_validator("validator1".to_string());
 
-        let slash_event = manager.slash_double_signing("validator1", 100, 1000000000).unwrap();
-        
+        let slash_event = manager
+            .slash_double_signing("validator1", 100, 1000000000)
+            .unwrap();
+
         assert_eq!(slash_event.violation_type, ViolationType::DoubleSigning);
         assert_eq!(slash_event.slash_amount_void, 1000000000);
         assert_eq!(slash_event.slash_percent, 100.0);
@@ -419,8 +431,10 @@ mod tests {
         let mut manager = SlashingManager::new();
         manager.register_validator("validator1".to_string());
 
-        let slash_event = manager.slash_downtime("validator1", 100, 1000000000).unwrap();
-        
+        let slash_event = manager
+            .slash_downtime("validator1", 100, 1000000000)
+            .unwrap();
+
         assert_eq!(slash_event.violation_type, ViolationType::ExtendedDowntime);
         assert_eq!(slash_event.slash_amount_void, 10000000); // 1% of 1B
         assert!(!manager.is_validator_banned("validator1")); // Not banned, just slashed
@@ -445,12 +459,20 @@ mod tests {
         manager.register_validator("validator1".to_string());
 
         // Slash for downtime
-        manager.slash_downtime("validator1", 100, 1000000000).unwrap();
-        assert_eq!(manager.get_profile("validator1").unwrap().status, ValidatorStatus::Slashed);
+        manager
+            .slash_downtime("validator1", 100, 1000000000)
+            .unwrap();
+        assert_eq!(
+            manager.get_profile("validator1").unwrap().status,
+            ValidatorStatus::Slashed
+        );
 
         // Restore
         assert!(manager.restore_validator("validator1").is_ok());
-        assert_eq!(manager.get_profile("validator1").unwrap().status, ValidatorStatus::Active);
+        assert_eq!(
+            manager.get_profile("validator1").unwrap().status,
+            ValidatorStatus::Active
+        );
     }
 
     #[test]
@@ -459,8 +481,10 @@ mod tests {
         manager.register_validator("validator1".to_string());
 
         // Slash for double-signing (permanent ban)
-        manager.slash_double_signing("validator1", 100, 1000000000).unwrap();
-        
+        manager
+            .slash_double_signing("validator1", 100, 1000000000)
+            .unwrap();
+
         // Try to restore banned validator
         assert!(manager.restore_validator("validator1").is_err());
     }
@@ -468,10 +492,12 @@ mod tests {
     #[test]
     fn test_statistics() {
         let mut manager = SlashingManager::new();
-        
+
         manager.register_validator("validator1".to_string());
         manager.register_validator("validator2".to_string());
-        manager.slash_double_signing("validator1", 100, 1000000000).unwrap();
+        manager
+            .slash_double_signing("validator1", 100, 1000000000)
+            .unwrap();
 
         let stats = manager.get_statistics();
         assert_eq!(stats.total_validators, 2);
@@ -494,7 +520,7 @@ mod tests {
     #[test]
     fn test_arc_mutex_integration() {
         let manager = Arc::new(Mutex::new(SlashingManager::new()));
-        
+
         {
             let mut mgr = manager.lock().unwrap();
             mgr.register_validator("validator1".to_string());

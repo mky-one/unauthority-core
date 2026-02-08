@@ -8,6 +8,7 @@
 /// - `validator_count`: Number of validators who confirmed this block.
 ///
 /// Returns the per-validator reward in VOID.
+#[allow(dead_code)]
 pub fn calculate_validator_reward(block_fee_void: u128, validator_count: u32) -> u128 {
     if validator_count == 0 || block_fee_void == 0 {
         return 0;

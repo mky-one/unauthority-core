@@ -11,9 +11,9 @@
 // 4. Reject any blocks before last checkpoint (finality guarantee)
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-use serde::{Serialize, Deserialize};
-use std::path::Path;
+use serde::{Deserialize, Serialize};
 use sha3::{Digest, Keccak256};
+use std::path::Path;
 
 /// Checkpoint interval (every 1,000 blocks)
 pub const CHECKPOINT_INTERVAL: u64 = 1000;
@@ -23,19 +23,19 @@ pub const CHECKPOINT_INTERVAL: u64 = 1000;
 pub struct FinalityCheckpoint {
     /// Block height of checkpoint
     pub height: u64,
-    
+
     /// Block hash at checkpoint
     pub block_hash: String,
-    
+
     /// Timestamp when checkpoint was created (Unix)
     pub timestamp: u64,
-    
+
     /// Total validators active at checkpoint
     pub validator_count: u32,
-    
+
     /// Merkle root of all accounts at this height (state snapshot)
     pub state_root: String,
-    
+
     /// Signature count (67% of validators)
     pub signature_count: u32,
 }
@@ -79,7 +79,7 @@ impl FinalityCheckpoint {
 
     /// Check if checkpoint is valid (interval aligned)
     pub fn is_valid_interval(&self) -> bool {
-        self.height % CHECKPOINT_INTERVAL == 0
+        self.height.is_multiple_of(CHECKPOINT_INTERVAL)
     }
 }
 
@@ -87,7 +87,7 @@ impl FinalityCheckpoint {
 pub struct CheckpointManager {
     /// Database for storing checkpoints
     db: sled::Db,
-    
+
     /// Latest checkpoint height
     latest_checkpoint_height: u64,
 }
@@ -96,7 +96,7 @@ impl CheckpointManager {
     /// Create new checkpoint manager
     pub fn new<P: AsRef<Path>>(db_path: P) -> Result<Self, Box<dyn std::error::Error>> {
         let db = sled::open(db_path)?;
-        
+
         // Load latest checkpoint from DB
         let latest_checkpoint_height = db
             .get(b"latest_checkpoint_height")?
@@ -105,7 +105,7 @@ impl CheckpointManager {
                 u64::from_le_bytes(arr)
             })
             .unwrap_or(0);
-        
+
         Ok(Self {
             db,
             latest_checkpoint_height,
@@ -113,29 +113,34 @@ impl CheckpointManager {
     }
 
     /// Store checkpoint in database (immutable)
-    pub fn store_checkpoint(&mut self, checkpoint: FinalityCheckpoint) -> Result<(), Box<dyn std::error::Error>> {
+    pub fn store_checkpoint(
+        &mut self,
+        checkpoint: FinalityCheckpoint,
+    ) -> Result<(), Box<dyn std::error::Error>> {
         // Validate checkpoint
         if !checkpoint.is_valid_interval() {
             return Err(format!(
                 "Invalid checkpoint height: {} not aligned to {} interval",
                 checkpoint.height, CHECKPOINT_INTERVAL
-            ).into());
+            )
+            .into());
         }
 
         if !checkpoint.verify_quorum() {
             return Err(format!(
                 "Insufficient signatures: {}/{} (need 67%)",
                 checkpoint.signature_count, checkpoint.validator_count
-            ).into());
+            )
+            .into());
         }
 
         // Serialize checkpoint
         let checkpoint_bytes = bincode::serialize(&checkpoint)?;
         let key = format!("checkpoint_{}", checkpoint.height);
-        
+
         // Store in DB (immutable)
         self.db.insert(key.as_bytes(), checkpoint_bytes)?;
-        
+
         // Update latest checkpoint height
         if checkpoint.height > self.latest_checkpoint_height {
             self.latest_checkpoint_height = checkpoint.height;
@@ -144,16 +149,19 @@ impl CheckpointManager {
                 &checkpoint.height.to_le_bytes(),
             )?;
         }
-        
+
         self.db.flush()?;
-        
+
         Ok(())
     }
 
     /// Get checkpoint by height
-    pub fn get_checkpoint(&self, height: u64) -> Result<Option<FinalityCheckpoint>, Box<dyn std::error::Error>> {
+    pub fn get_checkpoint(
+        &self,
+        height: u64,
+    ) -> Result<Option<FinalityCheckpoint>, Box<dyn std::error::Error>> {
         let key = format!("checkpoint_{}", height);
-        
+
         if let Some(bytes) = self.db.get(key.as_bytes())? {
             let checkpoint: FinalityCheckpoint = bincode::deserialize(&bytes)?;
             Ok(Some(checkpoint))
@@ -163,11 +171,13 @@ impl CheckpointManager {
     }
 
     /// Get latest checkpoint
-    pub fn get_latest_checkpoint(&self) -> Result<Option<FinalityCheckpoint>, Box<dyn std::error::Error>> {
+    pub fn get_latest_checkpoint(
+        &self,
+    ) -> Result<Option<FinalityCheckpoint>, Box<dyn std::error::Error>> {
         if self.latest_checkpoint_height == 0 {
             return Ok(None);
         }
-        
+
         self.get_checkpoint(self.latest_checkpoint_height)
     }
 
@@ -189,28 +199,31 @@ impl CheckpointManager {
             return Err(format!(
                 "Block height {} is before finality checkpoint {} (long-range attack rejected)",
                 block_height, latest_checkpoint.height
-            ).into());
+            )
+            .into());
         }
 
         // If block is at checkpoint height, verify hash matches
-        if block_height == latest_checkpoint.height {
-            if block_hash != latest_checkpoint.block_hash {
-                return Err(format!(
-                    "Block hash mismatch at checkpoint {}: expected {}, got {}",
-                    block_height, latest_checkpoint.block_hash, block_hash
-                ).into());
-            }
+        if block_height == latest_checkpoint.height && block_hash != latest_checkpoint.block_hash {
+            return Err(format!(
+                "Block hash mismatch at checkpoint {}: expected {}, got {}",
+                block_height, latest_checkpoint.block_hash, block_hash
+            )
+            .into());
         }
 
         // Validate parent hash chain back to checkpoint
-        if block_height > latest_checkpoint.height && block_height < latest_checkpoint.height + CHECKPOINT_INTERVAL {
+        if block_height > latest_checkpoint.height
+            && block_height < latest_checkpoint.height + CHECKPOINT_INTERVAL
+        {
             // Parent must be after or at checkpoint
             let parent_height = block_height - 1;
             if parent_height < latest_checkpoint.height {
                 return Err(format!(
                     "Parent block {} is before checkpoint {} (invalid chain)",
                     parent_height, latest_checkpoint.height
-                ).into());
+                )
+                .into());
             }
         }
 
@@ -219,55 +232,58 @@ impl CheckpointManager {
 
     /// Check if height should create checkpoint
     pub fn should_create_checkpoint(&self, height: u64) -> bool {
-        height % CHECKPOINT_INTERVAL == 0 && height > self.latest_checkpoint_height
+        height.is_multiple_of(CHECKPOINT_INTERVAL) && height > self.latest_checkpoint_height
     }
 
     /// Get all checkpoints (for sync)
-    pub fn get_all_checkpoints(&self) -> Result<Vec<FinalityCheckpoint>, Box<dyn std::error::Error>> {
+    pub fn get_all_checkpoints(
+        &self,
+    ) -> Result<Vec<FinalityCheckpoint>, Box<dyn std::error::Error>> {
         let mut checkpoints = Vec::new();
-        
+
         for item in self.db.scan_prefix(b"checkpoint_") {
             let (_, value) = item?;
             let checkpoint: FinalityCheckpoint = bincode::deserialize(&value)?;
             checkpoints.push(checkpoint);
         }
-        
+
         // Sort by height
         checkpoints.sort_by_key(|cp| cp.height);
-        
+
         Ok(checkpoints)
     }
 
     /// Get checkpoint count
     pub fn get_checkpoint_count(&self) -> usize {
-        self.db
-            .scan_prefix(b"checkpoint_")
-            .count()
+        self.db.scan_prefix(b"checkpoint_").count()
     }
 
     /// Prune old checkpoints (keep last N)
-    pub fn prune_old_checkpoints(&mut self, keep_last: usize) -> Result<usize, Box<dyn std::error::Error>> {
+    pub fn prune_old_checkpoints(
+        &mut self,
+        keep_last: usize,
+    ) -> Result<usize, Box<dyn std::error::Error>> {
         let mut checkpoints = self.get_all_checkpoints()?;
-        
+
         if checkpoints.len() <= keep_last {
             return Ok(0); // Nothing to prune
         }
 
         // Sort by height descending
         checkpoints.sort_by_key(|cp| std::cmp::Reverse(cp.height));
-        
+
         // Remove old checkpoints (but keep at least 1)
         let _to_remove = checkpoints.len() - keep_last;
         let mut removed = 0;
-        
+
         for checkpoint in checkpoints.iter().skip(keep_last) {
             let key = format!("checkpoint_{}", checkpoint.height);
             self.db.remove(key.as_bytes())?;
             removed += 1;
         }
-        
+
         self.db.flush()?;
-        
+
         Ok(removed)
     }
 
@@ -434,11 +450,8 @@ mod tests {
         manager.store_checkpoint(checkpoint).unwrap();
 
         // Block at height 1500 should be valid (after checkpoint)
-        let result = manager.validate_block_against_checkpoint(
-            1500,
-            "block_hash_1500",
-            "parent_hash_1499",
-        );
+        let result =
+            manager.validate_block_against_checkpoint(1500, "block_hash_1500", "parent_hash_1499");
         assert!(result.is_ok());
         assert!(result.unwrap());
     }
@@ -460,13 +473,13 @@ mod tests {
         manager.store_checkpoint(checkpoint).unwrap();
 
         // Block at height 500 should be REJECTED (before checkpoint - long-range attack)
-        let result = manager.validate_block_against_checkpoint(
-            500,
-            "block_hash_500",
-            "parent_hash_499",
-        );
+        let result =
+            manager.validate_block_against_checkpoint(500, "block_hash_500", "parent_hash_499");
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("long-range attack"));
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("long-range attack"));
     }
 
     #[test]
@@ -478,7 +491,7 @@ mod tests {
         assert!(manager.should_create_checkpoint(1000));
         assert!(manager.should_create_checkpoint(2000));
         assert!(!manager.should_create_checkpoint(1500)); // Not at interval
-        assert!(!manager.should_create_checkpoint(999));  // Not at interval
+        assert!(!manager.should_create_checkpoint(999)); // Not at interval
     }
 
     #[test]
@@ -577,7 +590,10 @@ mod tests {
 
         let result = manager.store_checkpoint(checkpoint);
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("Insufficient signatures"));
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("Insufficient signatures"));
     }
 
     #[test]

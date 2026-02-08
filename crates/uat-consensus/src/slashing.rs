@@ -1,6 +1,6 @@
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // UNAUTHORITY (UAT) - VALIDATOR SLASHING & SAFETY
-// 
+//
 // Task #4: Anti-Misbehavior Mechanism
 // - Double-signing detection (100% slash + permanent ban)
 // - Uptime tracking with 1% slash for extended downtime
@@ -8,8 +8,8 @@
 // - Automatic punishment enforcement
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
+use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, VecDeque};
-use serde::{Serialize, Deserialize};
 
 /// Slashing constants
 pub const DOUBLE_SIGNING_SLASH_PERCENT: f64 = 100.0; // 100% of stake
@@ -41,9 +41,9 @@ pub struct SlashEvent {
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 pub enum ValidatorStatus {
     Active,
-    Slashed,      // Caught misbehaving but not yet banned
-    Banned,       // Permanently removed from consensus
-    Unstaking,    // Voluntary exit in progress
+    Slashed,   // Caught misbehaving but not yet banned
+    Banned,    // Permanently removed from consensus
+    Unstaking, // Voluntary exit in progress
 }
 
 /// Per-validator signature tracking for double-signing detection
@@ -58,28 +58,28 @@ pub struct SignatureRecord {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ValidatorSafetyProfile {
     pub validator_address: String,
-    
+
     /// Current status in state machine
     pub status: ValidatorStatus,
-    
+
     /// Total stake slashed (VOI)
     pub total_slashed_void: u128,
-    
+
     /// Recent signatures for double-signing detection
     pub recent_signatures: VecDeque<SignatureRecord>,
-    
+
     /// Blocks participated in (for uptime calculation)
     pub blocks_participated: u64,
-    
+
     /// Total blocks in observation window
     pub total_blocks_observed: u64,
-    
+
     /// Last block participation timestamp
     pub last_participation_timestamp: u64,
-    
+
     /// Slash history (for audit trail)
     pub slash_history: Vec<SlashEvent>,
-    
+
     /// Number of times slashed
     pub violation_count: u32,
 }
@@ -132,15 +132,21 @@ pub struct SlashProposal {
 pub struct SlashingManager {
     /// Per-validator safety profiles
     validators: HashMap<String, ValidatorSafetyProfile>,
-    
+
     /// Global slash events log
     slash_events: Vec<SlashEvent>,
-    
+
     /// Current block height
     current_block_height: u64,
-    
+
     /// Pending slash proposals requiring confirmation
     pending_proposals: HashMap<String, SlashProposal>,
+}
+
+impl Default for SlashingManager {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl SlashingManager {
@@ -297,7 +303,7 @@ impl SlashingManager {
                 staked_amount_void
             } else {
                 // 1% = staked / 100, rounds up via + 99 trick
-                (staked_amount_void + 99) / 100
+                staked_amount_void.div_ceil(100)
             };
 
             profile.total_slashed_void += slash_amount;
@@ -337,11 +343,7 @@ impl SlashingManager {
     }
 
     /// Ban a validator (emergency mechanism)
-    pub fn emergency_ban(
-        &mut self,
-        validator_address: &str,
-        _reason: &str,
-    ) -> Result<(), String> {
+    pub fn emergency_ban(&mut self, validator_address: &str, _reason: &str) -> Result<(), String> {
         let profile = self
             .validators
             .get_mut(validator_address)
@@ -407,11 +409,7 @@ impl SlashingManager {
             .filter(|p| p.status == ValidatorStatus::Slashed)
             .count() as u32;
 
-        let total_slashed: u128 = self
-            .validators
-            .values()
-            .map(|p| p.total_slashed_void)
-            .sum();
+        let total_slashed: u128 = self.validators.values().map(|p| p.total_slashed_void).sum();
 
         SafetyStats {
             total_validators,
@@ -449,12 +447,12 @@ impl SlashingManager {
         // Old: format!("slash_{}_{}", offender, timestamp) — collides when same offender
         // is slashed at the same second for different offenses
         let proposal_id = format!("slash_{}_{}_{}", offender, evidence_hash, timestamp);
-        
+
         // Check if proposal already exists
         if self.pending_proposals.contains_key(&proposal_id) {
             return Err("Proposal already exists".to_string());
         }
-        
+
         let proposal = SlashProposal {
             proposal_id: proposal_id.clone(),
             offender,
@@ -466,11 +464,11 @@ impl SlashingManager {
             executed: false,
             staked_amount_void: None, // Set later via confirm_slash with actual ledger balance
         };
-        
+
         self.pending_proposals.insert(proposal_id.clone(), proposal);
         Ok(proposal_id)
     }
-    
+
     /// Confirm a slash proposal - returns true if threshold met and slash executed
     /// staked_amount_void: actual balance of offender from ledger (used if threshold met)
     pub fn confirm_slash(
@@ -481,63 +479,80 @@ impl SlashingManager {
         timestamp: u64,
         staked_amount_void: Option<u128>,
     ) -> Result<bool, String> {
-        let proposal = self.pending_proposals.get_mut(proposal_id)
+        let proposal = self
+            .pending_proposals
+            .get_mut(proposal_id)
             .ok_or("Proposal not found")?;
-        
+
         // Update staked amount if provided (from ledger at confirmation time)
         if let Some(amount) = staked_amount_void {
             proposal.staked_amount_void = Some(amount);
         }
-        
+
         if proposal.executed {
             return Err("Already executed".to_string());
         }
-        
+
         // Add confirmation if not already confirmed by this validator
         if !proposal.confirmations.contains(&confirmer) {
             proposal.confirmations.push(confirmer);
         }
-        
+
         // Require 2/3 + 1 confirmations (Byzantine fault tolerance)
         let threshold = (total_validators * 2 / 3) + 1;
-        
+
         if proposal.confirmations.len() >= threshold {
             // Execute slash
             let offender = proposal.offender.clone();
             let offense_type = proposal.offense_type;
-            
+
             // SECURITY FIX V4#7: Use actual staked_amount from the proposal instead of hardcoded 100k
             // The staked_amount should be provided by the caller or read from ledger
             let staked_amount = proposal.staked_amount_void.unwrap_or(0);
-            
+
             // Execute appropriate slash
             match offense_type {
                 ViolationType::DoubleSigning => {
-                    self.slash_double_signing(&offender, self.current_block_height, staked_amount, timestamp)?;
+                    self.slash_double_signing(
+                        &offender,
+                        self.current_block_height,
+                        staked_amount,
+                        timestamp,
+                    )?;
                 }
                 ViolationType::ExtendedDowntime => {
-                    if let Some(slash_amt) = self.check_and_slash_downtime(&offender, self.current_block_height, staked_amount, timestamp)? {
+                    if let Some(slash_amt) = self.check_and_slash_downtime(
+                        &offender,
+                        self.current_block_height,
+                        staked_amount,
+                        timestamp,
+                    )? {
                         // Slash executed
                         let _ = slash_amt;
                     }
                 }
                 ViolationType::FraudulentTransaction => {
                     // Fraudulent transactions (fake burn TXIDs etc) — 100% slash like double signing
-                    self.slash_double_signing(&offender, self.current_block_height, staked_amount, timestamp)?;
+                    self.slash_double_signing(
+                        &offender,
+                        self.current_block_height,
+                        staked_amount,
+                        timestamp,
+                    )?;
                 }
             }
-            
+
             // Mark as executed
             if let Some(proposal) = self.pending_proposals.get_mut(proposal_id) {
                 proposal.executed = true;
             }
-            
+
             Ok(true)
         } else {
             Ok(false)
         }
     }
-    
+
     /// Get pending slash proposals
     pub fn get_pending_proposals(&self) -> Vec<SlashProposal> {
         self.pending_proposals.values().cloned().collect()
@@ -589,9 +604,7 @@ mod tests {
         let result = manager.record_signature("validator1", 100, "sig_hash_2".to_string(), 1001);
 
         assert!(result.is_err());
-        assert!(result
-            .unwrap_err()
-            .contains("Double-signing detected"));
+        assert!(result.unwrap_err().contains("Double-signing detected"));
     }
 
     #[test]

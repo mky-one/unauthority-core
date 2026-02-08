@@ -1,6 +1,6 @@
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // UNAUTHORITY (UAT) - QUADRATIC VOTING
-// 
+//
 // Task #3b: Anti-Whale Voting Mechanism
 // - Voting power = √(Total Stake)
 // - Prevents wealth concentration in consensus
@@ -8,8 +8,8 @@
 // - Example: 1 whale(1000) < 10 nodes(100 each) → 31.6 < 100 voting power
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use serde::{Serialize, Deserialize};
 
 /// Voting power calculation precision (decimal places)
 pub const VOTING_POWER_PRECISION: u32 = 6;
@@ -26,16 +26,16 @@ pub const MAX_STAKE_FOR_VOTING_VOI: u128 = 2_193_623_600_000_000; // Total suppl
 pub struct ValidatorVote {
     /// Validator address
     pub validator_address: String,
-    
+
     /// Current staked amount (in VOI)
     pub staked_amount_void: u128,
-    
+
     /// Calculated voting power (√stake)
     pub voting_power: f64,
-    
+
     /// Vote preference (proposition ID or "abstain")
     pub vote_preference: String,
-    
+
     /// Is validator currently active
     pub is_active: bool,
 }
@@ -48,7 +48,7 @@ impl ValidatorVote {
         is_active: bool,
     ) -> Self {
         let voting_power = calculate_voting_power(staked_amount_void);
-        
+
         Self {
             validator_address,
             staked_amount_void,
@@ -79,9 +79,11 @@ pub fn calculate_voting_power(staked_amount_void: u128) -> f64 {
 /// Deterministic integer square root using Newton's method.
 /// Returns floor(√n) for any u128 value.
 fn isqrt(n: u128) -> u128 {
-    if n == 0 { return 0; }
+    if n == 0 {
+        return 0;
+    }
     let mut x = n;
-    let mut y = (x + 1) / 2;
+    let mut y = x.div_ceil(2);
     while y < x {
         x = y;
         y = (x + n / x) / 2;
@@ -109,25 +111,25 @@ pub fn normalize_voting_power(validator_power: f64, total_network_power: f64) ->
 pub struct VotingPowerSummary {
     /// Total validators participating
     pub total_validators: u32,
-    
+
     /// Total network stake (VOI)
     pub total_stake_void: u128,
-    
+
     /// Total voting power (sum of √stake for all validators)
     pub total_voting_power: f64,
-    
+
     /// Validators with voting power
     pub votes: Vec<ValidatorVote>,
-    
+
     /// Average voting power per validator
     pub average_voting_power: f64,
-    
+
     /// Maximum voting power (richest validator)
     pub max_voting_power: f64,
-    
+
     /// Minimum voting power (poorest active validator)
     pub min_voting_power: f64,
-    
+
     /// Power concentration (max_power / total_power, lower = more decentralized)
     pub concentration_ratio: f64,
 }
@@ -136,6 +138,12 @@ pub struct VotingPowerSummary {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct VotingSystem {
     validators: HashMap<String, ValidatorVote>,
+}
+
+impl Default for VotingSystem {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl VotingSystem {
@@ -237,7 +245,10 @@ impl VotingSystem {
         let (max_voting_power, min_voting_power) = if votes.is_empty() {
             (0.0, 0.0)
         } else {
-            let max = votes.iter().map(|v| v.voting_power).fold(f64::NEG_INFINITY, f64::max);
+            let max = votes
+                .iter()
+                .map(|v| v.voting_power)
+                .fold(f64::NEG_INFINITY, f64::max);
             let min = votes
                 .iter()
                 .map(|v| v.voting_power)
@@ -270,10 +281,7 @@ impl VotingSystem {
     }
 
     /// Reach consensus on a proposal (>50% voting power needed)
-    pub fn calculate_proposal_consensus(
-        &self,
-        proposal_id: &str,
-    ) -> (f64, f64, bool) {
+    pub fn calculate_proposal_consensus(&self, proposal_id: &str) -> (f64, f64, bool) {
         let votes_for: f64 = self
             .validators
             .values()
@@ -328,7 +336,8 @@ impl VotingSystem {
 
         let whale_concentration = max_whale / whale_total_power;
         let distributed_concentration = max_distributed / distributed_total_power;
-        let improvement = (whale_concentration - distributed_concentration) / whale_concentration * 100.0;
+        let improvement =
+            (whale_concentration - distributed_concentration) / whale_concentration * 100.0;
 
         (whale_concentration, distributed_concentration, improvement)
     }
@@ -346,7 +355,7 @@ impl VotingSystem {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     // 1 UAT = 100_000_000_000 VOID (10^11)
     // MIN_STAKE_VOI = 1000 UAT = 100_000_000_000_000 VOID (10^14)
     const UAT: u128 = 100_000_000_000; // 10^11 VOID per UAT
@@ -441,13 +450,28 @@ mod tests {
 
         // Add validators voting for proposal (all >= 1000 UAT)
         system
-            .register_validator("val1".to_string(), 1_000 * UAT, "proposal_1".to_string(), true)
+            .register_validator(
+                "val1".to_string(),
+                1_000 * UAT,
+                "proposal_1".to_string(),
+                true,
+            )
             .unwrap();
         system
-            .register_validator("val2".to_string(), 1_000 * UAT, "proposal_1".to_string(), true)
+            .register_validator(
+                "val2".to_string(),
+                1_000 * UAT,
+                "proposal_1".to_string(),
+                true,
+            )
             .unwrap();
         system
-            .register_validator("val3".to_string(), 1_000 * UAT, "proposal_2".to_string(), true)
+            .register_validator(
+                "val3".to_string(),
+                1_000 * UAT,
+                "proposal_2".to_string(),
+                true,
+            )
             .unwrap();
 
         let (votes_for, percentage, consensus) = system.calculate_proposal_consensus("proposal_1");
@@ -463,10 +487,20 @@ mod tests {
 
         // Equal vote split (both >= 1000 UAT)
         system
-            .register_validator("val1".to_string(), 1_000 * UAT, "proposal_1".to_string(), true)
+            .register_validator(
+                "val1".to_string(),
+                1_000 * UAT,
+                "proposal_1".to_string(),
+                true,
+            )
             .unwrap();
         system
-            .register_validator("val2".to_string(), 1_000 * UAT, "proposal_2".to_string(), true)
+            .register_validator(
+                "val2".to_string(),
+                1_000 * UAT,
+                "proposal_2".to_string(),
+                true,
+            )
             .unwrap();
 
         let (_, percentage, consensus) = system.calculate_proposal_consensus("proposal_1");
@@ -486,9 +520,7 @@ mod tests {
         let old_power = system.get_validator_power("val1").unwrap();
 
         // Increase stake (10x)
-        system
-            .update_stake("val1", 10_000 * UAT)
-            .unwrap();
+        system.update_stake("val1", 10_000 * UAT).unwrap();
 
         let new_power = system.get_validator_power("val1").unwrap();
         assert!(new_power > old_power);
@@ -500,10 +532,20 @@ mod tests {
 
         // Highly concentrated: whale has 10x more stake
         system
-            .register_validator("whale".to_string(), 10_000 * UAT, "prop_1".to_string(), true)
+            .register_validator(
+                "whale".to_string(),
+                10_000 * UAT,
+                "prop_1".to_string(),
+                true,
+            )
             .unwrap();
         system
-            .register_validator("small1".to_string(), 1_000 * UAT, "prop_1".to_string(), true)
+            .register_validator(
+                "small1".to_string(),
+                1_000 * UAT,
+                "prop_1".to_string(),
+                true,
+            )
             .unwrap();
 
         let summary = system.get_summary();

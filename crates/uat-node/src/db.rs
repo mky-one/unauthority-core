@@ -2,9 +2,9 @@
 // Provides ACID-compliant atomic operations for blockchain state
 
 use sled::{Db, Tree};
-use uat_core::{Ledger, Block, AccountState};
-use std::sync::Arc;
 use std::path::Path;
+use std::sync::Arc;
+use uat_core::{AccountState, Block, Ledger};
 
 const DB_PATH: &str = "uat_database";
 const TREE_BLOCKS: &str = "blocks";
@@ -21,12 +21,9 @@ pub struct UatDatabase {
 impl UatDatabase {
     /// Open or create database
     pub fn open<P: AsRef<Path>>(path: P) -> Result<Self, String> {
-        let db = sled::open(path)
-            .map_err(|e| format!("Failed to open database: {}", e))?;
-        
-        Ok(UatDatabase {
-            db: Arc::new(db),
-        })
+        let db = sled::open(path).map_err(|e| format!("Failed to open database: {}", e))?;
+
+        Ok(UatDatabase { db: Arc::new(db) })
     }
 
     /// Open with default path
@@ -36,19 +33,22 @@ impl UatDatabase {
 
     /// Get blocks tree
     fn blocks_tree(&self) -> Result<Tree, String> {
-        self.db.open_tree(TREE_BLOCKS)
+        self.db
+            .open_tree(TREE_BLOCKS)
             .map_err(|e| format!("Failed to open blocks tree: {}", e))
     }
 
     /// Get accounts tree
     fn accounts_tree(&self) -> Result<Tree, String> {
-        self.db.open_tree(TREE_ACCOUNTS)
+        self.db
+            .open_tree(TREE_ACCOUNTS)
             .map_err(|e| format!("Failed to open accounts tree: {}", e))
     }
 
     /// Get metadata tree
     fn meta_tree(&self) -> Result<Tree, String> {
-        self.db.open_tree(TREE_META)
+        self.db
+            .open_tree(TREE_META)
             .map_err(|e| format!("Failed to open metadata tree: {}", e))
     }
 
@@ -71,7 +71,8 @@ impl UatDatabase {
             block_entries.push((hash.as_bytes().to_vec(), block_json));
         }
 
-        let mut account_entries: Vec<(Vec<u8>, Vec<u8>)> = Vec::with_capacity(ledger.accounts.len());
+        let mut account_entries: Vec<(Vec<u8>, Vec<u8>)> =
+            Vec::with_capacity(ledger.accounts.len());
         for (addr, state) in &ledger.accounts {
             let state_json = serde_json::to_vec(state)
                 .map_err(|e| format!("Failed to serialize account: {}", e))?;
@@ -82,19 +83,24 @@ impl UatDatabase {
             .map_err(|e| format!("Failed to serialize distribution: {}", e))?;
 
         // Atomic cross-tree transaction: all-or-nothing commit
-        (&blocks_tree, &accounts_tree, &meta_tree).transaction(|(tx_blocks, tx_accounts, tx_meta)| {
-            for (key, value) in &block_entries {
-                tx_blocks.insert(key.as_slice(), value.as_slice())?;
-            }
-            for (key, value) in &account_entries {
-                tx_accounts.insert(key.as_slice(), value.as_slice())?;
-            }
-            tx_meta.insert(b"distribution".as_ref(), distribution_json.as_slice())?;
-            Ok(())
-        }).map_err(|e: sled::transaction::TransactionError<()>| format!("Atomic save failed: {:?}", e))?;
+        (&blocks_tree, &accounts_tree, &meta_tree)
+            .transaction(|(tx_blocks, tx_accounts, tx_meta)| {
+                for (key, value) in &block_entries {
+                    tx_blocks.insert(key.as_slice(), value.as_slice())?;
+                }
+                for (key, value) in &account_entries {
+                    tx_accounts.insert(key.as_slice(), value.as_slice())?;
+                }
+                tx_meta.insert(b"distribution".as_ref(), distribution_json.as_slice())?;
+                Ok(())
+            })
+            .map_err(|e: sled::transaction::TransactionError<()>| {
+                format!("Atomic save failed: {:?}", e)
+            })?;
 
         // Flush to disk (durability guarantee)
-        self.db.flush()
+        self.db
+            .flush()
             .map_err(|e| format!("Failed to flush to disk: {}", e))?;
 
         Ok(())
@@ -111,32 +117,33 @@ impl UatDatabase {
         // 1. Load all blocks
         for item in blocks_tree.iter() {
             let (key, value) = item.map_err(|e| format!("Failed to read block: {}", e))?;
-            
+
             let hash = String::from_utf8(key.to_vec())
                 .map_err(|e| format!("Invalid block hash: {}", e))?;
-            
+
             let block: Block = serde_json::from_slice(&value)
                 .map_err(|e| format!("Failed to deserialize block: {}", e))?;
-            
+
             ledger.blocks.insert(hash, block);
         }
 
         // 2. Load all accounts
         for item in accounts_tree.iter() {
             let (key, value) = item.map_err(|e| format!("Failed to read account: {}", e))?;
-            
+
             let addr = String::from_utf8(key.to_vec())
                 .map_err(|e| format!("Invalid account address: {}", e))?;
-            
+
             let state: AccountState = serde_json::from_slice(&value)
                 .map_err(|e| format!("Failed to deserialize account: {}", e))?;
-            
+
             ledger.accounts.insert(addr, state);
         }
 
         // 3. Load metadata
-        if let Some(dist_bytes) = meta_tree.get(b"distribution")
-            .map_err(|e| format!("Failed to read distribution: {}", e))? 
+        if let Some(dist_bytes) = meta_tree
+            .get(b"distribution")
+            .map_err(|e| format!("Failed to read distribution: {}", e))?
         {
             ledger.distribution = serde_json::from_slice(&dist_bytes)
                 .map_err(|e| format!("Failed to deserialize distribution: {}", e))?;
@@ -156,13 +163,13 @@ impl UatDatabase {
     #[allow(dead_code)]
     pub fn save_block(&self, hash: &str, block: &Block) -> Result<(), String> {
         let tree = self.blocks_tree()?;
-        
-        let block_json = serde_json::to_vec(block)
-            .map_err(|e| format!("Failed to serialize block: {}", e))?;
-        
+
+        let block_json =
+            serde_json::to_vec(block).map_err(|e| format!("Failed to serialize block: {}", e))?;
+
         tree.insert(hash.as_bytes(), block_json)
             .map_err(|e| format!("Failed to save block: {}", e))?;
-        
+
         tree.flush()
             .map_err(|e| format!("Failed to flush block: {}", e))?;
 
@@ -173,9 +180,10 @@ impl UatDatabase {
     #[allow(dead_code)]
     pub fn get_block(&self, hash: &str) -> Result<Option<Block>, String> {
         let tree = self.blocks_tree()?;
-        
-        if let Some(bytes) = tree.get(hash.as_bytes())
-            .map_err(|e| format!("Failed to read block: {}", e))? 
+
+        if let Some(bytes) = tree
+            .get(hash.as_bytes())
+            .map_err(|e| format!("Failed to read block: {}", e))?
         {
             let block: Block = serde_json::from_slice(&bytes)
                 .map_err(|e| format!("Failed to deserialize block: {}", e))?;
@@ -189,13 +197,13 @@ impl UatDatabase {
     #[allow(dead_code)]
     pub fn save_account(&self, addr: &str, state: &AccountState) -> Result<(), String> {
         let tree = self.accounts_tree()?;
-        
-        let state_json = serde_json::to_vec(state)
-            .map_err(|e| format!("Failed to serialize account: {}", e))?;
-        
+
+        let state_json =
+            serde_json::to_vec(state).map_err(|e| format!("Failed to serialize account: {}", e))?;
+
         tree.insert(addr.as_bytes(), state_json)
             .map_err(|e| format!("Failed to save account: {}", e))?;
-        
+
         tree.flush()
             .map_err(|e| format!("Failed to flush account: {}", e))?;
 
@@ -206,9 +214,10 @@ impl UatDatabase {
     #[allow(dead_code)]
     pub fn get_account(&self, addr: &str) -> Result<Option<AccountState>, String> {
         let tree = self.accounts_tree()?;
-        
-        if let Some(bytes) = tree.get(addr.as_bytes())
-            .map_err(|e| format!("Failed to read account: {}", e))? 
+
+        if let Some(bytes) = tree
+            .get(addr.as_bytes())
+            .map_err(|e| format!("Failed to read account: {}", e))?
         {
             let state: AccountState = serde_json::from_slice(&bytes)
                 .map_err(|e| format!("Failed to deserialize account: {}", e))?;
@@ -220,18 +229,11 @@ impl UatDatabase {
 
     /// Get database statistics
     pub fn stats(&self) -> DatabaseStats {
-        let blocks_count = self.blocks_tree()
-            .ok()
-            .map(|t| t.len())
-            .unwrap_or(0);
-        
-        let accounts_count = self.accounts_tree()
-            .ok()
-            .map(|t| t.len())
-            .unwrap_or(0);
+        let blocks_count = self.blocks_tree().ok().map(|t| t.len()).unwrap_or(0);
 
-        let size_on_disk = self.db.size_on_disk()
-            .unwrap_or(0);
+        let accounts_count = self.accounts_tree().ok().map(|t| t.len()).unwrap_or(0);
+
+        let size_on_disk = self.db.size_on_disk().unwrap_or(0);
 
         DatabaseStats {
             blocks_count,
@@ -251,13 +253,14 @@ impl UatDatabase {
     /// Create backup snapshot
     #[allow(dead_code)]
     pub fn create_snapshot(&self, path: &str) -> Result<(), String> {
-        self.db.flush()
+        self.db
+            .flush()
             .map_err(|e| format!("Failed to flush before snapshot: {}", e))?;
 
         // sled snapshots are not directly supported, use export instead
         let blocks = self.blocks_tree()?;
         let accounts = self.accounts_tree()?;
-        
+
         let backup_data = serde_json::json!({
             "blocks_count": blocks.len(),
             "accounts_count": accounts.len(),
@@ -269,8 +272,9 @@ impl UatDatabase {
 
         std::fs::write(
             format!("{}/snapshot_meta.json", path),
-            serde_json::to_string_pretty(&backup_data).unwrap()
-        ).map_err(|e| format!("Failed to write snapshot metadata: {}", e))?;
+            serde_json::to_string_pretty(&backup_data).unwrap(),
+        )
+        .map_err(|e| format!("Failed to write snapshot metadata: {}", e))?;
 
         Ok(())
     }
@@ -282,14 +286,17 @@ impl UatDatabase {
         let accounts = self.accounts_tree()?;
         let meta = self.meta_tree()?;
 
-        blocks.clear()
+        blocks
+            .clear()
             .map_err(|e| format!("Failed to clear blocks: {}", e))?;
-        accounts.clear()
+        accounts
+            .clear()
             .map_err(|e| format!("Failed to clear accounts: {}", e))?;
         meta.clear()
             .map_err(|e| format!("Failed to clear metadata: {}", e))?;
 
-        self.db.flush()
+        self.db
+            .flush()
             .map_err(|e| format!("Failed to flush after clear: {}", e))?;
 
         Ok(())
@@ -299,7 +306,8 @@ impl UatDatabase {
 
     /// Get faucet cooldowns tree
     fn faucet_tree(&self) -> Result<Tree, String> {
-        self.db.open_tree(TREE_FAUCET_COOLDOWNS)
+        self.db
+            .open_tree(TREE_FAUCET_COOLDOWNS)
             .map_err(|e| format!("Failed to open faucet cooldowns tree: {}", e))
     }
 
@@ -319,7 +327,7 @@ impl UatDatabase {
     /// Returns Ok(()) if allowed, Err(seconds_remaining) if in cooldown
     pub fn check_faucet_cooldown(&self, address: &str, cooldown_secs: u64) -> Result<(), u64> {
         let tree = self.faucet_tree().map_err(|_| 0u64)?;
-        
+
         if let Ok(Some(bytes)) = tree.get(address.as_bytes()) {
             if bytes.len() == 8 {
                 let last_claim = u64::from_le_bytes(bytes.as_ref().try_into().unwrap_or([0u8; 8]));
@@ -327,14 +335,14 @@ impl UatDatabase {
                     .duration_since(std::time::UNIX_EPOCH)
                     .unwrap_or_default()
                     .as_secs();
-                
+
                 let elapsed = now.saturating_sub(last_claim);
                 if elapsed < cooldown_secs {
                     return Err(cooldown_secs - elapsed);
                 }
             }
         }
-        
+
         Ok(())
     }
 
@@ -342,7 +350,8 @@ impl UatDatabase {
 
     /// Get known peers tree
     fn peers_tree(&self) -> Result<Tree, String> {
-        self.db.open_tree(TREE_PEERS)
+        self.db
+            .open_tree(TREE_PEERS)
             .map_err(|e| format!("Failed to open peers tree: {}", e))
     }
 
@@ -358,16 +367,16 @@ impl UatDatabase {
     pub fn load_peers(&self) -> Result<std::collections::HashMap<String, String>, String> {
         let tree = self.peers_tree()?;
         let mut peers = std::collections::HashMap::new();
-        
+
         for item in tree.iter() {
             let (key, value) = item.map_err(|e| format!("Failed to read peer: {}", e))?;
-            let short = String::from_utf8(key.to_vec())
-                .map_err(|e| format!("Invalid peer key: {}", e))?;
+            let short =
+                String::from_utf8(key.to_vec()).map_err(|e| format!("Invalid peer key: {}", e))?;
             let full = String::from_utf8(value.to_vec())
                 .map_err(|e| format!("Invalid peer value: {}", e))?;
             peers.insert(short, full);
         }
-        
+
         Ok(peers)
     }
 
@@ -398,7 +407,7 @@ mod tests {
     fn test_database_open() {
         let db = UatDatabase::open("test_db_open").unwrap();
         assert!(db.is_empty());
-        
+
         // Cleanup
         std::fs::remove_dir_all("test_db_open").ok();
     }
@@ -406,7 +415,7 @@ mod tests {
     #[test]
     fn test_save_and_load_ledger() {
         let db = UatDatabase::open("test_db_ledger").unwrap();
-        
+
         // Create test ledger
         let mut ledger = Ledger::new();
         ledger.accounts.insert(
@@ -424,7 +433,10 @@ mod tests {
         // Load
         let loaded = db.load_ledger().unwrap();
         assert_eq!(loaded.accounts.len(), 1);
-        assert_eq!(loaded.accounts.get("test_account").unwrap().balance, 1000 * VOID_PER_UAT);
+        assert_eq!(
+            loaded.accounts.get("test_account").unwrap().balance,
+            1000 * VOID_PER_UAT
+        );
 
         // Cleanup
         std::fs::remove_dir_all("test_db_ledger").ok();
@@ -433,7 +445,7 @@ mod tests {
     #[test]
     fn test_save_single_block() {
         let db = UatDatabase::open("test_db_block").unwrap();
-        
+
         let block = Block {
             account: "test".to_string(),
             previous: "0".to_string(),
@@ -462,9 +474,9 @@ mod tests {
     #[test]
     fn test_atomic_batch() {
         let db = UatDatabase::open("test_db_atomic").unwrap();
-        
+
         let mut ledger = Ledger::new();
-        
+
         // Add multiple accounts
         for i in 0..10 {
             ledger.accounts.insert(
@@ -491,7 +503,7 @@ mod tests {
     #[test]
     fn test_database_stats() {
         let db = UatDatabase::open("test_db_stats").unwrap();
-        
+
         let mut ledger = Ledger::new();
         ledger.accounts.insert(
             "test".to_string(),

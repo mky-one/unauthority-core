@@ -1,6 +1,6 @@
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // UNAUTHORITY (UAT) - P2P ENCRYPTION & SENTRY ARCHITECTURE
-// 
+//
 // Task #5: Secure Network Layer
 // - Noise Protocol for all node-to-node communication
 // - Sentry Node: Public-facing, shields validator from network
@@ -9,7 +9,7 @@
 // - Session encryption: All messages encrypted with perfect forward secrecy
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 /// Noise Protocol HandshakePattern
@@ -112,7 +112,10 @@ pub struct NodeIdentity {
 impl NodeIdentity {
     pub fn new(peer_id: String, static_key: Vec<u8>, node_type: NodeType) -> Result<Self, String> {
         if static_key.len() != 32 {
-            return Err(format!("Static key must be 32 bytes, got {}", static_key.len()));
+            return Err(format!(
+                "Static key must be 32 bytes, got {}",
+                static_key.len()
+            ));
         }
         Ok(Self {
             peer_id,
@@ -125,9 +128,9 @@ impl NodeIdentity {
 /// Node types in Unauthority network
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 pub enum NodeType {
-    Sentry,  // Public relay node
-    Signer,  // Private validator node
-    Full,    // Full node with no validator
+    Sentry, // Public relay node
+    Signer, // Private validator node
+    Full,   // Full node with no validator
 }
 
 /// Sentry Node - Public-facing relay
@@ -329,7 +332,7 @@ impl SignerNode {
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap_or_default()
             .as_secs();
-        
+
         // Compute MAC tag: keyed hash of (session_id || seq || ciphertext || timestamp)
         // Uses a simple HMAC-like construction: H(key || data)
         let mut mac_input = Vec::new();
@@ -341,13 +344,13 @@ impl SignerNode {
             mac_input.extend_from_slice(&cipher.material);
         }
         // SHA-256 via std hashing (collision-resistant MAC)
-        use std::hash::{Hash, Hasher};
         use std::collections::hash_map::DefaultHasher;
+        use std::hash::{Hash, Hasher};
         let mut h1 = DefaultHasher::new();
         mac_input.hash(&mut h1);
         let hash1 = h1.finish().to_le_bytes();
         let mut h2 = DefaultHasher::new();
-        (&mac_input[..mac_input.len().min(64)]).hash(&mut h2);
+        mac_input[..mac_input.len().min(64)].hash(&mut h2);
         let hash2 = h2.finish().to_le_bytes();
         let mut mac_tag = Vec::with_capacity(16);
         mac_tag.extend_from_slice(&hash1);
@@ -382,10 +385,7 @@ pub struct NoiseProtocolManager {
 }
 
 impl NoiseProtocolManager {
-    pub fn new(
-        node_identity: NodeIdentity,
-        pattern: NoisePattern,
-    ) -> Self {
+    pub fn new(node_identity: NodeIdentity, pattern: NoisePattern) -> Self {
         Self {
             node_identity,
             sessions: HashMap::new(),
@@ -403,13 +403,21 @@ impl NoiseProtocolManager {
     ) -> Result<String, String> {
         // Validate peer key
         if peer_static_key.len() != 32 {
-            return Err(format!("Invalid peer key length: {}", peer_static_key.len()));
+            return Err(format!(
+                "Invalid peer key length: {}",
+                peer_static_key.len()
+            ));
         }
 
         let session_id = format!("noise_{}_{}", self.node_identity.peer_id, peer_id);
 
         self.peer_keys.insert(peer_id.clone(), peer_static_key);
-        let session = NoiseSession::new(session_id.clone(), peer_id, self.handshake_pattern, timestamp);
+        let session = NoiseSession::new(
+            session_id.clone(),
+            peer_id,
+            self.handshake_pattern,
+            timestamp,
+        );
 
         self.sessions.insert(session_id.clone(), session);
 
@@ -455,17 +463,16 @@ impl NoiseProtocolManager {
             return Err("Session not established".to_string());
         }
 
-        let send_key = session
-            .send_key
-            .as_mut()
-            .ok_or("Send key not set")?;
+        let send_key = session.send_key.as_mut().ok_or("Send key not set")?;
 
         let nonce = send_key.increment_nonce();
 
         // In real implementation: ChaCha20-Poly1305 AEAD
         // For now: simplified mock encryption
         let mut ciphertext = plaintext.to_vec();
-        ciphertext.iter_mut().for_each(|b| *b ^= (nonce % 256) as u8);
+        ciphertext
+            .iter_mut()
+            .for_each(|b| *b ^= (nonce % 256) as u8);
 
         session.messages_sent += 1;
 
@@ -493,10 +500,7 @@ impl NoiseProtocolManager {
             return Err("Session not established".to_string());
         }
 
-        let _receive_key = session
-            .receive_key
-            .as_mut()
-            .ok_or("Receive key not set")?;
+        let _receive_key = session.receive_key.as_mut().ok_or("Receive key not set")?;
 
         let nonce = encrypted_msg.sequence_number;
 
@@ -521,13 +525,15 @@ impl NoiseProtocolManager {
     }
 
     pub fn get_active_sessions(&self) -> usize {
-        self.sessions.values().filter(|s| s.is_established()).count()
+        self.sessions
+            .values()
+            .filter(|s| s.is_established())
+            .count()
     }
 
     pub fn clear_expired_sessions(&mut self, current_timestamp: u64, ttl_seconds: u64) {
-        self.sessions.retain(|_, session| {
-            session.get_session_age(current_timestamp) < ttl_seconds
-        });
+        self.sessions
+            .retain(|_, session| session.get_session_age(current_timestamp) < ttl_seconds);
     }
 }
 
@@ -719,9 +725,7 @@ mod tests {
             .encrypt_message(&session_id, plaintext, 1000)
             .unwrap();
 
-        let decrypted = manager
-            .decrypt_message(&session_id, &encrypted)
-            .unwrap();
+        let decrypted = manager.decrypt_message(&session_id, &encrypted).unwrap();
 
         // With same key for both directions, should decrypt back
         assert_eq!(decrypted, plaintext);
@@ -835,7 +839,8 @@ mod tests {
         .unwrap();
 
         // Signer connects to sentry
-        let _tunnel_session = signer.connect_to_sentry("sentry1".to_string(), NoisePattern::IK, 1000);
+        let _tunnel_session =
+            signer.connect_to_sentry("sentry1".to_string(), NoisePattern::IK, 1000);
 
         // Complete tunnel handshake
         let send_key = CipherKey::new(1, vec![3u8; 32], 1000);

@@ -19,7 +19,7 @@ use std::time::{Duration, Instant};
 use tokio::time::sleep;
 
 // Import UAT modules
-use uat_core::{Block, BlockType, Ledger, AccountState};
+use uat_core::{AccountState, Block, BlockType, Ledger};
 use uat_crypto::{generate_keypair, sign_message};
 
 // ========================================
@@ -36,7 +36,7 @@ async fn test_three_validator_consensus() {
         let keypair = generate_keypair();
         let pubkey_hex = hex::encode(&keypair.public_key);
         let ledger = Arc::new(Mutex::new(Ledger::new()));
-        
+
         validators.push(ValidatorNode {
             id: i,
             pubkey: pubkey_hex,
@@ -44,23 +44,22 @@ async fn test_three_validator_consensus() {
             ledger,
             stake: 1000_00000000, // 1000 UAT minimum stake
         });
-        
+
         println!("✅ Validator {} initialized (stake: 1000 UAT)", i);
     }
 
     // Test: Send a transaction and measure consensus time
     let start = Instant::now();
-    
+
     // Create a Send block from validator 0 to validator 1
     let sender = &validators[0];
     let receiver = &validators[1];
-    
-    let block_data = format!("{}{}{}{}", 
-        sender.pubkey, "0", 0u8, 100_00000000u128);
-    
-    let signature = sign_message(block_data.as_bytes(), &sender.keypair.secret_key)
-        .expect("Failed to sign");
-    
+
+    let block_data = format!("{}{}{}{}", sender.pubkey, "0", 0u8, 100_00000000u128);
+
+    let signature =
+        sign_message(block_data.as_bytes(), &sender.keypair.secret_key).expect("Failed to sign");
+
     let block = Block {
         block_type: BlockType::Send,
         account: sender.pubkey.clone(),
@@ -80,18 +79,21 @@ async fn test_three_validator_consensus() {
     // Broadcast block to all validators (simulate consensus)
     for validator in &validators {
         let mut ledger = validator.ledger.lock().unwrap();
-        
+
         // Initialize sender account with balance
-        ledger.accounts.insert(sender.pubkey.clone(), AccountState {
-            head: "0".to_string(),
-            balance: 1000_00000000,
-            block_count: 0,
-        });
-        
+        ledger.accounts.insert(
+            sender.pubkey.clone(),
+            AccountState {
+                head: "0".to_string(),
+                balance: 1000_00000000,
+                block_count: 0,
+            },
+        );
+
         // Process the block (simulates aBFT consensus)
         let block_hash = block.calculate_hash();
         ledger.blocks.insert(block_hash.clone(), block.clone());
-        
+
         // Update account state
         if let Some(state) = ledger.accounts.get_mut(&sender.pubkey) {
             state.balance -= block.amount;
@@ -101,28 +103,46 @@ async fn test_three_validator_consensus() {
     }
 
     let finality_time = start.elapsed();
-    
+
     println!("\n📊 Results:");
     println!("  - Finality Time: {:?}", finality_time);
-    
+
     // Verify all validators have same state
     let ledger0 = validators[0].ledger.lock().unwrap();
     let ledger1 = validators[1].ledger.lock().unwrap();
     let ledger2 = validators[2].ledger.lock().unwrap();
-    
-    let balance0 = ledger0.accounts.get(&sender.pubkey).map(|a| a.balance).unwrap_or(0);
-    let balance1 = ledger1.accounts.get(&sender.pubkey).map(|a| a.balance).unwrap_or(0);
-    let balance2 = ledger2.accounts.get(&sender.pubkey).map(|a| a.balance).unwrap_or(0);
-    
+
+    let balance0 = ledger0
+        .accounts
+        .get(&sender.pubkey)
+        .map(|a| a.balance)
+        .unwrap_or(0);
+    let balance1 = ledger1
+        .accounts
+        .get(&sender.pubkey)
+        .map(|a| a.balance)
+        .unwrap_or(0);
+    let balance2 = ledger2
+        .accounts
+        .get(&sender.pubkey)
+        .map(|a| a.balance)
+        .unwrap_or(0);
+
     println!("  - Validator 0 sees sender balance: {} VOI", balance0);
     println!("  - Validator 1 sees sender balance: {} VOI", balance1);
     println!("  - Validator 2 sees sender balance: {} VOI", balance2);
-    
+
     assert_eq!(balance0, balance1, "Validator 0 and 1 state mismatch!");
     assert_eq!(balance1, balance2, "Validator 1 and 2 state mismatch!");
-    assert!(finality_time < Duration::from_secs(3), "Finality time exceeded 3 seconds!");
-    
-    println!("\n✅ TEST PASSED: Consensus reached in {:?}\n", finality_time);
+    assert!(
+        finality_time < Duration::from_secs(3),
+        "Finality time exceeded 3 seconds!"
+    );
+
+    println!(
+        "\n✅ TEST PASSED: Consensus reached in {:?}\n",
+        finality_time
+    );
 }
 
 // ========================================
@@ -154,22 +174,22 @@ async fn test_proof_of_burn_distribution() {
     let base_price = 1.0;
     let current_price = base_price * scarcity;
     let uat_received = ((usd_burned / current_price) * 100000000000.0) as u128;
-    
+
     println!("🔥 Burn Transaction #1:");
     println!("  - Asset: BTC, Amount: {} BTC", btc_burned);
     println!("  - USD Value: ${:.2}", usd_burned);
     println!("  - UAT Received: {} UAT", uat_received / 100000000000);
-    
+
     remaining_public -= uat_received;
     let _total_burned_usd = total_burned_usd + usd_burned;
-    
+
     println!("  - Remaining: {} UAT\n", remaining_public / 100000000000);
 
     // Verify supply constraints
     assert!(remaining_public > 0, "Public supply exhausted!");
     assert!(remaining_public < public_supply, "Supply didn't decrease!");
     assert!(uat_received > 0, "User didn't receive UAT!");
-    
+
     println!("✅ TEST PASSED: PoB distribution working correctly\n");
 }
 
@@ -198,10 +218,11 @@ async fn test_byzantine_fault_tolerance() {
 
     let mut prices: Vec<f64> = oracle_prices.iter().map(|(_, p)| *p).collect();
     prices.sort_by(|a, b| a.partial_cmp(b).unwrap());
-    
+
     let median = prices[prices.len() / 2];
     let threshold = 0.20;
-    let valid_prices: Vec<f64> = prices.iter()
+    let valid_prices: Vec<f64> = prices
+        .iter()
         .filter(|&p| (*p - median).abs() / median < threshold)
         .copied()
         .collect();
@@ -215,7 +236,7 @@ async fn test_byzantine_fault_tolerance() {
 
     assert_eq!(valid_prices.len(), 2, "Should reject 1 outlier!");
     assert!(consensus_price > 80000.0 && consensus_price < 100000.0);
-    
+
     println!("\n✅ TEST PASSED: Byzantine attack mitigated\n");
 }
 
@@ -231,7 +252,7 @@ async fn test_load_1000_tps() {
     let duration_seconds = 5;
 
     let ledger = Arc::new(Mutex::new(Ledger::new()));
-    
+
     let mut accounts = Vec::new();
     for _ in 0..100 {
         let keypair = generate_keypair();
@@ -249,24 +270,27 @@ async fn test_load_1000_tps() {
 
     for _ in 0..duration_seconds {
         let second_start = Instant::now();
-        
+
         for _ in 0..target_tps {
             let tx_start = Instant::now();
             let sender = &accounts[tx_count % accounts.len()];
-            
+
             {
                 let mut ledger_guard = ledger.lock().unwrap();
-                ledger_guard.accounts.insert(sender.clone(), AccountState {
-                    head: format!("block_{}", tx_count),
-                    balance: 1000_00000000 - (tx_count as u128 * 100000),
-                    block_count: tx_count as u64 + 1,
-                });
+                ledger_guard.accounts.insert(
+                    sender.clone(),
+                    AccountState {
+                        head: format!("block_{}", tx_count),
+                        balance: 1000_00000000 - (tx_count as u128 * 100000),
+                        block_count: tx_count as u64 + 1,
+                    },
+                );
             }
-            
+
             latencies.push(tx_start.elapsed());
             tx_count += 1;
         }
-        
+
         let elapsed = second_start.elapsed();
         if elapsed < Duration::from_secs(1) {
             sleep(Duration::from_secs(1) - elapsed).await;
@@ -287,7 +311,7 @@ async fn test_load_1000_tps() {
 
     assert!(actual_tps >= 950.0, "TPS below target!");
     assert!(p95 < Duration::from_millis(50), "P95 too high!");
-    
+
     println!("\n✅ TEST PASSED: {:.0} TPS sustained\n", actual_tps);
 }
 
@@ -305,30 +329,33 @@ async fn test_database_persistence() {
     println!("📝 Phase 1: Writing 1000 accounts...");
     {
         let ledger = Arc::new(Mutex::new(Ledger::new()));
-        
+
         for i in 0..1000 {
             let keypair = generate_keypair();
             let pubkey_hex = hex::encode(&keypair.public_key);
             let mut ledger_guard = ledger.lock().unwrap();
-            ledger_guard.accounts.insert(pubkey_hex, AccountState {
-                head: format!("block_{}", i),
-                balance: (i * 100000) as u128,
-                block_count: i as u64,
-            });
+            ledger_guard.accounts.insert(
+                pubkey_hex,
+                AccountState {
+                    head: format!("block_{}", i),
+                    balance: (i * 100000) as u128,
+                    block_count: i as u64,
+                },
+            );
         }
-        
+
         println!("  ✅ Wrote 1000 accounts");
     }
 
     println!("\n💥 Phase 2: Simulating crash...");
     sleep(Duration::from_millis(100)).await;
-    
+
     println!("🔄 Phase 3: Recovery...");
     {
         let ledger = Arc::new(Mutex::new(Ledger::new()));
         let ledger_guard = ledger.lock().unwrap();
         let account_count = ledger_guard.accounts.len();
-        
+
         println!("  ✅ Loaded {} accounts", account_count);
         println!("  ✅ Data integrity verified");
     }

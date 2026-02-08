@@ -1,14 +1,11 @@
+use age::{Decryptor, Encryptor};
 use pqcrypto_dilithium::dilithium5::{
-    keypair, 
-    detached_sign, 
-    verify_detached_signature,
-    PublicKey as DilithiumPublicKey,
+    detached_sign, keypair, verify_detached_signature, PublicKey as DilithiumPublicKey,
     SecretKey as DilithiumSecretKey,
 };
-use pqcrypto_traits::sign::{PublicKey, SecretKey, DetachedSignature};
-use serde::{Serialize, Deserialize};
-use age::{Encryptor, Decryptor};
+use pqcrypto_traits::sign::{DetachedSignature, PublicKey, SecretKey};
 use secrecy::Secret;
+use serde::{Deserialize, Serialize};
 use std::io::{Read, Write};
 
 #[derive(Debug)]
@@ -64,26 +61,22 @@ pub fn generate_keypair() -> KeyPair {
 
 /// Menandatangani pesan
 pub fn sign_message(message: &[u8], secret_key_bytes: &[u8]) -> Result<Vec<u8>, CryptoError> {
-    let sk = DilithiumSecretKey::from_bytes(secret_key_bytes)
-        .map_err(|_| CryptoError::InvalidKey)?;
-    
+    let sk =
+        DilithiumSecretKey::from_bytes(secret_key_bytes).map_err(|_| CryptoError::InvalidKey)?;
+
     let signature = detached_sign(message, &sk);
     Ok(signature.as_bytes().to_vec())
 }
 
 /// Verify signature
-pub fn verify_signature(
-    message: &[u8],
-    signature_bytes: &[u8],
-    public_key_bytes: &[u8]
-) -> bool {
+pub fn verify_signature(message: &[u8], signature_bytes: &[u8], public_key_bytes: &[u8]) -> bool {
     let pk = match DilithiumPublicKey::from_bytes(public_key_bytes) {
         Ok(k) => k,
         Err(_) => return false,
     };
 
     use pqcrypto_dilithium::dilithium5::DetachedSignature as DilithiumSig;
-    
+
     let sig = match DilithiumSig::from_bytes(signature_bytes) {
         Ok(s) => s,
         Err(_) => return false,
@@ -100,13 +93,13 @@ use blake2::{Blake2b512, Digest};
 use sha2::Sha256;
 
 /// Derive UAT address from Dilithium5 public key (Base58Check format)
-/// 
+///
 /// Format: Base58(version_byte + BLAKE2b160(pubkey) + checksum)
 /// - Version: 0x4A (74 = "UAT" identifier)
 /// - Hash: BLAKE2b-160 (20 bytes, quantum-resistant)
 /// - Checksum: First 4 bytes of SHA256(SHA256(version + hash))
 /// - Result: "UAT" prefix + Base58 encoded payload
-/// 
+///
 /// # Example
 /// ```
 /// use uat_crypto::{generate_keypair, public_key_to_address};
@@ -116,44 +109,43 @@ use sha2::Sha256;
 /// ```
 pub fn public_key_to_address(public_key_bytes: &[u8]) -> String {
     const VERSION_BYTE: u8 = 0x4A; // 74 = "UAT" identifier
-    
+
     // 1. Hash public key with BLAKE2b-512, take first 20 bytes (160-bit)
     let mut hasher = Blake2b512::new();
     hasher.update(public_key_bytes);
     let hash_result = hasher.finalize();
     let pubkey_hash = &hash_result[..20]; // Take first 20 bytes
-    
+
     // 2. Construct payload: version + hash
     let mut payload = vec![VERSION_BYTE];
     payload.extend_from_slice(pubkey_hash);
-    
+
     // 3. Calculate checksum: SHA256(SHA256(payload))
     let checksum_full = {
         let hash1 = Sha256::digest(&payload);
-        let hash2 = Sha256::digest(&hash1);
-        hash2
+        Sha256::digest(hash1)
     };
     let checksum = &checksum_full[..4]; // First 4 bytes
-    
+
     // 4. Combine: version + hash + checksum
     let mut address_bytes = payload;
     address_bytes.extend_from_slice(checksum);
-    
+
     // 5. Base58 encode
-    let base58_addr = bs58::encode(address_bytes).into_string();
-    
+    let base58_addr = bs58::encode(&address_bytes).into_string();
+
     // 6. Add "UAT" prefix for readability
     format!("UAT{}", base58_addr)
 }
 
 /// Validate UAT address format and checksum
-/// 
+///
 /// Checks:
 /// 1. Starts with "UAT" prefix
 /// 2. Valid Base58 encoding
 /// 3. Correct length (25 bytes decoded)
 /// 4. Valid checksum
-/// 
+///
 /// # Example
 /// ```
 /// use uat_crypto::{generate_keypair, public_key_to_address, validate_address};
@@ -166,37 +158,36 @@ pub fn validate_address(address: &str) -> bool {
     if !address.starts_with("UAT") {
         return false;
     }
-    
+
     // Decode Base58 (remove "UAT" prefix first)
     let base58_part = &address[3..];
     let decoded = match bs58::decode(base58_part).into_vec() {
         Ok(bytes) => bytes,
         Err(_) => return false,
     };
-    
+
     // Must be 25 bytes: 1 (version) + 20 (hash) + 4 (checksum)
     if decoded.len() != 25 {
         return false;
     }
-    
+
     // Verify checksum
     let payload = &decoded[..21]; // version + hash
     let checksum = &decoded[21..]; // last 4 bytes
-    
+
     let expected_checksum = {
         let hash1 = Sha256::digest(payload);
-        let hash2 = Sha256::digest(&hash1);
-        hash2
+        Sha256::digest(hash1)
     };
-    
+
     checksum == &expected_checksum[..4]
 }
 
 /// Extract public key hash from address (for debugging)
-/// 
+///
 /// Note: Cannot reverse to original public key (one-way hash)!
 /// Returns Some(hash) if address is valid, None otherwise.
-/// 
+///
 /// # Example
 /// ```
 /// use uat_crypto::{generate_keypair, public_key_to_address, address_to_pubkey_hash};
@@ -209,10 +200,10 @@ pub fn address_to_pubkey_hash(address: &str) -> Option<Vec<u8>> {
     if !validate_address(address) {
         return None;
     }
-    
+
     let base58_part = &address[3..];
     let decoded = bs58::decode(base58_part).into_vec().ok()?;
-    
+
     // Extract hash (skip version byte, exclude checksum)
     Some(decoded[1..21].to_vec())
 }
@@ -222,50 +213,49 @@ pub fn address_to_pubkey_hash(address: &str) -> Option<Vec<u8>> {
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 /// Encrypt private key with password using age encryption
-/// 
+///
 /// Security: Uses age's built-in scrypt key derivation (N=2^20, secure)
 /// Format: age encrypted binary (portable, battle-tested)
-/// 
+///
 /// # Arguments
 /// * `secret_key` - Raw private key bytes (will be zeroized after encryption)
 /// * `password` - User password (will be zeroized after use)
-/// 
+///
 /// # Returns
 /// Encrypted key structure with ciphertext and metadata
-pub fn encrypt_private_key(
-    secret_key: &[u8],
-    password: &str,
-) -> Result<EncryptedKey, CryptoError> {
+pub fn encrypt_private_key(secret_key: &[u8], password: &str) -> Result<EncryptedKey, CryptoError> {
     let password_secret = Secret::new(password.to_string());
-    
+
     // Create age encryptor with password
     let encryptor = Encryptor::with_user_passphrase(password_secret);
-    
+
     let mut encrypted_output = Vec::new();
     let mut writer = encryptor
         .wrap_output(&mut encrypted_output)
         .map_err(|e| CryptoError::EncryptionFailed(e.to_string()))?;
-    
-    writer.write_all(secret_key)
+
+    writer
+        .write_all(secret_key)
         .map_err(|e| CryptoError::EncryptionFailed(e.to_string()))?;
-    
-    writer.finish()
+
+    writer
+        .finish()
         .map_err(|e| CryptoError::EncryptionFailed(e.to_string()))?;
-    
+
     Ok(EncryptedKey {
         ciphertext: encrypted_output,
         version: 1,
-        salt: vec![], // age handles salt internally
+        salt: vec![],       // age handles salt internally
         public_key: vec![], // To be filled by caller
     })
 }
 
 /// Decrypt private key with password
-/// 
+///
 /// # Arguments
 /// * `encrypted_key` - Encrypted key structure
 /// * `password` - User password (will be zeroized after use)
-/// 
+///
 /// # Returns
 /// Decrypted private key bytes (caller must zeroize after use)
 pub fn decrypt_private_key(
@@ -273,16 +263,18 @@ pub fn decrypt_private_key(
     password: &str,
 ) -> Result<Vec<u8>, CryptoError> {
     let password_secret = Secret::new(password.to_string());
-    
+
     // Create age decryptor
     let decryptor = match Decryptor::new(&encrypted_key.ciphertext[..]) {
         Ok(Decryptor::Passphrase(d)) => d,
-        Ok(_) => return Err(CryptoError::DecryptionFailed(
-            "Expected passphrase encryption".to_string()
-        )),
+        Ok(_) => {
+            return Err(CryptoError::DecryptionFailed(
+                "Expected passphrase encryption".to_string(),
+            ))
+        }
         Err(e) => return Err(CryptoError::DecryptionFailed(e.to_string())),
     };
-    
+
     // Decrypt with password
     let mut reader = decryptor
         .decrypt(&password_secret, None)
@@ -290,27 +282,28 @@ pub fn decrypt_private_key(
             age::DecryptError::DecryptionFailed => CryptoError::InvalidPassword,
             _ => CryptoError::DecryptionFailed(e.to_string()),
         })?;
-    
+
     let mut decrypted = Vec::new();
-    reader.read_to_end(&mut decrypted)
+    reader
+        .read_to_end(&mut decrypted)
         .map_err(|e| CryptoError::DecryptionFailed(e.to_string()))?;
-    
+
     Ok(decrypted)
 }
 
 /// Check if key data is encrypted (simple heuristic)
-/// 
+///
 /// age encrypted files start with "age-encryption.org/v1" header
 pub fn is_encrypted(data: &[u8]) -> bool {
     data.starts_with(b"age-encryption.org/v1")
 }
 
 /// Migrate plaintext key to encrypted format
-/// 
+///
 /// # Arguments
 /// * `plaintext_key` - Plaintext KeyPair
 /// * `password` - Password for encryption
-/// 
+///
 /// # Returns
 /// Encrypted key structure ready for storage
 pub fn migrate_to_encrypted(
@@ -323,7 +316,7 @@ pub fn migrate_to_encrypted(
 }
 
 /// Full key lifecycle: generate + encrypt
-/// 
+///
 /// Generates new keypair and immediately encrypts private key
 /// Public key remains unencrypted for address derivation
 pub fn generate_encrypted_keypair(password: &str) -> Result<EncryptedKey, CryptoError> {
@@ -351,18 +344,17 @@ mod tests {
     fn test_encrypt_decrypt_private_key() {
         let keypair = generate_keypair();
         let password = "super_secure_password_123";
-        
+
         // Encrypt
-        let encrypted = encrypt_private_key(&keypair.secret_key, password)
-            .expect("Encryption failed");
-        
+        let encrypted =
+            encrypt_private_key(&keypair.secret_key, password).expect("Encryption failed");
+
         assert!(!encrypted.ciphertext.is_empty());
         assert_ne!(encrypted.ciphertext, keypair.secret_key); // Ciphertext != plaintext
-        
+
         // Decrypt
-        let decrypted = decrypt_private_key(&encrypted, password)
-            .expect("Decryption failed");
-        
+        let decrypted = decrypt_private_key(&encrypted, password).expect("Decryption failed");
+
         assert_eq!(decrypted, keypair.secret_key); // Decrypted == original
     }
 
@@ -371,16 +363,16 @@ mod tests {
         let keypair = generate_keypair();
         let password = "correct_password";
         let wrong_password = "wrong_password";
-        
-        let encrypted = encrypt_private_key(&keypair.secret_key, password)
-            .expect("Encryption failed");
-        
+
+        let encrypted =
+            encrypt_private_key(&keypair.secret_key, password).expect("Encryption failed");
+
         // Should fail with wrong password
         let result = decrypt_private_key(&encrypted, wrong_password);
         assert!(result.is_err());
-        
+
         match result.unwrap_err() {
-            CryptoError::InvalidPassword => {}, // Expected
+            CryptoError::InvalidPassword => {} // Expected
             _ => panic!("Expected InvalidPassword error"),
         }
     }
@@ -388,21 +380,19 @@ mod tests {
     #[test]
     fn test_encrypted_key_still_signs() {
         let password = "test_password_456";
-        
+
         // Generate and encrypt key
         let keypair = generate_keypair();
-        let encrypted = encrypt_private_key(&keypair.secret_key, password)
-            .expect("Encryption failed");
-        
+        let encrypted =
+            encrypt_private_key(&keypair.secret_key, password).expect("Encryption failed");
+
         // Decrypt for signing
-        let decrypted_key = decrypt_private_key(&encrypted, password)
-            .expect("Decryption failed");
-        
+        let decrypted_key = decrypt_private_key(&encrypted, password).expect("Decryption failed");
+
         // Sign message with decrypted key
         let msg = b"Test transaction";
-        let sig = sign_message(msg, &decrypted_key)
-            .expect("Signing failed");
-        
+        let sig = sign_message(msg, &decrypted_key).expect("Signing failed");
+
         // Verify signature with public key
         assert!(verify_signature(msg, &sig, &keypair.public_key));
     }
@@ -411,13 +401,13 @@ mod tests {
     fn test_is_encrypted_detection() {
         let keypair = generate_keypair();
         let password = "password";
-        
+
         // Plaintext key should NOT be detected as encrypted
         assert!(!is_encrypted(&keypair.secret_key));
-        
+
         // Encrypted key should be detected
-        let encrypted = encrypt_private_key(&keypair.secret_key, password)
-            .expect("Encryption failed");
+        let encrypted =
+            encrypt_private_key(&keypair.secret_key, password).expect("Encryption failed");
         assert!(is_encrypted(&encrypted.ciphertext));
     }
 
@@ -425,34 +415,30 @@ mod tests {
     fn test_migrate_plaintext_to_encrypted() {
         let keypair = generate_keypair();
         let password = "migration_password";
-        
+
         // Migrate
-        let encrypted = migrate_to_encrypted(&keypair, password)
-            .expect("Migration failed");
-        
+        let encrypted = migrate_to_encrypted(&keypair, password).expect("Migration failed");
+
         assert_eq!(encrypted.public_key, keypair.public_key); // Public key preserved
         assert_ne!(encrypted.ciphertext, keypair.secret_key); // Private key encrypted
-        
+
         // Verify decryption works
-        let decrypted = decrypt_private_key(&encrypted, password)
-            .expect("Decryption failed");
+        let decrypted = decrypt_private_key(&encrypted, password).expect("Decryption failed");
         assert_eq!(decrypted, keypair.secret_key);
     }
 
     #[test]
     fn test_generate_encrypted_keypair() {
         let password = "new_wallet_password";
-        
-        let encrypted_key = generate_encrypted_keypair(password)
-            .expect("Generation failed");
-        
+
+        let encrypted_key = generate_encrypted_keypair(password).expect("Generation failed");
+
         assert!(!encrypted_key.public_key.is_empty());
         assert!(!encrypted_key.ciphertext.is_empty());
         assert!(is_encrypted(&encrypted_key.ciphertext));
-        
+
         // Should be able to decrypt
-        let decrypted = decrypt_private_key(&encrypted_key, password)
-            .expect("Decryption failed");
+        let decrypted = decrypt_private_key(&encrypted_key, password).expect("Decryption failed");
         assert!(!decrypted.is_empty());
     }
 
@@ -460,10 +446,10 @@ mod tests {
     fn test_encryption_version_field() {
         let keypair = generate_keypair();
         let password = "password";
-        
-        let encrypted = encrypt_private_key(&keypair.secret_key, password)
-            .expect("Encryption failed");
-        
+
+        let encrypted =
+            encrypt_private_key(&keypair.secret_key, password).expect("Encryption failed");
+
         assert_eq!(encrypted.version, 1); // Current version
     }
 
@@ -472,15 +458,15 @@ mod tests {
         let keypair = generate_keypair();
         let password1 = "password1";
         let password2 = "password2";
-        
-        let encrypted1 = encrypt_private_key(&keypair.secret_key, password1)
-            .expect("Encryption 1 failed");
-        let encrypted2 = encrypt_private_key(&keypair.secret_key, password2)
-            .expect("Encryption 2 failed");
-        
+
+        let encrypted1 =
+            encrypt_private_key(&keypair.secret_key, password1).expect("Encryption 1 failed");
+        let encrypted2 =
+            encrypt_private_key(&keypair.secret_key, password2).expect("Encryption 2 failed");
+
         // Different passwords should produce different ciphertexts
         assert_ne!(encrypted1.ciphertext, encrypted2.ciphertext);
-        
+
         // But both should decrypt to same plaintext
         let decrypted1 = decrypt_private_key(&encrypted1, password1).unwrap();
         let decrypted2 = decrypt_private_key(&encrypted2, password2).unwrap();
@@ -492,13 +478,12 @@ mod tests {
     fn test_empty_password_still_encrypts() {
         let keypair = generate_keypair();
         let password = ""; // Empty password (not recommended but should work)
-        
-        let encrypted = encrypt_private_key(&keypair.secret_key, password)
-            .expect("Encryption failed");
-        
-        let decrypted = decrypt_private_key(&encrypted, password)
-            .expect("Decryption failed");
-        
+
+        let encrypted =
+            encrypt_private_key(&keypair.secret_key, password).expect("Encryption failed");
+
+        let decrypted = decrypt_private_key(&encrypted, password).expect("Decryption failed");
+
         assert_eq!(decrypted, keypair.secret_key);
     }
 
@@ -506,13 +491,12 @@ mod tests {
     fn test_long_password_works() {
         let keypair = generate_keypair();
         let password = "a".repeat(500); // 500 character password
-        
-        let encrypted = encrypt_private_key(&keypair.secret_key, &password)
-            .expect("Encryption failed");
-        
-        let decrypted = decrypt_private_key(&encrypted, &password)
-            .expect("Decryption failed");
-        
+
+        let encrypted =
+            encrypt_private_key(&keypair.secret_key, &password).expect("Encryption failed");
+
+        let decrypted = decrypt_private_key(&encrypted, &password).expect("Decryption failed");
+
         assert_eq!(decrypted, keypair.secret_key);
     }
 
@@ -520,13 +504,12 @@ mod tests {
     fn test_unicode_password_works() {
         let keypair = generate_keypair();
         let password = "密码🔒パスワード"; // Mixed Unicode
-        
-        let encrypted = encrypt_private_key(&keypair.secret_key, password)
-            .expect("Encryption failed");
-        
-        let decrypted = decrypt_private_key(&encrypted, password)
-            .expect("Decryption failed");
-        
+
+        let encrypted =
+            encrypt_private_key(&keypair.secret_key, password).expect("Encryption failed");
+
+        let decrypted = decrypt_private_key(&encrypted, password).expect("Decryption failed");
+
         assert_eq!(decrypted, keypair.secret_key);
     }
 
@@ -536,13 +519,12 @@ mod tests {
         // This test validates that decrypt(encrypt(x)) == x consistently
         let keypair = generate_keypair();
         let password = "consistent_password";
-        
+
         for _ in 0..5 {
-            let encrypted = encrypt_private_key(&keypair.secret_key, password)
-                .expect("Encryption failed");
-            let decrypted = decrypt_private_key(&encrypted, password)
-                .expect("Decryption failed");
-            
+            let encrypted =
+                encrypt_private_key(&keypair.secret_key, password).expect("Encryption failed");
+            let decrypted = decrypt_private_key(&encrypted, password).expect("Decryption failed");
+
             assert_eq!(decrypted, keypair.secret_key);
         }
     }

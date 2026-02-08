@@ -6,8 +6,8 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BondingCurve {
-    pub total_supply: u64,         // 21,936,236 UAT (fixed)
-    pub distributed: u64,          // How much distributed via PoB
+    pub total_supply: u64,        // 21,936,236 UAT (fixed)
+    pub distributed: u64,         // How much distributed via PoB
     pub price_per_pob_ratio: f64, // Base price multiplier
 }
 
@@ -33,7 +33,7 @@ impl BondingCurve {
     /// Uses logarithmic bonding curve: price increases as supply depletes
     pub fn calculate_uat_for_burn(&self, burned_satoshis: u64) -> BondingCurveResult {
         let remaining = self.total_supply - self.distributed;
-        
+
         if remaining == 0 {
             return BondingCurveResult {
                 uat_amount: 0,
@@ -66,7 +66,7 @@ impl BondingCurve {
     pub fn process_burn(&mut self, burned_satoshis: u64) -> BondingCurveResult {
         let result = self.calculate_uat_for_burn(burned_satoshis);
         self.distributed += result.uat_amount;
-        
+
         BondingCurveResult {
             remaining_supply: self.total_supply - self.distributed,
             ..result
@@ -97,7 +97,7 @@ impl BondingCurve {
 
         let supply_ratio = (self.total_supply as f64) / (remaining as f64);
         let price_multiplier = supply_ratio.ln().max(1.0);
-        
+
         // Cost in satoshis to get 1 UAT
         10000.0 * price_multiplier // 10000 satoshis = 0.0001 BTC base
     }
@@ -123,8 +123,7 @@ impl BondingCurve {
     pub fn estimated_final_distribution(&self, remaining_burners: u64) -> u64 {
         // Estimate: if remaining_burners continue burning
         // This helps forecast when distribution ends
-        let per_burner = self.total_supply / (remaining_burners + 1).max(1);
-        per_burner
+        self.total_supply / (remaining_burners + 1).max(1)
     }
 
     /// Reset curve state (for testing/genesis only)
@@ -202,10 +201,7 @@ mod tests {
         assert_eq!(curve.remaining_supply(), 21_936_236);
 
         let result = curve.process_burn(10_000);
-        assert_eq!(
-            curve.remaining_supply() + result.uat_amount,
-            21_936_236
-        );
+        assert_eq!(curve.remaining_supply() + result.uat_amount, 21_936_236);
     }
 
     #[test]

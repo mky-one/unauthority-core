@@ -1,8 +1,7 @@
+use bip39::Mnemonic;
 use rand::Rng;
 use std::fs::File;
 use std::io::Write;
-use bip39::Mnemonic;
-use uat_crypto;
 
 const VOID_PER_UAT: u128 = 100_000_000_000; // 10^11 VOID per UAT
 const DEV_SUPPLY_TOTAL_VOID: u128 = 1_535_536 * VOID_PER_UAT;
@@ -12,8 +11,10 @@ const DEV_WALLET_COUNT: usize = 8;
 const ALLOCATION_PER_DEV_WALLET_VOID: u128 = 191_942 * VOID_PER_UAT;
 const BOOTSTRAP_NODE_COUNT: usize = 4;
 const ALLOCATION_PER_BOOTSTRAP_NODE_VOID: u128 = 1_000 * VOID_PER_UAT;
-const TOTAL_BOOTSTRAP_ALLOCATION_VOID: u128 = ALLOCATION_PER_BOOTSTRAP_NODE_VOID * (BOOTSTRAP_NODE_COUNT as u128);
-const DEV_WALLET_8_FINAL_VOID: u128 = ALLOCATION_PER_DEV_WALLET_VOID - TOTAL_BOOTSTRAP_ALLOCATION_VOID;
+const TOTAL_BOOTSTRAP_ALLOCATION_VOID: u128 =
+    ALLOCATION_PER_BOOTSTRAP_NODE_VOID * (BOOTSTRAP_NODE_COUNT as u128);
+const DEV_WALLET_8_FINAL_VOID: u128 =
+    ALLOCATION_PER_DEV_WALLET_VOID - TOTAL_BOOTSTRAP_ALLOCATION_VOID;
 
 #[derive(Clone)]
 struct DevWallet {
@@ -78,23 +79,37 @@ fn main() {
     println!("═══════════════════════════════════════════════════════════");
     println!("DEV WALLETS (Treasury/Operations)");
     println!("═══════════════════════════════════════════════════════════\n");
-    for wallet in wallets.iter().filter(|w| matches!(w.wallet_type, WalletType::DevWallet(_))) {
+    for wallet in wallets
+        .iter()
+        .filter(|w| matches!(w.wallet_type, WalletType::DevWallet(_)))
+    {
         print_wallet(wallet);
     }
 
     println!("═══════════════════════════════════════════════════════════");
     println!("BOOTSTRAP VALIDATOR NODES (Initial Validators)");
     println!("═══════════════════════════════════════════════════════════\n");
-    for wallet in wallets.iter().filter(|w| matches!(w.wallet_type, WalletType::BootstrapNode(_))) {
+    for wallet in wallets
+        .iter()
+        .filter(|w| matches!(w.wallet_type, WalletType::BootstrapNode(_)))
+    {
         print_wallet(wallet);
     }
 
     println!("═══════════════════════════════════════════════════════════");
     println!("SUPPLY VERIFICATION");
     println!("═══════════════════════════════════════════════════════════");
-    println!("Target:    {} VOI ({} UAT)", DEV_SUPPLY_TOTAL_VOID, DEV_SUPPLY_TOTAL_VOID / VOID_PER_UAT);
-    println!("Allocated: {} VOI ({} UAT)", total_allocated_void, total_allocated_void / VOID_PER_UAT);
-    
+    println!(
+        "Target:    {} VOI ({} UAT)",
+        DEV_SUPPLY_TOTAL_VOID,
+        DEV_SUPPLY_TOTAL_VOID / VOID_PER_UAT
+    );
+    println!(
+        "Allocated: {} VOI ({} UAT)",
+        total_allocated_void,
+        total_allocated_void / VOID_PER_UAT
+    );
+
     if total_allocated_void == DEV_SUPPLY_TOTAL_VOID {
         println!("Status: ✅ MATCH\n");
     } else {
@@ -115,41 +130,39 @@ fn main() {
     println!("   - Node will activate if balance >= 1000 UAT\n");
 
     generate_config(&wallets);
-    
+
     println!("✅ Genesis config saved: genesis/genesis_config.json");
     println!("⚠️  WARNING: This file contains private keys! Keep secure!\n");
 }
 
 fn generate_keys(label: &str) -> (String, String, String) {
     let mut rng = rand::thread_rng();
-    
+
     // Generate 24-word BIP39 seed phrase (256-bit entropy)
     let entropy: [u8; 32] = rng.gen();
-    let mnemonic = Mnemonic::from_entropy(&entropy)
-        .expect("Failed to generate mnemonic");
-    
+    let mnemonic = Mnemonic::from_entropy(&entropy).expect("Failed to generate mnemonic");
+
     let seed_phrase = mnemonic.to_string();
-    
+
     // NOTE: Dilithium5 keypairs are NOT derived from BIP39 seeds (unlike Ed25519/secp256k1).
     // The BIP39 seed phrase is used to ENCRYPT the private key at rest.
     // Key recovery requires: seed phrase + encrypted key file.
     // This is the correct architecture for post-quantum crypto where
     // deterministic key derivation from seeds is not standardized.
     let keypair = uat_crypto::generate_keypair();
-    
+
     let private_key = hex::encode(&keypair.secret_key);
     let public_key = hex::encode(&keypair.public_key);
 
     println!("✓ Generated Dilithium5 keypair for: {}", label);
-    
+
     (seed_phrase, private_key, public_key)
 }
 
 fn derive_address(pub_key_hex: &str) -> String {
     // Decode hex public key
-    let public_key = hex::decode(pub_key_hex)
-        .expect("Failed to decode public key hex");
-    
+    let public_key = hex::decode(pub_key_hex).expect("Failed to decode public key hex");
+
     // Use uat-crypto's Base58Check address derivation
     // Format: UAT + Base58(0x4A + BLAKE2b160(pubkey) + checksum)
     uat_crypto::public_key_to_address(&public_key)
@@ -169,16 +182,24 @@ fn print_wallet(w: &DevWallet) {
     println!("│ Balance:  {:<46} │", format!("{} UAT", balance_uat));
     println!("├─────────────────────────────────────────────────────────┤");
     println!("│ SEED PHRASE (24 words):                                 │");
-    
+
     // Word-wrap seed phrase for readability
     let words: Vec<&str> = w.seed_phrase.split_whitespace().collect();
     for chunk in words.chunks(6) {
         println!("│ {:<56} │", chunk.join(" "));
     }
-    
+
     println!("├─────────────────────────────────────────────────────────┤");
-    println!("│ Private Key: {}...{} │", &w.private_key[0..24], &w.private_key[w.private_key.len()-24..]);
-    println!("│ Public Key:  {}...{} │", &w.public_key[0..24], &w.public_key[w.public_key.len()-24..]);
+    println!(
+        "│ Private Key: {}...{} │",
+        &w.private_key[0..24],
+        &w.private_key[w.private_key.len() - 24..]
+    );
+    println!(
+        "│ Public Key:  {}...{} │",
+        &w.public_key[0..24],
+        &w.public_key[w.public_key.len() - 24..]
+    );
     println!("└─────────────────────────────────────────────────────────┘");
     println!();
 }
@@ -188,32 +209,36 @@ fn generate_config(wallets: &[DevWallet]) {
     let bootstrap: Vec<_> = wallets
         .iter()
         .filter(|w| matches!(w.wallet_type, WalletType::BootstrapNode(_)))
-        .map(|w| format!(
-            r#"    {{
+        .map(|w| {
+            format!(
+                r#"    {{
       "address": "{}",
       "stake_void": {},
       "seed_phrase": "{}",
       "private_key": "{}",
       "public_key": "{}"
     }}"#,
-            w.address, w.balance_void, w.seed_phrase, w.private_key, w.public_key
-        ))
+                w.address, w.balance_void, w.seed_phrase, w.private_key, w.public_key
+            )
+        })
         .collect();
 
     // Dev accounts with PRIVATE KEYS included
     let dev: Vec<_> = wallets
         .iter()
         .filter(|w| matches!(w.wallet_type, WalletType::DevWallet(_)))
-        .map(|w| format!(
-            r#"    {{
+        .map(|w| {
+            format!(
+                r#"    {{
       "address": "{}",
       "balance_void": {},
       "seed_phrase": "{}",
       "private_key": "{}",
       "public_key": "{}"
     }}"#,
-            w.address, w.balance_void, w.seed_phrase, w.private_key, w.public_key
-        ))
+                w.address, w.balance_void, w.seed_phrase, w.private_key, w.public_key
+            )
+        })
         .collect();
 
     let config = format!(
@@ -241,5 +266,6 @@ fn generate_config(wallets: &[DevWallet]) {
     );
 
     let mut file = File::create("genesis_config.json").expect("Failed to create config");
-    file.write_all(config.as_bytes()).expect("Failed to write config");
+    file.write_all(config.as_bytes())
+        .expect("Failed to write config");
 }

@@ -1,18 +1,17 @@
+use rate_limiter::{filters::rate_limit, RateLimiter};
+use std::collections::{HashMap, HashSet};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex, MutexGuard};
 use tokio::io::{self, AsyncBufReadExt, BufReader};
 use tokio::sync::mpsc;
-use uat_core::{Block, BlockType, Ledger, VOID_PER_UAT, MIN_VALIDATOR_STAKE_VOID, AccountState};
-use uat_core::oracle_consensus::OracleConsensus;  // NEW: Oracle consensus
-use uat_core::anti_whale::{AntiWhaleEngine, AntiWhaleConfig}; // NEW: Anti-whale mechanisms
+use uat_consensus::checkpoint::{CheckpointManager, FinalityCheckpoint, CHECKPOINT_INTERVAL}; // Finality checkpoints
 use uat_consensus::slashing::SlashingManager; // Slashing enforcement
 use uat_consensus::voting::calculate_voting_power; // Quadratic voting: Power = √Stake
-use uat_consensus::checkpoint::{CheckpointManager, FinalityCheckpoint, CHECKPOINT_INTERVAL}; // Finality checkpoints
-use uat_crypto;
-use uat_network::{UatNode, NetworkEvent};
-use uat_vm::{WasmEngine, ContractCall};
-use rate_limiter::{RateLimiter, filters::rate_limit};
-use std::sync::{Arc, Mutex, MutexGuard};
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::collections::{HashMap, HashSet};
+use uat_core::anti_whale::{AntiWhaleConfig, AntiWhaleEngine}; // NEW: Anti-whale mechanisms
+use uat_core::oracle_consensus::OracleConsensus; // NEW: Oracle consensus
+use uat_core::{AccountState, Block, BlockType, Ledger, MIN_VALIDATOR_STAKE_VOID, VOID_PER_UAT};
+use uat_network::{NetworkEvent, UatNode};
+use uat_vm::{ContractCall, WasmEngine};
 
 /// Safe mutex lock that recovers from poisoned state instead of panicking.
 /// When a thread panics while holding a lock, the Mutex becomes "poisoned".
@@ -27,13 +26,13 @@ fn safe_lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
     }
 }
 
-use std::time::{Duration, Instant};
 use std::fs;
+use std::time::{Duration, Instant};
 
 // SECURITY FIX #11: Named constants for consensus thresholds (no more magic numbers)
 /// Quadratic voting power threshold for burn consensus (production)
 const BURN_CONSENSUS_THRESHOLD: u128 = 20_000;
-/// Quadratic voting power threshold for send confirmation (production)  
+/// Quadratic voting power threshold for send confirmation (production)
 const SEND_CONSENSUS_THRESHOLD: u128 = 20_000;
 /// Minimum threshold for testnet functional mode (bypasses real consensus)
 const TESTNET_FUNCTIONAL_THRESHOLD: u128 = 1;
@@ -41,18 +40,18 @@ const TESTNET_FUNCTIONAL_THRESHOLD: u128 = 1;
 const TESTNET_INITIAL_BALANCE: u128 = 1000 * VOID_PER_UAT;
 use serde_json::Value;
 
-mod validator_rewards;
+mod db; // NEW: Database module (sled)
 mod genesis;
-mod mempool;      // NEW: Mempool for transaction management
-mod grpc_server;  // NEW: gRPC server module
+mod grpc_server; // NEW: gRPC server module
+mod mempool; // NEW: Mempool for transaction management
+mod metrics; // NEW: Prometheus metrics module
 mod rate_limiter; // NEW: Rate limiter module
-mod db;           // NEW: Database module (sled)
-mod metrics;      // NEW: Prometheus metrics module
-mod testnet_config; // Testnet configuration module (graduated levels)
-// --- TAMBAHAN: HTTP API MODULE ---
-use warp::Filter;
+mod testnet_config;
+mod validator_rewards; // Testnet configuration module (graduated levels)
+                       // --- TAMBAHAN: HTTP API MODULE ---
 use db::UatDatabase;
 use metrics::UatMetrics;
+use warp::Filter;
 
 const LEDGER_FILE: &str = "ledger_state.json";
 const BURN_ADDRESS_ETH: &str = "0x000000000000000000000000000000000000dead";
@@ -69,12 +68,11 @@ static SAVE_DIRTY: AtomicBool = AtomicBool::new(false);
 /// Example: UAT_BOOTSTRAP_NODES=abc123.onion:4001,def456.onion:4001
 fn get_bootstrap_nodes() -> Vec<String> {
     match std::env::var("UAT_BOOTSTRAP_NODES") {
-        Ok(val) if !val.trim().is_empty() => {
-            val.split(',')
-                .map(|s| s.trim().to_string())
-                .filter(|s| !s.is_empty())
-                .collect()
-        }
+        Ok(val) if !val.trim().is_empty() => val
+            .split(',')
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty())
+            .collect(),
         _ => Vec::new(),
     }
 }
@@ -82,13 +80,13 @@ fn get_bootstrap_nodes() -> Vec<String> {
 // Request body structure for sending UAT
 #[derive(serde::Deserialize, serde::Serialize)]
 struct SendRequest {
-    from: Option<String>,  // Sender address (if empty, use node's address)
+    from: Option<String>, // Sender address (if empty, use node's address)
     target: String,
     amount: u128,
     signature: Option<String>, // Client-provided signature (if present, validate instead of signing)
     public_key: Option<String>, // Sender's public key (hex-encoded, REQUIRED for signature verification)
-    previous: Option<String>,  // Previous block hash (for client-side signing)
-    work: Option<u64>,        // PoW nonce (if client pre-computed)
+    previous: Option<String>,   // Previous block hash (for client-side signing)
+    work: Option<u64>,          // PoW nonce (if client pre-computed)
 }
 
 #[derive(serde::Deserialize, serde::Serialize)]
@@ -160,7 +158,7 @@ impl EndpointRateLimiter {
             }
         }
 
-        let timestamps = requests.entry(address.to_string()).or_insert_with(Vec::new);
+        let timestamps = requests.entry(address.to_string()).or_default();
 
         // Remove expired timestamps for this address
         timestamps.retain(|t| now.duration_since(*t) < self.window);
@@ -183,10 +181,13 @@ impl EndpointRateLimiter {
 }
 
 // Helper to inject state into route handlers
-fn with_state<T: Clone + Send>(state: T) -> impl Filter<Extract = (T,), Error = std::convert::Infallible> + Clone {
+fn with_state<T: Clone + Send>(
+    state: T,
+) -> impl Filter<Extract = (T,), Error = std::convert::Infallible> + Clone {
     warp::any().map(move || state.clone())
 }
 
+#[allow(clippy::type_complexity)]
 pub async fn start_api_server(
     ledger: Arc<Mutex<Ledger>>,
     tx_out: mpsc::Sender<String>,
@@ -208,9 +209,9 @@ pub async fn start_api_server(
     let rate_limit_filter = rate_limit(limiter.clone());
 
     // Per-address endpoint rate limiters
-    let send_limiter = Arc::new(EndpointRateLimiter::new(10, 60));     // /send: 10 tx per 60 seconds
-    let burn_limiter = Arc::new(EndpointRateLimiter::new(1, 300));     // /burn: 1 per 5 minutes
-    let faucet_limiter = Arc::new(EndpointRateLimiter::new(1, 3600));  // /faucet: 1 per hour
+    let send_limiter = Arc::new(EndpointRateLimiter::new(10, 60)); // /send: 10 tx per 60 seconds
+    let burn_limiter = Arc::new(EndpointRateLimiter::new(1, 300)); // /burn: 1 per 5 minutes
+    let faucet_limiter = Arc::new(EndpointRateLimiter::new(1, 3600)); // /faucet: 1 per hour
 
     // 1. GET /bal/:address
     let l_bal = ledger.clone();
@@ -229,10 +230,10 @@ pub async fn start_api_server(
         .and(with_state(l_sup))
         .map(|l: Arc<Mutex<Ledger>>| {
             let l_guard = safe_lock(&l);
-            warp::reply::json(&serde_json::json!({ 
-                "remaining_supply": format_balance_precise(l_guard.distribution.remaining_supply), 
+            warp::reply::json(&serde_json::json!({
+                "remaining_supply": format_balance_precise(l_guard.distribution.remaining_supply),
                 "remaining_supply_void": l_guard.distribution.remaining_supply,
-                "total_burned_usd": l_guard.distribution.total_burned_usd 
+                "total_burned_usd": l_guard.distribution.total_burned_usd
             }))
         });
 
@@ -241,7 +242,7 @@ pub async fn start_api_server(
     let ab_his = address_book.clone();
     let history_route = warp::path!("history" / String)
         .and(with_state((l_his, ab_his)))
-        .map(|addr: String, (l, ab): (Arc<Mutex<Ledger>>, Arc<Mutex<HashMap<String, String>>>)| {
+        .map(#[allow(clippy::type_complexity)] |addr: String, (l, ab): (Arc<Mutex<Ledger>>, Arc<Mutex<HashMap<String, String>>>)| {
             let l_guard = safe_lock(&l);
             let target_full = if l_guard.accounts.contains_key(&addr) {
                 Some(addr)
@@ -278,12 +279,12 @@ pub async fn start_api_server(
 
     // 4. GET /peers
     let ab_peer = address_book.clone();
-    let peers_route = warp::path("peers")
-        .and(with_state(ab_peer))
-        .map(|ab: Arc<Mutex<HashMap<String, String>>>| {
+    let peers_route = warp::path("peers").and(with_state(ab_peer)).map(
+        |ab: Arc<Mutex<HashMap<String, String>>>| {
             let peers = safe_lock(&ab).clone();
             warp::reply::json(&peers)
-        });
+        },
+    );
 
     // 5. POST /send (WEIGHTED INITIAL POWER + ANTI-WHALE DYNAMIC FEES)
     let l_send = ledger.clone();
@@ -296,10 +297,10 @@ pub async fn start_api_server(
         .and(warp::post())
         .and(warp::body::json())
         .and(with_state((l_send, tx_send, p_send, my_address.clone(), secret_key.clone(), sl_send, aw_send, pk_send)))
-        .then(|req: SendRequest, (l, tx, p, my_addr, key, rate_lim, aw, node_pk): (Arc<Mutex<Ledger>>, mpsc::Sender<String>, Arc<Mutex<HashMap<String, (Block, u128)>>>, String, Vec<u8>, Arc<EndpointRateLimiter>, Arc<Mutex<AntiWhaleEngine>>, Vec<u8>)| async move {
+        .then(#[allow(clippy::type_complexity)] |req: SendRequest, (l, tx, p, my_addr, key, rate_lim, aw, node_pk): (Arc<Mutex<Ledger>>, mpsc::Sender<String>, Arc<Mutex<HashMap<String, (Block, u128)>>>, String, Vec<u8>, Arc<EndpointRateLimiter>, Arc<Mutex<AntiWhaleEngine>>, Vec<u8>)| async move {
             // Determine sender: use req.from if provided, otherwise node's address
             let sender_addr = req.from.clone().unwrap_or(my_addr.clone());
-            
+
             // RATE LIMIT: 10 transactions per minute per sender address
             if let Err(wait_secs) = rate_lim.check_and_record(&sender_addr) {
                 return warp::reply::json(&serde_json::json!({
@@ -308,7 +309,7 @@ pub async fn start_api_server(
                     "msg": format!("Rate limit exceeded: max 10 transactions per minute. Try again in {} seconds.", wait_secs)
                 }));
             }
-            
+
             // CRITICAL: Validate sender address format (Base58Check)
             if !uat_crypto::validate_address(&sender_addr) {
                 return warp::reply::json(&serde_json::json!({
@@ -316,7 +317,7 @@ pub async fn start_api_server(
                     "msg": "Invalid sender address format. Must be Base58Check with UAT prefix."
                 }));
             }
-            
+
             // Validate target address format (Base58Check)
             if !uat_crypto::validate_address(&req.target) {
                 return warp::reply::json(&serde_json::json!({
@@ -324,17 +325,17 @@ pub async fn start_api_server(
                     "msg": "Invalid target address format. Must be Base58Check with UAT prefix."
                 }));
             }
-            
+
             // Client-side signing: if signature provided, validate it instead of signing with node key
             let client_signed = req.signature.is_some();
-            
+
             let target_addr = {
                 let l_guard = safe_lock(&l);
                 l_guard.accounts.keys().find(|k| get_short_addr(k) == req.target || **k == req.target).cloned()
             };
             if let Some(target) = target_addr {
                 let amt = req.amount * VOID_PER_UAT;
-                
+
                 // CRITICAL: For client-signed transactions, public_key is REQUIRED
                 let pubkey = if client_signed {
                     if let Some(pk) = req.public_key.clone() {
@@ -348,36 +349,36 @@ pub async fn start_api_server(
                 } else {
                     hex::encode(&node_pk) // Node's own public key
                 };
-                
-                let mut blk = Block { 
-                    account: sender_addr.clone(), 
-                    previous: req.previous.clone().unwrap_or("0".to_string()), 
-                    block_type: BlockType::Send, 
-                    amount: amt, 
-                    link: target.clone(), 
+
+                let mut blk = Block {
+                    account: sender_addr.clone(),
+                    previous: req.previous.clone().unwrap_or("0".to_string()),
+                    block_type: BlockType::Send,
+                    amount: amt,
+                    link: target.clone(),
                     signature: "".to_string(),
                     public_key: pubkey,
                     work: req.work.unwrap_or(0),
                     timestamp: std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs(),
                     fee: 0, // Set after anti-whale calculation
                 };
-                
+
                 let initial_power: u128;
                 let base_fee = 100_000u128; // 0.001 UAT base fee
                 let final_fee: u128;
-                
+
                 // DEADLOCK FIX #4a: Never hold L and AW simultaneously.
                 // Step 1: Read state from Ledger, drop lock
                 let sender_state = {
                     let l_guard = safe_lock(&l);
                     l_guard.accounts.get(&sender_addr).cloned()
                 }; // L dropped
-                
+
                 if let Some(st) = sender_state {
                     if req.previous.is_none() {
                         blk.previous = st.head.clone();
                     }
-                    
+
                     // Step 2: Anti-Whale fee calculation (separate lock scope)
                     {
                         let mut aw_guard = safe_lock(&aw);
@@ -385,7 +386,7 @@ pub async fn start_api_server(
                             Ok(fee) => {
                                 final_fee = fee as u128;
                                 if final_fee > base_fee {
-                                    println!("⚠️ Dynamic fee applied to {}: {} VOID ({}x multiplier)", 
+                                    println!("⚠️ Dynamic fee applied to {}: {} VOID ({}x multiplier)",
                                         get_short_addr(&sender_addr), final_fee, final_fee as f64 / base_fee as f64);
                                 }
                             }
@@ -397,7 +398,7 @@ pub async fn start_api_server(
                             }
                         }
                     } // AW dropped
-                    
+
                     // Step 3: Check balance INCLUDING pending transactions (TOCTOU prevention)
                     let pending_total: u128 = {
                         let ps = safe_lock(&p);
@@ -406,29 +407,29 @@ pub async fn start_api_server(
                             .map(|(b, _)| b.amount)
                             .sum()
                     };
-                    if st.balance < amt + final_fee + pending_total { 
+                    if st.balance < amt + final_fee + pending_total {
                         return warp::reply::json(&serde_json::json!({
                             "status":"error",
                             "msg": format!("Insufficient balance (need {} VOID for tx + {} VOID fee + {} VOID pending)", amt, final_fee, pending_total)
-                        })); 
+                        }));
                     }
-                    initial_power = (st.balance / VOID_PER_UAT) as u128;
+                    initial_power = st.balance / VOID_PER_UAT;
                 } else {
                     return warp::reply::json(&serde_json::json!({"status":"error","msg":"Sender account not found"}));
                 }
-                
+
                 // Set fee on block BEFORE PoW/signing (fee is part of signing_hash)
                 blk.fee = final_fee;
-                
+
                 // Compute PoW if not provided by client
                 if req.work.is_none() {
                     solve_pow(&mut blk);
                 }
-                
+
                 // If client provided signature, validate it
                 if client_signed {
                     blk.signature = req.signature.unwrap();
-                    
+
                     // CRITICAL: Verify signature with public key (not address!)
                     if !blk.verify_signature() {
                         return warp::reply::json(&serde_json::json!({
@@ -447,18 +448,18 @@ pub async fn start_api_server(
                     }
                     blk.signature = hex::encode(uat_crypto::sign_message(blk.signing_hash().as_bytes(), &key).expect("BUG: signing failed — key corrupted"));
                 }
-                
+
                 // Block ID sekarang mencakup signature
                 let hash = blk.calculate_hash();
-                
+
                 // Insert with INITIAL POWER to queue
                 safe_lock(&p).insert(hash.clone(), (blk, initial_power));
-                
+
                 let ts = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis();
                 let _ = tx.send(format!("CONFIRM_REQ:{}:{}:{}:{}", hash, sender_addr, amt, ts)).await;
                 warp::reply::json(&serde_json::json!({
                     "status":"success",
-                    "tx_hash":hash, 
+                    "tx_hash":hash,
                     "initial_power": initial_power,
                     "fee_paid_void": final_fee,
                     "fee_multiplier": final_fee as f64 / base_fee as f64
@@ -481,14 +482,14 @@ pub async fn start_api_server(
         .and(warp::post())
         .and(warp::body::json())
         .and(with_state((p_burn, tx_burn, my_address.clone(), l_burn, oc_burn, bl_burn, aw_burn, (pk_burn, sk_burn))))
-        .then(|req: BurnRequest, (p, tx, my_addr, l, oc, rate_lim, aw, (node_pk, node_sk)): (Arc<Mutex<HashMap<String, (f64, f64, String, u128, u64, String)>>>, mpsc::Sender<String>, String, Arc<Mutex<Ledger>>, Arc<Mutex<OracleConsensus>>, Arc<EndpointRateLimiter>, Arc<Mutex<AntiWhaleEngine>>, (Vec<u8>, Vec<u8>))| async move {
-            
+        .then(#[allow(clippy::type_complexity)] |req: BurnRequest, (p, tx, my_addr, l, oc, rate_lim, aw, (node_pk, node_sk)): (Arc<Mutex<HashMap<String, (f64, f64, String, u128, u64, String)>>>, mpsc::Sender<String>, String, Arc<Mutex<Ledger>>, Arc<Mutex<OracleConsensus>>, Arc<EndpointRateLimiter>, Arc<Mutex<AntiWhaleEngine>>, (Vec<u8>, Vec<u8>))| async move {
+
             // 1. Sanitize TXID
             let clean_txid = req.txid.trim().trim_start_matches("0x").to_lowercase();
-            
+
             // Determine recipient address for rate limiting
             let recipient = req.recipient_address.as_ref().unwrap_or(&my_addr);
-            
+
             // RATE LIMIT: 1 burn per 5 minutes per recipient address
             if let Err(wait_secs) = rate_lim.check_and_record(recipient) {
                 return warp::reply::json(&serde_json::json!({
@@ -497,7 +498,7 @@ pub async fn start_api_server(
                     "msg": format!("Rate limit exceeded: max 1 burn per 5 minutes. Try again in {} seconds.", wait_secs)
                 }));
             }
-            
+
             // 2. Double-Claim Protection (Ledger & Pending)
             let (in_ledger, my_power) = {
                 let l_guard = safe_lock(&l);
@@ -508,19 +509,19 @@ pub async fn start_api_server(
 
             let is_pending = safe_lock(&p).contains_key(&clean_txid);
 
-            if in_ledger || is_pending { 
+            if in_ledger || is_pending {
                 return warp::reply::json(&serde_json::json!({
                     "status": "error",
                     "msg": "This TXID has already been used or is currently being verified!"
-                })); 
+                }));
             }
-            
+
             // 3. Process Oracle: Use Consensus if available, fallback to single-node
             let consensus_price_opt = {
                 let oc_guard = safe_lock(&oc);
                 oc_guard.get_consensus_price()
             }; // Drop lock before await
-            
+
             let (ep, bp) = match consensus_price_opt {
                 Some((eth_median, btc_median)) => {
                     println!("✅ Using Oracle Consensus for burn calculation");
@@ -531,28 +532,28 @@ pub async fn start_api_server(
                     get_crypto_prices().await
                 }
             };
-            
-            let res = if req.coin_type.to_lowercase() == "eth" { 
-                verify_eth_burn_tx(&clean_txid).await.map(|a| (a, ep, "ETH")) 
-            } else { 
-                verify_btc_burn_tx(&clean_txid).await.map(|a| (a, bp, "BTC")) 
+
+            let res = if req.coin_type.to_lowercase() == "eth" {
+                verify_eth_burn_tx(&clean_txid).await.map(|a| (a, ep, "ETH"))
+            } else {
+                verify_btc_burn_tx(&clean_txid).await.map(|a| (a, bp, "BTC"))
             };
 
             if let Some((amt, prc, sym)) = res {
                 // SECURITY FIX NEW#3: Pure integer math via calculate_mint_void()
                 let uat_to_mint = calculate_mint_void(amt, prc, sym);
                 let uat_to_mint_display = uat_to_mint / VOID_PER_UAT;
-                
+
                 if uat_to_mint == 0 {
                     return warp::reply::json(&serde_json::json!({"error": "Burn amount too small or overflow"}));
                 }
-                
+
                 // Anti-Whale: Check burn limit per block
                 // ATOMIC: Anti-whale check AND ledger modification in same scope for testnet instant path
                 if !testnet_config::get_testnet_config().should_enable_consensus() {
                     // Get recipient address from request, fallback to sender if not provided
                     let recipient = req.recipient_address.as_ref().unwrap_or(&my_addr).clone();
-                    
+
                     // DEADLOCK FIX #4b: Never hold AW and L simultaneously.
                     // Step 1: Anti-whale check (separate lock scope)
                     let mint_result = {
@@ -563,22 +564,22 @@ pub async fn start_api_server(
                             Ok(()) // Burn limit check passed
                         }
                     }; // AW dropped
-                    
+
                     let mint_result = match mint_result {
                         Err(e) => Err(e),
                         Ok(()) => {
                             // Step 2: Lock ledger separately for minting
                             let mut l_guard = safe_lock(&l);
-                            
+
                             // Ensure account exists
                             if !l_guard.accounts.contains_key(&recipient) {
-                                l_guard.accounts.insert(recipient.clone(), AccountState { 
-                                    head: "0".to_string(), balance: 0, block_count: 0 
+                                l_guard.accounts.insert(recipient.clone(), AccountState {
+                                    head: "0".to_string(), balance: 0, block_count: 0
                                 });
                             }
-                            
-                            let state = l_guard.accounts.get(&recipient).cloned().unwrap_or(AccountState { 
-                                head: "0".to_string(), balance: 0, block_count: 0 
+
+                            let state = l_guard.accounts.get(&recipient).cloned().unwrap_or(AccountState {
+                                head: "0".to_string(), balance: 0, block_count: 0
                             });
 
                             let mut mint_blk = Block {
@@ -593,7 +594,7 @@ pub async fn start_api_server(
                                 timestamp: std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs(),
                                 fee: 0,
                             };
-                            
+
                             solve_pow(&mut mint_blk);
                             mint_blk.signature = hex::encode(
                                 uat_crypto::sign_message(mint_blk.signing_hash().as_bytes(), &node_sk).expect("BUG: signing failed — key corrupted")
@@ -609,7 +610,7 @@ pub async fn start_api_server(
                             }
                         } // L dropped
                     };
-                    
+
                     match mint_result {
                         Err(msg) => {
                             return warp::reply::json(&serde_json::json!({
@@ -629,7 +630,7 @@ pub async fn start_api_server(
                         }
                     }
                 }
-                
+
                 // Production path: Anti-whale check then add to pending
                 {
                     let mut aw_guard = safe_lock(&aw);
@@ -641,17 +642,17 @@ pub async fn start_api_server(
                     }
                     println!("🐋 Burn registered: {} UAT for {} (within limits)", uat_to_mint_display, get_short_addr(recipient));
                 }
-                
+
                 // Production: Add to pending with initial power = our own balance + recipient address
                 let created_at = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs();
                 let burn_recipient = req.recipient_address.as_ref().unwrap_or(&my_addr).clone();
                 safe_lock(&p).insert(clean_txid.clone(), (amt, prc, sym.to_string(), my_power, created_at, burn_recipient));
-                
+
                 let ts = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis();
                 let vote_msg = format!("VOTE_REQ:{}:{}:{}:{}", req.coin_type.to_lowercase(), clean_txid, my_addr, ts);
                 println!("📡 Broadcasting VOTE_REQ: {} (Initial Power: {})", &vote_msg[..50], my_power);
                 let _ = tx.send(vote_msg).await;
-                
+
                 warp::reply::json(&serde_json::json!({
                     "status":"success",
                     "msg":"Verification started",
@@ -669,44 +670,44 @@ pub async fn start_api_server(
         .and(warp::post())
         .and(warp::body::json())
         .and(with_state(wasm_deploy))
-        .then(|req: DeployContractRequest, engine: Arc<WasmEngine>| async move {
-            // Decode base64 WASM bytecode
-            let bytecode = match base64::decode(&req.bytecode) {
-                Ok(bytes) => bytes,
-                Err(_) => return warp::reply::json(&serde_json::json!({
-                    "status": "error",
-                    "msg": "Invalid base64 bytecode"
-                }))
-            };
+        .then(
+            |req: DeployContractRequest, engine: Arc<WasmEngine>| async move {
+                // Decode base64 WASM bytecode
+                let bytecode = match base64::decode(&req.bytecode) {
+                    Ok(bytes) => bytes,
+                    Err(_) => {
+                        return warp::reply::json(&serde_json::json!({
+                            "status": "error",
+                            "msg": "Invalid base64 bytecode"
+                        }))
+                    }
+                };
 
-            // Deploy to UVM (permissionless)
-            let block_number = std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_secs();
+                // Deploy to UVM (permissionless)
+                let block_number = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap()
+                    .as_secs();
 
-            match engine.deploy_contract(
-                req.owner.clone(),
-                bytecode,
-                req.initial_state.unwrap_or_default(),
-                block_number
-            ) {
-                Ok(contract_addr) => {
-                    warp::reply::json(&serde_json::json!({
+                match engine.deploy_contract(
+                    req.owner.clone(),
+                    bytecode,
+                    req.initial_state.unwrap_or_default(),
+                    block_number,
+                ) {
+                    Ok(contract_addr) => warp::reply::json(&serde_json::json!({
                         "status": "success",
                         "contract_address": contract_addr,
                         "owner": req.owner,
                         "deployed_at_block": block_number
-                    }))
-                },
-                Err(e) => {
-                    warp::reply::json(&serde_json::json!({
+                    })),
+                    Err(e) => warp::reply::json(&serde_json::json!({
                         "status": "error",
                         "msg": e
-                    }))
+                    })),
                 }
-            }
-        });
+            },
+        );
 
     // 8. POST /call-contract
     let wasm_call = wasm_engine.clone();
@@ -714,57 +715,51 @@ pub async fn start_api_server(
         .and(warp::post())
         .and(warp::body::json())
         .and(with_state(wasm_call))
-        .then(|req: CallContractRequest, engine: Arc<WasmEngine>| async move {
-            let call = ContractCall {
-                contract: req.contract_address,
-                function: req.function,
-                args: req.args,
-                gas_limit: req.gas_limit.unwrap_or(1000000),
-            };
+        .then(
+            |req: CallContractRequest, engine: Arc<WasmEngine>| async move {
+                let call = ContractCall {
+                    contract: req.contract_address,
+                    function: req.function,
+                    args: req.args,
+                    gas_limit: req.gas_limit.unwrap_or(1000000),
+                };
 
-            match engine.call_contract(call) {
-                Ok(result) => {
-                    warp::reply::json(&serde_json::json!({
+                match engine.call_contract(call) {
+                    Ok(result) => warp::reply::json(&serde_json::json!({
                         "status": "success",
                         "result": result
-                    }))
-                },
-                Err(e) => {
-                    warp::reply::json(&serde_json::json!({
+                    })),
+                    Err(e) => warp::reply::json(&serde_json::json!({
                         "status": "error",
                         "msg": e
-                    }))
+                    })),
                 }
-            }
-        });
+            },
+        );
 
     // 9. GET /contract/:address
     let wasm_get = wasm_engine.clone();
     let get_contract_route = warp::path!("contract" / String)
         .and(with_state(wasm_get))
-        .map(|addr: String, engine: Arc<WasmEngine>| {
-            match engine.get_contract(&addr) {
-                Ok(contract) => {
-                    warp::reply::json(&serde_json::json!({
-                        "status": "success",
-                        "contract": {
-                            "address": contract.address,
-                            "code_hash": contract.code_hash,
-                            "balance": contract.balance,
-                            "owner": contract.owner,
-                            "created_at_block": contract.created_at_block,
-                            "state": contract.state
-                        }
-                    }))
-                },
-                Err(e) => {
-                    warp::reply::json(&serde_json::json!({
-                        "status": "error",
-                        "msg": e
-                    }))
-                }
-            }
-        });
+        .map(
+            |addr: String, engine: Arc<WasmEngine>| match engine.get_contract(&addr) {
+                Ok(contract) => warp::reply::json(&serde_json::json!({
+                    "status": "success",
+                    "contract": {
+                        "address": contract.address,
+                        "code_hash": contract.code_hash,
+                        "balance": contract.balance,
+                        "owner": contract.owner,
+                        "created_at_block": contract.created_at_block,
+                        "state": contract.state
+                    }
+                })),
+                Err(e) => warp::reply::json(&serde_json::json!({
+                    "status": "error",
+                    "msg": e
+                })),
+            },
+        );
 
     // 10. GET /metrics (Prometheus endpoint)
     let metrics_clone = metrics.clone();
@@ -772,59 +767,66 @@ pub async fn start_api_server(
     let db_metrics = database.clone();
     let metrics_route = warp::path("metrics")
         .and(with_state((metrics_clone, ledger_metrics, db_metrics)))
-        .map(|(m, l, db): (Arc<UatMetrics>, Arc<Mutex<Ledger>>, Arc<UatDatabase>)| {
-            // Update blockchain metrics before export
-            {
-                let ledger_guard = safe_lock(&l);
-                m.update_blockchain_metrics(&ledger_guard);
-            }
-            
-            // Update database metrics
-            let stats = db.stats();
-            m.update_db_metrics(&stats);
-            
-            // Export all metrics
-            match m.export() {
-                Ok(output) => {
-                    warp::reply::with_header(output, "Content-Type", "text/plain; version=0.0.4")
-                },
-                Err(e) => {
-                    warp::reply::with_header(
+        .map(
+            |(m, l, db): (Arc<UatMetrics>, Arc<Mutex<Ledger>>, Arc<UatDatabase>)| {
+                // Update blockchain metrics before export
+                {
+                    let ledger_guard = safe_lock(&l);
+                    m.update_blockchain_metrics(&ledger_guard);
+                }
+
+                // Update database metrics
+                let stats = db.stats();
+                m.update_db_metrics(&stats);
+
+                // Export all metrics
+                match m.export() {
+                    Ok(output) => warp::reply::with_header(
+                        output,
+                        "Content-Type",
+                        "text/plain; version=0.0.4",
+                    ),
+                    Err(e) => warp::reply::with_header(
                         format!("# Error exporting metrics: {}", e),
                         "Content-Type",
-                        "text/plain"
-                    )
+                        "text/plain",
+                    ),
                 }
-            }
-        });
+            },
+        );
 
     // 11. GET /node-info (Network metadata for CLI)
     let l_info = ledger.clone();
     let ab_info = address_book.clone();
     let node_info_route = warp::path("node-info")
         .and(with_state((l_info, ab_info)))
-        .map(|(l, ab): (Arc<Mutex<Ledger>>, Arc<Mutex<HashMap<String, String>>>)| {
-            let l_guard = safe_lock(&l);
-            let total_supply = 21_936_236u128 * VOID_PER_UAT;
-            let circulating = total_supply - l_guard.distribution.remaining_supply;
-            
-            // SECURITY FIX #12: Dynamic validator and peer count from actual state
-            let validator_count = l_guard.accounts.iter()
-                .filter(|(_, acc)| acc.balance >= MIN_VALIDATOR_STAKE_VOID)
-                .count();
-            let peer_count = safe_lock(&ab).len();
-            
-            warp::reply::json(&serde_json::json!({
-                "chain_id": if uat_core::CHAIN_ID == 1 { "uat-mainnet" } else { "uat-testnet" },
-                "version": "1.0.0",
-                "block_height": l_guard.blocks.len(),
-                "validator_count": validator_count,
-                "peer_count": peer_count,
-                "total_supply": format_balance_precise(total_supply),
-                "circulating_supply": format_balance_precise(circulating),
-                "network_tps": 0
-            }))
-        });
+        .map(
+            #[allow(clippy::type_complexity)]
+            |(l, ab): (Arc<Mutex<Ledger>>, Arc<Mutex<HashMap<String, String>>>)| {
+                let l_guard = safe_lock(&l);
+                let total_supply = 21_936_236u128 * VOID_PER_UAT;
+                let circulating = total_supply - l_guard.distribution.remaining_supply;
+
+                // SECURITY FIX #12: Dynamic validator and peer count from actual state
+                let validator_count = l_guard
+                    .accounts
+                    .iter()
+                    .filter(|(_, acc)| acc.balance >= MIN_VALIDATOR_STAKE_VOID)
+                    .count();
+                let peer_count = safe_lock(&ab).len();
+
+                warp::reply::json(&serde_json::json!({
+                    "chain_id": if uat_core::CHAIN_ID == 1 { "uat-mainnet" } else { "uat-testnet" },
+                    "version": "1.0.0",
+                    "block_height": l_guard.blocks.len(),
+                    "validator_count": validator_count,
+                    "peer_count": peer_count,
+                    "total_supply": format_balance_precise(total_supply),
+                    "circulating_supply": format_balance_precise(circulating),
+                    "network_tps": 0
+                }))
+            },
+        );
 
     // 12. GET /validators (List active validators - Functional testnet aggregates from all nodes)
     let l_validators = ledger.clone();
@@ -834,31 +836,37 @@ pub async fn start_api_server(
             // Get local validators (collect quickly then drop lock)
             let local_validators: Vec<serde_json::Value> = {
                 let l_guard = safe_lock(&l);
-                l_guard.accounts.iter()
+                l_guard
+                    .accounts
+                    .iter()
                     .filter(|(_, acc)| acc.balance >= MIN_VALIDATOR_STAKE_VOID)
-                    .map(|(addr, acc)| serde_json::json!({
-                        "address": addr,
-                        "stake": acc.balance / VOID_PER_UAT,
-                        "is_active": true,
-                        "active": true,
-                        "uptime_percentage": 99.9
-                    }))
+                    .map(|(addr, acc)| {
+                        serde_json::json!({
+                            "address": addr,
+                            "stake": acc.balance / VOID_PER_UAT,
+                            "is_active": true,
+                            "active": true,
+                            "uptime_percentage": 99.9
+                        })
+                    })
                     .collect()
             }; // Lock dropped here
-            
+
             // Functional Testnet: Aggregate from all 3 bootstrap nodes
             // Production: Return only local validator set
             let mut all_validators = local_validators.clone();
-            
+
             if !testnet_config::get_testnet_config().should_enable_consensus() {
                 let client = reqwest::Client::new();
                 let bootstrap_ports = vec![3031, 3032]; // Skip self to avoid circular call
-                
+
                 for port in bootstrap_ports {
-                    match client.get(format!("http://localhost:{}/validators", port))
+                    match client
+                        .get(format!("http://localhost:{}/validators", port))
                         .timeout(std::time::Duration::from_millis(500))
                         .send()
-                        .await {
+                        .await
+                    {
                         Ok(resp) => {
                             match resp.json::<serde_json::Value>().await {
                                 Ok(data) => {
@@ -866,22 +874,25 @@ pub async fn start_api_server(
                                         for v in vals {
                                             // Deduplicate by address
                                             if let Some(addr) = v["address"].as_str() {
-                                                if !all_validators.iter().any(|existing| 
-                                                    existing["address"].as_str() == Some(addr)) {
+                                                if !all_validators.iter().any(|existing| {
+                                                    existing["address"].as_str() == Some(addr)
+                                                }) {
                                                     all_validators.push(v.clone());
                                                 }
                                             }
                                         }
                                     }
                                 }
-                                Err(e) => eprintln!("Failed to parse response from port {}: {}", port, e),
+                                Err(e) => {
+                                    eprintln!("Failed to parse response from port {}: {}", port, e)
+                                }
                             }
                         }
                         Err(e) => eprintln!("Failed to connect to port {}: {}", port, e),
                     }
                 }
             }
-            
+
             Ok::<_, warp::Rejection>(warp::reply::json(&serde_json::json!({
                 "validators": all_validators
             })))
@@ -893,13 +904,22 @@ pub async fn start_api_server(
         .and(with_state(l_balance_alias))
         .map(|addr: String, l: Arc<Mutex<Ledger>>| {
             let l_guard = safe_lock(&l);
-            let full_addr = l_guard.accounts.keys().find(|k| get_short_addr(k) == addr || **k == addr).cloned().unwrap_or(addr.clone());
-            let bal = l_guard.accounts.get(&full_addr).map(|a| a.balance).unwrap_or(0);
-            warp::reply::json(&serde_json::json!({ 
-                "address": full_addr, 
+            let full_addr = l_guard
+                .accounts
+                .keys()
+                .find(|k| get_short_addr(k) == addr || **k == addr)
+                .cloned()
+                .unwrap_or(addr.clone());
+            let bal = l_guard
+                .accounts
+                .get(&full_addr)
+                .map(|a| a.balance)
+                .unwrap_or(0);
+            warp::reply::json(&serde_json::json!({
+                "address": full_addr,
                 "balance": format_balance_precise(bal),
                 "balance_uat": format_balance_precise(bal),
-                "balance_voi": bal 
+                "balance_voi": bal
             }))
         });
 
@@ -935,14 +955,14 @@ pub async fn start_api_server(
         .and(warp::post())
         .and(warp::body::json())
         .and(with_state((l_faucet, db_faucet, fl_faucet, pk_faucet, sk_faucet)))
-        .map(|req: serde_json::Value, (l, db, rate_lim, node_pk, node_sk): (Arc<Mutex<Ledger>>, Arc<UatDatabase>, Arc<EndpointRateLimiter>, Vec<u8>, Vec<u8>)| {
+        .map(#[allow(clippy::type_complexity)] |req: serde_json::Value, (l, db, rate_lim, node_pk, node_sk): (Arc<Mutex<Ledger>>, Arc<UatDatabase>, Arc<EndpointRateLimiter>, Vec<u8>, Vec<u8>)| {
             if !testnet_config::get_testnet_config().should_enable_faucet() {
                 return warp::reply::json(&serde_json::json!({
                     "status": "error",
                     "msg": "Faucet only available in Functional/Consensus testnet modes"
                 }));
             }
-            
+
             let address = req["address"].as_str().unwrap_or("");
             if address.is_empty() {
                 return warp::reply::json(&serde_json::json!({
@@ -950,7 +970,7 @@ pub async fn start_api_server(
                     "msg": "Address required"
                 }));
             }
-            
+
             // PERSISTENT cooldown: 1 faucet claim per hour per address (survives restart)
             const FAUCET_COOLDOWN_SECS: u64 = 3600; // 1 hour
             if let Err(remaining) = db.check_faucet_cooldown(address, FAUCET_COOLDOWN_SECS) {
@@ -960,7 +980,7 @@ pub async fn start_api_server(
                     "msg": format!("Faucet cooldown active: try again in {} seconds", remaining)
                 }));
             }
-            
+
             // In-memory rate limit as secondary protection
             if let Err(wait_secs) = rate_lim.check_and_record(address) {
                 return warp::reply::json(&serde_json::json!({
@@ -969,11 +989,11 @@ pub async fn start_api_server(
                     "msg": format!("Rate limit exceeded: max 1 faucet claim per hour. Try again in {} seconds.", wait_secs)
                 }));
             }
-            
+
             let faucet_amount = 100_000u128 * VOID_PER_UAT; // 100k UAT
-            
+
             let mut l_guard = safe_lock(&l);
-            
+
             // Ensure account exists
             if !l_guard.accounts.contains_key(address) {
                 l_guard.accounts.insert(address.to_string(), AccountState {
@@ -982,13 +1002,13 @@ pub async fn start_api_server(
                     block_count: 0,
                 });
             }
-            
+
             let state = l_guard.accounts.get(address).cloned().unwrap_or(AccountState {
                 head: "0".to_string(),
                 balance: 0,
                 block_count: 0,
             });
-            
+
             // CRITICAL FIX: Create proper Mint block with PoW + signature, use process_block()
             // This ensures remaining_supply is properly deducted
             let mut faucet_block = Block {
@@ -1004,22 +1024,22 @@ pub async fn start_api_server(
                 timestamp: std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs(),
                 fee: 0,
             };
-            
+
             solve_pow(&mut faucet_block);
             faucet_block.signature = hex::encode(
                 uat_crypto::sign_message(faucet_block.signing_hash().as_bytes(), &node_sk).expect("BUG: signing failed — key corrupted")
             );
-            
+
             match l_guard.process_block(&faucet_block) {
                 Ok(hash) => {
                     let new_balance = l_guard.accounts.get(address)
                         .map(|a| a.balance).unwrap_or(0);
-                    
+
                     // Persist faucet cooldown to database (survives restart)
                     let _ = db.record_faucet_claim(address);
-                    
+
                     SAVE_DIRTY.store(true, Ordering::Relaxed);
-                    
+
                     warp::reply::json(&serde_json::json!({
                         "status": "success",
                         "msg": "Faucet claim successful",
@@ -1046,22 +1066,25 @@ pub async fn start_api_server(
             // SECURITY FIX #13: Sort by timestamp descending for deterministic recent blocks
             let mut block_list: Vec<(&String, &Block)> = l_guard.blocks.iter().collect();
             block_list.sort_by(|a, b| b.1.timestamp.cmp(&a.1.timestamp));
-            let blocks: Vec<serde_json::Value> = block_list.iter()
+            let blocks: Vec<serde_json::Value> = block_list
+                .iter()
                 .take(10) // Last 10 blocks by timestamp
-                .map(|(hash, b)| serde_json::json!({
-                    "hash": hash,
-                    "height": l_guard.blocks.len(),
-                    "timestamp": b.timestamp,
-                    "transactions_count": 1,
-                    "account": b.account,
-                    "amount": b.amount / VOID_PER_UAT
-                }))
+                .map(|(hash, b)| {
+                    serde_json::json!({
+                        "hash": hash,
+                        "height": l_guard.blocks.len(),
+                        "timestamp": b.timestamp,
+                        "transactions_count": 1,
+                        "account": b.account,
+                        "amount": b.amount / VOID_PER_UAT
+                    })
+                })
                 .collect();
             warp::reply::json(&serde_json::json!({
                 "blocks": blocks
             }))
         });
-    
+
     // 17. GET /whoami (Get node's internal signing address)
     let whoami_route = warp::path("whoami")
         .and(with_state(my_address.clone()))
@@ -1079,12 +1102,16 @@ pub async fn start_api_server(
         .and(with_state(l_account))
         .map(|addr: String, l: Arc<Mutex<Ledger>>| {
             let l_guard = safe_lock(&l);
-            let state = l_guard.accounts.get(&addr).cloned().unwrap_or(AccountState {
-                head: "0".to_string(),
-                balance: 0,
-                block_count: 0,
-            });
-            
+            let state = l_guard
+                .accounts
+                .get(&addr)
+                .cloned()
+                .unwrap_or(AccountState {
+                    head: "0".to_string(),
+                    balance: 0,
+                    block_count: 0,
+                });
+
             // Get transaction history for this account
             let mut transactions: Vec<serde_json::Value> = Vec::new();
             for (hash, block) in l_guard.blocks.iter() {
@@ -1098,7 +1125,7 @@ pub async fn start_api_server(
                     }));
                 }
             }
-            
+
             warp::reply::json(&serde_json::json!({
                 "address": addr,
                 "balance": format_balance_precise(state.balance),
@@ -1141,38 +1168,44 @@ pub async fn start_api_server(
 
     // 20. GET /slashing (Slashing statistics and validator safety)
     let sm_stats = slashing_manager.clone();
-    let slashing_route = warp::path("slashing")
-        .and(with_state(sm_stats))
-        .map(|sm: Arc<Mutex<SlashingManager>>| {
-            let sm_guard = safe_lock(&sm);
-            let stats = sm_guard.get_safety_stats();
-            let banned = sm_guard.get_banned_validators();
-            let slashed = sm_guard.get_slashed_validators();
-            let events = sm_guard.get_all_slash_events();
-            
-            let events_json: Vec<serde_json::Value> = events.iter().map(|e| serde_json::json!({
-                "block_height": e.block_height,
-                "validator": e.validator_address,
-                "violation": format!("{:?}", e.violation_type),
-                "slash_amount_void": e.slash_amount_void,
-                "slash_percent": e.slash_percent,
-                "timestamp": e.timestamp
-            })).collect();
-            
-            warp::reply::json(&serde_json::json!({
-                "safety_stats": {
-                    "total_validators": stats.total_validators,
-                    "active_validators": stats.active_validators,
-                    "banned_count": stats.banned_count,
-                    "slashed_count": stats.slashed_count,
-                    "total_slashed_void": stats.total_slashed_void,
-                    "total_slash_events": stats.total_slash_events
-                },
-                "banned_validators": banned,
-                "slashed_validators": slashed,
-                "recent_events": events_json
-            }))
-        });
+    let slashing_route =
+        warp::path("slashing")
+            .and(with_state(sm_stats))
+            .map(|sm: Arc<Mutex<SlashingManager>>| {
+                let sm_guard = safe_lock(&sm);
+                let stats = sm_guard.get_safety_stats();
+                let banned = sm_guard.get_banned_validators();
+                let slashed = sm_guard.get_slashed_validators();
+                let events = sm_guard.get_all_slash_events();
+
+                let events_json: Vec<serde_json::Value> = events
+                    .iter()
+                    .map(|e| {
+                        serde_json::json!({
+                            "block_height": e.block_height,
+                            "validator": e.validator_address,
+                            "violation": format!("{:?}", e.violation_type),
+                            "slash_amount_void": e.slash_amount_void,
+                            "slash_percent": e.slash_percent,
+                            "timestamp": e.timestamp
+                        })
+                    })
+                    .collect();
+
+                warp::reply::json(&serde_json::json!({
+                    "safety_stats": {
+                        "total_validators": stats.total_validators,
+                        "active_validators": stats.active_validators,
+                        "banned_count": stats.banned_count,
+                        "slashed_count": stats.slashed_count,
+                        "total_slashed_void": stats.total_slashed_void,
+                        "total_slash_events": stats.total_slash_events
+                    },
+                    "banned_validators": banned,
+                    "slashed_validators": slashed,
+                    "recent_events": events_json
+                }))
+            });
 
     // 21. GET /slashing/:address (Validator-specific slashing info)
     let sm_profile = slashing_manager.clone();
@@ -1181,14 +1214,20 @@ pub async fn start_api_server(
         .map(|addr: String, sm: Arc<Mutex<SlashingManager>>| {
             let sm_guard = safe_lock(&sm);
             if let Some(profile) = sm_guard.get_profile(&addr) {
-                let history: Vec<serde_json::Value> = profile.slash_history.iter().map(|e| serde_json::json!({
-                    "block_height": e.block_height,
-                    "violation": format!("{:?}", e.violation_type),
-                    "slash_amount_void": e.slash_amount_void,
-                    "slash_percent": e.slash_percent,
-                    "timestamp": e.timestamp
-                })).collect();
-                
+                let history: Vec<serde_json::Value> = profile
+                    .slash_history
+                    .iter()
+                    .map(|e| {
+                        serde_json::json!({
+                            "block_height": e.block_height,
+                            "violation": format!("{:?}", e.violation_type),
+                            "slash_amount_void": e.slash_amount_void,
+                            "slash_percent": e.slash_percent,
+                            "timestamp": e.timestamp
+                        })
+                    })
+                    .collect();
+
                 warp::reply::json(&serde_json::json!({
                     "address": addr,
                     "status": format!("{:?}", profile.status),
@@ -1215,11 +1254,11 @@ pub async fn start_api_server(
         .map(|(l, db): (Arc<Mutex<Ledger>>, Arc<UatDatabase>)| {
             let l_guard = safe_lock(&l);
             let db_stats = db.stats();
-            
+
             // Check system health
-            let is_healthy = l_guard.accounts.len() > 0 && db_stats.accounts_count > 0;
+            let is_healthy = !l_guard.accounts.is_empty() && db_stats.accounts_count > 0;
             let status = if is_healthy { "healthy" } else { "degraded" };
-            
+
             warp::reply::json(&serde_json::json!({
                 "status": status,
                 "uptime_seconds": std::time::SystemTime::now()
@@ -1243,7 +1282,7 @@ pub async fn start_api_server(
                     .as_secs()
             }))
         });
-    
+
     // 23. GET /block/:hash (Block explorer - get block by hash)
     let l_block_hash = ledger.clone();
     let block_by_hash_route = warp::path!("block" / String)
@@ -1274,7 +1313,7 @@ pub async fn start_api_server(
                 }))
             }
         });
-    
+
     // 24. GET /transaction/:hash (Alias for block by hash - block explorer compatibility)
     let l_tx_hash = ledger.clone();
     let tx_by_hash_route = warp::path!("transaction" / String)
@@ -1303,71 +1342,76 @@ pub async fn start_api_server(
                 }))
             }
         });
-    
+
     // 25. GET /search/:query (Block explorer - search for address, block, or transaction)
     let l_search = ledger.clone();
     let ab_search = address_book.clone();
     let search_route = warp::path!("search" / String)
         .and(with_state((l_search, ab_search)))
-        .map(|query: String, (l, ab): (Arc<Mutex<Ledger>>, Arc<Mutex<HashMap<String, String>>>)| {
-            let l_guard = safe_lock(&l);
-            let mut results = Vec::new();
-            
-            // Check if it's a full address
-            if l_guard.accounts.contains_key(&query) {
-                if let Some(acc) = l_guard.accounts.get(&query) {
-                    results.push(serde_json::json!({
-                        "type": "account",
-                        "address": query,
-                        "balance": acc.balance / VOID_PER_UAT,
-                        "block_count": acc.block_count
-                    }));
-                }
-            }
-            
-            // Check if it's a block hash
-            if l_guard.blocks.contains_key(&query) {
-                results.push(serde_json::json!({
-                    "type": "block",
-                    "hash": query
-                }));
-            }
-            
-            // Check if it's a short address
-            let ab_guard = safe_lock(&ab);
-            if let Some(full) = ab_guard.get(&query) {
-                if let Some(acc) = l_guard.accounts.get(full) {
-                    results.push(serde_json::json!({
-                        "type": "account",
-                        "address": full,
-                        "short_address": query,
-                        "balance": acc.balance / VOID_PER_UAT,
-                        "block_count": acc.block_count
-                    }));
-                }
-            }
-            
-            // Partial match on addresses
-            if results.is_empty() {
-                for (addr, acc) in l_guard.accounts.iter() {
-                    if addr.contains(&query) {
+        .map(
+            #[allow(clippy::type_complexity)]
+            |query: String, (l, ab): (Arc<Mutex<Ledger>>, Arc<Mutex<HashMap<String, String>>>)| {
+                let l_guard = safe_lock(&l);
+                let mut results = Vec::new();
+
+                // Check if it's a full address
+                if l_guard.accounts.contains_key(&query) {
+                    if let Some(acc) = l_guard.accounts.get(&query) {
                         results.push(serde_json::json!({
                             "type": "account",
-                            "address": addr,
+                            "address": query,
                             "balance": acc.balance / VOID_PER_UAT,
                             "block_count": acc.block_count
                         }));
-                        if results.len() >= 10 { break; } // Limit to 10 results
                     }
                 }
-            }
-            
-            warp::reply::json(&serde_json::json!({
-                "query": query,
-                "results": results,
-                "count": results.len()
-            }))
-        });
+
+                // Check if it's a block hash
+                if l_guard.blocks.contains_key(&query) {
+                    results.push(serde_json::json!({
+                        "type": "block",
+                        "hash": query
+                    }));
+                }
+
+                // Check if it's a short address
+                let ab_guard = safe_lock(&ab);
+                if let Some(full) = ab_guard.get(&query) {
+                    if let Some(acc) = l_guard.accounts.get(full) {
+                        results.push(serde_json::json!({
+                            "type": "account",
+                            "address": full,
+                            "short_address": query,
+                            "balance": acc.balance / VOID_PER_UAT,
+                            "block_count": acc.block_count
+                        }));
+                    }
+                }
+
+                // Partial match on addresses
+                if results.is_empty() {
+                    for (addr, acc) in l_guard.accounts.iter() {
+                        if addr.contains(&query) {
+                            results.push(serde_json::json!({
+                                "type": "account",
+                                "address": addr,
+                                "balance": acc.balance / VOID_PER_UAT,
+                                "block_count": acc.block_count
+                            }));
+                            if results.len() >= 10 {
+                                break;
+                            } // Limit to 10 results
+                        }
+                    }
+                }
+
+                warp::reply::json(&serde_json::json!({
+                    "query": query,
+                    "results": results,
+                    "count": results.len()
+                }))
+            },
+        );
 
     // CORS configuration - Allow all origins for local development
     let cors = warp::cors()
@@ -1381,40 +1425,48 @@ pub async fn start_api_server(
     let sync_route = warp::path("sync")
         .and(warp::query::<std::collections::HashMap<String, String>>())
         .and(with_state(l_sync))
-        .map(|params: std::collections::HashMap<String, String>, l: Arc<Mutex<Ledger>>| {
-            let their_blocks: usize = params.get("blocks").and_then(|s| s.parse().ok()).unwrap_or(0);
-            
-            let l_guard = safe_lock(&l);
-            let our_blocks = l_guard.blocks.len();
-            
-            // Only send state if we have more blocks
-            if our_blocks <= their_blocks {
-                return warp::reply::json(&serde_json::json!({
-                    "status": "up_to_date",
-                    "blocks": our_blocks
-                }));
-            }
-            
-            // Collect non-Mint/Slash blocks only (those must go through consensus)
-            let sync_blocks: std::collections::HashMap<String, &uat_core::Block> = l_guard.blocks.iter()
-                .filter(|(_, b)| !matches!(b.block_type, BlockType::Mint | BlockType::Slash))
-                .take(5000) // Cap at 5000 blocks per sync
-                .map(|(k, v)| (k.clone(), v))
-                .collect();
-            
-            let accounts_snapshot: std::collections::HashMap<&String, &AccountState> = l_guard.accounts.iter().collect();
-            
-            warp::reply::json(&serde_json::json!({
-                "status": "sync",
-                "blocks": sync_blocks,
-                "accounts": accounts_snapshot,
-                "our_block_count": our_blocks,
-                "distribution": l_guard.distribution
-            }))
-        });
+        .map(
+            |params: std::collections::HashMap<String, String>, l: Arc<Mutex<Ledger>>| {
+                let their_blocks: usize = params
+                    .get("blocks")
+                    .and_then(|s| s.parse().ok())
+                    .unwrap_or(0);
+
+                let l_guard = safe_lock(&l);
+                let our_blocks = l_guard.blocks.len();
+
+                // Only send state if we have more blocks
+                if our_blocks <= their_blocks {
+                    return warp::reply::json(&serde_json::json!({
+                        "status": "up_to_date",
+                        "blocks": our_blocks
+                    }));
+                }
+
+                // Collect non-Mint/Slash blocks only (those must go through consensus)
+                let sync_blocks: std::collections::HashMap<String, &uat_core::Block> = l_guard
+                    .blocks
+                    .iter()
+                    .filter(|(_, b)| !matches!(b.block_type, BlockType::Mint | BlockType::Slash))
+                    .take(5000) // Cap at 5000 blocks per sync
+                    .map(|(k, v)| (k.clone(), v))
+                    .collect();
+
+                let accounts_snapshot: std::collections::HashMap<&String, &AccountState> =
+                    l_guard.accounts.iter().collect();
+
+                warp::reply::json(&serde_json::json!({
+                    "status": "sync",
+                    "blocks": sync_blocks,
+                    "accounts": accounts_snapshot,
+                    "our_block_count": our_blocks,
+                    "distribution": l_guard.distribution
+                }))
+            },
+        );
 
     // Combine all routes with rate limiting
-    let routes = root_route            // Root endpoint (must be first!)
+    let routes = root_route // Root endpoint (must be first!)
         .or(balance_route)
         .or(supply_route)
         .or(history_route)
@@ -1425,22 +1477,22 @@ pub async fn start_api_server(
         .or(call_route)
         .or(get_contract_route)
         .or(metrics_route)
-        .or(node_info_route)      // NEW: Node info endpoint
-        .or(validators_route)     // NEW: Validators endpoint
-        .or(balance_alias_route)  // NEW: Balance alias for CLI
-        .or(block_route)          // NEW: Latest block endpoint
-        .or(faucet_route)         // NEW: Faucet endpoint (Functional/Consensus testnet only)
-        .or(blocks_recent_route)  // NEW: Recent blocks endpoint
-        .or(whoami_route)         // NEW: Node's signing address endpoint
-        .or(account_route)        // NEW: Account details endpoint
-        .or(health_route)         // NEW: Health check endpoint
-        .or(slashing_route)       // NEW: Slashing stats endpoint
+        .or(node_info_route) // NEW: Node info endpoint
+        .or(validators_route) // NEW: Validators endpoint
+        .or(balance_alias_route) // NEW: Balance alias for CLI
+        .or(block_route) // NEW: Latest block endpoint
+        .or(faucet_route) // NEW: Faucet endpoint (Functional/Consensus testnet only)
+        .or(blocks_recent_route) // NEW: Recent blocks endpoint
+        .or(whoami_route) // NEW: Node's signing address endpoint
+        .or(account_route) // NEW: Account details endpoint
+        .or(health_route) // NEW: Health check endpoint
+        .or(slashing_route) // NEW: Slashing stats endpoint
         .or(slashing_profile_route) // NEW: Slashing per-validator
-        .or(block_by_hash_route)  // NEW: Block explorer - get block by hash
-        .or(tx_by_hash_route)     // NEW: Block explorer - get transaction by hash
-        .or(search_route)         // NEW: Block explorer - search
-        .or(sync_route)           // NEW: HTTP-based state sync for Tor peers
-        .with(cors)               // Apply CORS
+        .or(block_by_hash_route) // NEW: Block explorer - get block by hash
+        .or(tx_by_hash_route) // NEW: Block explorer - get transaction by hash
+        .or(search_route) // NEW: Block explorer - search
+        .or(sync_route) // NEW: HTTP-based state sync for Tor peers
+        .with(cors) // Apply CORS
         .with(warp::log("api"))
         .recover(handle_rejection);
 
@@ -1455,13 +1507,24 @@ pub async fn start_api_server(
     } else {
         [127, 0, 0, 1] // Default: localhost only (safe for Tor hidden service)
     };
-    println!("🌍 API Server running at http://{}:{} (Rate Limit: 100 req/sec per IP)", 
-        if bind_addr == [0,0,0,0] { "0.0.0.0" } else { "127.0.0.1" }, api_port);
-    warp::serve(routes_with_limit).run((bind_addr, api_port)).await;
+    println!(
+        "🌍 API Server running at http://{}:{} (Rate Limit: 100 req/sec per IP)",
+        if bind_addr == [0, 0, 0, 0] {
+            "0.0.0.0"
+        } else {
+            "127.0.0.1"
+        },
+        api_port
+    );
+    warp::serve(routes_with_limit)
+        .run((bind_addr, api_port))
+        .await;
 }
 
 // Rate limit rejection handler
-async fn handle_rejection(err: warp::Rejection) -> Result<impl warp::Reply, std::convert::Infallible> {
+async fn handle_rejection(
+    err: warp::Rejection,
+) -> Result<impl warp::Reply, std::convert::Infallible> {
     if let Some(rate_limiter::filters::RateLimitExceeded { ip }) = err.find() {
         let json = warp::reply::json(&serde_json::json!({
             "status": "error",
@@ -1469,21 +1532,30 @@ async fn handle_rejection(err: warp::Rejection) -> Result<impl warp::Reply, std:
             "msg": "Rate limit exceeded. Please slow down your requests.",
             "ip": ip.to_string()
         }));
-        Ok(warp::reply::with_status(json, warp::http::StatusCode::TOO_MANY_REQUESTS))
+        Ok(warp::reply::with_status(
+            json,
+            warp::http::StatusCode::TOO_MANY_REQUESTS,
+        ))
     } else if err.is_not_found() {
         let json = warp::reply::json(&serde_json::json!({
             "status": "error",
             "code": 404,
             "msg": "Endpoint not found"
         }));
-        Ok(warp::reply::with_status(json, warp::http::StatusCode::NOT_FOUND))
+        Ok(warp::reply::with_status(
+            json,
+            warp::http::StatusCode::NOT_FOUND,
+        ))
     } else {
         let json = warp::reply::json(&serde_json::json!({
             "status": "error",
             "code": 500,
             "msg": "Internal server error"
         }));
-        Ok(warp::reply::with_status(json, warp::http::StatusCode::INTERNAL_SERVER_ERROR))
+        Ok(warp::reply::with_status(
+            json,
+            warp::http::StatusCode::INTERNAL_SERVER_ERROR,
+        ))
     }
 }
 
@@ -1494,26 +1566,36 @@ async fn get_crypto_prices() -> (f64, f64) {
         .build()
         .unwrap_or_default();
 
-    let url_coingecko = "https://api.coingecko.com/api/v3/simple/price?ids=ethereum,bitcoin&vs_currencies=usd";
-    let url_cryptocompare = "https://min-api.cryptocompare.com/data/pricemulti?fsyms=BTC,ETH&tsyms=USD";
+    let url_coingecko =
+        "https://api.coingecko.com/api/v3/simple/price?ids=ethereum,bitcoin&vs_currencies=usd";
+    let url_cryptocompare =
+        "https://min-api.cryptocompare.com/data/pricemulti?fsyms=BTC,ETH&tsyms=USD";
     let url_kraken = "https://api.kraken.com/0/public/Ticker?pair=ETHUSD,XBTUSD"; // Kraken (global exchange)
-    
+
     let mut eth_prices = Vec::new();
     let mut btc_prices = Vec::new();
 
     // 1. Fetch CoinGecko
     if let Ok(resp) = client.get(url_coingecko).send().await {
         if let Ok(json) = resp.json::<Value>().await {
-            if let Some(p) = json["ethereum"]["usd"].as_f64() { eth_prices.push(p); }
-            if let Some(p) = json["bitcoin"]["usd"].as_f64() { btc_prices.push(p); }
+            if let Some(p) = json["ethereum"]["usd"].as_f64() {
+                eth_prices.push(p);
+            }
+            if let Some(p) = json["bitcoin"]["usd"].as_f64() {
+                btc_prices.push(p);
+            }
         }
     }
 
     // 2. Fetch CryptoCompare
     if let Ok(resp) = client.get(url_cryptocompare).send().await {
         if let Ok(json) = resp.json::<Value>().await {
-            if let Some(p) = json["ETH"]["USD"].as_f64() { eth_prices.push(p); }
-            if let Some(p) = json["BTC"]["USD"].as_f64() { btc_prices.push(p); }
+            if let Some(p) = json["ETH"]["USD"].as_f64() {
+                eth_prices.push(p);
+            }
+            if let Some(p) = json["BTC"]["USD"].as_f64() {
+                btc_prices.push(p);
+            }
         }
     }
 
@@ -1525,14 +1607,18 @@ async fn get_crypto_prices() -> (f64, f64) {
                 if let Some(eth) = result.get("XETHZUSD") {
                     if let Some(p_array) = eth["c"].as_array() {
                         if let Some(p_str) = p_array[0].as_str() {
-                            if let Ok(p) = p_str.parse::<f64>() { eth_prices.push(p); }
+                            if let Ok(p) = p_str.parse::<f64>() {
+                                eth_prices.push(p);
+                            }
                         }
                     }
                 }
                 if let Some(btc) = result.get("XXBTZUSD") {
                     if let Some(p_array) = btc["c"].as_array() {
                         if let Some(p_str) = p_array[0].as_str() {
-                            if let Ok(p) = p_str.parse::<f64>() { btc_prices.push(p); }
+                            if let Ok(p) = p_str.parse::<f64>() {
+                                btc_prices.push(p);
+                            }
                         }
                     }
                 }
@@ -1541,30 +1627,45 @@ async fn get_crypto_prices() -> (f64, f64) {
     }
 
     // Calculate Final Average
-    let final_eth = if eth_prices.is_empty() { 2500.0 } else {
+    let final_eth = if eth_prices.is_empty() {
+        2500.0
+    } else {
         eth_prices.iter().sum::<f64>() / eth_prices.len() as f64
     };
 
-    let final_btc = if btc_prices.is_empty() { 83000.0 } else {
+    let final_btc = if btc_prices.is_empty() {
+        83000.0
+    } else {
         btc_prices.iter().sum::<f64>() / btc_prices.len() as f64
     };
-    
+
     // SECURITY FIX #15: Sanity bounds to reject manipulated oracle prices
     // ETH reasonable range: $10 - $100,000 | BTC reasonable range: $100 - $10,000,000
-    let final_eth = if final_eth < 10.0 || final_eth > 100_000.0 {
-        println!("⚠️ Oracle ETH price ${:.2} out of sanity bounds, using fallback $2500", final_eth);
+    let final_eth = if !(10.0..=100_000.0).contains(&final_eth) {
+        println!(
+            "⚠️ Oracle ETH price ${:.2} out of sanity bounds, using fallback $2500",
+            final_eth
+        );
         2500.0
-    } else { final_eth };
-    
-    let final_btc = if final_btc < 100.0 || final_btc > 10_000_000.0 {
-        println!("⚠️ Oracle BTC price ${:.2} out of sanity bounds, using fallback $83000", final_btc);
+    } else {
+        final_eth
+    };
+
+    let final_btc = if !(100.0..=10_000_000.0).contains(&final_btc) {
+        println!(
+            "⚠️ Oracle BTC price ${:.2} out of sanity bounds, using fallback $83000",
+            final_btc
+        );
         83000.0
-    } else { final_btc };
+    } else {
+        final_btc
+    };
 
     // Show successful source count (for debugging)
-    println!("📊 Oracle Consensus ({} APIs): ETH ${:.2}, BTC ${:.2}", 
-        eth_prices.len(), 
-        format_u128(final_eth as u128), 
+    println!(
+        "📊 Oracle Consensus ({} APIs): ETH ${:.2}, BTC ${:.2}",
+        eth_prices.len(),
+        format_u128(final_eth as u128),
         format_u128(final_btc as u128)
     );
 
@@ -1576,15 +1677,21 @@ async fn verify_eth_burn_tx(txid: &str) -> Option<f64> {
     if !testnet_config::get_testnet_config().should_enable_oracle_consensus() {
         let clean_txid = txid.trim().trim_start_matches("0x").to_lowercase();
         if clean_txid.len() == 64 && clean_txid.chars().all(|c| c.is_ascii_hexdigit()) {
-            println!("🧪 TESTNET (Functional): Accepting ETH TXID {} with mock amount 0.1 ETH", &clean_txid[..16]);
+            println!(
+                "🧪 TESTNET (Functional): Accepting ETH TXID {} with mock amount 0.1 ETH",
+                &clean_txid[..16]
+            );
             return Some(0.1); // Mock 0.1 ETH burn
         }
         return None;
     }
-    
+
     let clean_txid = txid.trim().trim_start_matches("0x").to_lowercase();
     let url = format!("https://api.blockcypher.com/v1/eth/main/txs/{}", clean_txid);
-    let client = reqwest::Client::builder().timeout(Duration::from_secs(10)).build().ok()?;
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(10))
+        .build()
+        .ok()?;
     println!("🌐 Oracle ETH: Verifying TXID {}...", clean_txid);
     if let Ok(resp) = client.get(url).send().await {
         if let Ok(json) = resp.json::<Value>().await {
@@ -1610,14 +1717,21 @@ async fn verify_btc_burn_tx(txid: &str) -> Option<f64> {
     if !testnet_config::get_testnet_config().should_enable_oracle_consensus() {
         let clean_txid = txid.trim().to_lowercase();
         if clean_txid.len() == 64 && clean_txid.chars().all(|c| c.is_ascii_hexdigit()) {
-            println!("🧪 TESTNET (Functional): Accepting BTC TXID {} with mock amount 0.01 BTC", &clean_txid[..16]);
+            println!(
+                "🧪 TESTNET (Functional): Accepting BTC TXID {} with mock amount 0.01 BTC",
+                &clean_txid[..16]
+            );
             return Some(0.01); // Mock 0.01 BTC burn
         }
         return None;
     }
-    
+
     let url = format!("https://mempool.space/api/tx/{}", txid.trim());
-    let client = reqwest::Client::builder().user_agent("Mozilla/5.0").timeout(Duration::from_secs(10)).build().ok()?;
+    let client = reqwest::Client::builder()
+        .user_agent("Mozilla/5.0")
+        .timeout(Duration::from_secs(10))
+        .build()
+        .ok()?;
     println!("🌐 Oracle BTC: Verifying TXID {}...", txid);
     if let Ok(resp) = client.get(url).send().await {
         if let Ok(body) = resp.text().await {
@@ -1638,14 +1752,20 @@ async fn verify_btc_burn_tx(txid: &str) -> Option<f64> {
 // --- UTILS & FORMATTING ---
 
 fn get_short_addr(full_addr: &str) -> String {
-    if full_addr.len() < 12 { return full_addr.to_string(); }
+    if full_addr.len() < 12 {
+        return full_addr.to_string();
+    }
     format!("uat_{}", &full_addr[..8])
 }
 
 /// SECURITY FIX #11: Format VOID balance as precise UAT string
 /// Prevents integer division hiding sub-UAT amounts (e.g., 0.5 UAT → "0" with integer division)
 fn format_balance_precise(void_amount: u128) -> String {
-    format!("{}.{:011}", void_amount / VOID_PER_UAT, void_amount % VOID_PER_UAT)
+    format!(
+        "{}.{:011}",
+        void_amount / VOID_PER_UAT,
+        void_amount % VOID_PER_UAT
+    )
 }
 
 /// SECURITY FIX NEW#3: Convert f64 burn amount + price to VOID using integer math.
@@ -1666,14 +1786,14 @@ fn calculate_mint_void(amt_coin: f64, price_usd: f64, symbol: &str) -> u128 {
     // Integer math: usd_micro = (amt_base * price_micro) / base_divisor
     let usd_micro = match amt_base.checked_mul(price_micro) {
         Some(v) => v / base_divisor,
-        None => return 0, // overflow protection
+        None => 0, // overflow protection
     };
 
     // 1 UAT = $0.01 = 10,000 micro-USD
     // void = usd_micro * VOID_PER_UAT / 10,000
     match usd_micro.checked_mul(VOID_PER_UAT) {
         Some(v) => v / 10_000,
-        None => return 0, // overflow protection
+        None => 0, // overflow protection
     }
 }
 
@@ -1681,14 +1801,16 @@ fn format_u128(n: u128) -> String {
     let s = n.to_string();
     if s.len() > 3 {
         let mut result = String::new();
-        let mut count = 0;
-        for c in s.chars().rev() {
-            if count > 0 && count % 3 == 0 { result.push('.'); }
+        for (count, c) in s.chars().rev().enumerate() {
+            if count > 0 && count % 3 == 0 {
+                result.push('.');
+            }
             result.push(c);
-            count += 1;
         }
         result.chars().rev().collect()
-    } else { s }
+    } else {
+        s
+    }
 }
 
 // DEPRECATED: Old JSON-based save (kept for emergency backup)
@@ -1701,7 +1823,7 @@ fn save_to_disk_legacy(ledger: &Ledger) {
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
             .as_secs();
-        let backup_path = format!("backups/ledger_{}.json", ts % 100); 
+        let backup_path = format!("backups/ledger_{}.json", ts % 100);
         let _ = fs::write(backup_path, data);
     }
 }
@@ -1716,7 +1838,10 @@ fn save_to_disk(ledger: &Ledger, db: &UatDatabase) {
 fn save_to_disk_internal(ledger: &Ledger, db: &UatDatabase, force: bool) {
     // Atomic check-and-set: prevents race condition where two tasks both pass the check
     if !force {
-        if SAVE_IN_PROGRESS.compare_exchange(false, true, Ordering::SeqCst, Ordering::Relaxed).is_err() {
+        if SAVE_IN_PROGRESS
+            .compare_exchange(false, true, Ordering::SeqCst, Ordering::Relaxed)
+            .is_err()
+        {
             // Another task is already saving — mark dirty so it will be retried
             SAVE_DIRTY.store(true, Ordering::Relaxed);
             return;
@@ -1724,13 +1849,13 @@ fn save_to_disk_internal(ledger: &Ledger, db: &UatDatabase, force: bool) {
     } else {
         SAVE_IN_PROGRESS.store(true, Ordering::SeqCst);
     }
-    
+
     if let Err(e) = db.save_ledger(ledger) {
         eprintln!("❌ Database save failed: {}", e);
         // Fallback to JSON backup
         save_to_disk_legacy(ledger);
     }
-    
+
     SAVE_IN_PROGRESS.store(false, Ordering::SeqCst);
     SAVE_DIRTY.store(false, Ordering::Relaxed);
 }
@@ -1743,13 +1868,13 @@ fn load_from_disk(db: &UatDatabase) -> Ledger {
             Ok(ledger) => {
                 println!("✅ Loaded ledger from database");
                 return ledger;
-            },
+            }
             Err(e) => {
                 eprintln!("⚠️  Database load failed: {}", e);
             }
         }
     }
-    
+
     // One-time migration: if legacy JSON file exists, migrate to DB then remove
     if std::path::Path::new(LEDGER_FILE).exists() {
         if let Ok(data) = fs::read_to_string(LEDGER_FILE) {
@@ -1758,15 +1883,18 @@ fn load_from_disk(db: &UatDatabase) -> Ledger {
                 if let Err(e) = db.save_ledger(&ledger) {
                     eprintln!("❌ Migration failed: {}", e);
                 } else {
-                    println!("✅ Migration complete: {} accounts, {} blocks",
-                        ledger.accounts.len(), ledger.blocks.len());
+                    println!(
+                        "✅ Migration complete: {} accounts, {} blocks",
+                        ledger.accounts.len(),
+                        ledger.blocks.len()
+                    );
                     let _ = fs::rename(LEDGER_FILE, format!("{}.migrated", LEDGER_FILE));
                 }
                 return ledger;
             }
         }
     }
-    
+
     println!("🆕 Creating new ledger");
     Ledger::new()
 }
@@ -1776,13 +1904,16 @@ fn load_from_disk(db: &UatDatabase) -> Ledger {
 const MAX_POW_ITERATIONS: u64 = 10_000_000;
 
 fn solve_pow(block: &mut uat_core::Block) {
-    println!("⏳ Calculating PoW (Anti-Spam: 16 zero bits, limit: {}M iterations)...", MAX_POW_ITERATIONS / 1_000_000);
+    println!(
+        "⏳ Calculating PoW (Anti-Spam: 16 zero bits, limit: {}M iterations)...",
+        MAX_POW_ITERATIONS / 1_000_000
+    );
     let mut nonce: u64 = 0;
     loop {
         block.work = nonce;
-        
+
         // Show progress every 100k attempts
-        if nonce % 100_000 == 0 && nonce > 0 {
+        if nonce.is_multiple_of(100_000) && nonce > 0 {
             println!("   ... trying nonce #{}", nonce);
         }
 
@@ -1791,10 +1922,13 @@ fn solve_pow(block: &mut uat_core::Block) {
             break;
         }
         nonce += 1;
-        
+
         // Safety limit: prevent infinite loop on malformed blocks
         if nonce >= MAX_POW_ITERATIONS {
-            eprintln!("⚠️ PoW safety limit reached ({} iterations). Using best nonce found.", MAX_POW_ITERATIONS);
+            eprintln!(
+                "⚠️ PoW safety limit reached ({} iterations). Using best nonce found.",
+                MAX_POW_ITERATIONS
+            );
             break;
         }
     }
@@ -1807,27 +1941,63 @@ fn solve_pow(block: &mut uat_core::Block) {
 
 fn print_history_table(blocks: Vec<&Block>) {
     println!("\n📜 TRANSACTION HISTORY (Newest -> Oldest)");
-    println!("+----------------+----------------+--------------------------+------------------------+");
-    println!("| {:<14} | {:<14} | {:<24} | {:<22} |", "TYPE", "AMOUNT (UAT)", "DETAIL / LINK", "HASH");
-    println!("+----------------+----------------+--------------------------+------------------------+");
+    println!(
+        "+----------------+----------------+--------------------------+------------------------+"
+    );
+    println!(
+        "| {:<14} | {:<14} | {:<24} | {:<22} |",
+        "TYPE", "AMOUNT (UAT)", "DETAIL / LINK", "HASH"
+    );
+    println!(
+        "+----------------+----------------+--------------------------+------------------------+"
+    );
 
     for b in blocks {
         let amount_uat = b.amount / VOID_PER_UAT;
         let amt_str = format_u128(amount_uat);
-        
+
         let (type_str, amt_display, info) = match b.block_type {
-            BlockType::Mint => ("🔥 MINT", format!("+{}", amt_str), format!("Src: {}", &b.link[..10.min(b.link.len())])),
-            BlockType::Send => ("📤 SEND", format!("-{}", amt_str), format!("To: {}", get_short_addr(&b.link))),
-            BlockType::Receive => ("📥 RECEIVE", format!("+{}", amt_str), format!("From Hash: {}", &b.link[..8.min(b.link.len())])),
-            BlockType::Change => ("🔄 CHANGE", "0".to_string(), format!("Rep: {}", get_short_addr(&b.link))),
-            BlockType::Slash => ("⚖️ SLASH", format!("-{}", amt_str), format!("Evidence: {}", &b.link[..10.min(b.link.len())])),
+            BlockType::Mint => (
+                "🔥 MINT",
+                format!("+{}", amt_str),
+                format!("Src: {}", &b.link[..10.min(b.link.len())]),
+            ),
+            BlockType::Send => (
+                "📤 SEND",
+                format!("-{}", amt_str),
+                format!("To: {}", get_short_addr(&b.link)),
+            ),
+            BlockType::Receive => (
+                "📥 RECEIVE",
+                format!("+{}", amt_str),
+                format!("From Hash: {}", &b.link[..8.min(b.link.len())]),
+            ),
+            BlockType::Change => (
+                "🔄 CHANGE",
+                "0".to_string(),
+                format!("Rep: {}", get_short_addr(&b.link)),
+            ),
+            BlockType::Slash => (
+                "⚖️ SLASH",
+                format!("-{}", amt_str),
+                format!("Evidence: {}", &b.link[..10.min(b.link.len())]),
+            ),
         };
 
-        let hash_short = if b.calculate_hash().len() > 8 { format!("...{}", &b.calculate_hash()[..8]) } else { "-".to_string() };
+        let hash_short = if b.calculate_hash().len() > 8 {
+            format!("...{}", &b.calculate_hash()[..8])
+        } else {
+            "-".to_string()
+        };
 
-        println!("| {:<14} | {:<14} | {:<24} | {:<22} |", type_str, amt_display, info, hash_short);
+        println!(
+            "| {:<14} | {:<14} | {:<24} | {:<22} |",
+            type_str, amt_display, info, hash_short
+        );
     }
-    println!("+----------------+----------------+--------------------------+------------------------+\n");
+    println!(
+        "+----------------+----------------+--------------------------+------------------------+\n"
+    );
 }
 
 #[tokio::main]
@@ -1835,14 +2005,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // --- 1. LOGIKA PORT DINAMIS ---
     // Parse command line: --config validator.toml
     let args: Vec<String> = std::env::args().collect();
-    
+
     // Try to load port from validator.toml if --config is provided
     let mut api_port: u16 = 3030; // Default
     if let Some(config_idx) = args.iter().position(|a| a == "--config") {
         if let Some(config_path) = args.get(config_idx + 1) {
             if let Ok(config_content) = fs::read_to_string(config_path) {
                 // Parse TOML to get [api] rest_port
-                if let Some(line) = config_content.lines().find(|l| l.trim().starts_with("rest_port")) {
+                if let Some(line) = config_content
+                    .lines()
+                    .find(|l| l.trim().starts_with("rest_port"))
+                {
                     if let Some(port_str) = line.split('=').nth(1) {
                         api_port = port_str.trim().parse().unwrap_or(3030);
                     }
@@ -1850,7 +2023,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
         }
     }
-    
+
     // Fallback: accept direct port argument
     if let Some(port_arg) = args.get(1).and_then(|s| s.parse().ok()) {
         api_port = port_arg;
@@ -1859,33 +2032,32 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // --- NEW: INITIALIZE DATABASE ---
     println!("🗄️  Initializing database...");
     // AUTO-DETECT NODE ID from port or environment variable
-    let node_id = std::env::var("UAT_NODE_ID").unwrap_or_else(|_| {
-        match api_port {
-            3030 => "validator-1".to_string(),
-            3031 => "validator-2".to_string(),
-            3032 => "validator-3".to_string(),
-            _ => format!("node-{}", api_port),
-        }
+    let node_id = std::env::var("UAT_NODE_ID").unwrap_or_else(|_| match api_port {
+        3030 => "validator-1".to_string(),
+        3031 => "validator-2".to_string(),
+        3032 => "validator-3".to_string(),
+        _ => format!("node-{}", api_port),
     });
-    
+
     println!("🆔 Node ID: {}", node_id);
     println!("📂 Data directory: node_data/{}/", node_id);
-    
+
     // Create node-specific database path (CRITICAL: Multi-node isolation)
     let db_path = format!("node_data/{}/uat_database", node_id);
-    std::fs::create_dir_all(&format!("node_data/{}", node_id))?;
-    
+    std::fs::create_dir_all(format!("node_data/{}", node_id))?;
+
     let database = match UatDatabase::open(&db_path) {
         Ok(db) => {
             let stats = db.stats();
             println!("✅ Database opened: {}", db_path);
-            println!("   {} blocks, {} accounts, {:.2} MB on disk",
+            println!(
+                "   {} blocks, {} accounts, {:.2} MB on disk",
                 stats.blocks_count,
                 stats.accounts_count,
                 stats.size_on_disk as f64 / 1_048_576.0
             );
             Arc::new(db)
-        },
+        }
         Err(e) => {
             eprintln!("❌ Failed to open database at {}: {}", db_path, e);
             eprintln!("⚠️  Falling back to JSON mode (not recommended for production)");
@@ -1899,7 +2071,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Ok(m) => {
             println!("✅ Metrics ready: 45+ endpoints registered");
             m
-        },
+        }
         Err(e) => {
             eprintln!("❌ Failed to initialize metrics: {}", e);
             return Err(e);
@@ -1921,10 +2093,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let my_address = uat_crypto::public_key_to_address(&keys.public_key);
     let my_short = get_short_addr(&my_address);
     let secret_key = keys.secret_key.clone();
-    
+
     // FIX: Load ledger and genesis BEFORE wrapping in Arc to prevent race condition
     let mut ledger_state = load_from_disk(&database);
-    
+
     // Load genesis state if testnet genesis file exists
     let genesis_path = "testnet-genesis/testnet_wallets.json";
     if std::path::Path::new(genesis_path).exists() {
@@ -1933,45 +2105,51 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 if let Some(wallets) = genesis_data["wallets"].as_array() {
                     let mut loaded_count = 0;
                     let mut genesis_supply_deducted: u128 = 0;
-                    
+
                     for wallet in wallets {
-                        if let (Some(address), Some(balance_str)) = (
-                            wallet["address"].as_str(),
-                            wallet["balance_uat"].as_str()
-                        ) {
+                        if let (Some(address), Some(balance_str)) =
+                            (wallet["address"].as_str(), wallet["balance_uat"].as_str())
+                        {
                             // SECURITY FIX #9: Integer math to avoid f64 precision loss
                             let balance_voi = genesis::parse_uat_to_void(balance_str).unwrap_or(0);
-                            
+
                             // Only load if account doesn't exist (preserve existing state)
                             if balance_voi > 0 && !ledger_state.accounts.contains_key(address) {
-                                ledger_state.accounts.insert(address.to_string(), AccountState {
-                                    head: "0".to_string(),
-                                    balance: balance_voi,
-                                    block_count: 0,
-                                });
+                                ledger_state.accounts.insert(
+                                    address.to_string(),
+                                    AccountState {
+                                        head: "0".to_string(),
+                                        balance: balance_voi,
+                                        block_count: 0,
+                                    },
+                                );
                                 // FIX: Deduct genesis balance from remaining supply
                                 genesis_supply_deducted += balance_voi;
                                 loaded_count += 1;
                             }
                         }
                     }
-                    
+
                     if loaded_count > 0 {
                         // Deduct genesis allocations from remaining supply
-                        ledger_state.distribution.remaining_supply = ledger_state.distribution
-                            .remaining_supply.saturating_sub(genesis_supply_deducted);
+                        ledger_state.distribution.remaining_supply = ledger_state
+                            .distribution
+                            .remaining_supply
+                            .saturating_sub(genesis_supply_deducted);
                         save_to_disk_internal(&ledger_state, &database, true); // Force save
-                        println!("🎁 Loaded {} genesis accounts (deducted {} VOID from supply)", 
-                            loaded_count, genesis_supply_deducted);
+                        println!(
+                            "🎁 Loaded {} genesis accounts (deducted {} VOID from supply)",
+                            loaded_count, genesis_supply_deducted
+                        );
                     }
                 }
             }
         }
     }
-    
+
     // Now wrap in Arc after all initialization is complete
     let ledger = Arc::new(Mutex::new(ledger_state));
-    
+
     // Load persistent peer storage from database
     let initial_peers = match database.load_peers() {
         Ok(peers) => {
@@ -1987,15 +2165,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
     let address_book = Arc::new(Mutex::new(initial_peers));
 
-    let pending_burns = Arc::new(Mutex::new(HashMap::<String, (f64, f64, String, u128, u64, String)>::new()));
+    let pending_burns = Arc::new(Mutex::new(HashMap::<
+        String,
+        (f64, f64, String, u128, u64, String),
+    >::new()));
 
     let pending_sends = Arc::new(Mutex::new(HashMap::<String, (Block, u128)>::new()));
-    
+
     // SECURITY FIX: Vote deduplication — track which validators have already voted
     // Prevents a single validator from reaching consensus alone by sending multiple votes
     let burn_voters = Arc::new(Mutex::new(HashMap::<String, HashSet<String>>::new()));
     let send_voters = Arc::new(Mutex::new(HashMap::<String, HashSet<String>>::new()));
-    
+
     // NEW: Oracle Consensus (decentralized median pricing)
     let oracle_consensus = Arc::new(Mutex::new(OracleConsensus::new()));
 
@@ -2012,37 +2193,53 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
         let registered = sm.get_safety_stats().total_validators;
         if registered > 0 {
-            println!("🛡️  SlashingManager: {} validators registered from genesis", registered);
+            println!(
+                "🛡️  SlashingManager: {} validators registered from genesis",
+                registered
+            );
         }
     }
-    
+
     // NEW: Anti-Whale Engine (dynamic fee scaling + burn limits)
     let anti_whale_config = AntiWhaleConfig::new();
     let anti_whale = Arc::new(Mutex::new(AntiWhaleEngine::new(anti_whale_config)));
-    println!("🐋 Anti-Whale Engine initialized (max {} tx/block, max {} UAT burn/block)", 
+    println!(
+        "🐋 Anti-Whale Engine initialized (max {} tx/block, max {} UAT burn/block)",
         safe_lock(&anti_whale).config.max_tx_per_block,
-        safe_lock(&anti_whale).config.max_burn_per_block);
-    
+        safe_lock(&anti_whale).config.max_burn_per_block
+    );
+
     // NEW: Finality Checkpoint Manager (prevents long-range attacks)
     let checkpoint_db_path = format!("node_data/{}/checkpoints", node_id);
     let checkpoint_manager = match CheckpointManager::new(&checkpoint_db_path) {
         Ok(cm) => {
             let latest = cm.get_latest_checkpoint().ok().flatten();
             if let Some(cp) = &latest {
-                println!("🏁 CheckpointManager: resuming from checkpoint at height {}", cp.height);
+                println!(
+                    "🏁 CheckpointManager: resuming from checkpoint at height {}",
+                    cp.height
+                );
             } else {
-                println!("🏁 CheckpointManager: no checkpoints yet (will create every {} blocks)", CHECKPOINT_INTERVAL);
+                println!(
+                    "🏁 CheckpointManager: no checkpoints yet (will create every {} blocks)",
+                    CHECKPOINT_INTERVAL
+                );
             }
             Arc::new(Mutex::new(cm))
-        },
+        }
         Err(e) => {
-            eprintln!("⚠️ Failed to open checkpoint DB: {} — continuing without checkpoints", e);
+            eprintln!(
+                "⚠️ Failed to open checkpoint DB: {} — continuing without checkpoints",
+                e
+            );
             // Create a fallback checkpoint manager with temp path
             let fallback_path = format!("node_data/{}/checkpoints_fallback", node_id);
-            Arc::new(Mutex::new(CheckpointManager::new(&fallback_path).expect("Fallback checkpoint DB must work")))
+            Arc::new(Mutex::new(
+                CheckpointManager::new(&fallback_path).expect("Fallback checkpoint DB must work"),
+            ))
         }
     };
-    
+
     // Init own account in ledger if not exists
     {
         let mut l = safe_lock(&ledger);
@@ -2050,48 +2247,69 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             if !testnet_config::get_testnet_config().should_enable_consensus() {
                 // SECURITY FIX #7: Create proper Mint block for testnet initial balance
                 // This deducts from distribution.remaining_supply (no free money)
-                l.accounts.insert(my_address.clone(), AccountState { 
-                    head: "0".to_string(), balance: 0, block_count: 0 
-                });
-                
+                l.accounts.insert(
+                    my_address.clone(),
+                    AccountState {
+                        head: "0".to_string(),
+                        balance: 0,
+                        block_count: 0,
+                    },
+                );
+
                 let mut init_block = Block {
                     account: my_address.clone(),
                     previous: "0".to_string(),
                     block_type: BlockType::Mint,
                     amount: TESTNET_INITIAL_BALANCE,
-                    link: format!("TESTNET:INITIAL:{}", std::time::SystemTime::now()
-                        .duration_since(std::time::UNIX_EPOCH).unwrap().as_secs()),
+                    link: format!(
+                        "TESTNET:INITIAL:{}",
+                        std::time::SystemTime::now()
+                            .duration_since(std::time::UNIX_EPOCH)
+                            .unwrap()
+                            .as_secs()
+                    ),
                     signature: "".to_string(),
                     public_key: hex::encode(&keys.public_key),
                     work: 0,
                     timestamp: std::time::SystemTime::now()
-                        .duration_since(std::time::UNIX_EPOCH).unwrap().as_secs(),
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap()
+                        .as_secs(),
                     fee: 0,
                 };
-                
+
                 solve_pow(&mut init_block);
                 init_block.signature = hex::encode(
-                    uat_crypto::sign_message(init_block.signing_hash().as_bytes(), &secret_key).expect("BUG: signing failed — key corrupted")
+                    uat_crypto::sign_message(init_block.signing_hash().as_bytes(), &secret_key)
+                        .expect("BUG: signing failed — key corrupted"),
                 );
-                
+
                 match l.process_block(&init_block) {
                     Ok(_) => {
                         SAVE_DIRTY.store(true, Ordering::Relaxed);
                         println!("🎁 TESTNET (Functional): Node initialized with 1000 UAT via Mint block (supply deducted)");
-                    },
+                    }
                     Err(e) => {
-                        println!("⚠️ TESTNET initial mint failed: {} — creating empty account", e);
+                        println!(
+                            "⚠️ TESTNET initial mint failed: {} — creating empty account",
+                            e
+                        );
                     }
                 }
             } else {
                 // Production: Create empty account (balance from Proof-of-Burn only)
-                l.accounts.insert(my_address.clone(), AccountState { 
-                    head: "0".to_string(), balance: 0, block_count: 0 
-                });
+                l.accounts.insert(
+                    my_address.clone(),
+                    AccountState {
+                        head: "0".to_string(),
+                        balance: 0,
+                        block_count: 0,
+                    },
+                );
             }
         }
     }
-    
+
     // FIX: Background task for debounced disk saves (prevents race conditions)
     // SECURITY FIX #15: Clone ledger snapshot THEN release lock BEFORE disk I/O
     let save_ledger = Arc::clone(&ledger);
@@ -2101,42 +2319,49 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let mut interval = tokio::time::interval(Duration::from_secs(5));
         loop {
             interval.tick().await;
-            
+
             // Only save if dirty and not currently saving
             if SAVE_DIRTY.load(Ordering::Relaxed) && !SAVE_IN_PROGRESS.load(Ordering::Relaxed) {
                 // Clone ledger under lock, then release lock BEFORE disk I/O
                 let (ledger_snapshot, block_count, validator_count) = {
                     let l = safe_lock(&save_ledger);
                     let bc = l.blocks.len() as u64;
-                    let vc = l.accounts.iter()
+                    let vc = l
+                        .accounts
+                        .iter()
                         .filter(|(_, a)| a.balance >= MIN_VALIDATOR_STAKE_VOID)
                         .count() as u32;
                     (l.clone(), bc, vc)
                 }; // Lock released — API requests can proceed during save
                 save_to_disk_internal(&ledger_snapshot, &save_database, false);
-                
+
                 // CHECKPOINT: Create finality checkpoint when block_count crosses next interval
                 // FIX: Use >= instead of == to handle block-lattice where exact multiples may be skipped
                 if block_count > 0 {
                     let mut cm = safe_lock(&save_checkpoint_mgr);
-                    let latest_height = cm.get_latest_checkpoint()
-                        .ok().flatten()
+                    let latest_height = cm
+                        .get_latest_checkpoint()
+                        .ok()
+                        .flatten()
                         .map(|cp| cp.height)
                         .unwrap_or(0);
-                    let next_checkpoint = ((latest_height / CHECKPOINT_INTERVAL) + 1) * CHECKPOINT_INTERVAL;
-                    
+                    let next_checkpoint =
+                        ((latest_height / CHECKPOINT_INTERVAL) + 1) * CHECKPOINT_INTERVAL;
+
                     if block_count >= next_checkpoint {
                         // FIX P0-3: Snap block_count DOWN to aligned interval.
                         // In a block-lattice, block_count rarely lands exactly on a
                         // multiple of CHECKPOINT_INTERVAL. Without snapping, every
                         // checkpoint was silently rejected by is_valid_interval().
-                        let checkpoint_height = (block_count / CHECKPOINT_INTERVAL) * CHECKPOINT_INTERVAL;
+                        let checkpoint_height =
+                            (block_count / CHECKPOINT_INTERVAL) * CHECKPOINT_INTERVAL;
 
                         // Calculate simple state root from account balances
                         let state_root = {
                             use sha3::{Digest, Keccak256};
                             let mut hasher = Keccak256::new();
-                            let mut sorted_accounts: Vec<_> = ledger_snapshot.accounts.iter().collect();
+                            let mut sorted_accounts: Vec<_> =
+                                ledger_snapshot.accounts.iter().collect();
                             sorted_accounts.sort_by(|(a, _), (b, _)| a.cmp(b));
                             for (addr, state) in sorted_accounts {
                                 hasher.update(addr.as_bytes());
@@ -2144,13 +2369,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             }
                             hex::encode(hasher.finalize())
                         };
-                        
+
                         // Find latest block hash
-                        let latest_block_hash = ledger_snapshot.blocks.values()
+                        let latest_block_hash = ledger_snapshot
+                            .blocks
+                            .values()
                             .max_by_key(|b| b.timestamp)
                             .map(|b| b.calculate_hash())
                             .unwrap_or_else(|| "genesis".to_string());
-                        
+
                         let sig_count = validator_count.max(1); // At minimum, this node signs
                         let checkpoint = FinalityCheckpoint::new(
                             checkpoint_height,
@@ -2159,7 +2386,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             state_root,
                             sig_count,
                         );
-                        
+
                         match cm.store_checkpoint(checkpoint) {
                             Ok(()) => println!("🏁 Checkpoint created at height {} (block_count={}, {} validators)", checkpoint_height, block_count, validator_count),
                             Err(e) => eprintln!("⚠️ Checkpoint creation failed: {}", e),
@@ -2183,19 +2410,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .unwrap_or_default()
                 .as_secs();
             const PENDING_TTL_SECS: u64 = 300; // 5 minute TTL for pending transactions
-            
+
             // Clean stale pending sends
             if let Ok(mut ps) = cleanup_pending_sends.lock() {
                 let before = ps.len();
-                ps.retain(|_, (block, _)| {
-                    now.saturating_sub(block.timestamp) < PENDING_TTL_SECS
-                });
+                ps.retain(|_, (block, _)| now.saturating_sub(block.timestamp) < PENDING_TTL_SECS);
                 let removed = before - ps.len();
                 if removed > 0 {
-                    println!("🧹 Cleaned {} stale pending sends (TTL: {}s)", removed, PENDING_TTL_SECS);
+                    println!(
+                        "🧹 Cleaned {} stale pending sends (TTL: {}s)",
+                        removed, PENDING_TTL_SECS
+                    );
                 }
             }
-            
+
             // Clean stale pending burns by timestamp-based TTL
             // pending_burns: HashMap<txid, (f64_amount, f64_price, String_sym, u128_power, u64_created_at, String_recipient)>
             if let Ok(mut pb) = cleanup_pending_burns.lock() {
@@ -2205,7 +2433,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 });
                 let removed = before - pb.len();
                 if removed > 0 {
-                    println!("🧹 Cleaned {} stale pending burns (TTL: {}s)", removed, PENDING_TTL_SECS);
+                    println!(
+                        "🧹 Cleaned {} stale pending burns (TTL: {}s)",
+                        removed, PENDING_TTL_SECS
+                    );
                 }
             }
         }
@@ -2214,13 +2445,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let (tx_out, rx_out) = mpsc::channel(32);
     let (tx_in, mut rx_in) = mpsc::channel(32);
 
-    tokio::spawn(async move { let _ = UatNode::start(tx_in, rx_out).await; });
-    
+    tokio::spawn(async move {
+        let _ = UatNode::start(tx_in, rx_out).await;
+    });
+
     // --- TAMBAHAN: JALANKAN HTTP API ---
     let api_ledger = Arc::clone(&ledger);
     let api_tx = tx_out.clone();
     let api_pending_sends = Arc::clone(&pending_sends);
-    let api_pending_burns = Arc::clone(&pending_burns); 
+    let api_pending_burns = Arc::clone(&pending_burns);
     let api_address_book = Arc::clone(&address_book);
     let api_addr = my_address.clone();
     let api_key = keys.secret_key.clone();
@@ -2231,24 +2464,25 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let api_slashing = Arc::clone(&slashing_manager);
     let api_aw = Arc::clone(&anti_whale);
     let api_pk = keys.public_key.clone();
-    
+
     tokio::spawn(async move {
         start_api_server(
-            api_ledger, 
-            api_tx, 
-            api_pending_sends, 
-            api_pending_burns, 
-            api_address_book, 
-            api_addr, 
-            api_key, 
+            api_ledger,
+            api_tx,
+            api_pending_sends,
+            api_pending_burns,
+            api_address_book,
+            api_addr,
+            api_key,
             api_port,
             api_oracle,
             api_metrics,
             api_database,
             api_slashing,
             api_aw,
-            api_pk
-        ).await;
+            api_pk,
+        )
+        .await;
     });
 
     // --- NEW: JALANKAN gRPC SERVER (PRODUCTION READY) ---
@@ -2259,12 +2493,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     tokio::spawn(async move {
         println!("🔧 Starting gRPC server on port {}...", grpc_port);
-        if let Err(e) = grpc_server::start_grpc_server(
-            grpc_ledger,
-            grpc_addr,
-            grpc_tx,
-            grpc_port,
-        ).await {
+        if let Err(e) =
+            grpc_server::start_grpc_server(grpc_ledger, grpc_addr, grpc_tx, grpc_port).await
+        {
             eprintln!("❌ gRPC Server error: {}", e);
         }
     });
@@ -2275,39 +2506,47 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let oracle_ledger = Arc::clone(&ledger);
     let oracle_sk = keys.secret_key.clone();
     let oracle_pk = keys.public_key.clone();
-    
+
     tokio::spawn(async move {
         let mut interval = tokio::time::interval(Duration::from_secs(30));
         loop {
             interval.tick().await;
-            
+
             // Check if node is validator (min 1,000 UAT)
             let is_validator = {
                 let l = safe_lock(&oracle_ledger);
-                l.accounts.get(&oracle_addr)
+                l.accounts
+                    .get(&oracle_addr)
                     .map(|acc| acc.balance >= MIN_VALIDATOR_STAKE_VOID)
                     .unwrap_or(false)
             };
-            
+
             if is_validator {
                 // Fetch price from external oracle
                 let (eth_price, btc_price) = get_crypto_prices().await;
-                
+
                 // Sign the oracle payload: "addr:eth:btc" with Dilithium5
                 let payload = format!("{}:{}:{}", oracle_addr, eth_price, btc_price);
                 let sig = match uat_crypto::sign_message(payload.as_bytes(), &oracle_sk) {
                     Ok(s) => hex::encode(s),
-                    Err(e) => { eprintln!("❌ Oracle sign error: {:?}", e); continue; }
+                    Err(e) => {
+                        eprintln!("❌ Oracle sign error: {:?}", e);
+                        continue;
+                    }
                 };
                 let pk_hex = hex::encode(&oracle_pk);
-                
+
                 // Format: ORACLE_SUBMIT:addr:eth:btc:signature:pubkey
-                let oracle_msg = format!("ORACLE_SUBMIT:{}:{}:{}:{}:{}", 
-                    oracle_addr, eth_price, btc_price, sig, pk_hex);
+                let oracle_msg = format!(
+                    "ORACLE_SUBMIT:{}:{}:{}:{}:{}",
+                    oracle_addr, eth_price, btc_price, sig, pk_hex
+                );
                 let _ = oracle_tx.send(oracle_msg).await;
-                
-                println!("📊 Broadcasting signed oracle prices: ETH=${:.2}, BTC=${:.2}", 
-                    eth_price, btc_price);
+
+                println!(
+                    "📊 Broadcasting signed oracle prices: ETH=${:.2}, BTC=${:.2}",
+                    eth_price, btc_price
+                );
             }
         }
     });
@@ -2321,21 +2560,36 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         tokio::time::sleep(Duration::from_secs(3)).await; // Wait for P2P to initialize
         let bootstrap_list = get_bootstrap_nodes();
         if bootstrap_list.is_empty() {
-            println!("📡 No bootstrap nodes configured (set UAT_BOOTSTRAP_NODES for multi-node testnet)");
+            println!(
+                "📡 No bootstrap nodes configured (set UAT_BOOTSTRAP_NODES for multi-node testnet)"
+            );
         }
         for addr in &bootstrap_list {
             let _ = tx_boot.send(format!("DIAL:{}", addr)).await;
             tokio::time::sleep(Duration::from_secs(2)).await;
-            let (s, b) = { let l = safe_lock(&ledger_boot); (l.distribution.remaining_supply, l.distribution.total_burned_usd) };
-            let _ = tx_boot.send(format!("ID:{}:{}:{}", my_addr_boot, s, b)).await;
+            let (s, b) = {
+                let l = safe_lock(&ledger_boot);
+                (
+                    l.distribution.remaining_supply,
+                    l.distribution.total_burned_usd,
+                )
+            };
+            let _ = tx_boot
+                .send(format!("ID:{}:{}:{}", my_addr_boot, s, b))
+                .await;
         }
-        
+
         // After bootstrapping, request state sync from peers (pull-based)
         if !bootstrap_list.is_empty() {
             tokio::time::sleep(Duration::from_secs(3)).await;
             let block_count = safe_lock(&ledger_boot).blocks.len();
-            let _ = tx_boot.send(format!("SYNC_REQUEST:{}:{}", my_addr_boot, block_count)).await;
-            println!("📡 Requesting state sync from peers (local blocks: {})", block_count);
+            let _ = tx_boot
+                .send(format!("SYNC_REQUEST:{}:{}", my_addr_boot, block_count))
+                .await;
+            println!(
+                "📡 Requesting state sync from peers (local blocks: {})",
+                block_count
+            );
         }
     });
 
@@ -2404,14 +2658,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             if let Some(acct) = l.accounts.get(&full_addr) {
                                 let mut history_blocks = Vec::new();
                                 let mut curr = acct.head.clone();
-                                
+
                                 while curr != "0" {
                                     if let Some(blk) = l.blocks.get(&curr) {
                                         history_blocks.push(blk);
                                         curr = blk.previous.clone();
                                     } else { break; }
                                 }
-                                
+
                                 if history_blocks.is_empty() {
                                     println!("📭 No transaction history for {}", get_short_addr(&full_addr));
                                 } else {
@@ -2455,7 +2709,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             let is_already_minted = {
                                 let l = safe_lock(&ledger);
                                 l.blocks.values().any(|b| {
-                                    b.block_type == uat_core::BlockType::Mint && 
+                                    b.block_type == uat_core::BlockType::Mint &&
                                     (b.link == link_to_search || b.link.contains(&clean_txid))
                                 })
                             }; // L dropped
@@ -2473,12 +2727,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
                             // 4. PROCESS ORACLE (Use Consensus if available)
                             println!("📊 Contacting Oracle for {}...", coin_type.to_uppercase());
-                            
+
                             let consensus_price_opt = {
                                 let oc_guard = safe_lock(&oracle_consensus);
                                 oc_guard.get_consensus_price()
                             }; // Drop lock before await
-                            
+
                             let (ep, bp) = match consensus_price_opt {
                                 Some((eth_median, btc_median)) => {
                                     println!("✅ Using Oracle Consensus: ETH=${:.2}, BTC=${:.2}", eth_median, btc_median);
@@ -2489,11 +2743,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     get_crypto_prices().await
                                 }
                             };
-                            
-                            let res = if coin_type == "eth" { 
-                                verify_eth_burn_tx(&clean_txid).await.map(|a| (a, ep, "ETH")) 
+
+                            let res = if coin_type == "eth" {
+                                verify_eth_burn_tx(&clean_txid).await.map(|a| (a, ep, "ETH"))
                             } else if coin_type == "btc" {
-                                verify_btc_burn_tx(&clean_txid).await.map(|a| (a, bp, "BTC")) 
+                                verify_btc_burn_tx(&clean_txid).await.map(|a| (a, bp, "BTC"))
                             } else {
                                 println!("❌ Error: Coin '{}' not supported.", coin_type);
                                 None
@@ -2501,7 +2755,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
                             if let Some((amt, prc, sym)) = res {
                                 println!("✅ Valid TXID: {:.6} {} detected.", amt, sym);
-                                
+
                                 // --- SELF-VOTING FEATURE (INITIAL POWER) ---
                                 // Get our own balance to use as initial Power
                                 let my_power = {
@@ -2511,12 +2765,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
                                 // Insert to pending with initial Power = our balance
                                 safe_lock(&pending_burns).insert(clean_txid.clone(), (amt, prc, sym.to_string(), my_power, std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs(), my_address.clone()));
-                                
+
                                 // 5. BROADCAST TO NETWORK
                                 let ts = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis();
                                 let msg = format!("VOTE_REQ:{}:{}:{}:{}", coin_type, clean_txid, my_address, ts);
                                 let _ = tx_out.send(msg).await;
-                                
+
                                 println!("📡 VOTE_REQ broadcast sent (Initial Power: {} UAT)", my_power);
 
                                 // INFO: If my_power >= 20, minting process will be auto-triggered in network loop
@@ -2539,23 +2793,23 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             }
 
                             let target_full = safe_lock(&address_book).get(target_short).cloned();
-                            
+
                             if let Some(d) = target_full {
                                 // DEADLOCK FIX #4e: Never hold L and PS simultaneously.
                                 // Step 1: Get state from Ledger (L lock only)
                                 let state = {
                                     let l = safe_lock(&ledger);
-                                    l.accounts.get(&my_address).cloned().unwrap_or(AccountState { 
-                                        head: "0".to_string(), balance: 0, block_count: 0 
+                                    l.accounts.get(&my_address).cloned().unwrap_or(AccountState {
+                                        head: "0".to_string(), balance: 0, block_count: 0
                                     })
                                 }; // L dropped
 
                                 // Step 2: Check pending total (PS lock only)
                                 let pending_total: u128 = safe_lock(&pending_sends).values().map(|(b, _)| b.amount).sum();
-                                
+
                                 if state.balance < (amt + pending_total) {
-                                    println!("❌ Insufficient balance! (Balance: {} UAT, In process: {} UAT)", 
-                                        format_u128(state.balance / VOID_PER_UAT), 
+                                    println!("❌ Insufficient balance! (Balance: {} UAT, In process: {} UAT)",
+                                        format_u128(state.balance / VOID_PER_UAT),
                                         format_u128(pending_total / VOID_PER_UAT));
                                     continue;
                                 }
@@ -2581,12 +2835,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
                                 // Save to confirmation queue
                                 safe_lock(&pending_sends).insert(hash.clone(), (blk.clone(), 0));
-                                
+
                                 // Broadcast confirmation request (REQ) to network
                                 let ts = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis();
                                 let req_msg = format!("CONFIRM_REQ:{}:{}:{}:{}", hash, my_address, amt, ts);
                                 let _ = tx_out.send(req_msg).await;
-                                
+
                                 println!("⏳ Transaction created. Requesting network confirmation (Anti Double-Spend)...");
                             } else {
                                 println!("❌ ID {} not found. Peer must connect first.", target_short);
@@ -2598,32 +2852,31 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
             },
             Some(event) = rx_in.recv() => {
-                match event {
-                    NetworkEvent::NewBlock(data) => {
+                if let NetworkEvent::NewBlock(data) = event {
                         if data.starts_with("ID:") {
                             let parts: Vec<&str> = data.split(':').collect();
                             if parts.len() >= 4 {
                                 let full = parts[1].to_string();
                                 let rem_s = parts[2].parse::<u128>().unwrap_or(0);
                                 let tot_b = parts[3].parse::<u128>().unwrap_or(0);
-                                
+
                                 if full != my_address {
                                     let short = get_short_addr(&full);
                                     let is_new = !safe_lock(&address_book).contains_key(&short);
                                     safe_lock(&address_book).insert(short.clone(), full.clone());
-                                    
+
                                     // Persist peer to database for recovery after restart
                                     if is_new {
                                         if let Err(e) = db_clone.save_peer(&short, &full) {
                                             eprintln!("⚠️ Failed to persist peer {}: {}", short, e);
                                         }
                                     }
-                                    
+
                                     // DEADLOCK FIX #4f: Never hold L and PS simultaneously.
                                     // Step 1: Ledger operations (L lock only)
                                     let (supply_data, full_state_json) = {
                                         let mut l = safe_lock(&ledger);
-                                        
+
                                         // SECURITY FIX #2: Don't blindly trust peer's remaining_supply.
                                         // Instead, verify by recalculating from our own Mint blocks.
                                         // Only sync if peer claims LESS supply remaining AND our calculation confirms it.
@@ -2634,11 +2887,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                                 .map(|b| b.amount)
                                                 .sum();
                                             let calculated_remaining = uat_core::distribution::PUBLIC_SUPPLY_CAP.saturating_sub(total_minted);
-                                            
+
                                             // Only accept peer's value if it's close to our calculation
                                             // Allow 1% tolerance for network propagation delay
                                             let tolerance = uat_core::distribution::PUBLIC_SUPPLY_CAP / 100;
-                                            if rem_s >= calculated_remaining.saturating_sub(tolerance) 
+                                            if rem_s >= calculated_remaining.saturating_sub(tolerance)
                                                 && rem_s <= calculated_remaining.saturating_add(tolerance) {
                                                 l.distribution.remaining_supply = calculated_remaining;
                                                 l.distribution.total_burned_usd = tot_b;
@@ -2649,9 +2902,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                                     short, rem_s, calculated_remaining);
                                             }
                                         }
-                                        
+
                                         println!("🤝 Handshake: {}", short);
-                                        
+
                                         let supply = (l.distribution.remaining_supply, l.distribution.total_burned_usd);
                                         let json = if is_new { serde_json::to_string(&*l).ok() } else { None };
                                         (supply, json)
@@ -2672,7 +2925,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     if is_new {
                                         let (s, b) = supply_data;
                                         let _ = tx_out.send(format!("ID:{}:{}:{}", my_address, s, b)).await;
-                                        
+
                                         // Only send full state sync for small networks or small ledgers
                                         // This avoids flooding gossipsub with huge payloads in larger networks
                                         if let Some(full_state_json) = full_state_json {
@@ -2687,7 +2940,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                                 if compressed_bytes.len() <= MAX_SYNC_PAYLOAD {
                                                     let encoded_data = base64::encode(&compressed_bytes);
                                                     let _ = tx_out.send(format!("SYNC_GZIP:{}", encoded_data)).await;
-                                                    println!("📦 Sent state sync to new peer ({:.1} KB compressed)", 
+                                                    println!("📦 Sent state sync to new peer ({:.1} KB compressed)",
                                                         compressed_bytes.len() as f64 / 1024.0);
                                                 } else {
                                                     println!("⚠️ State too large for gossipsub sync ({:.1} MB > 8 MB limit). New peer should use SYNC_REQUEST.",
@@ -2698,7 +2951,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     }
                                 }
                             }
-                        } else if data.starts_with("SYNC_GZIP:") {
+                        } else if let Some(encoded_data) = data.strip_prefix("SYNC_GZIP:") {
                             // V4#17: Rate limit SYNC_GZIP to prevent DDoS via large payloads
                             static LAST_SYNC: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
                             let now_secs = std::time::SystemTime::now()
@@ -2709,8 +2962,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 continue;
                             }
                             LAST_SYNC.store(now_secs, Ordering::Relaxed);
-                            
-                            let encoded_data = &data[10..];
+
                             if let Ok(compressed_bytes) = base64::decode(encoded_data) {
                                 use flate2::read::GzDecoder;
                                 use std::io::Read;
@@ -2720,7 +2972,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 let decoder = GzDecoder::new(&compressed_bytes[..]);
                                 let mut limited_decoder = decoder.take(MAX_DECOMPRESSED_SIZE);
                                 let mut decompressed_json = String::new();
-                                
+
                                 if limited_decoder.read_to_string(&mut decompressed_json).is_ok() {
                                     if let Ok(incoming_ledger) = serde_json::from_str::<Ledger>(&decompressed_json) {
                                         let mut l = safe_lock(&ledger);
@@ -2729,11 +2981,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
                                         // SECURITY FIX #12: Sort blocks by timestamp for O(n log n) sync instead of O(n²)
                                         let mut incoming_blocks: Vec<Block> = incoming_ledger.blocks.values()
-                                            .cloned()
-                                            .take(1000) 
+                                            .take(1000).cloned()
                                             .collect();
                                         incoming_blocks.sort_by_key(|b| b.timestamp);
-                                        
+
                                         // Two-pass: first pass processes ordered blocks, second catches stragglers
                                         for pass in 0..2 {
                                             for blk in &incoming_blocks {
@@ -2748,8 +2999,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                                 if l.blocks.contains_key(&hash) { continue; }
 
                                                 if !l.accounts.contains_key(&blk.account) {
-                                                    l.accounts.insert(blk.account.clone(), AccountState { 
-                                                        head: "0".to_string(), balance: 0, block_count: 0 
+                                                    l.accounts.insert(blk.account.clone(), AccountState {
+                                                        head: "0".to_string(), balance: 0, block_count: 0
                                                     });
                                                 }
 
@@ -2762,7 +3013,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                                                 .duration_since(std::time::UNIX_EPOCH)
                                                                 .unwrap_or_default()
                                                                 .as_secs();
-                                                            
+
                                                             if let Some(acc) = l.accounts.get(&blk.account) {
                                                                 if acc.balance >= MIN_VALIDATOR_STAKE_VOID {
                                                                     if sm.get_profile(&blk.account).is_none() {
@@ -2810,7 +3061,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             if parts.len() >= 3 {
                                 let requester = parts[1].to_string();
                                 let their_count: usize = parts[2].parse().unwrap_or(0);
-                                
+
                                 // Per-requester rate limit: max 1 sync response per 30 seconds per peer
                                 let now_secs = std::time::SystemTime::now()
                                     .duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_secs();
@@ -2824,24 +3075,24 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     // Evict old entries to prevent memory leak
                                     times.retain(|_, ts| now_secs.saturating_sub(*ts) < 300);
                                 }
-                                
+
                                 // Only respond if we have more blocks than the requester
                                 let our_count = safe_lock(&ledger).blocks.len();
                                 if our_count > their_count && requester != my_address {
-                                    println!("📡 Sync request from {} (they have {} blocks, we have {})", 
+                                    println!("📡 Sync request from {} (they have {} blocks, we have {})",
                                         get_short_addr(&requester), their_count, our_count);
-                                    
+
                                     // Send only the BLOCKS the requester is missing (not full ledger)
                                     let sync_json = {
                                         let l = safe_lock(&ledger);
                                         serde_json::to_string(&*l).ok()
                                     };
-                                    
+
                                     if let Some(json) = sync_json {
                                         use flate2::write::GzEncoder;
                                         use flate2::Compression;
                                         use std::io::Write;
-                                        
+
                                         let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
                                         let _ = encoder.write_all(json.as_bytes());
                                         if let Ok(compressed) = encoder.finish() {
@@ -2877,14 +3128,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                         l.blocks.values().any(|b| b.block_type == uat_core::BlockType::Mint && (b.link == link_to_check || b.link.contains(&txid)))
                                     };
 
-                                    if already_exists { 
+                                    if already_exists {
                                         // IF DOUBLE CLAIM DETECTED FROM OTHER PEER
                                         if requester != my_addr_clone {
                                             println!("🚨 DOUBLE CLAIM DETECTED: {} trying to claim existing TXID!", get_short_addr(&requester));
                                             let slash_msg = format!("SLASH_REQ:{}:{}", requester, txid);
                                             let _ = tx_vote.send(slash_msg).await;
                                         }
-                                        return; 
+                                        return;
                                     }
 
                                     // 2. Oracle Verification: Verify TXID to Blockchain Explorer
@@ -2901,22 +3152,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                         // VALID TXID: Send VOTE_RES YES (signed with Dilithium5)
                                         let payload = format!("{}:{}:YES:{}:{}", txid, requester, my_addr_clone, ts_res);
                                         let sig = uat_crypto::sign_message(payload.as_bytes(), &vote_sk).expect("BUG: signing failed");
-                                        let response = format!("VOTE_RES:{}:{}:YES:{}:{}:{}:{}", txid, requester, my_addr_clone, ts_res, hex::encode(&sig), hex::encode(&vote_pk)); 
+                                        let response = format!("VOTE_RES:{}:{}:YES:{}:{}:{}:{}", txid, requester, my_addr_clone, ts_res, hex::encode(&sig), hex::encode(&vote_pk));
                                         let _ = tx_vote.send(response).await;
-                                        
-                                        println!("🗳️ Casting YES vote for TXID: {} from {}", 
-                                            &txid[..8], 
+
+                                        println!("🗳️ Casting YES vote for TXID: {} from {}",
+                                            &txid[..8],
                                             get_short_addr(&requester)
                                         );
                                     } else {
                                         // SECURITY P2-6: TXID not verified — ABSTAIN instead of SLASH
                                         // The API may be unreachable, not necessarily fraud.
                                         // Double-claim detection (above) already handles confirmed fraud.
-                                        println!("⚠️ TXID {} from {} could not be verified — abstaining (API may be down)", 
+                                        println!("⚠️ TXID {} from {} could not be verified — abstaining (API may be down)",
                                             &txid[..std::cmp::min(8, txid.len())], get_short_addr(&requester));
                                     }
                                 });
-                            } 
+                            }
                         } else if data.starts_with("ORACLE_SUBMIT:") {
                             // FORMAT: ORACLE_SUBMIT:validator_address:eth_price:btc_price:signature:pubkey
                             let parts: Vec<&str> = data.split(':').collect();
@@ -2933,7 +3184,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 let pk_bytes = hex::decode(pk_hex).unwrap_or_default();
 
                                 if !uat_crypto::verify_signature(payload.as_bytes(), &sig_bytes, &pk_bytes) {
-                                    println!("🚨 Rejected oracle submission: invalid signature from {}", 
+                                    println!("🚨 Rejected oracle submission: invalid signature from {}",
                                         get_short_addr(&validator_addr));
                                     continue;
                                 }
@@ -2964,11 +3215,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
                                 // Check if consensus achieved
                                 if let Some((eth_median, btc_median)) = oc.get_consensus_price() {
-                                    println!("✅ Oracle Consensus: ETH=${:.2}, BTC=${:.2} (from {} validators)", 
+                                    println!("✅ Oracle Consensus: ETH=${:.2}, BTC=${:.2} (from {} validators)",
                                         eth_median, btc_median, oc.submission_count());
                                 } else {
-                                    println!("📊 Oracle submission from {} ({} more validators needed)", 
-                                        get_short_addr(&validator_addr), 
+                                    println!("📊 Oracle submission from {} ({} more validators needed)",
+                                        get_short_addr(&validator_addr),
                                         2_usize.saturating_sub(oc.submission_count())
                                     );
                                 }
@@ -3078,8 +3329,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                                     Ok(hash) => {
                                                         SAVE_DIRTY.store(true, Ordering::Relaxed);
                                                         let _ = tx_out.send(serde_json::to_string(&slash_blk).unwrap_or_default()).await;
-                                                        println!("🔨 SLASHED (consensus {}/3+1)! {} penalized {} UAT (block: {})",
-                                                            "2", get_short_addr(&cheater_addr),
+                                                        println!("🔨 SLASHED (consensus 2/3+1)! {} penalized {} UAT (block: {})",
+                                                            get_short_addr(&cheater_addr),
                                                             penalty_amount / VOID_PER_UAT,
                                                             &hash[..8]
                                                         );
@@ -3097,7 +3348,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             }
                         } else if data.starts_with("VOTE_RES:") {
                             let parts: Vec<&str> = data.split(':').collect();
-                            
+
                             // FORMAT: VOTE_RES:txid:requester:YES:voter_addr:timestamp:signature:pubkey (8 parts)
                             if parts.len() == 8 {
                                 let txid = parts[1].to_string();
@@ -3129,9 +3380,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                         let pending = safe_lock(&pending_burns);
                                         pending.contains_key(&txid)
                                     }; // PB dropped
-                                    
+
                                     if !txid_exists { continue; }
-                                    
+
                                     // Step 2: Get voter balance (L lock only)
                                     let voter_balance = {
                                         let l_guard = safe_lock(&ledger);
@@ -3145,33 +3396,33 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     // --- QUADRATIC VOTING: Power = √Stake (Anti-Whale) ---
                                     let voter_power_quadratic = calculate_voting_power(voter_balance);
                                     let voter_power_display = voter_balance / VOID_PER_UAT;
-                                    
+
                                     if voter_power_quadratic <= 0.0 {
-                                        println!("⚠️ Vote ignored: {} (Stake {} UAT insufficient, need 1000 UAT min)", 
+                                        println!("⚠️ Vote ignored: {} (Stake {} UAT insufficient, need 1000 UAT min)",
                                             get_short_addr(&voter_addr),
                                             voter_power_display
                                         );
-                                        continue; 
+                                        continue;
                                     }
-                                    
+
                                     // Step 3: Update votes and check threshold (PB lock only)
                                     let consensus_data = {
                                         // SECURITY FIX: Vote deduplication — prevent single validator from reaching consensus alone
                                         let mut voters = safe_lock(&burn_voters_clone);
-                                        let voter_set = voters.entry(txid.clone()).or_insert_with(HashSet::new);
+                                        let voter_set = voters.entry(txid.clone()).or_default();
                                         if voter_set.contains(&voter_addr) {
                                             println!("⚠️ Duplicate burn vote from {} — ignored", get_short_addr(&voter_addr));
                                             continue;
                                         }
                                         voter_set.insert(voter_addr.clone());
                                         drop(voters);
-                                        
+
                                         let mut pending = safe_lock(&pending_burns);
                                         if let Some(burn_info) = pending.get_mut(&txid) {
                                             let power_scaled = (voter_power_quadratic * 1000.0) as u128;
-                                            burn_info.3 += power_scaled; 
-                                            
-                                            println!("📩 Vote Received: {} (Stake: {} UAT, Quadratic Power: {:.2}) | Progress: {}/20000", 
+                                            burn_info.3 += power_scaled;
+
+                                            println!("📩 Vote Received: {} (Stake: {} UAT, Quadratic Power: {:.2}) | Progress: {}/20000",
                                                 get_short_addr(&voter_addr),
                                                 voter_power_display,
                                                 voter_power_quadratic,
@@ -3186,7 +3437,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                             } else { None }
                                         } else { None }
                                     }; // PB dropped
-                                    
+
                                     // Step 4: If consensus reached, mint (L lock only)
                                     if let Some((amt_coin, price, sym, mint_recipient)) = consensus_data {
                                         // SECURITY FIX NEW#3: Pure integer math via calculate_mint_void()
@@ -3194,15 +3445,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                         if uat_to_mint == 0 { continue; } // overflow or too small
 
                                         let mut l = safe_lock(&ledger);
-                                        
+
                                         // Ensure recipient account exists
                                         if !l.accounts.contains_key(&mint_recipient) {
                                             l.accounts.insert(mint_recipient.clone(), AccountState {
                                                 head: "0".to_string(), balance: 0, block_count: 0
                                             });
                                         }
-                                        let state = l.accounts.get(&mint_recipient).cloned().unwrap_or(AccountState { 
-                                            head: "0".to_string(), balance: 0, block_count: 0 
+                                        let state = l.accounts.get(&mint_recipient).cloned().unwrap_or(AccountState {
+                                            head: "0".to_string(), balance: 0, block_count: 0
                                         });
 
                                         let mut mint_blk = Block {
@@ -3221,7 +3472,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                         solve_pow(&mut mint_blk);
                                         let signing_hash = mint_blk.signing_hash();
                                         mint_blk.signature = hex::encode(uat_crypto::sign_message(signing_hash.as_bytes(), &secret_key).expect("BUG: signing failed — key corrupted"));
-                                        
+
                                         match l.process_block(&mint_blk) {
                                             Ok(_) => {
                                                 SAVE_DIRTY.store(true, Ordering::Relaxed);
@@ -3231,20 +3482,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                             Err(e) => println!("❌ Failed to process Mint block: {}", e),
                                         }
                                         drop(l); // L dropped
-                                        
+
                                         // Step 5: Remove from pending (PB lock only)
                                         safe_lock(&pending_burns).remove(&txid);
                                         safe_lock(&burn_voters_clone).remove(&txid);
                                     }
                                 }
-                            } 
+                            }
                         } else if data.starts_with("CONFIRM_REQ:") {
                             let parts: Vec<&str> = data.split(':').collect();
                             if parts.len() == 5 {
                                 let tx_hash = parts[1].to_string();
                                 let sender_addr = parts[2].to_string();
                                 let amount = parts[3].parse::<u128>().unwrap_or(0);
-                                
+
                                 let tx_confirm = tx_out.clone();
                                 let ledger_ref = Arc::clone(&ledger);
                                 let my_addr_clone = my_address.clone();
@@ -3312,9 +3563,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                         let pending = safe_lock(&pending_sends);
                                         pending.contains_key(&tx_hash)
                                     }; // PS dropped
-                                    
+
                                     if !tx_exists { continue; }
-                                    
+
                                     // Step 2: Get voter balance (L lock only)
                                     let voter_balance = {
                                         let l_guard = safe_lock(&ledger);
@@ -3331,21 +3582,21 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     let finalize_data = {
                                         // SECURITY FIX: Vote deduplication — prevent single validator from reaching consensus alone
                                         let mut voters = safe_lock(&send_voters_clone);
-                                        let voter_set = voters.entry(tx_hash.clone()).or_insert_with(HashSet::new);
+                                        let voter_set = voters.entry(tx_hash.clone()).or_default();
                                         if voter_set.contains(&voter_addr) {
                                             println!("⚠️ Duplicate send vote from {} — ignored", get_short_addr(&voter_addr));
                                             continue;
                                         }
                                         voter_set.insert(voter_addr.clone());
                                         drop(voters);
-                                        
+
                                         let mut pending = safe_lock(&pending_sends);
                                         if let Some((blk, total_power_votes)) = pending.get_mut(&tx_hash) {
                                             if voter_power_quadratic > 0.0 {
                                                 // SECURITY FIX #6: Use u128 power_scaled directly (matching VOTE_RES pattern)
                                                 let power_scaled = (voter_power_quadratic * 1000.0) as u128;
-                                                *total_power_votes += power_scaled; 
-                                                println!("📩 Konfirmasi Power: {} (Stake: {} UAT, Quadratic: {:.2}) | Total: {}/20000", 
+                                                *total_power_votes += power_scaled;
+                                                println!("📩 Konfirmasi Power: {} (Stake: {} UAT, Quadratic: {:.2}) | Total: {}/20000",
                                                     get_short_addr(&voter_addr), voter_power_display, voter_power_quadratic, total_power_votes
                                                 );
                                             }
@@ -3356,7 +3607,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                             } else { None }
                                         } else { None }
                                     }; // PS dropped
-                                    
+
                                     // Step 4: If threshold met, finalize (L lock only, then SM lock only)
                                     if let Some(blk_to_finalize) = finalize_data {
                                         let process_success = {
@@ -3370,10 +3621,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                                             .duration_since(std::time::UNIX_EPOCH)
                                                             .unwrap_or_default()
                                                             .as_secs();
-                                                        
+
                                                         if let Some(acc) = l.accounts.get(&blk_to_finalize.account) {
                                                             if acc.balance >= MIN_VALIDATOR_STAKE_VOID {
-                                                                if !sm.get_profile(&blk_to_finalize.account).is_some() {
+                                                                if sm.get_profile(&blk_to_finalize.account).is_none() {
                                                                     sm.register_validator(blk_to_finalize.account.clone());
                                                                 }
                                                                 let _ = sm.record_block_participation(&blk_to_finalize.account, l.blocks.len() as u64, timestamp);
@@ -3393,14 +3644,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                         if process_success {
                                             let _ = tx_out.send(serde_json::to_string(&blk_to_finalize).unwrap_or_default()).await;
                                             println!("✅ Transaction Confirmed (Power Verified) & Added to Ledger");
-                                            
+
                                             // SECURITY FIX #5: Auto-create Receive block ONLY for our own address.
                                             // In block-lattice, Receive blocks must be signed by the RECIPIENT.
                                             // We can only sign for ourselves — remote recipients auto-receive
                                             // when they see the Send block via P2P gossip.
                                             if blk_to_finalize.block_type == BlockType::Send && blk_to_finalize.link == my_address {
                                                 let send_hash = blk_to_finalize.calculate_hash();
-                                                
+
                                                 let mut l = safe_lock(&ledger);
                                                 if !l.accounts.contains_key(&my_address) {
                                                     l.accounts.insert(my_address.clone(), AccountState {
@@ -3451,30 +3702,30 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 println!("🚫 Rejected {:?} block from P2P (must go through consensus flow)", inc.block_type);
                                 continue;
                             }
-                            
+
                             let mut l = safe_lock(&ledger);
                             if !l.accounts.contains_key(&inc.account) {
                                 l.accounts.insert(inc.account.clone(), AccountState { head: "0".to_string(), balance: 0, block_count: 0 });
                             }
-                            
+
                             // 🛡️ SLASHING INTEGRATION: Check for double-signing before processing
                             let block_hash = inc.calculate_hash();
                             let timestamp = std::time::SystemTime::now()
                                 .duration_since(std::time::UNIX_EPOCH)
                                 .unwrap_or_default()
                                 .as_secs();
-                            
+
                             let double_sign_detected = {
                                 let mut sm = safe_lock(&slashing_clone);
                                 // Register validator if not exists
-                                if !sm.get_profile(&inc.account).is_some() {
+                                if sm.get_profile(&inc.account).is_none() {
                                     if let Some(acc) = l.accounts.get(&inc.account) {
                                         if acc.balance >= MIN_VALIDATOR_STAKE_VOID {
                                             sm.register_validator(inc.account.clone());
                                         }
                                     }
                                 }
-                                
+
                                 // SECURITY FIX V4#3: Use account's block_count as height
                                 // (was hardcoded 0 → false double-signing detection after every 2nd block)
                                 let block_height = l.accounts.get(&inc.account)
@@ -3482,18 +3733,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     .unwrap_or(0);
                                 sm.record_signature(&inc.account, block_height, block_hash.clone(), timestamp).is_err()
                             };
-                            
+
                             if double_sign_detected {
                                 println!("🚨 DOUBLE-SIGNING DETECTED from {}! Slashing...", get_short_addr(&inc.account));
-                                
+
                                 // Slash validator for double-signing (100%) via proper Slash block
                                 let staked_amount = l.accounts.get(&inc.account).map(|a| a.balance).unwrap_or(0);
                                 let mut sm = safe_lock(&slashing_clone);
                                 if let Ok(slashed) = sm.slash_double_signing(&inc.account, l.blocks.len() as u64, staked_amount, timestamp) {
-                                    println!("⚖️ Validator {} slashed {} VOID (100%) for double-signing", 
+                                    println!("⚖️ Validator {} slashed {} VOID (100%) for double-signing",
                                         get_short_addr(&inc.account), slashed);
                                     drop(sm);
-                                    
+
                                     // FIX: Create proper Slash block instead of direct balance mutation
                                     // This ensures all nodes see the slash in the blockchain
                                     let cheater_state = l.accounts.get(&inc.account).cloned().unwrap_or(AccountState {
@@ -3528,7 +3779,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 drop(l);
                                 continue; // Don't process the original block
                             }
-                            
+
                             match l.process_block(&inc) {
                                 Ok(block_hash) => {
                                     // 🛡️ SLASHING INTEGRATION: Record block participation for uptime tracking
@@ -3536,18 +3787,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                         let mut sm = safe_lock(&slashing_clone);
                                         let global_height = l.blocks.len() as u64;
                                         let _ = sm.record_block_participation(&inc.account, global_height, timestamp);
-                                        
+
                                         // Check for downtime and slash if needed
                                         if let Some(acc) = l.accounts.get(&inc.account) {
                                             if let Ok(Some(slashed)) = sm.check_and_slash_downtime(
-                                                &inc.account, 
-                                                global_height, 
-                                                acc.balance, 
+                                                &inc.account,
+                                                global_height,
+                                                acc.balance,
                                                 timestamp
                                             ) {
-                                                println!("⚖️ Validator {} downtime penalty: {} VOID (1%)", 
+                                                println!("⚖️ Validator {} downtime penalty: {} VOID (1%)",
                                                     get_short_addr(&inc.account), slashed);
-                                                
+
                                                 // Create proper Slash block for downtime penalty
                                                 let dt_state = l.accounts.get(&inc.account).cloned().unwrap_or(AccountState {
                                                     head: "0".to_string(), balance: 0, block_count: 0,
@@ -3575,14 +3826,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                             }
                                         }
                                     }
-                                    
+
                                     if inc.block_type == BlockType::Mint {
                                         let burn_val = inc.amount / VOID_PER_UAT;
                                         println!("🔥 Network Mint Verified: +{} UAT", format_u128(burn_val));
                                     }
                                     SAVE_DIRTY.store(true, Ordering::Relaxed);
-                                    println!("✅ Block Verified: {} from {}", format!("{:?}", inc.block_type), get_short_addr(&inc.account));
-                                    
+                                    println!("✅ Block Verified: {:?} from {}", inc.block_type, get_short_addr(&inc.account));
+
                                     if inc.block_type == BlockType::Send && inc.link == my_address {
                                         if !l.accounts.contains_key(&my_address) {
                                             l.accounts.insert(my_address.clone(), AccountState { head: "0".to_string(), balance: 0, block_count: 0 });
@@ -3611,9 +3862,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 }
                             }
                         }
-                    },
-                    _ => {}
-                }
+                    }
             }
         }
     }

@@ -1,6 +1,6 @@
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // UNAUTHORITY (UAT) - VALIDATOR REWARD DISTRIBUTION
-// 
+//
 // Task #2: Non-Inflationary Reward Model
 // - 100% Transaction Fees → Validator Account
 // - Dynamic Gas Calculation
@@ -8,8 +8,8 @@
 // - Automatic Fee Distribution
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use serde::{Serialize, Deserialize};
 
 /// Base gas price in VOI (smallest unit)
 pub const BASE_GAS_PRICE_VOID: u128 = 1_000;
@@ -25,16 +25,16 @@ pub const MAX_GAS_PER_TX: u128 = 10_000_000;
 pub struct TransactionFee {
     /// Base fee calculated from gas
     pub base_fee_void: u128,
-    
+
     /// Optional priority tip (higher = faster inclusion)
     pub priority_tip_void: u128,
-    
+
     /// Total fee (base + priority)
     pub total_fee_void: u128,
-    
+
     /// Fee multiplier (for spam detection)
     pub multiplier: u128,
-    
+
     /// Timestamp when fee was calculated
     pub timestamp: u64,
 }
@@ -44,16 +44,16 @@ pub struct TransactionFee {
 pub struct ValidatorReward {
     /// Validator address (unique per validator)
     pub validator_address: String,
-    
+
     /// Total fees collected in this block
     pub collected_fees_void: u128,
-    
+
     /// Number of transactions processed
     pub tx_count: u32,
-    
+
     /// Block height
     pub block_height: u64,
-    
+
     /// Timestamp
     pub timestamp: u64,
 }
@@ -63,13 +63,13 @@ pub struct ValidatorReward {
 pub struct RewardAccount {
     /// Total accumulated rewards (VOI)
     pub total_rewards_void: u128,
-    
+
     /// Pending rewards (not yet claimed)
     pub pending_rewards_void: u128,
-    
+
     /// Last claim timestamp
     pub last_claim_timestamp: u64,
-    
+
     /// Total blocks produced
     pub blocks_produced: u64,
 }
@@ -79,7 +79,7 @@ pub struct RewardAccount {
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 /// Calculate base gas fee for a transaction
-/// 
+///
 /// Formula: base_fee = BASE_GAS_PRICE + (tx_size_bytes * GAS_PER_BYTE)
 ///
 /// # Arguments
@@ -106,10 +106,10 @@ pub fn calculate_gas_fee(
     // Calculate base fee (size-dependent)
     let size_fee = tx_size_bytes as u128 * gas_per_byte as u128;
     let base_fee = base_price_void + size_fee;
-    
+
     // Apply fee multiplier (for spam detection)
     let total_fee = base_fee.saturating_mul(fee_multiplier);
-    
+
     // Enforce maximum gas per transaction
     if total_fee > MAX_GAS_PER_TX {
         return Err(format!(
@@ -117,7 +117,7 @@ pub fn calculate_gas_fee(
             total_fee, MAX_GAS_PER_TX
         ));
     }
-    
+
     Ok(total_fee)
 }
 
@@ -137,19 +137,16 @@ pub fn calculate_gas_fee(
 /// let total_fee = calculate_transaction_fee(base_fee, priority_tip)?;
 /// assert_eq!(total_fee, 13_560);
 /// ```
-pub fn calculate_transaction_fee(
-    base_fee: u128,
-    priority_tip: u128,
-) -> Result<u128, String> {
+pub fn calculate_transaction_fee(base_fee: u128, priority_tip: u128) -> Result<u128, String> {
     let total_fee = base_fee.saturating_add(priority_tip);
-    
+
     if total_fee > MAX_GAS_PER_TX {
         return Err(format!(
             "Total fee {} VOI exceeds maximum {} VOI",
             total_fee, MAX_GAS_PER_TX
         ));
     }
-    
+
     Ok(total_fee)
 }
 
@@ -167,10 +164,10 @@ pub fn build_transaction_fee(
         GAS_PER_BYTE,
         fee_multiplier,
     )?;
-    
+
     // Calculate total with priority tip
     let total_fee = calculate_transaction_fee(base_fee, priority_tip_void)?;
-    
+
     Ok(TransactionFee {
         base_fee_void: base_fee,
         priority_tip_void,
@@ -205,15 +202,15 @@ pub fn distribute_transaction_fees(
 ) -> ValidatorReward {
     // Add to pending rewards
     reward_account.pending_rewards_void += total_fees_void;
-    
+
     // Track total accumulated
     reward_account.total_rewards_void += total_fees_void;
-    
+
     // Create reward record for this block
     ValidatorReward {
         validator_address: validator_address.to_string(),
         collected_fees_void: total_fees_void,
-        tx_count: 0, // Will be filled by caller
+        tx_count: 0,     // Will be filled by caller
         block_height: 0, // Will be filled by caller
         timestamp: std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -226,18 +223,15 @@ pub fn distribute_transaction_fees(
 ///
 /// In UAT model, rewards are automatically available after block finality.
 /// This function is for explicit claims/transfers if needed.
-pub fn claim_rewards(
-    reward_account: &mut RewardAccount,
-    timestamp: u64,
-) -> Result<u128, String> {
+pub fn claim_rewards(reward_account: &mut RewardAccount, timestamp: u64) -> Result<u128, String> {
     if reward_account.pending_rewards_void == 0 {
         return Err("No pending rewards to claim".to_string());
     }
-    
+
     let claimed_amount = reward_account.pending_rewards_void;
     reward_account.pending_rewards_void = 0;
     reward_account.last_claim_timestamp = timestamp;
-    
+
     Ok(claimed_amount)
 }
 
@@ -249,12 +243,10 @@ pub fn accumulate_block_rewards(
     rewards: &mut HashMap<String, RewardAccount>,
     total_fees_void: u128,
 ) -> ValidatorReward {
-    let account = rewards
-        .entry(validator_address.to_string())
-        .or_insert_with(RewardAccount::default);
-    
+    let account = rewards.entry(validator_address.to_string()).or_default();
+
     account.blocks_produced += 1;
-    
+
     distribute_transaction_fees(validator_address, total_fees_void, account)
 }
 
@@ -303,23 +295,18 @@ pub fn finalize_block_rewards(
     block_height: u64,
 ) -> ValidatorReward {
     // Calculate total fees in block
-    let total_fees: u128 = transaction_fees
-        .iter()
-        .map(|tf| tf.total_fee_void)
-        .sum();
-    
+    let total_fees: u128 = transaction_fees.iter().map(|tf| tf.total_fee_void).sum();
+
     // Get or create reward account
-    let account = rewards
-        .entry(validator_address.to_string())
-        .or_insert_with(RewardAccount::default);
-    
+    let account = rewards.entry(validator_address.to_string()).or_default();
+
     // Update account
     account.pending_rewards_void += total_fees;
     account.total_rewards_void += total_fees;
     account.blocks_produced += 1;
-    
+
     // Create reward record
-    let reward = ValidatorReward {
+    ValidatorReward {
         validator_address: validator_address.to_string(),
         collected_fees_void: total_fees,
         tx_count: transaction_fees.len() as u32,
@@ -328,9 +315,7 @@ pub fn finalize_block_rewards(
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap_or_default()
             .as_secs(),
-    };
-    
-    reward
+    }
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -356,14 +341,14 @@ pub fn get_validator_stats(
     let account = rewards
         .get(validator_address)
         .ok_or_else(|| "Validator not found".to_string())?;
-    
+
     let total_uat = account.total_rewards_void as f64 / 100_000_000.0;
     let avg_fee = if account.blocks_produced > 0 {
         account.total_rewards_void as f64 / account.blocks_produced as f64
     } else {
         0.0
     };
-    
+
     Ok(ValidatorRewardStats {
         validator_address: validator_address.to_string(),
         total_rewards_void: account.total_rewards_void,
@@ -380,22 +365,22 @@ pub fn get_all_validator_stats(
 ) -> Vec<ValidatorRewardStats> {
     rewards
         .iter()
-        .filter_map(|(address, account)| {
+        .map(|(address, account)| {
             let total_uat = account.total_rewards_void as f64 / 100_000_000.0;
             let avg_fee = if account.blocks_produced > 0 {
                 account.total_rewards_void as f64 / account.blocks_produced as f64
             } else {
                 0.0
             };
-            
-            Some(ValidatorRewardStats {
+
+            ValidatorRewardStats {
                 validator_address: address.clone(),
                 total_rewards_void: account.total_rewards_void,
                 total_rewards_uat: total_uat,
                 pending_rewards_void: account.pending_rewards_void,
                 blocks_produced: account.blocks_produced,
                 average_fee_per_block: avg_fee,
-            })
+            }
         })
         .collect()
 }
@@ -433,13 +418,13 @@ mod tests {
     #[test]
     fn test_reward_distribution() {
         let mut account = RewardAccount::default();
-        
+
         let reward = distribute_transaction_fees(
             "UAT_VALIDATOR_1",
             100_000_000, // 1 UAT
             &mut account,
         );
-        
+
         assert_eq!(account.pending_rewards_void, 100_000_000);
         assert_eq!(account.total_rewards_void, 100_000_000);
         assert_eq!(reward.collected_fees_void, 100_000_000);
@@ -448,7 +433,7 @@ mod tests {
     #[test]
     fn test_block_finalization() {
         let mut rewards = HashMap::new();
-        
+
         // Create sample fees
         let fees = vec![
             TransactionFee {
@@ -466,14 +451,9 @@ mod tests {
                 timestamp: 1001,
             },
         ];
-        
-        let result = finalize_block_rewards(
-            "UAT_VALIDATOR_1",
-            &fees,
-            &mut rewards,
-            1,
-        );
-        
+
+        let result = finalize_block_rewards("UAT_VALIDATOR_1", &fees, &mut rewards, 1);
+
         assert_eq!(result.collected_fees_void, 18_560);
         assert_eq!(result.tx_count, 2);
         assert_eq!(result.block_height, 1);

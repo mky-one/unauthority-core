@@ -9,14 +9,14 @@ use std::time::Duration;
 use tokio::sync::mpsc;
 
 // Public modules
-pub mod validator_rewards;
 pub mod fee_scaling;
 pub mod p2p_encryption;
 pub mod p2p_integration;
 pub mod slashing_integration;
 pub mod tor_transport;
+pub mod validator_rewards;
 
-pub use tor_transport::{TorConfig, TorDialer, BootstrapNode, load_bootstrap_nodes};
+pub use tor_transport::{load_bootstrap_nodes, BootstrapNode, TorConfig, TorDialer};
 
 #[derive(Debug)]
 pub enum NetworkEvent {
@@ -34,19 +34,24 @@ pub struct UatNode;
 
 impl UatNode {
     pub async fn start(
-        tx: mpsc::Sender<NetworkEvent>, 
-        mut rx_out: mpsc::Receiver<String> 
+        tx: mpsc::Sender<NetworkEvent>,
+        mut rx_out: mpsc::Receiver<String>,
     ) -> Result<(), Box<dyn Error>> {
         // Load Tor configuration from environment
         let tor_config = TorConfig::from_env();
         let bootstrap_nodes = load_bootstrap_nodes();
 
         // Create optional Tor dialer for .onion connections
-        let tor_dialer = tor_config.socks5_proxy.map(|addr| TorDialer::new(addr));
+        let tor_dialer = tor_config.socks5_proxy.map(TorDialer::new);
 
         if tor_config.enabled {
-            println!("🧅 Tor transport enabled (SOCKS5: {})", 
-                tor_config.socks5_proxy.map(|a| a.to_string()).unwrap_or_default());
+            println!(
+                "🧅 Tor transport enabled (SOCKS5: {})",
+                tor_config
+                    .socks5_proxy
+                    .map(|a| a.to_string())
+                    .unwrap_or_default()
+            );
             if let Some(ref onion) = tor_config.onion_address {
                 println!("🧅 This node's .onion address: {}", onion);
             }
@@ -71,19 +76,22 @@ impl UatNode {
                 };
 
                 let gossipsub_config = gossipsub::ConfigBuilder::default()
-                    .heartbeat_interval(Duration::from_secs(1)) 
+                    .heartbeat_interval(Duration::from_secs(1))
                     .validation_mode(gossipsub::ValidationMode::Strict)
                     .message_id_fn(message_id_fn)
                     .max_transmit_size(10 * 1024 * 1024)
                     .build()
-                    .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+                    .map_err(std::io::Error::other)?;
 
                 let gossipsub = gossipsub::Behaviour::new(
                     gossipsub::MessageAuthenticity::Signed(key.clone()),
                     gossipsub_config,
                 )?;
 
-                let mdns = mdns::tokio::Behaviour::new(mdns::Config::default(), key.public().to_peer_id())?;
+                let mdns = mdns::tokio::Behaviour::new(
+                    mdns::Config::default(),
+                    key.public().to_peer_id(),
+                )?;
 
                 Ok(UatBehaviour { gossipsub, mdns })
             })?
@@ -120,7 +128,10 @@ impl UatNode {
                             }
                         }
                     } else {
-                        eprintln!("🧅 Cannot dial .onion {} — UAT_TOR_SOCKS5 not configured", host);
+                        eprintln!(
+                            "🧅 Cannot dial .onion {} — UAT_TOR_SOCKS5 not configured",
+                            host
+                        );
                     }
                 }
             }
@@ -129,8 +140,7 @@ impl UatNode {
         loop {
             tokio::select! {
                 Some(msg_to_send) = rx_out.recv() => {
-                    if msg_to_send.starts_with("DIAL:") {
-                        let addr_str = &msg_to_send[5..];
+                    if let Some(addr_str) = msg_to_send.strip_prefix("DIAL:") {
                         // Check if it's a .onion address
                         if addr_str.contains(".onion") {
                             if let Some(ref dialer) = tor_dialer {
@@ -153,11 +163,9 @@ impl UatNode {
                             println!("📡 Swarm: Dialing {}...", maddr);
                             let _ = swarm.dial(maddr);
                         }
-                    } else {
-                        if let Err(e) = swarm.behaviour_mut().gossipsub.publish(topic.clone(), msg_to_send.as_bytes()) {
-                            if !format!("{:?}", e).contains("InsufficientPeers") {
-                                eprintln!("⚠️ Broadcast Error: {:?}", e);
-                            }
+                    } else if let Err(e) = swarm.behaviour_mut().gossipsub.publish(topic.clone(), msg_to_send.as_bytes()) {
+                        if !format!("{:?}", e).contains("InsufficientPeers") {
+                            eprintln!("⚠️ Broadcast Error: {:?}", e);
                         }
                     }
                 },

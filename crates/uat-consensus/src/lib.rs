@@ -2,7 +2,7 @@
 // UNAUTHORITY (UAT) - CONSENSUS MODULE
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-pub mod voting;
-pub mod slashing;
 pub mod abft;
 pub mod checkpoint;
+pub mod slashing;
+pub mod voting;

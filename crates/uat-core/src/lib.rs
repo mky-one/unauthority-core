@@ -1,15 +1,15 @@
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 use sha3::{Digest, Keccak256};
 use std::collections::{HashMap, HashSet};
 
 /// Maximum allowed timestamp drift from current time (5 minutes)
 pub const MAX_TIMESTAMP_DRIFT_SECS: u64 = 300;
 
-pub mod distribution;
-pub mod bonding_curve;
 pub mod anti_whale;
-pub mod validator_config;
+pub mod bonding_curve;
+pub mod distribution;
 pub mod oracle_consensus;
+pub mod validator_config;
 use crate::distribution::DistributionState;
 
 /// 1 UAT = 100_000_000_000 VOID (10^11 precision)
@@ -58,13 +58,13 @@ impl Block {
     /// Includes chain_id to prevent cross-chain replay attacks.
     pub fn signing_hash(&self) -> String {
         let mut hasher = Keccak256::new();
-        
+
         // Chain ID domain separation — prevents replay across testnet/mainnet
         hasher.update(CHAIN_ID.to_le_bytes());
-        
+
         hasher.update(self.account.as_bytes());
         hasher.update(self.previous.as_bytes());
-        
+
         let type_byte = match self.block_type {
             BlockType::Send => 0,
             BlockType::Receive => 1,
@@ -72,23 +72,23 @@ impl Block {
             BlockType::Mint => 3,
             BlockType::Slash => 4,
         };
-        hasher.update(&[type_byte]);
-        
+        hasher.update([type_byte]);
+
         hasher.update(self.amount.to_le_bytes());
         hasher.update(self.link.as_bytes());
-        
+
         // public_key MUST be included in hash (cryptographic identity binding)
         hasher.update(self.public_key.as_bytes());
-        
+
         // work (nonce) MUST be included in hash
         hasher.update(self.work.to_le_bytes());
-        
+
         // timestamp MUST be included in hash (prevent replay attacks)
         hasher.update(self.timestamp.to_le_bytes());
-        
+
         // fee MUST be included in hash (prevent fee manipulation)
         hasher.update(self.fee.to_le_bytes());
-        
+
         hex::encode(hasher.finalize())
     }
 
@@ -105,9 +105,13 @@ impl Block {
     }
 
     pub fn verify_signature(&self) -> bool {
-        if self.signature.is_empty() { return false; }
-        if self.public_key.is_empty() { return false; }
-        
+        if self.signature.is_empty() {
+            return false;
+        }
+        if self.public_key.is_empty() {
+            return false;
+        }
+
         // Verify terhadap signing_hash (content hash tanpa signature)
         let msg_hash = self.signing_hash();
         let sig_bytes = hex::decode(&self.signature).unwrap_or_default();
@@ -120,13 +124,13 @@ impl Block {
     /// Minimum: 16 leading zero bits (≈65,536 average attempts)
     pub fn verify_pow(&self) -> bool {
         const MIN_POW_DIFFICULTY_BITS: u32 = 16;
-        
+
         let hash = self.signing_hash();
         let hash_bytes = match hex::decode(&hash) {
             Ok(bytes) => bytes,
             Err(_) => return false,
         };
-        
+
         // Count leading zero bits
         let mut zero_bits = 0u32;
         for byte in &hash_bytes {
@@ -137,7 +141,7 @@ impl Block {
                 break;
             }
         }
-        
+
         zero_bits >= MIN_POW_DIFFICULTY_BITS
     }
 }
@@ -152,7 +156,7 @@ pub struct AccountState {
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Ledger {
     pub accounts: HashMap<String, AccountState>,
-    pub blocks: HashMap<String, Block>, 
+    pub blocks: HashMap<String, Block>,
     pub distribution: DistributionState,
     /// O(1) index of Send block hashes that have already been claimed by a Receive block.
     /// Prevents the O(n) full-scan double-receive check.
@@ -161,6 +165,12 @@ pub struct Ledger {
     /// Accumulated transaction fees (VOID units) — available for validator distribution
     #[serde(default)]
     pub accumulated_fees_void: u128,
+}
+
+impl Default for Ledger {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl Ledger {
@@ -177,7 +187,9 @@ impl Ledger {
     pub fn process_block(&mut self, block: &Block) -> Result<String, String> {
         // 1. PROOF-OF-WORK VALIDATION (Anti-spam: 16 leading zero bits)
         if !block.verify_pow() {
-            return Err("Invalid PoW: Block does not meet minimum difficulty (16 zero bits)".to_string());
+            return Err(
+                "Invalid PoW: Block does not meet minimum difficulty (16 zero bits)".to_string(),
+            );
         }
 
         // 2. SIGNATURE VALIDATION (Dilithium5 post-quantum)
@@ -205,15 +217,19 @@ impl Ledger {
             return Ok(block_hash);
         }
 
-        let mut state = self.accounts.get(&block.account).cloned().unwrap_or(AccountState {
-            head: "0".to_string(),
-            balance: 0,
-            block_count: 0,
-        });
+        let mut state = self
+            .accounts
+            .get(&block.account)
+            .cloned()
+            .unwrap_or(AccountState {
+                head: "0".to_string(),
+                balance: 0,
+                block_count: 0,
+            });
 
         if block.previous != state.head {
             return Err(format!(
-                "Chain Error: Invalid block sequence. Expected {}, got {}", 
+                "Chain Error: Invalid block sequence. Expected {}, got {}",
                 state.head, block.previous
             ));
         }
@@ -224,16 +240,16 @@ impl Ledger {
                 .duration_since(std::time::UNIX_EPOCH)
                 .unwrap_or_default()
                 .as_secs();
-            
+
             const MAX_TIMESTAMP_DRIFT_SECS: u64 = 300; // 5 minutes max drift
-            
+
             if block.timestamp > now + MAX_TIMESTAMP_DRIFT_SECS {
                 return Err(format!(
                     "Block timestamp {} is too far in the future (now: {}, max drift: {}s)",
                     block.timestamp, now, MAX_TIMESTAMP_DRIFT_SECS
                 ));
             }
-            
+
             // For non-genesis blocks, ensure timestamp is after previous block
             if block.previous != "0" {
                 if let Some(prev_block) = self.blocks.get(&block.previous) {
@@ -259,30 +275,36 @@ impl Ledger {
                 // Prevents single entity from acquiring disproportionate supply
                 const MAX_MINT_PER_BLOCK: u128 = 1_000 * VOID_PER_UAT;
                 // Faucet blocks (FAUCET:TESTNET:*) are exempt from limit on testnet
-                let is_faucet = block.link.starts_with("FAUCET:") || block.link.starts_with("TESTNET:");
+                let is_faucet =
+                    block.link.starts_with("FAUCET:") || block.link.starts_with("TESTNET:");
                 if !is_faucet && block.amount > MAX_MINT_PER_BLOCK {
                     return Err(format!(
                         "Anti-Whale: Mint amount {} VOID exceeds max {} UAT per block",
-                        block.amount, MAX_MINT_PER_BLOCK / VOID_PER_UAT
+                        block.amount,
+                        MAX_MINT_PER_BLOCK / VOID_PER_UAT
                     ));
                 }
-                
+
                 // Only modify state after validation passes
                 state.balance += block.amount;
                 self.distribution.remaining_supply -= block.amount;
 
                 let parts: Vec<&str> = block.link.split(':').collect();
-                if parts.len() >= 4 { 
+                if parts.len() >= 4 {
                     if let Ok(fiat_price) = parts[3].trim().parse::<u128>() {
                         self.distribution.total_burned_usd += fiat_price;
                     }
                 }
             }
             BlockType::Send => {
-                let total_debit = block.amount.checked_add(block.fee)
+                let total_debit = block
+                    .amount
+                    .checked_add(block.fee)
                     .ok_or("Overflow: amount + fee exceeds u128")?;
                 if state.balance < total_debit {
-                    return Err("Insufficient Funds: Insufficient balance for amount + fee".to_string());
+                    return Err(
+                        "Insufficient Funds: Insufficient balance for amount + fee".to_string()
+                    );
                 }
                 state.balance -= total_debit;
                 // P3-3: Track accumulated fees for validator redistribution
@@ -326,7 +348,7 @@ impl Ledger {
                         block.link
                     ));
                 }
-                
+
                 // All validations passed — credit balance
                 state.balance += block.amount;
             }
@@ -334,7 +356,9 @@ impl Ledger {
                 // SECURITY FIX #16: Reject no-op Change blocks (anti-spam)
                 // Change block `link` should contain new representative address
                 if block.link.is_empty() {
-                    return Err("Change Error: link field must specify new representative".to_string());
+                    return Err(
+                        "Change Error: link field must specify new representative".to_string()
+                    );
                 }
                 // Reject if representative is unchanged (no-op spam)
                 // No balance modification for Change blocks — only representative change
@@ -379,10 +403,10 @@ impl Ledger {
 
         state.head = block_hash.clone();
         state.block_count += 1;
-        
+
         self.accounts.insert(block.account.clone(), state);
         self.blocks.insert(block_hash.clone(), block.clone());
-        
+
         // Track claimed Sends for O(1) double-receive prevention
         if block.block_type == BlockType::Receive {
             self.claimed_sends.insert(block.link.clone());

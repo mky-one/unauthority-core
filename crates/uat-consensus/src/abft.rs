@@ -8,9 +8,9 @@
 // - Cryptographic message authentication codes (MAC)
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-use std::collections::{HashMap, VecDeque};
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 use sha3::{Digest, Keccak256};
+use std::collections::{HashMap, VecDeque};
 
 /// Block structure for consensus
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
@@ -31,7 +31,7 @@ impl Block {
         hasher.update(&self.data);
         hasher.update(self.proposer.as_bytes());
         hasher.update(self.parent_hash.as_bytes());
-        
+
         format!("{:x}", hasher.finalize())
     }
 }
@@ -54,7 +54,7 @@ pub struct ConsensusMessage {
     pub block_hash: String,
     pub sender: String,
     pub timestamp: u64,
-    pub mac: Vec<u8>,  // Message Authentication Code
+    pub mac: Vec<u8>, // Message Authentication Code
 }
 
 impl ConsensusMessage {
@@ -85,9 +85,15 @@ impl ConsensusMessage {
             .as_secs();
 
         let mac = Self::compute_keyed_mac(
-            shared_secret, &msg_type, view, sequence, &block_hash, &sender, timestamp,
+            shared_secret,
+            &msg_type,
+            view,
+            sequence,
+            &block_hash,
+            &sender,
+            timestamp,
         );
-        
+
         Self {
             msg_type,
             view,
@@ -128,8 +134,13 @@ impl ConsensusMessage {
     /// Verify message authentication with shared secret
     pub fn verify_mac_with_secret(&self, shared_secret: &[u8]) -> bool {
         let expected = Self::compute_keyed_mac(
-            shared_secret, &self.msg_type, self.view, self.sequence,
-            &self.block_hash, &self.sender, self.timestamp,
+            shared_secret,
+            &self.msg_type,
+            self.view,
+            self.sequence,
+            &self.block_hash,
+            &self.sender,
+            self.timestamp,
         );
         expected == self.mac
     }
@@ -140,7 +151,7 @@ impl ConsensusMessage {
 pub enum ValidatorState {
     Normal,
     ViewChanging,
-    Locked,  // Locked on a block
+    Locked, // Locked on a block
 }
 
 /// aBFT Consensus Engine
@@ -149,30 +160,30 @@ pub struct ABFTConsensus {
     // Validator identity
     pub validator_id: String,
     pub total_validators: usize,
-    pub f_max_faulty: usize,  // max (n-1)/3
-    
+    pub f_max_faulty: usize, // max (n-1)/3
+
     // Consensus state
     pub view: u64,
     pub sequence: u64,
     pub state: ValidatorState,
-    
+
     // Locked block information
     pub locked_block: Option<Block>,
     pub locked_view: u64,
-    
+
     // Message tracking
     pub pre_prepare_messages: HashMap<u64, ConsensusMessage>,
     pub prepare_votes: HashMap<u64, Vec<ConsensusMessage>>,
     pub commit_votes: HashMap<u64, Vec<ConsensusMessage>>,
-    
+
     // Finalized blocks
     pub finalized_blocks: VecDeque<Block>,
     pub finality_timestamp: u64,
-    
+
     // Timing
     pub block_timeout_ms: u64,
     pub view_change_timeout_ms: u64,
-    
+
     // Statistics
     pub blocks_finalized: u64,
     pub view_changes: u64,
@@ -182,7 +193,7 @@ impl ABFTConsensus {
     /// Create new aBFT consensus engine
     pub fn new(validator_id: String, total_validators: usize) -> Self {
         let f_max_faulty = (total_validators - 1) / 3;
-        
+
         Self {
             validator_id,
             total_validators,
@@ -197,7 +208,7 @@ impl ABFTConsensus {
             commit_votes: HashMap::new(),
             finalized_blocks: VecDeque::new(),
             finality_timestamp: 0,
-            block_timeout_ms: 3000,  // 3 seconds for finality
+            block_timeout_ms: 3000, // 3 seconds for finality
             view_change_timeout_ms: 5000,
             blocks_finalized: 0,
             view_changes: 0,
@@ -217,7 +228,7 @@ impl ABFTConsensus {
 
         self.sequence += 1;
         let block_hash = block.calculate_hash();
-        
+
         let message = ConsensusMessage::new(
             ConsensusMessageType::PrePrepare,
             self.view,
@@ -226,7 +237,8 @@ impl ABFTConsensus {
             self.validator_id.clone(),
         );
 
-        self.pre_prepare_messages.insert(self.sequence, message.clone());
+        self.pre_prepare_messages
+            .insert(self.sequence, message.clone());
 
         // Lock the block
         self.locked_block = Some(block);
@@ -254,7 +266,7 @@ impl ABFTConsensus {
         // Record prepare vote
         self.prepare_votes
             .entry(msg.sequence)
-            .or_insert_with(Vec::new)
+            .or_default()
             .push(msg);
 
         Ok(())
@@ -277,12 +289,9 @@ impl ABFTConsensus {
         }
 
         let sequence = msg.sequence;
-        
+
         // Record commit vote
-        self.commit_votes
-            .entry(sequence)
-            .or_insert_with(Vec::new)
-            .push(msg);
+        self.commit_votes.entry(sequence).or_default().push(msg);
 
         // Check if we reached consensus (2f+1 commits)
         if let Some(commit_votes) = self.commit_votes.get(&sequence) {
@@ -327,7 +336,7 @@ impl ABFTConsensus {
             ConsensusMessageType::ViewChange,
             self.view,
             self.sequence,
-            "".to_string(),  // No block hash for view change
+            "".to_string(), // No block hash for view change
             self.validator_id.clone(),
         );
 
@@ -466,8 +475,8 @@ mod tests {
 
         assert_eq!(consensus.validator_id, "validator-1");
         assert_eq!(consensus.total_validators, 7);
-        assert_eq!(consensus.f_max_faulty, 2);  // (7-1)/3 = 2
-        assert_eq!(consensus.get_quorum_threshold(), 5);  // 2*2+1 = 5
+        assert_eq!(consensus.f_max_faulty, 2); // (7-1)/3 = 2
+        assert_eq!(consensus.get_quorum_threshold(), 5); // 2*2+1 = 5
     }
 
     #[test]
@@ -550,10 +559,10 @@ mod tests {
 
         let leader_0 = consensus.get_leader(0);
         let leader_1 = consensus.get_leader(1);
-        let leader_7 = consensus.get_leader(7);  // Should wrap around
+        let leader_7 = consensus.get_leader(7); // Should wrap around
 
         assert_ne!(leader_0, leader_1);
-        assert_eq!(leader_0, leader_7);  // 7 % 7 = 0
+        assert_eq!(leader_0, leader_7); // 7 % 7 = 0
     }
 
     #[test]
@@ -561,7 +570,7 @@ mod tests {
         let mut consensus = ABFTConsensus::new("validator-0".to_string(), 7);
         consensus.view = 0;
 
-        assert!(consensus.is_leader());  // validator-0 is leader at view 0
+        assert!(consensus.is_leader()); // validator-0 is leader at view 0
 
         consensus.validator_id = "validator-1".to_string();
         assert!(!consensus.is_leader());
@@ -575,7 +584,7 @@ mod tests {
         assert!(consensus.is_byzantine_safe(0));
 
         let finality_time = consensus.calculate_finality_time();
-        assert!(finality_time <= 3000);  // Must finalize in <3 seconds
+        assert!(finality_time <= 3000); // Must finalize in <3 seconds
     }
 
     #[test]
@@ -614,7 +623,7 @@ mod tests {
 
         let msg = ConsensusMessage::new(
             ConsensusMessageType::Prepare,
-            1,  // Wrong view
+            1, // Wrong view
             1,
             "block_hash".to_string(),
             "validator-2".to_string(),

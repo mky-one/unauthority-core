@@ -133,7 +133,7 @@ jobs:
           key: ${{ runner.os }}-release-${{ hashFiles('**/Cargo.lock') }}
 
       - name: Build release binary
-        run: cargo build --release --workspace
+        run: cargo build --release --workspace --exclude uat-vm --exclude uat-node && cargo build --release -p uat-node --no-default-features
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4

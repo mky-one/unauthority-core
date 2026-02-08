@@ -4,8 +4,12 @@ import 'screens/home_screen.dart';
 import 'screens/wallet_setup_screen.dart';
 import 'services/wallet_service.dart';
 import 'services/api_service.dart';
+import 'services/dilithium_service.dart';
 
-void main() {
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  // Initialize Dilithium5 native library (non-blocking, graceful fallback)
+  await DilithiumService.initialize();
   runApp(const MyApp());
 }
 

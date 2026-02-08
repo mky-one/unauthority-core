@@ -398,6 +398,7 @@ impl UatMetrics {
                 uat_core::BlockType::Receive => receive_count += 1,
                 uat_core::BlockType::Mint => mint_count += 1,
                 uat_core::BlockType::Change => {}, // Skip change blocks for now
+                uat_core::BlockType::Slash => {},  // Slash blocks counted separately via slashing manager
             }
         }
         

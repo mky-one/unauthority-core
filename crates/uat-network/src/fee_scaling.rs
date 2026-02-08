@@ -226,8 +226,9 @@ pub fn calculate_escalation_multiplier(
 // BURN LIMIT PER BLOCK
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-/// Maximum VOI that can be obtained via PoB in single block
-pub const BURN_LIMIT_PER_BLOCK_VOID: u128 = 1_000_000_000; // 10 UAT max per block
+/// Maximum VOI that can be obtained via PoB in single block (1000 UAT as per whitepaper)
+/// 1 UAT = 100_000_000_000 VOID (10^11)
+pub const BURN_LIMIT_PER_BLOCK_VOID: u128 = 1_000 * 100_000_000_000; // 1000 UAT max per block
 
 /// Track burn activity per block
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -359,14 +360,14 @@ mod tests {
     fn test_burn_limit_per_block() {
         let mut burn_state = BlockBurnState::new(1);
 
-        // Add burn transactions up to limit
-        let burn_amount = 500_000_000u128; // 5 UAT
+        // Add burn transactions up to limit (1000 UAT = 100_000_000_000_000 VOID)
+        let burn_amount = BURN_LIMIT_PER_BLOCK_VOID / 2; // 500 UAT
         burn_state.try_add_burn(burn_amount).unwrap();
         burn_state.try_add_burn(burn_amount).unwrap();
 
         // Should have capacity exhausted
         assert!(burn_state.is_capacity_exhausted());
-        assert_eq!(burn_state.total_burn_void, 1_000_000_000);
+        assert_eq!(burn_state.total_burn_void, BURN_LIMIT_PER_BLOCK_VOID);
         assert_eq!(burn_state.burn_count, 2);
     }
 
@@ -387,11 +388,11 @@ mod tests {
         assert_eq!(burn_state.get_capacity_percentage(), 0.0);
 
         // Half full
-        burn_state.try_add_burn(500_000_000).unwrap();
+        burn_state.try_add_burn(BURN_LIMIT_PER_BLOCK_VOID / 2).unwrap();
         assert_eq!(burn_state.get_capacity_percentage(), 50.0);
 
         // Full
-        burn_state.try_add_burn(500_000_000).unwrap();
+        burn_state.try_add_burn(BURN_LIMIT_PER_BLOCK_VOID / 2).unwrap();
         assert_eq!(burn_state.get_capacity_percentage(), 100.0);
     }
 

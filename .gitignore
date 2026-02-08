@@ -215,6 +215,7 @@ debug_*.log
 !.github/
 
 # Dev-only documentation (not for public repo)
+dev_docs/
 **/INSTALLER_*.md
 **/FAQ_*.md
 **/LAUNCH_GUIDE.md
@@ -228,3 +229,5 @@ debug_*.log
 **/KNOWN_RISKS_AND_MITIGATIONS.md
 **/STATUS.sh
 **/QUICKSTART.sh
+
+**/copilot-instructions.md

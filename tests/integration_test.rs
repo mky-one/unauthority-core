@@ -67,8 +67,14 @@ async fn test_three_validator_consensus() {
         previous: "0".to_string(),
         amount: 100_00000000, // Send 100 UAT
         link: receiver.pubkey.clone(),
-        signature: hex::encode(signature),
+        signature: hex::encode(&signature),
+        public_key: sender.pubkey.clone(),
         work: 0x0000000000000001u64, // Simplified PoW
+        timestamp: std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs(),
+        fee: 0,
     };
 
     // Broadcast block to all validators (simulate consensus)
@@ -127,16 +133,16 @@ async fn test_proof_of_burn_distribution() {
     println!("\n🧪 TEST 2: Proof-of-Burn Distribution Flow");
     println!("============================================\n");
 
-    let total_supply = 21_936_236_00000000u128;
-    let dev_allocation = 1_535_536_00000000u128;
+    let total_supply = 21_936_236 * 100_000_000_000u128; // 10^11 VOID per UAT
+    let dev_allocation = 1_535_536 * 100_000_000_000u128;
     let public_supply = total_supply - dev_allocation;
     let mut remaining_public = public_supply;
-    let mut total_burned_usd = 0.0;
+    let total_burned_usd = 0.0_f64;
 
     println!("📦 Initial State:");
-    println!("  - Total Supply: {} UAT", total_supply / 100000000);
-    println!("  - Public Supply: {} UAT", public_supply / 100000000);
-    println!("  - Remaining: {} UAT\n", remaining_public / 100000000);
+    println!("  - Total Supply: {} UAT", total_supply / 100000000000);
+    println!("  - Public Supply: {} UAT", public_supply / 100000000000);
+    println!("  - Remaining: {} UAT\n", remaining_public / 100000000000);
 
     let btc_price = 90000.0;
     let _eth_price = 3500.0; // Reserved for multi-asset burn
@@ -144,20 +150,20 @@ async fn test_proof_of_burn_distribution() {
     // Test Case 1: User burns 0.1 BTC
     let btc_burned = 0.1;
     let usd_burned = btc_burned * btc_price;
-    let scarcity = 1.0 + (total_burned_usd / (total_supply as f64 / 100000000.0));
+    let scarcity = 1.0 + (total_burned_usd / (total_supply as f64 / 100000000000.0));
     let base_price = 1.0;
     let current_price = base_price * scarcity;
-    let uat_received = ((usd_burned / current_price) * 100000000.0) as u128;
+    let uat_received = ((usd_burned / current_price) * 100000000000.0) as u128;
     
     println!("🔥 Burn Transaction #1:");
     println!("  - Asset: BTC, Amount: {} BTC", btc_burned);
     println!("  - USD Value: ${:.2}", usd_burned);
-    println!("  - UAT Received: {} UAT", uat_received / 100000000);
+    println!("  - UAT Received: {} UAT", uat_received / 100000000000);
     
     remaining_public -= uat_received;
-    let total_burned_usd = total_burned_usd + usd_burned;
+    let _total_burned_usd = total_burned_usd + usd_burned;
     
-    println!("  - Remaining: {} UAT\n", remaining_public / 100000000);
+    println!("  - Remaining: {} UAT\n", remaining_public / 100000000000);
 
     // Verify supply constraints
     assert!(remaining_public > 0, "Public supply exhausted!");

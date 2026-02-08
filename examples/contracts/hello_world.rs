@@ -32,9 +32,14 @@ pub struct Response {
     pub message: String,
 }
 
-// Global storage (in real WASM, this would be persisted via host functions)
+// SAFETY NOTE: In WASM, contracts run in single-threaded environments.
+// For production use with potential multi-threading, consider using:
+// - std::sync::Mutex<HashMap<String, String>> for thread-safety
+// - once_cell::sync::Lazy for lazy initialization
+// This pattern is acceptable ONLY for single-threaded WASM execution.
 static mut STORAGE: Option<HashMap<String, String>> = None;
 
+#[allow(static_mut_refs)] // WASM is single-threaded
 fn get_storage() -> &'static mut HashMap<String, String> {
     unsafe {
         if STORAGE.is_none() {

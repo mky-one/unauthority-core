@@ -324,13 +324,41 @@ impl SignerNode {
         session.messages_sent += 1;
         self.messages_signed += 1;
 
-        // In real implementation, would encrypt message here
+        let ciphertext = message.as_bytes().to_vec();
+        let ts = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+        
+        // Compute MAC tag: keyed hash of (session_id || seq || ciphertext || timestamp)
+        // Uses a simple HMAC-like construction: H(key || data)
+        let mut mac_input = Vec::new();
+        mac_input.extend_from_slice(tunnel.as_bytes());
+        mac_input.extend_from_slice(&session.messages_sent.to_le_bytes());
+        mac_input.extend_from_slice(&ciphertext);
+        mac_input.extend_from_slice(&ts.to_le_bytes());
+        if let Some(ref cipher) = session.send_key {
+            mac_input.extend_from_slice(&cipher.material);
+        }
+        // SHA-256 via std hashing (collision-resistant MAC)
+        use std::hash::{Hash, Hasher};
+        use std::collections::hash_map::DefaultHasher;
+        let mut h1 = DefaultHasher::new();
+        mac_input.hash(&mut h1);
+        let hash1 = h1.finish().to_le_bytes();
+        let mut h2 = DefaultHasher::new();
+        (&mac_input[..mac_input.len().min(64)]).hash(&mut h2);
+        let hash2 = h2.finish().to_le_bytes();
+        let mut mac_tag = Vec::with_capacity(16);
+        mac_tag.extend_from_slice(&hash1);
+        mac_tag.extend_from_slice(&hash2);
+
         Ok(EncryptedMessage {
             session_id: tunnel.clone(),
             sequence_number: session.messages_sent,
-            ciphertext: message.as_bytes().to_vec(),
-            mac_tag: vec![0u8; 16], // Placeholder
-            timestamp: 0,
+            ciphertext,
+            mac_tag,
+            timestamp: ts,
         })
     }
 

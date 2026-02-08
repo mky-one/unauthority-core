@@ -1,0 +1,163 @@
+/// UNAUTHORITY TESTNET CONFIGURATION
+/// 
+/// Implements graduated testnet modes that progressively test production features.
+/// Goal: Ensure testnet success = mainnet success guarantee.
+///
+/// ARCHITECTURE:
+/// - Level 1: UI/API Testing (current TESTNET_MODE)
+/// - Level 2: Consensus Testing (real aBFT, mock economics) 
+/// - Level 3: Production Simulation (full production code, testnet data)
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum TestnetLevel {
+    /// Level 1: Functional testing only
+    /// - Bypass consensus (immediate finalization)
+    /// - Mock burn verification
+    /// - UI/API testing focus
+    Functional,
+    
+    /// Level 2: Consensus testing  
+    /// - Real aBFT consensus
+    /// - Real oracle aggregation
+    /// - Testnet economic parameters
+    Consensus,
+    
+    /// Level 3: Production simulation
+    /// - Identical to mainnet code
+    /// - Real validator staking/rewards
+    /// - Only network/domain differs from mainnet
+    Production,
+}
+
+#[derive(Debug, Clone)]
+pub struct TestnetConfig {
+    pub level: TestnetLevel,
+    pub enable_faucet: bool,
+    pub consensus_threshold: f64,
+    pub oracle_consensus: bool,
+    pub signature_validation: bool,
+    pub byzantine_testing: bool,
+    pub economic_incentives: bool,
+}
+
+impl TestnetConfig {
+    /// Level 1: Current testnet (functional testing)
+    pub fn functional() -> Self {
+        Self {
+            level: TestnetLevel::Functional,
+            enable_faucet: true,
+            consensus_threshold: 0.0, // Immediate finalization
+            oracle_consensus: false,  // Mock prices
+            signature_validation: false, // Allow any signature
+            byzantine_testing: false,
+            economic_incentives: false,
+        }
+    }
+    
+    /// Level 2: Consensus testing (production logic, testnet parameters)
+    pub fn consensus_testing() -> Self {
+        Self {
+            level: TestnetLevel::Consensus,
+            enable_faucet: true,
+            consensus_threshold: 0.67, // Real BFT threshold
+            oracle_consensus: true,    // Real oracle aggregation
+            signature_validation: true, // Real Ed25519 validation
+            byzantine_testing: true,   // Enable byzantine scenarios
+            economic_incentives: false, // No real staking rewards yet
+        }
+    }
+    
+    /// Level 3: Production simulation (identical to mainnet)
+    pub fn production_simulation() -> Self {
+        Self {
+            level: TestnetLevel::Production,
+            enable_faucet: false,     // No faucet in production
+            consensus_threshold: 0.67, // Real BFT
+            oracle_consensus: true,   // Real oracle
+            signature_validation: true, // Full validation
+            byzantine_testing: true,   // Byzantine resistance
+            economic_incentives: true, // Real validator economics
+        }
+    }
+    
+    /// Check if feature should be enabled
+    pub fn should_enable_consensus(&self) -> bool {
+        matches!(self.level, TestnetLevel::Consensus | TestnetLevel::Production)
+    }
+    
+    pub fn should_enable_oracle_consensus(&self) -> bool {
+        self.oracle_consensus
+    }
+    
+    pub fn should_validate_signatures(&self) -> bool {
+        self.signature_validation
+    }
+    
+    pub fn should_enable_faucet(&self) -> bool {
+        self.enable_faucet
+    }
+    
+    pub fn should_test_byzantine_behavior(&self) -> bool {
+        self.byzantine_testing
+    }
+    
+    pub fn get_consensus_threshold(&self) -> f64 {
+        self.consensus_threshold
+    }
+}
+
+/// Global testnet configuration
+static TESTNET_CONFIG: std::sync::LazyLock<TestnetConfig> = std::sync::LazyLock::new(|| {
+    // Read from environment variable or config file
+    match std::env::var("UAT_TESTNET_LEVEL").as_deref() {
+        Ok("functional") => {
+            println!("🧪 TESTNET Level 1: Functional testing (instant finalization, mock burns)");
+            TestnetConfig::functional()
+        },
+        Ok("consensus") => {
+            println!("🧪 TESTNET Level 2: Consensus testing (real aBFT, real signatures, oracle aggregation)");
+            TestnetConfig::consensus_testing()
+        },
+        Ok("production") => {
+            println!("🧪 TESTNET Level 3: Production simulation (identical to mainnet, full security)");
+            TestnetConfig::production_simulation()
+        },
+        _ => {
+            // Default: Consensus testing — this is the minimum for multi-node testnet over Tor
+            // Single-node dev should explicitly set UAT_TESTNET_LEVEL=functional
+            println!("🧪 TESTNET: Defaulting to Level 2 (Consensus) for multi-node testing");
+            println!("   Set UAT_TESTNET_LEVEL=functional for single-node dev mode");
+            println!("   Set UAT_TESTNET_LEVEL=production for mainnet-equivalent testing");
+            TestnetConfig::consensus_testing()
+        }
+    }
+});
+
+pub fn get_testnet_config() -> &'static TestnetConfig {
+    &TESTNET_CONFIG
+}
+
+/// Check if we're in any testnet mode (vs mainnet)
+/// Returns false only when UAT_NETWORK=mainnet is explicitly set
+pub fn is_testnet() -> bool {
+    match std::env::var("UAT_NETWORK").as_deref() {
+        Ok("mainnet") => false,
+        _ => true, // Default: testnet
+    }
+}
+
+/// Check if we're using production-equivalent code
+pub fn is_production_simulation() -> bool {
+    matches!(get_testnet_config().level, TestnetLevel::Production)
+}
+
+/// Migration helper: Convert old flags to new system
+pub fn legacy_testnet_mode() -> bool {
+    // Backward compatibility with old TESTNET_MODE flag
+    !get_testnet_config().should_enable_consensus()
+}
+
+pub fn legacy_dev_mode() -> bool {
+    // Backward compatibility with old DEV_MODE flag  
+    matches!(get_testnet_config().level, TestnetLevel::Functional)
+}

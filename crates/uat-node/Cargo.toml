@@ -16,6 +16,7 @@ toml = "0.8"
 sha3 = "0.10"
 uat-core = { path = "../uat-core" }
 uat-crypto = { path = "../uat-crypto" }
+uat-consensus = { path = "../uat-consensus" }
 uat-network = { path = "../uat-network" }
 uat-vm = { path = "../uat-vm" }
 

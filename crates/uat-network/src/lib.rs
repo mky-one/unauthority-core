@@ -14,6 +14,9 @@ pub mod fee_scaling;
 pub mod p2p_encryption;
 pub mod p2p_integration;
 pub mod slashing_integration;
+pub mod tor_transport;
+
+pub use tor_transport::{TorConfig, TorDialer, BootstrapNode, load_bootstrap_nodes};
 
 #[derive(Debug)]
 pub enum NetworkEvent {
@@ -34,7 +37,25 @@ impl UatNode {
         tx: mpsc::Sender<NetworkEvent>, 
         mut rx_out: mpsc::Receiver<String> 
     ) -> Result<(), Box<dyn Error>> {
-        
+        // Load Tor configuration from environment
+        let tor_config = TorConfig::from_env();
+        let bootstrap_nodes = load_bootstrap_nodes();
+
+        // Create optional Tor dialer for .onion connections
+        let tor_dialer = tor_config.socks5_proxy.map(|addr| TorDialer::new(addr));
+
+        if tor_config.enabled {
+            println!("🧅 Tor transport enabled (SOCKS5: {})", 
+                tor_config.socks5_proxy.map(|a| a.to_string()).unwrap_or_default());
+            if let Some(ref onion) = tor_config.onion_address {
+                println!("🧅 This node's .onion address: {}", onion);
+            }
+        }
+
+        if !bootstrap_nodes.is_empty() {
+            println!("📡 Bootstrap nodes: {}", bootstrap_nodes.len());
+        }
+
         let mut swarm = libp2p::SwarmBuilder::with_new_identity()
             .with_tokio()
             .with_tcp(
@@ -71,14 +92,64 @@ impl UatNode {
         let topic = gossipsub::IdentTopic::new("uat-blocks");
         swarm.behaviour_mut().gossipsub.subscribe(&topic)?;
 
-        swarm.listen_on("/ip4/0.0.0.0/tcp/0".parse()?)?;
+        // Listen on configured port (fixed for Tor hidden service forwarding)
+        let listen_addr = format!("/ip4/0.0.0.0/tcp/{}", tor_config.listen_port);
+        swarm.listen_on(listen_addr.parse()?)?;
+        println!("📡 P2P listening on port {}", tor_config.listen_port);
+
+        // Bootstrap: dial all configured bootstrap nodes
+        for node in &bootstrap_nodes {
+            match node {
+                BootstrapNode::Multiaddr(addr) => {
+                    if let Ok(maddr) = addr.parse::<libp2p::Multiaddr>() {
+                        println!("📡 Dialing bootstrap peer: {}", addr);
+                        let _ = swarm.dial(maddr);
+                    }
+                }
+                BootstrapNode::Onion { host, port } => {
+                    if let Some(ref dialer) = tor_dialer {
+                        match dialer.create_onion_proxy(host.clone(), *port).await {
+                            Ok(local_addr) => {
+                                println!("🧅 Tor proxy created for {} → {}", host, local_addr);
+                                if let Ok(maddr) = local_addr.parse::<libp2p::Multiaddr>() {
+                                    let _ = swarm.dial(maddr);
+                                }
+                            }
+                            Err(e) => {
+                                eprintln!("🧅 Failed to create Tor proxy for {}: {}", host, e);
+                            }
+                        }
+                    } else {
+                        eprintln!("🧅 Cannot dial .onion {} — UAT_TOR_SOCKS5 not configured", host);
+                    }
+                }
+            }
+        }
 
         loop {
             tokio::select! {
                 Some(msg_to_send) = rx_out.recv() => {
                     if msg_to_send.starts_with("DIAL:") {
                         let addr_str = &msg_to_send[5..];
-                        if let Ok(maddr) = addr_str.parse::<libp2p::Multiaddr>() {
+                        // Check if it's a .onion address
+                        if addr_str.contains(".onion") {
+                            if let Some(ref dialer) = tor_dialer {
+                                let parsed = tor_transport::parse_bootstrap_node(addr_str);
+                                if let BootstrapNode::Onion { host, port } = parsed {
+                                    match dialer.create_onion_proxy(host.clone(), port).await {
+                                        Ok(local_addr) => {
+                                            println!("🧅 Tor proxy for {} → {}", host, local_addr);
+                                            if let Ok(maddr) = local_addr.parse::<libp2p::Multiaddr>() {
+                                                let _ = swarm.dial(maddr);
+                                            }
+                                        }
+                                        Err(e) => eprintln!("🧅 Tor dial failed: {}", e),
+                                    }
+                                }
+                            } else {
+                                eprintln!("🧅 Cannot dial .onion — set UAT_TOR_SOCKS5=127.0.0.1:9050");
+                            }
+                        } else if let Ok(maddr) = addr_str.parse::<libp2p::Multiaddr>() {
                             println!("📡 Swarm: Dialing {}...", maddr);
                             let _ = swarm.dial(maddr);
                         }
@@ -102,10 +173,10 @@ impl UatNode {
                         let _ = tx.send(NetworkEvent::NewBlock(content)).await;
                     },
                     SwarmEvent::NewListenAddr { address, .. } => {
-                        println!("📍 Node mendengarkan di: {:?}", address);
+                        println!("📍 P2P listening on: {:?}", address);
                     },
                     SwarmEvent::ConnectionEstablished { peer_id, .. } => {
-                        println!("🤝 Connected to: {:?}", peer_id);
+                        println!("🤝 Connected to peer: {:?}", peer_id);
                     },
                     _ => {}
                 }

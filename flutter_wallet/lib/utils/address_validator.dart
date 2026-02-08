@@ -1,0 +1,92 @@
+// Address Validation Utilities for UAT Blockchain
+//
+// UAT address formats:
+// - Testnet L1 (current): "UAT" + hex(SHA256(seed)[:20]) = 43 chars
+// - Mainnet (future): "UAT" + Base58(version_byte + BLAKE2b160(dilithium5_pubkey) + checksum)
+//
+// This validator accepts both formats for forward compatibility.
+
+import '../constants/blockchain.dart';
+
+class AddressValidator {
+  static const String _prefix = BlockchainConstants.addressPrefix; // "UAT"
+
+  // Testnet L1: UAT + 40 hex chars = 43 total
+  static const int testnetLength = 43;
+
+  // Mainnet: UAT + Base58(1 + 20 + 4 bytes) ≈ 37-55 chars
+  static const int _minLength = 37;
+  static const int _maxLength = 55;
+
+  /// Validate UAT address format
+  static bool isValidAddress(String address) {
+    return getValidationError(address) == null;
+  }
+
+  /// Get validation error message for invalid address
+  static String? getValidationError(String address) {
+    if (address.isEmpty) {
+      return 'Address cannot be empty';
+    }
+
+    if (!address.startsWith(_prefix)) {
+      return 'Address must start with "$_prefix"';
+    }
+
+    if (address.length < _minLength) {
+      return 'Address too short (minimum $_minLength characters)';
+    }
+
+    if (address.length > _maxLength) {
+      return 'Address too long (maximum $_maxLength characters)';
+    }
+
+    // Extract address body (after "UAT" prefix)
+    final body = address.substring(_prefix.length);
+
+    // Check if it's testnet hex format (40 hex chars)
+    if (body.length == 40 && _isHex(body)) {
+      return null; // Valid testnet address
+    }
+
+    // Check if it's Base58-encoded (mainnet format)
+    if (_isBase58(body)) {
+      return null; // Valid Base58 address
+    }
+
+    return 'Invalid address encoding (expected hex or Base58)';
+  }
+
+  /// Check if string is valid hexadecimal
+  static bool _isHex(String s) {
+    return RegExp(r'^[0-9a-fA-F]+$').hasMatch(s);
+  }
+
+  /// Check if string contains only valid Base58 characters
+  /// Base58 alphabet: 123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz
+  /// Excludes: 0 (zero), O (capital o), I (capital i), l (lowercase L)
+  static bool _isBase58(String s) {
+    return RegExp(
+            r'^[123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz]+$')
+        .hasMatch(s);
+  }
+
+  /// Check if address contains only valid characters
+  static bool hasValidCharacters(String address) {
+    if (!address.startsWith(_prefix)) {
+      return false;
+    }
+    final body = address.substring(_prefix.length);
+    return _isHex(body) || _isBase58(body);
+  }
+
+  /// Format address for display (truncate middle)
+  static String formatAddress(String address,
+      {int prefixLength = 10, int suffixLength = 8}) {
+    if (address.length <= prefixLength + suffixLength) {
+      return address;
+    }
+
+    return '${address.substring(0, prefixLength)}...${address.substring(address.length - suffixLength)}';
+  }
+}

@@ -1564,6 +1564,7 @@ dependencies = [
  "rand 0.8.5",
  "serde_json",
  "sha3",
+ "uat-crypto",
 ]
 
 [[package]]
@@ -4910,6 +4911,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "tokio-socks"
+version = "0.5.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0d4770b8024672c1101b3f6733eab95b18007dbe0847a8afe341fcf79e06043f"
+dependencies = [
+ "either",
+ "futures-util",
+ "thiserror 1.0.69",
+ "tokio",
+]
+
+[[package]]
 name = "tokio-stream"
 version = "0.1.18"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5204,12 +5217,15 @@ name = "uat-crypto"
 version = "0.1.0"
 dependencies = [
  "age",
+ "blake2",
+ "bs58",
  "hex",
  "pqcrypto-dilithium",
  "pqcrypto-traits",
  "rand 0.8.5",
  "secrecy",
  "serde",
+ "sha2",
  "zeroize",
 ]
 
@@ -5219,9 +5235,11 @@ version = "0.1.0"
 dependencies = [
  "futures",
  "libp2p",
+ "log",
  "serde",
  "serde_json",
  "tokio",
+ "tokio-socks",
  "uat-consensus",
  "uat-core",
 ]
@@ -5247,6 +5265,7 @@ dependencies = [
  "toml 0.8.23",
  "tonic",
  "tonic-build",
+ "uat-consensus",
  "uat-core",
  "uat-crypto",
  "uat-network",

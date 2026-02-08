@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../services/wallet_service.dart';
 import '../services/api_service.dart';
+import '../constants/blockchain.dart';
 
 class SendScreen extends StatefulWidget {
   const SendScreen({super.key});
@@ -28,12 +29,32 @@ class _SendScreenState extends State<SendScreen> {
       if (wallet == null) throw Exception('No wallet found');
 
       final apiService = context.read<ApiService>();
-      final amount = (double.parse(_amountController.text) * 1000000).toInt();
+      final amount =
+          BlockchainConstants.uatToVoid(double.parse(_amountController.text));
+
+      // Sign transaction with Dilithium5 (if available)
+      String? signature;
+      String? publicKey;
+      try {
+        final sigData =
+            '${wallet['address']}${_toController.text.trim()}$amount';
+        signature = await walletService.signTransaction(sigData);
+        publicKey = await walletService.getPublicKeyHex();
+        // Don't send placeholder signatures
+        if (signature == 'address-only-no-local-signing') {
+          signature = null;
+          publicKey = null;
+        }
+      } catch (_) {
+        // Signing failed — node will sign in L1 testnet
+      }
 
       final result = await apiService.sendTransaction(
         from: wallet['address']!,
         to: _toController.text.trim(),
         amount: amount,
+        signature: signature,
+        publicKey: publicKey,
       );
 
       if (!mounted) return;
@@ -89,7 +110,9 @@ class _SendScreenState extends State<SendScreen> {
                     if (!value.trim().startsWith('UAT')) {
                       return 'Address must start with UAT';
                     }
-                    if (value.trim().length != 43) {
+                    // Accept both SHA256 (43 chars) and Dilithium5 Base58Check (~37 chars)
+                    final len = value.trim().length;
+                    if (len < 30 || len > 60) {
                       return 'Invalid address length';
                     }
                     return null;

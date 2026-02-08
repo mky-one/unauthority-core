@@ -12,6 +12,11 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
+use chacha20poly1305::{
+    aead::{Aead, KeyInit},
+    ChaCha20Poly1305, Nonce,
+};
+
 /// Noise Protocol HandshakePattern
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 pub enum NoisePattern {
@@ -467,20 +472,34 @@ impl NoiseProtocolManager {
 
         let nonce = send_key.increment_nonce();
 
-        // In real implementation: ChaCha20-Poly1305 AEAD
-        // For now: simplified mock encryption
-        let mut ciphertext = plaintext.to_vec();
-        ciphertext
-            .iter_mut()
-            .for_each(|b| *b ^= (nonce % 256) as u8);
+        // Real ChaCha20-Poly1305 AEAD encryption
+        let key_bytes: [u8; 32] =
+            send_key.material.as_slice().try_into().map_err(|_| {
+                "Invalid key length for ChaCha20-Poly1305 (need 32 bytes)".to_string()
+            })?;
+        let cipher = ChaCha20Poly1305::new_from_slice(&key_bytes)
+            .map_err(|e| format!("ChaCha20-Poly1305 key init failed: {}", e))?;
+
+        // Build 12-byte nonce from counter (first 8 bytes = nonce counter, last 4 = 0)
+        let mut nonce_bytes = [0u8; 12];
+        nonce_bytes[..8].copy_from_slice(&nonce.to_le_bytes());
+        let nonce_val = Nonce::from(nonce_bytes);
+
+        let ciphertext = cipher
+            .encrypt(&nonce_val, plaintext)
+            .map_err(|e| format!("ChaCha20-Poly1305 encryption failed: {}", e))?;
+
+        // MAC tag is appended to ciphertext by AEAD (last 16 bytes)
+        // Split for compatibility with EncryptedMessage struct
+        let (ct, tag) = ciphertext.split_at(ciphertext.len() - 16);
 
         session.messages_sent += 1;
 
         Ok(EncryptedMessage {
             session_id: session_id.to_string(),
             sequence_number: nonce,
-            ciphertext,
-            mac_tag: vec![0u8; 16], // Mock MAC
+            ciphertext: ct.to_vec(),
+            mac_tag: tag.to_vec(),
             timestamp,
         })
     }
@@ -504,9 +523,26 @@ impl NoiseProtocolManager {
 
         let nonce = encrypted_msg.sequence_number;
 
-        // In real implementation: verify MAC first, then decrypt
-        let mut plaintext = encrypted_msg.ciphertext.clone();
-        plaintext.iter_mut().for_each(|b| *b ^= (nonce % 256) as u8);
+        // Real ChaCha20-Poly1305 AEAD decryption with MAC verification
+        let key_bytes: [u8; 32] =
+            _receive_key.material.as_slice().try_into().map_err(|_| {
+                "Invalid key length for ChaCha20-Poly1305 (need 32 bytes)".to_string()
+            })?;
+        let cipher = ChaCha20Poly1305::new_from_slice(&key_bytes)
+            .map_err(|e| format!("ChaCha20-Poly1305 key init failed: {}", e))?;
+
+        // Build 12-byte nonce from counter
+        let mut nonce_bytes = [0u8; 12];
+        nonce_bytes[..8].copy_from_slice(&nonce.to_le_bytes());
+        let nonce_val = Nonce::from(nonce_bytes);
+
+        // Reconstruct AEAD ciphertext (data + tag)
+        let mut aead_ciphertext = encrypted_msg.ciphertext.clone();
+        aead_ciphertext.extend_from_slice(&encrypted_msg.mac_tag);
+
+        let plaintext = cipher
+            .decrypt(&nonce_val, aead_ciphertext.as_slice())
+            .map_err(|_| "ChaCha20-Poly1305 decryption failed: MAC verification error (tampered or wrong key)".to_string())?;
 
         session.messages_received += 1;
 

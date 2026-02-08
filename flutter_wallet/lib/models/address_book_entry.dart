@@ -1,5 +1,3 @@
-import 'package:flutter/foundation.dart';
-
 class AddressBookEntry {
   final String id;
   final String name;

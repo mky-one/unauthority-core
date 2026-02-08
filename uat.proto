@@ -47,10 +47,11 @@ message GetBalanceRequest {
 
 message GetBalanceResponse {
   string address = 1;            // Full UAT address
-  uint64 balance_void = 2;       // Balance in VOI (1 UAT = 100,000,000 VOI)
+  uint64 balance_void = 2;       // Balance in VOI (truncated to u64, use balance_void_str for full precision)
   double balance_uat = 3;        // Balance in UAT (human-readable)
   uint64 block_count = 4;        // Total blocks created by this account
   string head_block = 5;         // Latest block hash
+  string balance_void_str = 6;   // Full-precision balance in VOI as string (u128 safe)
 }
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -69,6 +70,8 @@ message GetAccountResponse {
   string head_block = 5;
   bool is_validator = 6;         // Has minimum 1,000 UAT stake
   uint64 stake_void = 7;         // Validator stake if applicable
+  string balance_void_str = 8;   // Full-precision balance as string (u128 safe)
+  string stake_void_str = 9;     // Full-precision stake as string (u128 safe)
 }
 
 // ────────────────────────────────────────────────────────────────────────────

@@ -104,10 +104,11 @@ impl UatNode for UatGrpcService {
 
         let response = GetBalanceResponse {
             address: full_addr,
-            balance_void: account.balance as u64, // Note: protobuf limitation, large balances may truncate
+            balance_void: account.balance as u64, // Legacy field: may truncate >184 UAT
             balance_uat: balance_uat as f64 + (balance_remainder as f64 / VOID_PER_UAT as f64),
             block_count: account.block_count,
             head_block: account.head.clone(),
+            balance_void_str: account.balance.to_string(), // Full-precision u128 as string
         };
 
         println!(
@@ -156,6 +157,12 @@ impl UatNode for UatGrpcService {
                 account.balance as u64
             } else {
                 0
+            },
+            balance_void_str: account.balance.to_string(),
+            stake_void_str: if is_validator {
+                account.balance.to_string()
+            } else {
+                "0".to_string()
             },
         };
 

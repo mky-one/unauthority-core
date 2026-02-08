@@ -62,7 +62,7 @@ impl TestnetConfig {
             enable_faucet: true,
             consensus_threshold: 0.67,  // Real BFT threshold
             oracle_consensus: true,     // Real oracle aggregation
-            signature_validation: true, // Real Ed25519 validation
+            signature_validation: true, // Real Dilithium5 (post-quantum) validation
             byzantine_testing: true,    // Enable byzantine scenarios
             economic_incentives: false, // No real staking rewards yet
         }

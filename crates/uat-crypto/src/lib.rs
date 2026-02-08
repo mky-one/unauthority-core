@@ -7,6 +7,7 @@ use pqcrypto_traits::sign::{DetachedSignature, PublicKey, SecretKey};
 use secrecy::Secret;
 use serde::{Deserialize, Serialize};
 use std::io::{Read, Write};
+use zeroize::Zeroize;
 
 #[derive(Debug)]
 pub enum CryptoError {
@@ -35,6 +36,14 @@ impl std::error::Error for CryptoError {}
 pub struct KeyPair {
     pub public_key: Vec<u8>,
     pub secret_key: Vec<u8>,
+}
+
+/// SECURITY: Zeroize secret key from memory on drop to prevent
+/// recovery via memory dump, swap file, or core dump.
+impl Drop for KeyPair {
+    fn drop(&mut self) {
+        self.secret_key.zeroize();
+    }
 }
 
 /// Encrypted key structure with metadata

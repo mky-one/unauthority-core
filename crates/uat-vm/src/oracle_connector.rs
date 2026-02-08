@@ -71,36 +71,45 @@ impl ExchangeOracle {
     }
 
     async fn fetch_from_binance(&self) -> Result<ExchangePrice, String> {
-        // TODO: Implement actual API call
-        // Example: https://api.binance.com/api/v3/ticker/24hr?symbol=UATUSDT
+        // SECURITY: On mainnet builds, stub oracles are disabled.
+        // The node-level oracle in main.rs fetches real prices from CoinGecko/CryptoCompare/Kraken.
+        // These VM-level stubs exist only for testnet contract testing.
+        #[cfg(feature = "mainnet")]
+        return Err("VM oracle stubs disabled on mainnet. Use node-level oracle.".to_string());
+
+        #[cfg(not(feature = "mainnet"))]
         Ok(ExchangePrice {
             exchange: "binance".to_string(),
             pair: "UAT/USDT".to_string(),
-            price: 0.01, // Placeholder
+            price: 0.01, // Testnet placeholder
             volume_24h: 1_000_000.0,
             timestamp: chrono::Utc::now().timestamp() as u64,
         })
     }
 
     async fn fetch_from_coinbase(&self) -> Result<ExchangePrice, String> {
-        // TODO: Implement actual API call
-        // Example: https://api.coinbase.com/v2/prices/UAT-USD/spot
+        #[cfg(feature = "mainnet")]
+        return Err("VM oracle stubs disabled on mainnet. Use node-level oracle.".to_string());
+
+        #[cfg(not(feature = "mainnet"))]
         Ok(ExchangePrice {
             exchange: "coinbase".to_string(),
             pair: "UAT-USD".to_string(),
-            price: 0.0099, // Placeholder
+            price: 0.0099, // Testnet placeholder
             volume_24h: 500_000.0,
             timestamp: chrono::Utc::now().timestamp() as u64,
         })
     }
 
     async fn fetch_from_kraken(&self) -> Result<ExchangePrice, String> {
-        // TODO: Implement actual API call
-        // Example: https://api.kraken.com/0/public/Ticker?pair=UATUSD
+        #[cfg(feature = "mainnet")]
+        return Err("VM oracle stubs disabled on mainnet. Use node-level oracle.".to_string());
+
+        #[cfg(not(feature = "mainnet"))]
         Ok(ExchangePrice {
             exchange: "kraken".to_string(),
             pair: "UATUSD".to_string(),
-            price: 0.0101, // Placeholder
+            price: 0.0101, // Testnet placeholder
             volume_24h: 750_000.0,
             timestamp: chrono::Utc::now().timestamp() as u64,
         })
@@ -116,7 +125,12 @@ impl PriceOracle for ExchangeOracle {
         // Calculate median price (Byzantine-resistant)
         let mut prices: Vec<f64> = self.price_feeds.values().map(|p| p.price).collect();
 
-        prices.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        // Filter NaN and sort safely (NaN-safe comparison)
+        prices.retain(|p| p.is_finite());
+        if prices.is_empty() {
+            return Err("No valid (finite) prices available".to_string());
+        }
+        prices.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
         let median = prices[prices.len() / 2];
 
         Ok(median)

@@ -19,6 +19,7 @@ use pqcrypto_traits::sign::{PublicKey, SecretKey, DetachedSignature};
 use blake2::Blake2b512;
 use sha2::Sha256;
 use digest::Digest;
+use zeroize::Zeroize;
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // SIZE QUERIES — Call these first to allocate correct buffer sizes in Dart
@@ -156,7 +157,7 @@ pub extern "C" fn uat_generate_keypair_from_seed(
     let mut hasher = Sha256::new();
     hasher.update(salt);
     hasher.update(seed_slice);
-    let derived: [u8; 32] = hasher.finalize().into();
+    let mut derived: [u8; 32] = hasher.finalize().into();
 
     // Activate deterministic CSPRNG for pqcrypto's randombytes
     pqcrypto_internals::set_seeded_rng(derived);
@@ -166,6 +167,9 @@ pub extern "C" fn uat_generate_keypair_from_seed(
 
     // Revert to OS-RNG
     pqcrypto_internals::clear_seeded_rng();
+
+    // SECURITY: Zero derived seed material immediately after use
+    derived.zeroize();
 
     let pk_bytes = pk.as_bytes();
     let sk_bytes = sk.as_bytes();

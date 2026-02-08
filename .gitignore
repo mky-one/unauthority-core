@@ -19,6 +19,7 @@ validator_keys/
 wallets/
 keys/
 wallet.json
+test_bip39.js
 
 # Node data directories
 node_data/

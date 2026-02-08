@@ -34,7 +34,8 @@ pub enum TestnetLevel {
 pub struct TestnetConfig {
     pub level: TestnetLevel,
     pub enable_faucet: bool,
-    pub consensus_threshold: f64,
+    /// Consensus quorum threshold in basis points (6700 = 67%)
+    pub consensus_threshold_bps: u32,
     pub oracle_consensus: bool,
     pub signature_validation: bool,
     pub byzantine_testing: bool,
@@ -47,7 +48,7 @@ impl TestnetConfig {
         Self {
             level: TestnetLevel::Functional,
             enable_faucet: true,
-            consensus_threshold: 0.0,    // Immediate finalization
+            consensus_threshold_bps: 0,  // Immediate finalization
             oracle_consensus: false,     // Mock prices
             signature_validation: false, // Allow any signature
             byzantine_testing: false,
@@ -60,11 +61,11 @@ impl TestnetConfig {
         Self {
             level: TestnetLevel::Consensus,
             enable_faucet: true,
-            consensus_threshold: 0.67,  // Real BFT threshold
-            oracle_consensus: true,     // Real oracle aggregation
-            signature_validation: true, // Real Dilithium5 (post-quantum) validation
-            byzantine_testing: true,    // Enable byzantine scenarios
-            economic_incentives: false, // No real staking rewards yet
+            consensus_threshold_bps: 6700, // Real BFT threshold (67%)
+            oracle_consensus: true,        // Real oracle aggregation
+            signature_validation: true,    // Real Dilithium5 (post-quantum) validation
+            byzantine_testing: true,       // Enable byzantine scenarios
+            economic_incentives: false,    // No real staking rewards yet
         }
     }
 
@@ -72,12 +73,12 @@ impl TestnetConfig {
     pub fn production_simulation() -> Self {
         Self {
             level: TestnetLevel::Production,
-            enable_faucet: false,       // No faucet in production
-            consensus_threshold: 0.67,  // Real BFT
-            oracle_consensus: true,     // Real oracle
-            signature_validation: true, // Full validation
-            byzantine_testing: true,    // Byzantine resistance
-            economic_incentives: true,  // Real validator economics
+            enable_faucet: false,          // No faucet in production
+            consensus_threshold_bps: 6700, // Real BFT (67%)
+            oracle_consensus: true,        // Real oracle
+            signature_validation: true,    // Full validation
+            byzantine_testing: true,       // Byzantine resistance
+            economic_incentives: true,     // Real validator economics
         }
     }
 
@@ -108,8 +109,8 @@ impl TestnetConfig {
     }
 
     #[allow(dead_code)]
-    pub fn get_consensus_threshold(&self) -> f64 {
-        self.consensus_threshold
+    pub fn get_consensus_threshold_bps(&self) -> u32 {
+        self.consensus_threshold_bps
     }
 }
 

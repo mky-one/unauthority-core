@@ -1217,7 +1217,7 @@ pub async fn start_api_server(
                             "validator": e.validator_address,
                             "violation": format!("{:?}", e.violation_type),
                             "slash_amount_void": e.slash_amount_void,
-                            "slash_percent": e.slash_percent,
+                            "slash_bps": e.slash_bps,
                             "timestamp": e.timestamp
                         })
                     })
@@ -1253,7 +1253,7 @@ pub async fn start_api_server(
                             "block_height": e.block_height,
                             "violation": format!("{:?}", e.violation_type),
                             "slash_amount_void": e.slash_amount_void,
-                            "slash_percent": e.slash_percent,
+                            "slash_bps": e.slash_bps,
                             "timestamp": e.timestamp
                         })
                     })

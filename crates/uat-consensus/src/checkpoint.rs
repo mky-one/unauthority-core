@@ -72,8 +72,14 @@ impl FinalityCheckpoint {
     }
 
     /// Verify checkpoint has enough signatures (67% quorum)
+    ///
+    /// SECURITY FIX: Uses integer ceiling division instead of f64 multiplication.
+    /// f64 rounding can produce different results across platforms, which would
+    /// cause chain splits when validators disagree on finality quorum.
+    /// Formula: ceil(n * 67 / 100) = (n * 67 + 99) / 100
     pub fn verify_quorum(&self) -> bool {
-        let required_sigs = ((self.validator_count as f64) * 0.67).ceil() as u32;
+        let n = self.validator_count as u64;
+        let required_sigs = (n * 67).div_ceil(100) as u32;
         self.signature_count >= required_sigs
     }
 

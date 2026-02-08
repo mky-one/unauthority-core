@@ -84,6 +84,7 @@ pub fn calculate_voting_power(staked_amount_void: u128) -> u128 {
 
 /// Legacy f64 wrapper — only used for display/logging purposes.
 /// NOT for consensus-critical accumulation.
+#[deprecated(note = "Use calculate_voting_power() which returns u128 for deterministic consensus")]
 pub fn calculate_voting_power_f64(staked_amount_void: u128) -> f64 {
     calculate_voting_power(staked_amount_void) as f64
 }
@@ -103,7 +104,7 @@ fn isqrt(n: u128) -> u128 {
     x
 }
 
-/// Normalize voting power to [0, 1] range for consensus decisions
+/// Normalize voting power to [0, 1] range — DEPRECATED, use basis-point integer math.
 ///
 /// # Arguments
 /// * `validator_power` - Individual validator voting power
@@ -111,6 +112,7 @@ fn isqrt(n: u128) -> u128 {
 ///
 /// # Returns
 /// Normalized power as fraction (0.0 = no influence, 1.0 = network controls 100%)
+#[deprecated(note = "Use integer basis-point normalization instead of f64 fractions")]
 pub fn normalize_voting_power(validator_power: f64, total_network_power: f64) -> f64 {
     if total_network_power <= 0.0 {
         return 0.0;
@@ -439,6 +441,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(deprecated)]
     fn test_normalize_voting_power() {
         let validator_power = 100_000.0;
         let total_power = 500_000.0;

@@ -11,12 +11,13 @@
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, VecDeque};
 
-/// Slashing constants
-pub const DOUBLE_SIGNING_SLASH_PERCENT: f64 = 100.0; // 100% of stake
-pub const DOWNTIME_SLASH_PERCENT: f64 = 1.0; // 1% of stake
+/// Slashing constants — all percentages expressed as basis points (1/100 of a percent)
+/// for deterministic cross-platform consensus. 10000 bps = 100%.
+pub const DOUBLE_SIGNING_SLASH_BPS: u32 = 10_000; // 100% of stake
+pub const DOWNTIME_SLASH_BPS: u32 = 100; // 1% of stake
 pub const DOWNTIME_THRESHOLD_BLOCKS: u64 = 10000; // ~1 hour at 0.36s blocks
 pub const DOWNTIME_WINDOW_BLOCKS: u64 = 50000; // ~5 hours observation window
-pub const MIN_UPTIME_PERCENT: f64 = 95.0; // Need 95%+ uptime
+pub const MIN_UPTIME_BPS: u32 = 9500; // Need 95%+ uptime (9500 bps)
 
 /// Violation types that trigger slashing
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash)]
@@ -33,7 +34,8 @@ pub struct SlashEvent {
     pub validator_address: String,
     pub violation_type: ViolationType,
     pub slash_amount_void: u128,
-    pub slash_percent: f64,
+    /// Slash percentage in basis points (10000 = 100%)
+    pub slash_bps: u32,
     pub timestamp: u64,
 }
 
@@ -99,17 +101,23 @@ impl ValidatorSafetyProfile {
         }
     }
 
-    /// Calculate uptime percentage
-    pub fn get_uptime_percent(&self) -> f64 {
+    /// Calculate uptime in basis points (10000 = 100%) — deterministic integer math
+    pub fn get_uptime_bps(&self) -> u32 {
         if self.total_blocks_observed == 0 {
-            return 100.0;
+            return 10_000; // 100%
         }
-        (self.blocks_participated as f64 / self.total_blocks_observed as f64) * 100.0
+        // Integer: (participated * 10000) / observed
+        ((self.blocks_participated as u128 * 10_000) / self.total_blocks_observed as u128) as u32
     }
 
-    /// Check if validator meets minimum uptime requirement
+    /// Legacy f64 helper — for display/logging only, NOT for consensus decisions
+    pub fn get_uptime_percent(&self) -> f64 {
+        self.get_uptime_bps() as f64 / 100.0
+    }
+
+    /// Check if validator meets minimum uptime requirement (deterministic)
     pub fn meets_uptime_requirement(&self) -> bool {
-        self.get_uptime_percent() >= MIN_UPTIME_PERCENT
+        self.get_uptime_bps() >= MIN_UPTIME_BPS
     }
 }
 
@@ -234,7 +242,7 @@ impl SlashingManager {
             validator_address: validator_address.to_string(),
             violation_type: ViolationType::DoubleSigning,
             slash_amount_void: slash_amount,
-            slash_percent: DOUBLE_SIGNING_SLASH_PERCENT,
+            slash_bps: DOUBLE_SIGNING_SLASH_BPS,
             timestamp,
         };
 
@@ -296,13 +304,12 @@ impl SlashingManager {
         if profile.total_blocks_observed >= DOWNTIME_WINDOW_BLOCKS
             && !profile.meets_uptime_requirement()
         {
-            // SECURITY FIX NEW#5: Use integer math instead of f64 for slash calculation
-            // DOWNTIME: 1% of stake. Double-signing: 100% (full slash).
-            // Integer: staked / 100 for 1%, staked for 100%
-            let slash_amount = if DOWNTIME_SLASH_PERCENT >= 100.0 {
+            // SECURITY FIX: Use integer math for slash calculation
+            // DOWNTIME: 1% of stake (100 bps). Double-signing: 100% (10000 bps).
+            let slash_amount = if DOWNTIME_SLASH_BPS >= 10_000 {
                 staked_amount_void
             } else {
-                // 1% = staked / 100, rounds up via + 99 trick
+                // 1% = staked / 100, rounds up via ceiling division
                 staked_amount_void.div_ceil(100)
             };
 
@@ -315,7 +322,7 @@ impl SlashingManager {
                 validator_address: validator_address.to_string(),
                 violation_type: ViolationType::ExtendedDowntime,
                 slash_amount_void: slash_amount,
-                slash_percent: DOWNTIME_SLASH_PERCENT,
+                slash_bps: DOWNTIME_SLASH_BPS,
                 timestamp,
             };
 

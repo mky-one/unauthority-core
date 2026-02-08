@@ -152,6 +152,9 @@ pub fn parse_uat_to_void(uat_str: &str) -> Result<u128, String> {
 
 /// Validate genesis configuration.
 /// Supports both generator format (network_id, total_supply_void) and legacy (network, total_supply).
+///
+/// SECURITY FIX: Now enforces network_id matches runtime environment to prevent
+/// a mainnet genesis being loaded on testnet or vice versa (chain contamination).
 pub fn validate_genesis(config: &GenesisConfig) -> Result<(), String> {
     // Check network — accept either format
     let network_ok = match (&config.network, config.network_id) {
@@ -164,6 +167,25 @@ pub fn validate_genesis(config: &GenesisConfig) -> Result<(), String> {
             "Invalid network: network={:?}, network_id={:?}",
             config.network, config.network_id
         ));
+    }
+
+    // SECURITY FIX: Validate network_id matches runtime build target
+    // Prevents mainnet genesis loading on testnet or vice versa
+    let is_mainnet_genesis = matches!(
+        (&config.network, config.network_id),
+        (Some(n), _) if n == "mainnet"
+    ) || config.network_id == Some(1);
+
+    let is_testnet_genesis = matches!(
+        (&config.network, config.network_id),
+        (Some(n), _) if n == "testnet"
+    ) || config.network_id == Some(2);
+
+    if uat_core::is_mainnet_build() && is_testnet_genesis {
+        return Err("Cannot load testnet genesis on mainnet build".to_string());
+    }
+    if !uat_core::is_mainnet_build() && is_mainnet_genesis {
+        return Err("Cannot load mainnet genesis on testnet build".to_string());
     }
 
     // Check timestamp is reasonable (after 2020, before 2100)
@@ -191,7 +213,8 @@ pub fn validate_genesis(config: &GenesisConfig) -> Result<(), String> {
         ));
     }
 
-    // Validate all addresses start with "UAT"
+    // Validate all addresses: must start with "UAT" and have minimum length
+    // SECURITY FIX: Added minimum length check to prevent malformed addresses
     let all_wallets = config
         .bootstrap_nodes
         .iter()
@@ -201,6 +224,13 @@ pub fn validate_genesis(config: &GenesisConfig) -> Result<(), String> {
     for wallet in all_wallets {
         if !wallet.address.starts_with("UAT") {
             return Err(format!("Invalid address format: {}", wallet.address));
+        }
+        // Address should be at least "UAT" + some hash chars (minimum ~10 chars)
+        if wallet.address.len() < 10 {
+            return Err(format!(
+                "Address too short (min 10 chars): {}",
+                wallet.address
+            ));
         }
     }
 
@@ -259,7 +289,8 @@ mod tests {
 
     #[test]
     fn test_genesis_validation_generator_format() {
-        let config = make_generator_config(1, 2_193_623_600_000_000_000);
+        // Default build is testnet (network_id=2)
+        let config = make_generator_config(2, 2_193_623_600_000_000_000);
         assert!(validate_genesis(&config).is_ok());
     }
 
@@ -270,13 +301,20 @@ mod tests {
 
     #[test]
     fn test_invalid_supply_generator() {
-        let config = make_generator_config(1, 999);
+        let config = make_generator_config(2, 999);
+        assert!(validate_genesis(&config).is_err());
+    }
+
+    #[test]
+    fn test_network_mismatch_rejected() {
+        // Testnet build should reject mainnet genesis
+        let config = make_generator_config(1, 2_193_623_600_000_000_000);
         assert!(validate_genesis(&config).is_err());
     }
 
     #[test]
     fn test_load_generator_format() {
-        let config = make_generator_config(1, 2_193_623_600_000_000_000);
+        let config = make_generator_config(2, 2_193_623_600_000_000_000);
         let accounts = load_genesis_from_config(&config).unwrap();
         assert_eq!(accounts.len(), 1);
         let acc = accounts.get("UATtest123").unwrap();

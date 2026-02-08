@@ -12,6 +12,7 @@
 use std::sync::{Arc, Mutex};
 use tokio::sync::mpsc;
 use tonic::{transport::Server, Request, Response, Status};
+use uat_consensus::voting::calculate_voting_power;
 use uat_core::{Ledger, MIN_VALIDATOR_STAKE_VOID, VOID_PER_UAT};
 
 // Include generated protobuf code
@@ -361,8 +362,10 @@ impl UatNode for UatGrpcService {
             .iter()
             .filter(|(_, acc)| acc.balance >= min_stake)
             .map(|(addr, acc)| {
-                // Quadratic voting power: sqrt(stake)
-                let voting_power = (acc.balance as f64 / VOID_PER_UAT as f64).sqrt();
+                // Quadratic voting power: deterministic integer sqrt
+                // SECURITY FIX: Use consensus isqrt() instead of f64 sqrt()
+                // to ensure gRPC API returns same values as consensus engine.
+                let voting_power = calculate_voting_power(acc.balance) as f64;
 
                 ValidatorInfo {
                     address: addr.clone(),

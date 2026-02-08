@@ -9,10 +9,9 @@ use std::collections::HashMap;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AntiWhaleConfig {
-    pub max_tx_per_block: u32,      // Max transactions per block per address
-    pub fee_scale_multiplier: f64,  // Fee multiplier when spam detected
-    pub max_burn_per_block: u64,    // Max UAT burned per block per address
-    pub voting_power_exponent: f64, // Exponent for stake (0.5 = quadratic)
+    pub max_tx_per_block: u32,     // Max transactions per block per address
+    pub fee_scale_multiplier: u64, // Fee multiplier base when spam detected (integer)
+    pub max_burn_per_block: u64,   // Max UAT burned per block per address
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -20,7 +19,7 @@ pub struct AddressActivity {
     pub tx_count: u32,
     pub total_burned: u64,
     pub last_block: u64,
-    pub fee_multiplier: f64,
+    pub fee_multiplier: u64,
     /// Timestamp of the start of the current activity window (Unix seconds)
     pub window_start: u64,
 }
@@ -35,9 +34,8 @@ impl AntiWhaleConfig {
     pub fn new() -> Self {
         AntiWhaleConfig {
             max_tx_per_block: 100,
-            fee_scale_multiplier: 2.0,
+            fee_scale_multiplier: 2,
             max_burn_per_block: 1_000,
-            voting_power_exponent: 0.5,
         }
     }
 }
@@ -75,7 +73,7 @@ impl AntiWhaleEngine {
         if now.saturating_sub(activity.window_start) >= Self::ACTIVITY_WINDOW_SECS {
             activity.tx_count = 0;
             activity.total_burned = 0;
-            activity.fee_multiplier = 1.0;
+            activity.fee_multiplier = 1;
             activity.window_start = now;
         }
     }
@@ -89,7 +87,7 @@ impl AntiWhaleEngine {
             if activity.last_block < block_number {
                 activity.tx_count = 0;
                 activity.total_burned = 0;
-                activity.fee_multiplier = 1.0;
+                activity.fee_multiplier = 1;
                 activity.last_block = block_number;
                 activity.window_start = Self::now_secs();
             }
@@ -107,7 +105,7 @@ impl AntiWhaleEngine {
                 tx_count: 0,
                 total_burned: 0,
                 last_block: current_block,
-                fee_multiplier: 1.0,
+                fee_multiplier: 1,
                 window_start: now,
             });
 
@@ -116,14 +114,16 @@ impl AntiWhaleEngine {
 
         // Check if address exceeded tx limit
         if activity.tx_count >= self.config.max_tx_per_block {
-            // Exponential fee scaling: fee = base * multiplier^(excess_tx - limit)
+            // Exponential fee scaling: fee = base * multiplier^(excess+1)
+            // SECURITY FIX: Uses integer exponentiation instead of f64 powi
             let excess = activity.tx_count - self.config.max_tx_per_block;
-            activity.fee_multiplier = self.config.fee_scale_multiplier.powi(excess as i32 + 1);
+            activity.fee_multiplier = self.config.fee_scale_multiplier.saturating_pow(excess + 1);
         }
 
         activity.tx_count += 1;
 
-        let final_fee = (base_fee as f64 * activity.fee_multiplier) as u64;
+        // SECURITY FIX: Integer multiplication instead of f64
+        let final_fee = base_fee.saturating_mul(activity.fee_multiplier);
 
         Ok(final_fee)
     }
@@ -139,7 +139,7 @@ impl AntiWhaleEngine {
                 tx_count: 0,
                 total_burned: 0,
                 last_block: current_block,
-                fee_multiplier: 1.0,
+                fee_multiplier: 1,
                 window_start: now,
             });
 
@@ -157,32 +157,32 @@ impl AntiWhaleEngine {
         Ok(())
     }
 
-    /// Calculate voting power using quadratic formula: stake^exponent
+    /// Calculate voting power using quadratic formula: √(stake)
+    /// SECURITY FIX: Uses deterministic integer sqrt (Newton's method)
+    /// instead of f64 powf() which varies across platforms.
     pub fn calculate_voting_power(&self, stake: u64) -> u64 {
-        let stake_f = stake as f64;
-        let power = stake_f.powf(self.config.voting_power_exponent);
-        power as u64
+        isqrt_u64(stake)
     }
 
-    /// Get voting power distribution for validators
+    /// Get voting power distribution for validators (basis points, 10000 = 100%)
     pub fn calculate_voting_distribution(
         &self,
         validators: HashMap<String, u64>, // address -> stake
-    ) -> HashMap<String, f64> {
+    ) -> HashMap<String, u64> {
         let mut distribution = HashMap::new();
-        let mut total_power: f64 = 0.0;
+        let mut total_power: u64 = 0;
 
         // Calculate power for each validator
-        for (address, stake) in validators {
-            let power = self.calculate_voting_power(stake) as f64;
-            distribution.insert(address, power);
+        for (address, stake) in &validators {
+            let power = self.calculate_voting_power(*stake);
+            distribution.insert(address.clone(), power);
             total_power += power;
         }
 
-        // Normalize to percentages
-        if total_power > 0.0 {
+        // Normalize to basis points (10000 = 100%)
+        if total_power > 0 {
             for power in distribution.values_mut() {
-                *power /= total_power;
+                *power = (*power as u128 * 10_000 / total_power as u128) as u64;
             }
         }
 
@@ -201,11 +201,11 @@ impl AntiWhaleEngine {
     }
 
     /// Get fee multiplier for an address
-    pub fn get_fee_multiplier(&self, address: &str) -> f64 {
+    pub fn get_fee_multiplier(&self, address: &str) -> u64 {
         self.address_activity
             .get(address)
             .map(|a| a.fee_multiplier)
-            .unwrap_or(1.0)
+            .unwrap_or(1)
     }
 
     /// Reset activity for new block cycle
@@ -214,7 +214,7 @@ impl AntiWhaleEngine {
         for activity in self.address_activity.values_mut() {
             activity.tx_count = 0;
             activity.total_burned = 0;
-            activity.fee_multiplier = 1.0;
+            activity.fee_multiplier = 1;
             activity.window_start = now;
         }
     }
@@ -243,6 +243,22 @@ impl AntiWhaleEngine {
     }
 }
 
+/// Deterministic integer square root using Newton's method.
+/// Returns floor(√n) for any u64 value.
+/// Used for quadratic voting power: voting_power = √stake
+fn isqrt_u64(n: u64) -> u64 {
+    if n == 0 {
+        return 0;
+    }
+    let mut x = n;
+    let mut y = x.div_ceil(2);
+    while y < x {
+        x = y;
+        y = (x + n / x) / 2;
+    }
+    x
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct ConcentrationStats {
     pub total_validators: usize,
@@ -261,7 +277,7 @@ mod tests {
     fn test_anti_whale_config_creation() {
         let config = AntiWhaleConfig::new();
         assert_eq!(config.max_tx_per_block, 100);
-        assert_eq!(config.fee_scale_multiplier, 2.0);
+        assert_eq!(config.fee_scale_multiplier, 2);
         assert_eq!(config.max_burn_per_block, 1_000);
     }
 
@@ -296,7 +312,7 @@ mod tests {
         }
 
         let activity = engine.get_activity("spammer").unwrap();
-        assert!(activity.fee_multiplier > 1.0);
+        assert!(activity.fee_multiplier > 1);
     }
 
     #[test]
@@ -345,10 +361,11 @@ mod tests {
         let distribution = engine.calculate_voting_distribution(validators);
         assert!(distribution.len() == 2);
 
-        // Both should have equal power (100^0.5 = 10 each)
-        let alice_power = distribution.get("alice").unwrap();
-        let bob_power = distribution.get("bob").unwrap();
-        assert!((alice_power - bob_power).abs() < 0.01);
+        // Both should have equal power (isqrt(100) = 10 each → 5000 bps each)
+        let alice_power = *distribution.get("alice").unwrap();
+        let bob_power = *distribution.get("bob").unwrap();
+        assert_eq!(alice_power, bob_power);
+        assert_eq!(alice_power, 5000); // 50% in basis points
     }
 
     #[test]
@@ -424,13 +441,13 @@ mod tests {
         let mut engine = AntiWhaleEngine::new(config);
         engine.new_block(1);
 
-        // Unknown address should have multiplier 1.0
-        assert_eq!(engine.get_fee_multiplier("unknown"), 1.0);
+        // Unknown address should have multiplier 1
+        assert_eq!(engine.get_fee_multiplier("unknown"), 1);
 
         // After registration, should track multiplier
         let _ = engine.register_transaction("alice".to_string(), 100);
         let multiplier = engine.get_fee_multiplier("alice");
-        assert_eq!(multiplier, 1.0);
+        assert_eq!(multiplier, 1);
     }
 
     #[test]

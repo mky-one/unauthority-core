@@ -13,9 +13,8 @@ use std::collections::HashMap;
 
 /// Re-export slashing types for convenience
 pub use uat_consensus::slashing::{
-    SlashEvent, ValidatorSafetyProfile, ValidatorStatus, ViolationType,
-    DOUBLE_SIGNING_SLASH_PERCENT, DOWNTIME_SLASH_PERCENT, DOWNTIME_THRESHOLD_BLOCKS,
-    DOWNTIME_WINDOW_BLOCKS, MIN_UPTIME_PERCENT,
+    SlashEvent, ValidatorSafetyProfile, ValidatorStatus, ViolationType, DOUBLE_SIGNING_SLASH_BPS,
+    DOWNTIME_SLASH_BPS, DOWNTIME_THRESHOLD_BLOCKS, DOWNTIME_WINDOW_BLOCKS, MIN_UPTIME_BPS,
 };
 
 /// Manages validator slashing state across the network
@@ -163,7 +162,7 @@ impl SlashingManager {
                 validator_address: validator_address.to_string(),
                 violation_type: ViolationType::DoubleSigning,
                 slash_amount_void: slash_amount,
-                slash_percent: DOUBLE_SIGNING_SLASH_PERCENT,
+                slash_bps: DOUBLE_SIGNING_SLASH_BPS,
                 timestamp: std::time::SystemTime::now()
                     .duration_since(std::time::UNIX_EPOCH)
                     .unwrap_or_default()
@@ -226,7 +225,7 @@ impl SlashingManager {
                 validator_address: validator_address.to_string(),
                 violation_type: ViolationType::ExtendedDowntime,
                 slash_amount_void: slash_amount,
-                slash_percent: DOWNTIME_SLASH_PERCENT,
+                slash_bps: DOWNTIME_SLASH_BPS,
                 timestamp: std::time::SystemTime::now()
                     .duration_since(std::time::UNIX_EPOCH)
                     .unwrap_or_default()
@@ -261,15 +260,16 @@ impl SlashingManager {
             profile.total_blocks_observed =
                 block_height.saturating_sub(profile.total_blocks_observed);
 
-            // Calculate uptime percentage
-            let uptime_percent = if profile.total_blocks_observed > 0 {
-                (profile.blocks_participated as f64 / profile.total_blocks_observed as f64) * 100.0
+            // Calculate uptime in basis points (10000 = 100%) — integer math for determinism
+            let uptime_bps: u32 = if profile.total_blocks_observed > 0 {
+                ((profile.blocks_participated as u128 * 10_000)
+                    / profile.total_blocks_observed as u128) as u32
             } else {
-                0.0
+                0
             };
 
-            // If uptime below minimum threshold, slash
-            if uptime_percent < MIN_UPTIME_PERCENT {
+            // If uptime below minimum threshold (9500 bps = 95%), slash
+            if uptime_bps < MIN_UPTIME_BPS {
                 let _ = profile; // Release mutable borrow before calling slash_downtime
                 if let Ok(slash_event) =
                     self.slash_downtime(validator_address, block_height, current_stake_void)
@@ -424,7 +424,7 @@ mod tests {
 
         assert_eq!(slash_event.violation_type, ViolationType::DoubleSigning);
         assert_eq!(slash_event.slash_amount_void, 1000000000);
-        assert_eq!(slash_event.slash_percent, 100.0);
+        assert_eq!(slash_event.slash_bps, 10_000);
         assert!(manager.is_validator_banned("validator1"));
     }
 

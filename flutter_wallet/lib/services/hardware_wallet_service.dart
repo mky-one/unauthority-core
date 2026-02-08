@@ -66,7 +66,7 @@ class HardwareWalletService {
   /// Mock: Disconnect hardware wallet
   Future<void> disconnect() async {
     if (_connectedWallet != null) {
-      final disconnectedWallet = _connectedWallet!.copyWith(
+      _connectedWallet!.copyWith(
         status: HardwareWalletStatus.disconnected,
         address: null,
         publicKey: null,

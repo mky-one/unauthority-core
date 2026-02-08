@@ -305,99 +305,110 @@ impl WasmEngine {
                         return Err(e);
                     }
                     Err(_) => {
-                        // Fall through to mock dispatch
+                        // Fall through to mock dispatch (testnet only)
                     }
                 }
             }
         }
 
-        // Fallback to mock dispatch for testing/simple contracts
-        let (output, gas_used, state_changes) = match call.function.as_str() {
-            "transfer" => {
-                if call.args.len() < 2 {
-                    return Err("transfer requires: amount, recipient".to_string());
+        // SECURITY: Mock dispatch is DISABLED on mainnet builds.
+        // On mainnet, contracts MUST have valid WASM — no fallback to hardcoded functions.
+        #[cfg(feature = "mainnet")]
+        return Err(format!(
+            "Contract function '{}' not found in WASM module. Mock dispatch disabled on mainnet.",
+            call.function
+        ));
+
+        // Fallback to mock dispatch for testing/simple contracts (testnet only)
+        #[cfg(not(feature = "mainnet"))]
+        {
+            let (output, gas_used, state_changes) = match call.function.as_str() {
+                "transfer" => {
+                    if call.args.len() < 2 {
+                        return Err("transfer requires: amount, recipient".to_string());
+                    }
+                    let amount: u128 = call.args[0]
+                        .parse()
+                        .map_err(|_| "Invalid amount".to_string())?;
+
+                    if contract.balance < amount {
+                        return Err("Insufficient contract balance".to_string());
+                    }
+
+                    contract.balance -= amount;
+                    (format!("Transferred {} void", amount), 75, HashMap::new())
                 }
-                let amount: u128 = call.args[0]
-                    .parse()
-                    .map_err(|_| "Invalid amount".to_string())?;
-
-                if contract.balance < amount {
-                    return Err("Insufficient contract balance".to_string());
+                "mint" => {
+                    // SECURITY P1-3: Minting via contract is DISABLED
+                    // Only the blockchain consensus (VOTE_RES flow) may mint UAT.
+                    // Allowing contracts to mint would bypass supply controls.
+                    return Err(
+                        "mint: operation not permitted — UAT minting requires PoB consensus"
+                            .to_string(),
+                    );
                 }
+                "burn" => {
+                    if call.args.is_empty() {
+                        return Err("burn requires: amount".to_string());
+                    }
+                    let amount: u128 = call.args[0]
+                        .parse()
+                        .map_err(|_| "Invalid amount".to_string())?;
 
-                contract.balance -= amount;
-                (format!("Transferred {} void", amount), 75, HashMap::new())
-            }
-            "mint" => {
-                // SECURITY P1-3: Minting via contract is DISABLED
-                // Only the blockchain consensus (VOTE_RES flow) may mint UAT.
-                // Allowing contracts to mint would bypass supply controls.
-                return Err(
-                    "mint: operation not permitted — UAT minting requires PoB consensus"
-                        .to_string(),
-                );
-            }
-            "burn" => {
-                if call.args.is_empty() {
-                    return Err("burn requires: amount".to_string());
+                    if contract.balance < amount {
+                        return Err("Insufficient balance to burn".to_string());
+                    }
+
+                    contract.balance -= amount;
+                    (format!("Burned {} void", amount), 100, HashMap::new())
                 }
-                let amount: u128 = call.args[0]
-                    .parse()
-                    .map_err(|_| "Invalid amount".to_string())?;
+                "set_state" => {
+                    if call.args.len() < 2 {
+                        return Err("set_state requires: key, value".to_string());
+                    }
+                    let key = call.args[0].clone();
+                    let value = call.args[1].clone();
 
-                if contract.balance < amount {
-                    return Err("Insufficient balance to burn".to_string());
+                    let mut sc: HashMap<String, String> = HashMap::new();
+                    sc.insert(key, value);
+                    ("State updated".to_string(), 60, sc)
                 }
+                "get_state" => {
+                    if call.args.is_empty() {
+                        return Err("get_state requires: key".to_string());
+                    }
+                    let key = &call.args[0];
+                    let value = contract
+                        .state
+                        .get(key)
+                        .cloned()
+                        .unwrap_or_else(|| "null".to_string());
 
-                contract.balance -= amount;
-                (format!("Burned {} void", amount), 100, HashMap::new())
-            }
-            "set_state" => {
-                if call.args.len() < 2 {
-                    return Err("set_state requires: key, value".to_string());
+                    (value, 30, HashMap::new())
                 }
-                let key = call.args[0].clone();
-                let value = call.args[1].clone();
-
-                let mut sc: HashMap<String, String> = HashMap::new();
-                sc.insert(key, value);
-                ("State updated".to_string(), 60, sc)
-            }
-            "get_state" => {
-                if call.args.is_empty() {
-                    return Err("get_state requires: key".to_string());
+                "get_balance" => (format!("{}", contract.balance), 20, HashMap::new()),
+                _ => {
+                    return Err(format!("Unknown function: {}", call.function));
                 }
-                let key = &call.args[0];
-                let value = contract
-                    .state
-                    .get(key)
-                    .cloned()
-                    .unwrap_or_else(|| "null".to_string());
+            };
 
-                (value, 30, HashMap::new())
+            // Check gas limit
+            if gas_used > call.gas_limit {
+                return Err(format!("Out of gas: {} > {}", gas_used, call.gas_limit));
             }
-            "get_balance" => (format!("{}", contract.balance), 20, HashMap::new()),
-            _ => {
-                return Err(format!("Unknown function: {}", call.function));
+
+            // Apply state changes
+            for (k, v) in state_changes.iter() {
+                contract.state.insert(k.clone(), v.clone());
             }
-        };
 
-        // Check gas limit
-        if gas_used > call.gas_limit {
-            return Err(format!("Out of gas: {} > {}", gas_used, call.gas_limit));
-        }
-
-        // Apply state changes
-        for (k, v) in state_changes.iter() {
-            contract.state.insert(k.clone(), v.clone());
-        }
-
-        Ok(ContractResult {
-            success: true,
-            output,
-            gas_used,
-            state_changes,
-        })
+            Ok(ContractResult {
+                success: true,
+                output,
+                gas_used,
+                state_changes,
+            })
+        } // end #[cfg(not(feature = "mainnet"))]
     }
 
     /// Send native void to contract

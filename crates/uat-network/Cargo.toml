@@ -11,5 +11,6 @@ futures = "0.3"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 log = "0.4"
+chacha20poly1305 = "0.10"     # Real AEAD encryption for P2P messages
 uat-core = { path = "../uat-core" }
 uat-consensus = { path = "../uat-consensus" }

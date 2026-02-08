@@ -1171,10 +1171,11 @@ pub async fn start_api_server(
     // 19. GET / (Root endpoint - API welcome)
     let root_route = warp::path::end()
         .map(|| {
+            let network_label = if uat_core::is_mainnet_build() { "mainnet" } else { "testnet" };
             warp::reply::json(&serde_json::json!({
                 "name": "Unauthority (UAT) Blockchain API",
                 "version": "1.0.0",
-                "network": "mainnet",
+                "network": network_label,
                 "description": "Decentralized blockchain with Proof-of-Burn consensus",
                 "endpoints": {
                     "health": "GET /health - Health check",
@@ -1296,7 +1297,7 @@ pub async fn start_api_server(
                     .unwrap_or_default()
                     .as_secs(),
                 "chain": {
-                    "id": "uat-mainnet",
+                    "id": if uat_core::is_mainnet_build() { "uat-mainnet" } else { "uat-testnet" },
                     "accounts": l_guard.accounts.len(),
                     "blocks": l_guard.blocks.len()
                 },
@@ -1606,11 +1607,36 @@ async fn handle_rejection(
 }
 
 async fn get_crypto_prices() -> (f64, f64) {
-    let client = reqwest::Client::builder()
-        .user_agent("Mozilla/5.0")
-        .timeout(Duration::from_secs(10))
-        .build()
-        .unwrap_or_default();
+    // SECURITY: Route oracle requests through Tor SOCKS5 proxy if available
+    // Prevents IP leak when fetching prices from clearweb APIs
+    let proxy_url = std::env::var("UAT_SOCKS5_PROXY").unwrap_or_default();
+    let client = if !proxy_url.is_empty() {
+        match reqwest::Proxy::all(&proxy_url) {
+            Ok(proxy) => reqwest::Client::builder()
+                .user_agent("Mozilla/5.0")
+                .timeout(Duration::from_secs(15))
+                .proxy(proxy)
+                .build()
+                .unwrap_or_default(),
+            Err(e) => {
+                println!(
+                    "⚠️ Oracle SOCKS5 proxy failed ({}): {} — using direct",
+                    proxy_url, e
+                );
+                reqwest::Client::builder()
+                    .user_agent("Mozilla/5.0")
+                    .timeout(Duration::from_secs(10))
+                    .build()
+                    .unwrap_or_default()
+            }
+        }
+    } else {
+        reqwest::Client::builder()
+            .user_agent("Mozilla/5.0")
+            .timeout(Duration::from_secs(10))
+            .build()
+            .unwrap_or_default()
+    };
 
     let url_coingecko =
         "https://api.coingecko.com/api/v3/simple/price?ids=ethereum,bitcoin&vs_currencies=usd";
@@ -1673,14 +1699,31 @@ async fn get_crypto_prices() -> (f64, f64) {
     }
 
     // Calculate Final Average
+    // SECURITY: On production testnet level, require at least 1 real oracle price
+    // Fallback prices are only used on functional/consensus levels
+    let is_production_level = testnet_config::get_testnet_config().should_enable_oracle_consensus()
+        && testnet_config::is_production_simulation();
+
     let final_eth = if eth_prices.is_empty() {
-        2500.0
+        if is_production_level {
+            println!("🛑 PRODUCTION: All ETH oracle APIs failed — rejecting (fail-closed)");
+            0.0 // Fail-closed: returning 0 will cause burn validation to reject
+        } else {
+            println!("⚠️ Oracle: No ETH prices from APIs, using testnet fallback $2500");
+            2500.0
+        }
     } else {
         eth_prices.iter().sum::<f64>() / eth_prices.len() as f64
     };
 
     let final_btc = if btc_prices.is_empty() {
-        83000.0
+        if is_production_level {
+            println!("🛑 PRODUCTION: All BTC oracle APIs failed — rejecting (fail-closed)");
+            0.0 // Fail-closed
+        } else {
+            println!("⚠️ Oracle: No BTC prices from APIs, using testnet fallback $83000");
+            83000.0
+        }
     } else {
         btc_prices.iter().sum::<f64>() / btc_prices.len() as f64
     };
@@ -1688,21 +1731,37 @@ async fn get_crypto_prices() -> (f64, f64) {
     // SECURITY FIX #15: Sanity bounds to reject manipulated oracle prices
     // ETH reasonable range: $10 - $100,000 | BTC reasonable range: $100 - $10,000,000
     let final_eth = if !(10.0..=100_000.0).contains(&final_eth) {
-        println!(
-            "⚠️ Oracle ETH price ${:.2} out of sanity bounds, using fallback $2500",
-            final_eth
-        );
-        2500.0
+        if is_production_level || final_eth == 0.0 {
+            println!(
+                "🛑 Oracle ETH price ${:.2} out of sanity bounds — fail-closed",
+                final_eth
+            );
+            0.0
+        } else {
+            println!(
+                "⚠️ Oracle ETH price ${:.2} out of sanity bounds, using fallback $2500",
+                final_eth
+            );
+            2500.0
+        }
     } else {
         final_eth
     };
 
     let final_btc = if !(100.0..=10_000_000.0).contains(&final_btc) {
-        println!(
-            "⚠️ Oracle BTC price ${:.2} out of sanity bounds, using fallback $83000",
-            final_btc
-        );
-        83000.0
+        if is_production_level || final_btc == 0.0 {
+            println!(
+                "🛑 Oracle BTC price ${:.2} out of sanity bounds — fail-closed",
+                final_btc
+            );
+            0.0
+        } else {
+            println!(
+                "⚠️ Oracle BTC price ${:.2} out of sanity bounds, using fallback $83000",
+                final_btc
+            );
+            83000.0
+        }
     } else {
         final_btc
     };
@@ -1734,10 +1793,15 @@ async fn verify_eth_burn_tx(txid: &str) -> Option<f64> {
 
     let clean_txid = txid.trim().trim_start_matches("0x").to_lowercase();
     let url = format!("https://api.blockcypher.com/v1/eth/main/txs/{}", clean_txid);
-    let client = reqwest::Client::builder()
-        .timeout(Duration::from_secs(10))
-        .build()
-        .ok()?;
+    // SECURITY: Route through SOCKS5 proxy (Tor) to prevent IP leak
+    let proxy_url = std::env::var("UAT_SOCKS5_PROXY").unwrap_or_default();
+    let mut builder = reqwest::Client::builder().timeout(Duration::from_secs(10));
+    if !proxy_url.is_empty() {
+        if let Ok(proxy) = reqwest::Proxy::all(&proxy_url) {
+            builder = builder.proxy(proxy);
+        }
+    }
+    let client = builder.build().ok()?;
     println!("🌐 Oracle ETH: Verifying TXID {}...", clean_txid);
     if let Ok(resp) = client.get(url).send().await {
         if let Ok(json) = resp.json::<Value>().await {
@@ -1773,11 +1837,17 @@ async fn verify_btc_burn_tx(txid: &str) -> Option<f64> {
     }
 
     let url = format!("https://mempool.space/api/tx/{}", txid.trim());
-    let client = reqwest::Client::builder()
+    // SECURITY: Route through SOCKS5 proxy (Tor) to prevent IP leak
+    let proxy_url = std::env::var("UAT_SOCKS5_PROXY").unwrap_or_default();
+    let mut builder = reqwest::Client::builder()
         .user_agent("Mozilla/5.0")
-        .timeout(Duration::from_secs(10))
-        .build()
-        .ok()?;
+        .timeout(Duration::from_secs(10));
+    if !proxy_url.is_empty() {
+        if let Ok(proxy) = reqwest::Proxy::all(&proxy_url) {
+            builder = builder.proxy(proxy);
+        }
+    }
+    let client = builder.build().ok()?;
     println!("🌐 Oracle BTC: Verifying TXID {}...", txid);
     if let Ok(resp) = client.get(url).send().await {
         if let Ok(body) = resp.text().await {
@@ -2144,8 +2214,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut ledger_state = load_from_disk(&database);
 
     // Load genesis state if testnet genesis file exists
+    // SECURITY: Genesis testnet wallets are ONLY loaded on testnet builds
     let genesis_path = "testnet-genesis/testnet_wallets.json";
-    if std::path::Path::new(genesis_path).exists() {
+    if uat_core::is_testnet_build() && std::path::Path::new(genesis_path).exists() {
         if let Ok(genesis_json) = std::fs::read_to_string(genesis_path) {
             if let Ok(genesis_data) = serde_json::from_str::<serde_json::Value>(&genesis_json) {
                 if let Some(wallets) = genesis_data["wallets"].as_array() {

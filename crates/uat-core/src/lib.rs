@@ -20,12 +20,21 @@ pub const MIN_VALIDATOR_STAKE_VOID: u128 = 1_000 * VOID_PER_UAT;
 
 /// Chain ID to prevent cross-chain replay attacks
 /// Mainnet = 1, Testnet = 2. Included in every block's signing hash.
-pub const CHAIN_ID: u64 = {
-    // Determined at compile time from CARGO feature flag
-    // cfg! isn't usable in const context, so we use a fixed value.
-    // Before mainnet launch, change this to 1.
-    2 // Testnet
-};
+/// Compile with `--features mainnet` for mainnet build.
+#[cfg(feature = "mainnet")]
+pub const CHAIN_ID: u64 = 1; // Mainnet
+#[cfg(not(feature = "mainnet"))]
+pub const CHAIN_ID: u64 = 2; // Testnet
+
+/// Returns true if this binary was compiled for testnet
+pub const fn is_testnet_build() -> bool {
+    CHAIN_ID != 1
+}
+
+/// Returns true if this binary was compiled for mainnet
+pub const fn is_mainnet_build() -> bool {
+    CHAIN_ID == 1
+}
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub enum BlockType {
@@ -274,9 +283,13 @@ impl Ledger {
                 // ANTI-WHALE: Enforce max mint per block (1,000 UAT)
                 // Prevents single entity from acquiring disproportionate supply
                 const MAX_MINT_PER_BLOCK: u128 = 1_000 * VOID_PER_UAT;
-                // Faucet blocks (FAUCET:TESTNET:*) are exempt from limit on testnet
-                let is_faucet =
-                    block.link.starts_with("FAUCET:") || block.link.starts_with("TESTNET:");
+                // Faucet blocks (FAUCET:TESTNET:*) are exempt from limit ONLY on testnet builds.
+                // SECURITY: On mainnet build, nobody can bypass anti-whale via link prefix.
+                let is_faucet = if is_testnet_build() {
+                    block.link.starts_with("FAUCET:") || block.link.starts_with("TESTNET:")
+                } else {
+                    false // Mainnet: NO exemptions
+                };
                 if !is_faucet && block.amount > MAX_MINT_PER_BLOCK {
                     return Err(format!(
                         "Anti-Whale: Mint amount {} VOID exceeds max {} UAT per block",

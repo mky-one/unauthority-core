@@ -50,8 +50,14 @@ struct TokenState {
     allowances: HashMap<(String, String), u64>, // (owner, spender) -> amount
 }
 
+// SAFETY NOTE: In WASM, contracts run in single-threaded environments.
+// For production use with potential multi-threading, consider using:
+// - std::sync::Mutex<TokenState> for thread-safety
+// - once_cell::sync::Lazy for lazy initialization
+// This pattern is acceptable ONLY for single-threaded WASM execution.
 static mut STATE: Option<TokenState> = None;
 
+#[allow(static_mut_refs)] // WASM is single-threaded
 fn get_state() -> &'static mut TokenState {
     unsafe {
         STATE.as_mut().expect("Token not initialized")

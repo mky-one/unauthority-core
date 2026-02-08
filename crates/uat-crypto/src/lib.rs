@@ -93,6 +93,131 @@ pub fn verify_signature(
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// ADDRESS DERIVATION MODULE (Base58Check Format - Like Bitcoin)
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+use blake2::{Blake2b512, Digest};
+use sha2::Sha256;
+
+/// Derive UAT address from Dilithium5 public key (Base58Check format)
+/// 
+/// Format: Base58(version_byte + BLAKE2b160(pubkey) + checksum)
+/// - Version: 0x4A (74 = "UAT" identifier)
+/// - Hash: BLAKE2b-160 (20 bytes, quantum-resistant)
+/// - Checksum: First 4 bytes of SHA256(SHA256(version + hash))
+/// - Result: "UAT" prefix + Base58 encoded payload
+/// 
+/// # Example
+/// ```
+/// use uat_crypto::{generate_keypair, public_key_to_address};
+/// let keypair = generate_keypair();
+/// let address = public_key_to_address(&keypair.public_key);
+/// // Result: "UATHjvLcaLZpKcRvHoEKtYdbQbMZECzNp3gh9LJ7Y9ZPTqH"
+/// ```
+pub fn public_key_to_address(public_key_bytes: &[u8]) -> String {
+    const VERSION_BYTE: u8 = 0x4A; // 74 = "UAT" identifier
+    
+    // 1. Hash public key with BLAKE2b-512, take first 20 bytes (160-bit)
+    let mut hasher = Blake2b512::new();
+    hasher.update(public_key_bytes);
+    let hash_result = hasher.finalize();
+    let pubkey_hash = &hash_result[..20]; // Take first 20 bytes
+    
+    // 2. Construct payload: version + hash
+    let mut payload = vec![VERSION_BYTE];
+    payload.extend_from_slice(pubkey_hash);
+    
+    // 3. Calculate checksum: SHA256(SHA256(payload))
+    let checksum_full = {
+        let hash1 = Sha256::digest(&payload);
+        let hash2 = Sha256::digest(&hash1);
+        hash2
+    };
+    let checksum = &checksum_full[..4]; // First 4 bytes
+    
+    // 4. Combine: version + hash + checksum
+    let mut address_bytes = payload;
+    address_bytes.extend_from_slice(checksum);
+    
+    // 5. Base58 encode
+    let base58_addr = bs58::encode(address_bytes).into_string();
+    
+    // 6. Add "UAT" prefix for readability
+    format!("UAT{}", base58_addr)
+}
+
+/// Validate UAT address format and checksum
+/// 
+/// Checks:
+/// 1. Starts with "UAT" prefix
+/// 2. Valid Base58 encoding
+/// 3. Correct length (25 bytes decoded)
+/// 4. Valid checksum
+/// 
+/// # Example
+/// ```
+/// use uat_crypto::{generate_keypair, public_key_to_address, validate_address};
+/// let keypair = generate_keypair();
+/// let address = public_key_to_address(&keypair.public_key);
+/// assert!(validate_address(&address));
+/// ```
+pub fn validate_address(address: &str) -> bool {
+    // Must start with "UAT"
+    if !address.starts_with("UAT") {
+        return false;
+    }
+    
+    // Decode Base58 (remove "UAT" prefix first)
+    let base58_part = &address[3..];
+    let decoded = match bs58::decode(base58_part).into_vec() {
+        Ok(bytes) => bytes,
+        Err(_) => return false,
+    };
+    
+    // Must be 25 bytes: 1 (version) + 20 (hash) + 4 (checksum)
+    if decoded.len() != 25 {
+        return false;
+    }
+    
+    // Verify checksum
+    let payload = &decoded[..21]; // version + hash
+    let checksum = &decoded[21..]; // last 4 bytes
+    
+    let expected_checksum = {
+        let hash1 = Sha256::digest(payload);
+        let hash2 = Sha256::digest(&hash1);
+        hash2
+    };
+    
+    checksum == &expected_checksum[..4]
+}
+
+/// Extract public key hash from address (for debugging)
+/// 
+/// Note: Cannot reverse to original public key (one-way hash)!
+/// Returns Some(hash) if address is valid, None otherwise.
+/// 
+/// # Example
+/// ```
+/// use uat_crypto::{generate_keypair, public_key_to_address, address_to_pubkey_hash};
+/// let keypair = generate_keypair();
+/// let address = public_key_to_address(&keypair.public_key);
+/// let hash = address_to_pubkey_hash(&address);
+/// assert_eq!(hash.unwrap().len(), 20);
+/// ```
+pub fn address_to_pubkey_hash(address: &str) -> Option<Vec<u8>> {
+    if !validate_address(address) {
+        return None;
+    }
+    
+    let base58_part = &address[3..];
+    let decoded = bs58::decode(base58_part).into_vec().ok()?;
+    
+    // Extract hash (skip version byte, exclude checksum)
+    Some(decoded[1..21].to_vec())
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // KEY ENCRYPTION MODULE (RISK-002 Mitigation - P0 Critical)
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 

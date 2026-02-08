@@ -13,8 +13,10 @@ class WalletSetupScreen extends StatefulWidget {
 class _WalletSetupScreenState extends State<WalletSetupScreen> {
   final _formKey = GlobalKey<FormState>();
   final _mnemonicController = TextEditingController();
+  final _addressController = TextEditingController();
   bool _isLoading = false;
-  bool _isImportMode = false;
+  // 0 = main menu, 1 = import mnemonic, 2 = import address
+  int _mode = 0;
 
   Future<void> _generateWallet() async {
     setState(() => _isLoading = true);
@@ -108,99 +110,229 @@ class _WalletSetupScreenState extends State<WalletSetupScreen> {
     }
   }
 
+  /// Import by address only (testnet genesis accounts)
+  Future<void> _importByAddress() async {
+    if (!_formKey.currentState!.validate()) return;
+
+    setState(() => _isLoading = true);
+
+    try {
+      final walletService = context.read<WalletService>();
+      await walletService.importByAddress(_addressController.text.trim());
+
+      if (!mounted) return;
+
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(builder: (_) => const HomeScreen()),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
+      );
+    } finally {
+      setState(() => _isLoading = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
         title: const Text('UAT Wallet Setup'),
         centerTitle: true,
+        leading: _mode != 0
+            ? IconButton(
+                icon: const Icon(Icons.arrow_back),
+                onPressed: () => setState(() => _mode = 0),
+              )
+            : null,
       ),
       body: SafeArea(
         child: Padding(
           padding: const EdgeInsets.all(24.0),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Icon(
-                Icons.account_balance_wallet,
-                size: 80,
-                color: Theme.of(context).colorScheme.primary,
-              ),
-              const SizedBox(height: 24),
-              Text(
-                _isImportMode ? 'Import Wallet' : 'Create New Wallet',
-                style: Theme.of(context).textTheme.headlineMedium,
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 48),
-              if (_isImportMode) ...[
-                Form(
-                  key: _formKey,
-                  child: TextFormField(
-                    controller: _mnemonicController,
-                    maxLines: 3,
-                    decoration: const InputDecoration(
-                      labelText: 'Seed Phrase (24 words)',
-                      hintText: 'word1 word2 word3 ...',
-                      border: OutlineInputBorder(),
-                    ),
-                    validator: (value) {
-                      if (value == null || value.trim().isEmpty) {
-                        return 'Please enter your seed phrase';
-                      }
-                      final words = value.trim().split(RegExp(r'\s+'));
-                      if (words.length != 24) {
-                        return 'Seed phrase must be exactly 24 words';
-                      }
-                      return null;
-                    },
-                  ),
-                ),
-                const SizedBox(height: 24),
-                ElevatedButton(
-                  onPressed: _isLoading ? null : _importWallet,
-                  style: ElevatedButton.styleFrom(
-                    padding: const EdgeInsets.all(16),
-                  ),
-                  child: _isLoading
-                      ? const CircularProgressIndicator()
-                      : const Text('IMPORT WALLET',
-                          style: TextStyle(fontSize: 16)),
-                ),
-              ] else ...[
-                ElevatedButton(
-                  onPressed: _isLoading ? null : _generateWallet,
-                  style: ElevatedButton.styleFrom(
-                    padding: const EdgeInsets.all(16),
-                  ),
-                  child: _isLoading
-                      ? const CircularProgressIndicator()
-                      : const Text('CREATE NEW WALLET',
-                          style: TextStyle(fontSize: 16)),
-                ),
-              ],
-              const SizedBox(height: 16),
-              TextButton(
-                onPressed: _isLoading
-                    ? null
-                    : () {
-                        setState(() => _isImportMode = !_isImportMode);
-                      },
-                child: Text(_isImportMode
-                    ? 'Create New Wallet Instead'
-                    : 'Import Existing Wallet'),
-              ),
-            ],
-          ),
+          child: _mode == 0
+              ? _buildMainMenu()
+              : _mode == 1
+                  ? _buildImportMnemonic()
+                  : _buildImportAddress(),
         ),
       ),
+    );
+  }
+
+  Widget _buildMainMenu() {
+    return Column(
+      mainAxisAlignment: MainAxisAlignment.center,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Icon(
+          Icons.account_balance_wallet,
+          size: 80,
+          color: Theme.of(context).colorScheme.primary,
+        ),
+        const SizedBox(height: 24),
+        Text(
+          'Welcome to UAT Wallet',
+          style: Theme.of(context).textTheme.headlineMedium,
+          textAlign: TextAlign.center,
+        ),
+        const SizedBox(height: 48),
+
+        // Create New Wallet
+        ElevatedButton.icon(
+          onPressed: _isLoading ? null : _generateWallet,
+          icon: const Icon(Icons.add),
+          style: ElevatedButton.styleFrom(
+            padding: const EdgeInsets.all(16),
+          ),
+          label: _isLoading
+              ? const CircularProgressIndicator()
+              : const Text('CREATE NEW WALLET', style: TextStyle(fontSize: 16)),
+        ),
+        const SizedBox(height: 16),
+
+        // Import from Seed Phrase
+        OutlinedButton.icon(
+          onPressed: _isLoading ? null : () => setState(() => _mode = 1),
+          icon: const Icon(Icons.vpn_key),
+          style: OutlinedButton.styleFrom(
+            padding: const EdgeInsets.all(16),
+          ),
+          label:
+              const Text('IMPORT SEED PHRASE', style: TextStyle(fontSize: 16)),
+        ),
+        const SizedBox(height: 16),
+
+        // Import by Address (for testnet genesis)
+        OutlinedButton.icon(
+          onPressed: _isLoading ? null : () => setState(() => _mode = 2),
+          icon: const Icon(Icons.account_circle),
+          style: OutlinedButton.styleFrom(
+            padding: const EdgeInsets.all(16),
+            foregroundColor: Colors.orange,
+          ),
+          label: const Text('IMPORT BY ADDRESS (TESTNET)',
+              style: TextStyle(fontSize: 14)),
+        ),
+        const SizedBox(height: 16),
+        const Text(
+          'Import by Address: Use a pre-funded testnet genesis address\nwithout needing a seed phrase.',
+          style: TextStyle(fontSize: 11, color: Colors.grey),
+          textAlign: TextAlign.center,
+        ),
+      ],
+    );
+  }
+
+  Widget _buildImportMnemonic() {
+    return Column(
+      mainAxisAlignment: MainAxisAlignment.center,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Text(
+          'Import Wallet',
+          style: Theme.of(context).textTheme.headlineMedium,
+          textAlign: TextAlign.center,
+        ),
+        const SizedBox(height: 32),
+        Form(
+          key: _formKey,
+          child: TextFormField(
+            controller: _mnemonicController,
+            maxLines: 3,
+            decoration: const InputDecoration(
+              labelText: 'Seed Phrase (24 words)',
+              hintText: 'word1 word2 word3 ...',
+              border: OutlineInputBorder(),
+            ),
+            validator: (value) {
+              if (value == null || value.trim().isEmpty) {
+                return 'Please enter your seed phrase';
+              }
+              final words = value.trim().split(RegExp(r'\s+'));
+              if (words.length != 24) {
+                return 'Seed phrase must be exactly 24 words';
+              }
+              return null;
+            },
+          ),
+        ),
+        const SizedBox(height: 24),
+        ElevatedButton(
+          onPressed: _isLoading ? null : _importWallet,
+          style: ElevatedButton.styleFrom(
+            padding: const EdgeInsets.all(16),
+          ),
+          child: _isLoading
+              ? const CircularProgressIndicator()
+              : const Text('IMPORT WALLET', style: TextStyle(fontSize: 16)),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildImportAddress() {
+    return Column(
+      mainAxisAlignment: MainAxisAlignment.center,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Text(
+          'Import by Address',
+          style: Theme.of(context).textTheme.headlineMedium,
+          textAlign: TextAlign.center,
+        ),
+        const SizedBox(height: 8),
+        const Text(
+          'For testnet genesis accounts. You can view balance and request faucet.\nTransactions are signed by the node in L1 testnet mode.',
+          style: TextStyle(fontSize: 12, color: Colors.orange),
+          textAlign: TextAlign.center,
+        ),
+        const SizedBox(height: 32),
+        Form(
+          key: _formKey,
+          child: TextFormField(
+            controller: _addressController,
+            decoration: const InputDecoration(
+              labelText: 'UAT Address',
+              hintText: 'UAT...',
+              border: OutlineInputBorder(),
+              prefixIcon: Icon(Icons.account_circle),
+            ),
+            validator: (value) {
+              if (value == null || value.trim().isEmpty) {
+                return 'Please enter UAT address';
+              }
+              if (!value.trim().startsWith('UAT')) {
+                return 'Address must start with UAT';
+              }
+              if (value.trim().length < 40) {
+                return 'Address too short';
+              }
+              return null;
+            },
+          ),
+        ),
+        const SizedBox(height: 24),
+        ElevatedButton(
+          onPressed: _isLoading ? null : _importByAddress,
+          style: ElevatedButton.styleFrom(
+            padding: const EdgeInsets.all(16),
+            backgroundColor: Colors.orange,
+          ),
+          child: _isLoading
+              ? const CircularProgressIndicator()
+              : const Text('IMPORT ADDRESS', style: TextStyle(fontSize: 16)),
+        ),
+      ],
     );
   }
 
   @override
   void dispose() {
     _mnemonicController.dispose();
+    _addressController.dispose();
     super.dispose();
   }
 }

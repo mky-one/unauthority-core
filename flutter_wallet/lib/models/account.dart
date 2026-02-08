@@ -1,7 +1,9 @@
+import '../constants/blockchain.dart';
+
 class Account {
   final String address;
-  final int balance;
-  final int voidBalance;
+  final int balance; // In VOID (smallest unit)
+  final int voidBalance; // Staked/locked VOID
   final List<Transaction> history;
 
   Account({
@@ -23,8 +25,11 @@ class Account {
     );
   }
 
-  double get balanceUAT => balance / 1000000.0;
-  double get voidBalanceUAT => voidBalance / 1000000.0;
+  /// Balance in UAT (1 UAT = 10^11 VOID)
+  double get balanceUAT => BlockchainConstants.voidToUat(balance);
+
+  /// Void balance in UAT
+  double get voidBalanceUAT => BlockchainConstants.voidToUat(voidBalance);
 }
 
 class Transaction {
@@ -34,6 +39,8 @@ class Transaction {
   final int amount;
   final int timestamp;
   final String type;
+  final String? memo;
+  final String? signature;
 
   Transaction({
     required this.txid,
@@ -42,6 +49,8 @@ class Transaction {
     required this.amount,
     required this.timestamp,
     required this.type,
+    this.memo,
+    this.signature,
   });
 
   factory Transaction.fromJson(Map<String, dynamic> json) {
@@ -52,10 +61,13 @@ class Transaction {
       amount: json['amount'] ?? 0,
       timestamp: json['timestamp'] ?? 0,
       type: json['type'] ?? 'transfer',
+      memo: json['memo'],
+      signature: json['signature'],
     );
   }
 
-  double get amountUAT => amount / 1000000.0;
+  /// Amount in UAT (1 UAT = 10^11 VOID)
+  double get amountUAT => BlockchainConstants.voidToUat(amount);
 }
 
 class BlockInfo {
@@ -100,5 +112,6 @@ class ValidatorInfo {
     );
   }
 
-  double get stakeUAT => stake / 1000000.0;
+  /// Stake in UAT (1 UAT = 10^11 VOID)
+  double get stakeUAT => BlockchainConstants.voidToUat(stake);
 }

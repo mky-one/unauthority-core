@@ -19,6 +19,11 @@ dependencies:
   bip39: ^1.0.6
   provider: ^6.1.1
   socks5_proxy: ^2.1.1
+  path_provider: ^2.1.2
+  path: ^1.9.0
+  uuid: ^4.3.3
+  flutter_rust_bridge: ^2.11.1
+  ffi: ^2.1.2
 
 dev_dependencies:
   flutter_test:

@@ -5,6 +5,7 @@ import 'package:intl/intl.dart';
 import '../services/wallet_service.dart';
 import '../services/api_service.dart';
 import '../models/account.dart';
+import '../constants/blockchain.dart';
 import 'send_screen.dart';
 import 'burn_screen.dart';
 
@@ -140,7 +141,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                       fontSize: 14, color: Colors.grey)),
                               const SizedBox(height: 8),
                               Text(
-                                '${_account?.balanceUAT.toStringAsFixed(6) ?? '0.000000'} UAT',
+                                '${BlockchainConstants.formatUat(_account?.balanceUAT ?? 0)} UAT',
                                 style: const TextStyle(
                                     fontSize: 36, fontWeight: FontWeight.bold),
                               ),
@@ -148,7 +149,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                   _account!.voidBalance > 0) ...[
                                 const SizedBox(height: 8),
                                 Text(
-                                  'Void: ${_account!.voidBalanceUAT.toStringAsFixed(6)} UAT',
+                                  'Void: ${BlockchainConstants.formatUat(_account!.voidBalanceUAT)} UAT',
                                   style: const TextStyle(
                                       fontSize: 14, color: Colors.orange),
                                 ),
@@ -254,7 +255,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                       : Colors.green,
                                 ),
                                 title: Text(
-                                  '${tx.amountUAT.toStringAsFixed(6)} UAT',
+                                  '${BlockchainConstants.formatUat(tx.amountUAT)} UAT',
                                   style: const TextStyle(
                                       fontWeight: FontWeight.bold),
                                 ),

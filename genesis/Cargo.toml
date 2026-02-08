@@ -10,3 +10,4 @@ sha3 = "0.10"
 chrono = "0.4"
 serde_json = "1.0"
 bip39 = "2.0"
+uat-crypto = { path = "../crates/uat-crypto" }

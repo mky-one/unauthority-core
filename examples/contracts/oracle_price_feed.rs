@@ -48,8 +48,14 @@ struct OracleState {
     max_history: usize,
 }
 
+// SAFETY NOTE: In WASM, contracts run in single-threaded environments.
+// For production use with potential multi-threading, consider using:
+// - std::sync::Mutex<OracleState> for thread-safety
+// - once_cell::sync::Lazy for lazy initialization
+// This pattern is acceptable ONLY for single-threaded WASM execution.
 static mut STATE: Option<OracleState> = None;
 
+#[allow(static_mut_refs)] // WASM is single-threaded
 fn get_state() -> &'static mut OracleState {
     unsafe {
         if STATE.is_none() {

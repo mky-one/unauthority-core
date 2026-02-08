@@ -78,20 +78,20 @@ fn main() {
     // Test 1: Single whale with 100,000 UAT
     let whale_stake = 100_000 * void_per_uat;
     let whale_power = calculate_voting_power(whale_stake);
-    println!("Whale (100k UAT): Power = {:.2}", whale_power);
+    println!("Whale (100k UAT): Power = {}", whale_power);
     
     // Test 2: Small node with 1,000 UAT
     let small_stake = 1_000 * void_per_uat;
     let small_power = calculate_voting_power(small_stake);
-    println!("Node (1k UAT): Power = {:.2}", small_power);
+    println!("Node (1k UAT): Power = {}", small_power);
     
     // Test 3: 100 small nodes vs 1 whale
-    let total_small = small_power * 100.0;
-    println!("\n100 Nodes (1k each): Total Power = {:.2}", total_small);
-    println!("1 Whale (100k): Power = {:.2}", whale_power);
-    println!("Ratio: Small nodes have {:.1}x more voting power", total_small / whale_power);
+    let total_small = small_power * 100;
+    println!("\n100 Nodes (1k each): Total Power = {}", total_small);
+    println!("1 Whale (100k): Power = {}", whale_power);
+    println!("Ratio: Small nodes have {}x more voting power", total_small / whale_power);
     
-    if total_small > whale_power * 2.0 {
+    if total_small > whale_power * 2 {
         println!("✓ Anti-whale mechanism working: distributed nodes have majority power");
     } else {
         println!("✗ Warning: Whale still has too much power");

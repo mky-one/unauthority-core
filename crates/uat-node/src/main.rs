@@ -2361,8 +2361,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             let mut genesis_supply_deducted: u128 = 0;
 
                             for wallet in wallets {
+                                // FIX C1: Support both "balance_uat" and "genesis_balance_uat" field names
+                                // testnet_wallets.json uses "genesis_balance_uat", mainnet uses "balance_uat"
+                                let balance_str_opt = wallet["balance_uat"]
+                                    .as_str()
+                                    .or_else(|| wallet["genesis_balance_uat"].as_str());
                                 if let (Some(address), Some(balance_str)) =
-                                    (wallet["address"].as_str(), wallet["balance_uat"].as_str())
+                                    (wallet["address"].as_str(), balance_str_opt)
                                 {
                                     let balance_voi =
                                         genesis::parse_uat_to_void(balance_str).unwrap_or(0);
@@ -2632,7 +2637,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             .map(|b| b.calculate_hash())
                             .unwrap_or_else(|| "genesis".to_string());
 
-                        let sig_count = validator_count.max(1); // At minimum, this node signs
+                        // SECURITY FIX S2: sig_count = 1 (only this node signed).
+                        // Previously set to validator_count, falsely claiming full consensus.
+                        // Multi-validator checkpoint coordination requires a separate protocol
+                        // (future: CHECKPOINT_REQ/CHECKPOINT_RES gossip).
+                        // For now, honestly report that only 1 validator signed.
+                        let sig_count = 1_u32;
                         let checkpoint = FinalityCheckpoint::new(
                             checkpoint_height,
                             latest_block_hash,
@@ -2642,7 +2652,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         );
 
                         match cm.store_checkpoint(checkpoint) {
-                            Ok(()) => println!("🏁 Checkpoint created at height {} (block_count={}, {} validators)", checkpoint_height, block_count, validator_count),
+                            Ok(()) => println!("🏁 Checkpoint created at height {} (block_count={}, {} validators, sig_count=1/{})",
+                                checkpoint_height, block_count, validator_count, validator_count),
                             Err(e) => eprintln!("⚠️ Checkpoint creation failed: {}", e),
                         }
                     }
@@ -3386,7 +3397,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                         // IF DOUBLE CLAIM DETECTED FROM OTHER PEER
                                         if requester != my_addr_clone {
                                             println!("🚨 DOUBLE CLAIM DETECTED: {} trying to claim existing TXID!", get_short_addr(&requester));
-                                            let slash_msg = format!("SLASH_REQ:{}:{}", requester, txid);
+                                            // SECURITY FIX S1: Sign SLASH_REQ with Dilithium5
+                                            let slash_ts = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_millis();
+                                            let slash_payload = format!("SLASH:{}:{}:{}:{}", requester, txid, my_addr_clone, slash_ts);
+                                            let slash_sig = uat_crypto::sign_message(slash_payload.as_bytes(), &vote_sk).expect("BUG: signing failed");
+                                            let slash_msg = format!("SLASH_REQ:{}:{}:{}:{}:{}:{}", requester, txid, my_addr_clone, slash_ts, hex::encode(&slash_sig), hex::encode(&vote_pk));
                                             let _ = tx_vote.send(slash_msg).await;
                                         }
                                         return;
@@ -3479,12 +3494,40 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 }
                             }
                         } else if data.starts_with("SLASH_REQ:") {
-                            // FORMAT: SLASH_REQ:cheater_address:fake_txid
-                            // SECURITY FIX NEW#2: Use SlashingManager consensus instead of immediate execution.
-                            // A single peer's SLASH_REQ only registers a PROPOSAL — actual slashing
-                            // requires 2/3+1 validator agreement via the SlashingManager.
+                            // FORMAT: SLASH_REQ:cheater_address:fake_txid:proposer_addr:timestamp:signature:pubkey (7 parts)
+                            // SECURITY FIX S1: Verify Dilithium5 signature on SLASH_REQ (was unsigned).
                             let parts: Vec<&str> = data.split(':').collect();
-                            if parts.len() == 3 {
+                            if parts.len() == 7 {
+                                let proposer_addr = parts[3].to_string();
+                                let slash_sig_hex = parts[5];
+                                let slash_pk_hex = parts[6];
+
+                                // Verify cryptographic signature
+                                let slash_payload = format!("SLASH:{}:{}:{}:{}", parts[1], parts[2], parts[3], parts[4]);
+                                let slash_sig_bytes = hex::decode(slash_sig_hex).unwrap_or_default();
+                                let slash_pk_bytes = hex::decode(slash_pk_hex).unwrap_or_default();
+
+                                if !uat_crypto::verify_signature(slash_payload.as_bytes(), &slash_sig_bytes, &slash_pk_bytes) {
+                                    println!("🚨 Rejected SLASH_REQ: invalid signature from {}", get_short_addr(&proposer_addr));
+                                    continue;
+                                }
+                                // Verify pubkey matches claimed proposer address
+                                let derived_proposer = uat_crypto::public_key_to_address(&slash_pk_bytes);
+                                if derived_proposer != proposer_addr {
+                                    println!("🚨 Rejected SLASH_REQ: pubkey mismatch for {}", get_short_addr(&proposer_addr));
+                                    continue;
+                                }
+                            } else if parts.len() == 3 {
+                                // Legacy unsigned format — reject on mainnet, warn on testnet
+                                if uat_core::is_mainnet_build() {
+                                    println!("🚨 Rejected unsigned SLASH_REQ (mainnet requires signed messages)");
+                                    continue;
+                                }
+                                println!("⚠️ Accepted unsigned SLASH_REQ (testnet only — will be rejected on mainnet)");
+                            } else {
+                                continue;
+                            }
+                            {
                                 let cheater_addr = parts[1].to_string();
                                 let fake_txid = parts[2].to_string();
 
@@ -3651,7 +3694,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     let voter_power_quadratic = calculate_voting_power(voter_balance);
                                     let voter_power_display = voter_balance / VOID_PER_UAT;
 
-                                    if voter_power_quadratic <= 0.0 {
+                                    if voter_power_quadratic == 0 {
                                         println!("⚠️ Vote ignored: {} (Stake {} UAT insufficient, need 1000 UAT min)",
                                             get_short_addr(&voter_addr),
                                             voter_power_display
@@ -3673,10 +3716,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
                                         let mut pending = safe_lock(&pending_burns);
                                         if let Some(burn_info) = pending.get_mut(&txid) {
-                                            let power_scaled = (voter_power_quadratic * 1000.0) as u128;
+                                            // SECURITY FIX S4: Pure u128 integer math — no f64 truncation
+                                            let power_scaled = voter_power_quadratic * 1000;
                                             burn_info.3 += power_scaled;
 
-                                            println!("📩 Vote Received: {} (Stake: {} UAT, Quadratic Power: {:.2}) | Progress: {}/20000",
+                                            println!("📩 Vote Received: {} (Stake: {} UAT, Quadratic Power: {}) | Progress: {}/20000",
                                                 get_short_addr(&voter_addr),
                                                 voter_power_display,
                                                 voter_power_quadratic,
@@ -3846,11 +3890,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
                                         let mut pending = safe_lock(&pending_sends);
                                         if let Some((blk, total_power_votes)) = pending.get_mut(&tx_hash) {
-                                            if voter_power_quadratic > 0.0 {
-                                                // SECURITY FIX #6: Use u128 power_scaled directly (matching VOTE_RES pattern)
-                                                let power_scaled = (voter_power_quadratic * 1000.0) as u128;
+                                            if voter_power_quadratic > 0 {
+                                                // SECURITY FIX S4: Pure u128 integer math — no f64 truncation
+                                                let power_scaled = voter_power_quadratic * 1000;
                                                 *total_power_votes += power_scaled;
-                                                println!("📩 Konfirmasi Power: {} (Stake: {} UAT, Quadratic: {:.2}) | Total: {}/20000",
+                                                println!("📩 Konfirmasi Power: {} (Stake: {} UAT, Quadratic: {}) | Total: {}/20000",
                                                     get_short_addr(&voter_addr), voter_power_display, voter_power_quadratic, total_power_votes
                                                 );
                                             }

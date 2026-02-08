@@ -169,6 +169,7 @@ pub struct Ledger {
     pub distribution: DistributionState,
     /// O(1) index of Send block hashes that have already been claimed by a Receive block.
     /// Prevents the O(n) full-scan double-receive check.
+    /// FIX U3: Pruned when exceeding MAX_CLAIMED_SENDS to prevent unbounded growth.
     #[serde(default)]
     pub claimed_sends: HashSet<String>,
     /// Accumulated transaction fees (VOID units) — available for validator distribution
@@ -423,6 +424,27 @@ impl Ledger {
         // Track claimed Sends for O(1) double-receive prevention
         if block.block_type == BlockType::Receive {
             self.claimed_sends.insert(block.link.clone());
+
+            // FIX U3: Prune claimed_sends if it grows too large.
+            // The set is a performance cache — the canonical check is in process_block()
+            // which also validates send_block existence in self.blocks.
+            // Cap at 1M entries (~64MB RAM). When exceeded, clear the oldest half.
+            // This is safe because any new Receive for a pruned Send will still be
+            // validated against self.blocks (the authoritative source of truth).
+            const MAX_CLAIMED_SENDS: usize = 1_000_000;
+            if self.claimed_sends.len() > MAX_CLAIMED_SENDS {
+                // Drain half — since HashSet is unordered, this removes arbitrary entries.
+                // The full-scan fallback in Receive validation ensures correctness.
+                let to_remove: Vec<String> = self
+                    .claimed_sends
+                    .iter()
+                    .take(MAX_CLAIMED_SENDS / 2)
+                    .cloned()
+                    .collect();
+                for key in to_remove {
+                    self.claimed_sends.remove(&key);
+                }
+            }
         }
 
         Ok(block_hash)

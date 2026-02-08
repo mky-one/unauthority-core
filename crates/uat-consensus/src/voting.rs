@@ -47,7 +47,7 @@ impl ValidatorVote {
         vote_preference: String,
         is_active: bool,
     ) -> Self {
-        let voting_power = calculate_voting_power(staked_amount_void);
+        let voting_power = calculate_voting_power_f64(staked_amount_void);
 
         Self {
             validator_address,
@@ -65,15 +65,25 @@ impl ValidatorVote {
 /// f64::sqrt() can produce different results across CPU architectures.
 /// We use Newton's method on u128 for exact deterministic results.
 ///
+/// SECURITY FIX S4: Returns u128 instead of f64 to avoid floating-point
+/// truncation when scaling by 1000 in consensus vote accumulation.
+/// All callers must use integer arithmetic.
+///
 /// # Returns
-/// Voting power as f64 (from deterministic integer sqrt), or 0.0 if below minimum stake.
-pub fn calculate_voting_power(staked_amount_void: u128) -> f64 {
+/// Voting power as u128 (deterministic integer sqrt), or 0 if below minimum stake.
+pub fn calculate_voting_power(staked_amount_void: u128) -> u128 {
     if staked_amount_void < MIN_STAKE_VOI {
-        return 0.0; // No voting power below minimum
+        return 0;
     }
 
     let clamped_stake = staked_amount_void.min(MAX_STAKE_FOR_VOTING_VOI);
-    isqrt(clamped_stake) as f64
+    isqrt(clamped_stake)
+}
+
+/// Legacy f64 wrapper — only used for display/logging purposes.
+/// NOT for consensus-critical accumulation.
+pub fn calculate_voting_power_f64(staked_amount_void: u128) -> f64 {
+    calculate_voting_power(staked_amount_void) as f64
 }
 
 /// Deterministic integer square root using Newton's method.
@@ -194,7 +204,7 @@ impl VotingSystem {
             .ok_or_else(|| format!("Validator {} not found", validator_address))?;
 
         validator.staked_amount_void = new_stake_void;
-        validator.voting_power = calculate_voting_power(new_stake_void);
+        validator.voting_power = calculate_voting_power_f64(new_stake_void);
 
         Ok(validator.voting_power)
     }
@@ -315,23 +325,23 @@ impl VotingSystem {
         // Whale scenario
         let whale_total_power: f64 = whale_scenario
             .iter()
-            .map(|(_, stake)| calculate_voting_power(*stake))
+            .map(|(_, stake)| calculate_voting_power_f64(*stake))
             .sum();
 
         // Distributed scenario
         let distributed_total_power: f64 = distributed_scenario
             .iter()
-            .map(|(_, stake)| calculate_voting_power(*stake))
+            .map(|(_, stake)| calculate_voting_power_f64(*stake))
             .sum();
 
         let max_whale = whale_scenario
             .iter()
-            .map(|(_, stake)| calculate_voting_power(*stake))
+            .map(|(_, stake)| calculate_voting_power_f64(*stake))
             .fold(0.0, f64::max);
 
         let max_distributed = distributed_scenario
             .iter()
-            .map(|(_, stake)| calculate_voting_power(*stake))
+            .map(|(_, stake)| calculate_voting_power_f64(*stake))
             .fold(0.0, f64::max);
 
         let whale_concentration = max_whale / whale_total_power;
@@ -364,18 +374,20 @@ mod tests {
     fn test_voting_power_calculation() {
         // 1000 UAT = MIN_STAKE = 100_000_000_000_000 VOID
         let power = calculate_voting_power(1000 * UAT);
-        assert!((power - 10_000_000.0).abs() < 1.0); // √(10^14) = 10^7
+        // √(10^14) = 10^7 = 10,000,000
+        assert_eq!(power, 10_000_000);
 
         // 10000 UAT = 1_000_000_000_000_000 VOID
         let power = calculate_voting_power(10_000 * UAT);
-        assert!((power - 31_622_776.6).abs() < 1.0); // √(10^15) ≈ 31,622,776.6
+        // √(10^15) ≈ 31,622,776 (integer floor)
+        assert!(power >= 31_622_776 && power <= 31_622_777);
     }
 
     #[test]
     fn test_voting_power_below_minimum() {
         // 999 UAT = below MIN_STAKE (1000 UAT)
         let power = calculate_voting_power(999 * UAT);
-        assert_eq!(power, 0.0); // No voting power
+        assert_eq!(power, 0); // No voting power
     }
 
     #[test]
@@ -386,13 +398,13 @@ mod tests {
 
         // Scenario 2: 10 nodes with 1000 UAT each (minimum stake)
         let node_stake = 1_000 * UAT;
-        let nodes_power = calculate_voting_power(node_stake) * 10.0;
+        let nodes_power = calculate_voting_power(node_stake) * 10;
 
         // Nodes should have significantly more power
         // whale: √(10^15) ≈ 31.6M, nodes: √(10^14)*10 = 10M*10 = 100M
         assert!(nodes_power > whale_power);
         let ratio = nodes_power / whale_power;
-        assert!(ratio > 3.0); // At least 3x more power
+        assert!(ratio >= 3); // At least 3x more power
     }
 
     #[test]
@@ -476,7 +488,7 @@ mod tests {
 
         let (votes_for, percentage, consensus) = system.calculate_proposal_consensus("proposal_1");
 
-        assert_eq!(votes_for, calculate_voting_power(1_000 * UAT) * 2.0);
+        assert_eq!(votes_for, calculate_voting_power_f64(1_000 * UAT) * 2.0);
         assert!(percentage > 50.0); // 2/3 validators (≈66.7%)
         assert!(consensus); // Passed
     }

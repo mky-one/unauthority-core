@@ -21,10 +21,12 @@ pub struct AddressActivity {
     pub total_burned: u64,
     pub last_block: u64,
     pub fee_multiplier: f64,
+    /// Timestamp of the start of the current activity window (Unix seconds)
+    pub window_start: u64,
 }
 
 pub struct AntiWhaleEngine {
-    config: AntiWhaleConfig,
+    pub config: AntiWhaleConfig,
     address_activity: HashMap<String, AddressActivity>,
     current_block: u64,
 }
@@ -56,6 +58,28 @@ impl AntiWhaleEngine {
         }
     }
 
+    /// Activity window duration in seconds (counters reset after this period)
+    const ACTIVITY_WINDOW_SECS: u64 = 60;
+
+    /// Get current Unix timestamp
+    fn now_secs() -> u64 {
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs()
+    }
+
+    /// Reset activity if the time window has elapsed
+    fn maybe_reset_activity(activity: &mut AddressActivity) {
+        let now = Self::now_secs();
+        if now.saturating_sub(activity.window_start) >= Self::ACTIVITY_WINDOW_SECS {
+            activity.tx_count = 0;
+            activity.total_burned = 0;
+            activity.fee_multiplier = 1.0;
+            activity.window_start = now;
+        }
+    }
+
     /// Advance to next block and reset activity counters
     pub fn new_block(&mut self, block_number: u64) {
         self.current_block = block_number;
@@ -67,6 +91,7 @@ impl AntiWhaleEngine {
                 activity.total_burned = 0;
                 activity.fee_multiplier = 1.0;
                 activity.last_block = block_number;
+                activity.window_start = Self::now_secs();
             }
         }
     }
@@ -77,15 +102,21 @@ impl AntiWhaleEngine {
         address: String,
         base_fee: u64,
     ) -> Result<u64, String> {
+        let now = Self::now_secs();
+        let current_block = self.current_block;
         let activity = self
             .address_activity
             .entry(address.clone())
             .or_insert_with(|| AddressActivity {
                 tx_count: 0,
                 total_burned: 0,
-                last_block: self.current_block,
+                last_block: current_block,
                 fee_multiplier: 1.0,
+                window_start: now,
             });
+
+        // Time-window based reset: counters reset every ACTIVITY_WINDOW_SECS
+        Self::maybe_reset_activity(activity);
 
         // Check if address exceeded tx limit
         if activity.tx_count >= self.config.max_tx_per_block {
@@ -103,15 +134,21 @@ impl AntiWhaleEngine {
 
     /// Register a burn and check limits
     pub fn register_burn(&mut self, address: String, amount: u64) -> Result<(), String> {
+        let now = Self::now_secs();
+        let current_block = self.current_block;
         let activity = self
             .address_activity
             .entry(address.clone())
             .or_insert_with(|| AddressActivity {
                 tx_count: 0,
                 total_burned: 0,
-                last_block: self.current_block,
+                last_block: current_block,
                 fee_multiplier: 1.0,
+                window_start: now,
             });
+
+        // Time-window based reset: counters reset every ACTIVITY_WINDOW_SECS
+        Self::maybe_reset_activity(activity);
 
         if activity.total_burned + amount > self.config.max_burn_per_block {
             return Err(format!(
@@ -177,10 +214,12 @@ impl AntiWhaleEngine {
 
     /// Reset activity for new block cycle
     pub fn reset_block_activity(&mut self) {
+        let now = Self::now_secs();
         for activity in self.address_activity.values_mut() {
             activity.tx_count = 0;
             activity.total_burned = 0;
             activity.fee_multiplier = 1.0;
+            activity.window_start = now;
         }
     }
 

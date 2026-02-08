@@ -245,7 +245,7 @@ impl Faucet {
                     success: true,
                     message: format!(
                         "Successfully sent {} UAT to {}",
-                        self.config.drip_amount / 100_000_000,
+                        self.config.drip_amount / 100_000_000_000,
                         request.address
                     ),
                     tx_hash: Some(tx_hash),
@@ -270,8 +270,8 @@ impl Faucet {
             "successful_drips": stats.successful_drips,
             "rejected_requests": stats.rejected_requests,
             "total_distributed_voi": stats.total_distributed,
-            "total_distributed_uat": stats.total_distributed / 100_000_000,
-            "drip_amount_uat": self.config.drip_amount / 100_000_000,
+            "total_distributed_uat": stats.total_distributed / 100_000_000_000,
+            "drip_amount_uat": self.config.drip_amount / 100_000_000_000,
             "ip_cooldown_seconds": self.config.ip_cooldown,
             "address_cooldown_hours": self.config.address_cooldown / 3600,
             "enabled": self.config.enabled,

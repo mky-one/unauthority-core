@@ -1,6 +1,7 @@
 use crate::{WalletCommands, print_success, print_error, print_info};
 use std::path::Path;
 use uat_crypto::generate_encrypted_keypair;
+use uat_core::VOID_PER_UAT;
 use serde::{Serialize, Deserialize};
 use colored::*;
 
@@ -49,8 +50,8 @@ fn create_new_wallet(name: &str, config_dir: &Path) -> Result<(), Box<dyn std::e
     print_info("Generating Post-Quantum keypair (Dilithium5)...");
     let encrypted_key = generate_encrypted_keypair(&password)?;
     
-    // Derive address from public key (simple hex for now)
-    let address = format!("UAT{}", hex::encode(&encrypted_key.public_key[..20]));
+    // Derive address from public key (Base58Check format)
+    let address = uat_crypto::public_key_to_address(&encrypted_key.public_key);
     
     // Save wallet
     let wallet_dir = config_dir.join("wallets");
@@ -134,7 +135,7 @@ async fn show_balance(address: &str, rpc: &str) -> Result<(), Box<dyn std::error
             if response.status().is_success() {
                 let data: serde_json::Value = response.json().await?;
                 let balance_voi = data["balance"].as_u64().unwrap_or(0);
-                let balance_uat = balance_voi as f64 / 100_000_000.0;
+                let balance_uat = balance_voi as f64 / VOID_PER_UAT as f64;
                 
                 println!();
                 println!("{} {}", "Address:".bold(), address.green());

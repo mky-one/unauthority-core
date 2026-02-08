@@ -1,4 +1,5 @@
 use crate::{QueryCommands, print_error, print_info};
+use uat_core::VOID_PER_UAT;
 use colored::*;
 
 pub async fn handle(
@@ -59,7 +60,7 @@ async fn query_account(address: &str, rpc: &str) -> Result<(), Box<dyn std::erro
                 let data: serde_json::Value = response.json().await?;
                 
                 let balance_voi = data["balance"].as_u64().unwrap_or(0);
-                let balance_uat = balance_voi as f64 / 100_000_000.0;
+                let balance_uat = balance_voi as f64 / VOID_PER_UAT as f64;
                 
                 println!();
                 println!("{} {}", "Address:".bold(), address.green());

@@ -3,8 +3,16 @@
 
 use std::collections::HashMap;
 use std::net::IpAddr;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::{Duration, Instant};
+
+/// Recover from poisoned mutex instead of panicking
+fn safe_lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
+    match mutex.lock() {
+        Ok(guard) => guard,
+        Err(poisoned) => poisoned.into_inner(),
+    }
+}
 
 /// Token Bucket Rate Limiter
 /// Allows burst traffic but limits average rate over time
@@ -46,7 +54,7 @@ impl RateLimiter {
         // Periodic cleanup
         self.cleanup_if_needed();
 
-        let mut buckets = self.buckets.lock().unwrap();
+        let mut buckets = safe_lock(&self.buckets);
         
         let bucket = buckets.entry(ip).or_insert_with(|| TokenBucket {
             tokens: self.max_tokens as f64,
@@ -73,22 +81,22 @@ impl RateLimiter {
     /// Get current token count for IP (for monitoring)
     #[allow(dead_code)]
     pub fn get_tokens(&self, ip: IpAddr) -> Option<f64> {
-        let buckets = self.buckets.lock().unwrap();
+        let buckets = safe_lock(&self.buckets);
         buckets.get(&ip).map(|b| b.tokens)
     }
 
     /// Get number of tracked IPs
     #[allow(dead_code)]
     pub fn tracked_ips(&self) -> usize {
-        self.buckets.lock().unwrap().len()
+        safe_lock(&self.buckets).len()
     }
 
     /// Cleanup old entries (IPs that haven't made requests recently)
     fn cleanup_if_needed(&self) {
-        let mut last_cleanup = self.last_cleanup.lock().unwrap();
+        let mut last_cleanup = safe_lock(&self.last_cleanup);
         
         if last_cleanup.elapsed() >= self.cleanup_interval {
-            let mut buckets = self.buckets.lock().unwrap();
+            let mut buckets = safe_lock(&self.buckets);
             let now = Instant::now();
             
             // Remove buckets idle for > 10 minutes
@@ -103,14 +111,14 @@ impl RateLimiter {
     /// Reset rate limit for specific IP (admin tool)
     #[allow(dead_code)]
     pub fn reset_ip(&self, ip: IpAddr) {
-        let mut buckets = self.buckets.lock().unwrap();
+        let mut buckets = safe_lock(&self.buckets);
         buckets.remove(&ip);
     }
 
     /// Clear all rate limits (admin tool)
     #[allow(dead_code)]
     pub fn reset_all(&self) {
-        let mut buckets = self.buckets.lock().unwrap();
+        let mut buckets = safe_lock(&self.buckets);
         buckets.clear();
     }
 }

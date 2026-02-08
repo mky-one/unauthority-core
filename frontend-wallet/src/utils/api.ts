@@ -123,7 +123,8 @@ export async function requestFaucet(address: string): Promise<FaucetResult> {
 
     const data = await response.json();
 
-    if (!response.ok) {
+    // Check data.status field - backend returns HTTP 200 with status:"error" for failures
+    if (!response.ok || data.status === 'error') {
       return {
         success: false,
         message: data.message || data.msg || `Request failed: ${response.status}`,
@@ -165,7 +166,8 @@ export async function sendTransaction(
 
     const data = await response.json();
 
-    if (!response.ok) {
+    // Check data.status field - backend returns HTTP 200 with status:"error" for failures
+    if (!response.ok || data.status === 'error') {
       return {
         success: false,
         message: data.message || data.msg || `Send failed: ${response.status}`,
@@ -247,10 +249,11 @@ export async function submitBurn(request: BurnRequest): Promise<BurnResponse> {
 
     const data = await response.json();
 
-    if (!response.ok) {
+    // Check data.status field - backend returns HTTP 200 with status:"error" for failures
+    if (!response.ok || data.status === 'error') {
       return {
         status: 'error',
-        error: data.message || data.error || `Burn failed: ${response.status}`,
+        error: data.message || data.msg || data.error || `Burn failed: ${response.status}`,
       };
     }
 

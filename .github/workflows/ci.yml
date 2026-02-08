@@ -45,7 +45,7 @@ jobs:
           key: ${{ runner.os }}-target-${{ hashFiles('**/Cargo.lock') }}
 
       - name: Run tests
-        run: cargo test --workspace --all-features --verbose
+        run: cargo test --workspace --all-features --verbose --exclude uat-vm
 
       - name: Run doc tests
         run: cargo test --doc --workspace

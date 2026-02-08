@@ -30,8 +30,9 @@ pub struct ValidatorVote {
     /// Current staked amount (in VOI)
     pub staked_amount_void: u128,
 
-    /// Calculated voting power (√stake)
-    pub voting_power: f64,
+    /// Calculated voting power (√stake) — deterministic u128 via integer sqrt
+    /// SECURITY FIX M-01: Changed from f64 to u128 for cross-platform determinism.
+    pub voting_power: u128,
 
     /// Vote preference (proposition ID or "abstain")
     pub vote_preference: String,
@@ -47,7 +48,8 @@ impl ValidatorVote {
         vote_preference: String,
         is_active: bool,
     ) -> Self {
-        let voting_power = calculate_voting_power_f64(staked_amount_void);
+        // SECURITY FIX M-01: Use deterministic u128 integer sqrt, not f64
+        let voting_power = calculate_voting_power(staked_amount_void);
 
         Self {
             validator_address,
@@ -117,6 +119,8 @@ pub fn normalize_voting_power(validator_power: f64, total_network_power: f64) ->
 }
 
 /// Voting power summary for a network
+/// SECURITY FIX M-01: All fields use deterministic integer math.
+/// Concentration ratio uses basis points (0-10000 = 0%-100%).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct VotingPowerSummary {
     /// Total validators participating
@@ -125,23 +129,24 @@ pub struct VotingPowerSummary {
     /// Total network stake (VOI)
     pub total_stake_void: u128,
 
-    /// Total voting power (sum of √stake for all validators)
-    pub total_voting_power: f64,
+    /// Total voting power (sum of √stake for all validators) — deterministic u128
+    pub total_voting_power: u128,
 
     /// Validators with voting power
     pub votes: Vec<ValidatorVote>,
 
-    /// Average voting power per validator
-    pub average_voting_power: f64,
+    /// Average voting power per validator (integer division, floor)
+    pub average_voting_power: u128,
 
     /// Maximum voting power (richest validator)
-    pub max_voting_power: f64,
+    pub max_voting_power: u128,
 
     /// Minimum voting power (poorest active validator)
-    pub min_voting_power: f64,
+    pub min_voting_power: u128,
 
-    /// Power concentration (max_power / total_power, lower = more decentralized)
-    pub concentration_ratio: f64,
+    /// Power concentration in basis points (max_power * 10000 / total_power)
+    /// Lower = more decentralized. 10000 = one validator controls 100%.
+    pub concentration_ratio_bps: u32,
 }
 
 /// Voting system to calculate and track voting power
@@ -165,13 +170,14 @@ impl VotingSystem {
     }
 
     /// Register or update a validator
+    /// SECURITY FIX M-01: Returns u128 voting power (deterministic)
     pub fn register_validator(
         &mut self,
         validator_address: String,
         staked_amount_void: u128,
         vote_preference: String,
         is_active: bool,
-    ) -> Result<f64, String> {
+    ) -> Result<u128, String> {
         if staked_amount_void > MAX_STAKE_FOR_VOTING_VOI {
             return Err(format!(
                 "Stake {} exceeds maximum {}",
@@ -193,18 +199,19 @@ impl VotingSystem {
     }
 
     /// Update validator stake (happens during epochs)
+    /// SECURITY FIX M-01: Returns u128 voting power (deterministic)
     pub fn update_stake(
         &mut self,
         validator_address: &str,
         new_stake_void: u128,
-    ) -> Result<f64, String> {
+    ) -> Result<u128, String> {
         let validator = self
             .validators
             .get_mut(validator_address)
             .ok_or_else(|| format!("Validator {} not found", validator_address))?;
 
         validator.staked_amount_void = new_stake_void;
-        validator.voting_power = calculate_voting_power_f64(new_stake_void);
+        validator.voting_power = calculate_voting_power(new_stake_void);
 
         Ok(validator.voting_power)
     }
@@ -224,22 +231,27 @@ impl VotingSystem {
         Ok(())
     }
 
-    /// Get individual validator voting power
-    pub fn get_validator_power(&self, validator_address: &str) -> Option<f64> {
+    /// Get individual validator voting power (deterministic u128)
+    pub fn get_validator_power(&self, validator_address: &str) -> Option<u128> {
         self.validators
             .get(validator_address)
             .map(|v| v.voting_power)
     }
 
-    /// Get normalized voting power for a validator
-    pub fn get_normalized_power(&self, validator_address: &str) -> Option<f64> {
-        let total_power: f64 = self.validators.values().map(|v| v.voting_power).sum();
+    /// Get normalized voting power in basis points (0-10000)
+    /// SECURITY FIX M-01: Uses integer math for determinism.
+    pub fn get_normalized_power(&self, validator_address: &str) -> Option<u32> {
+        let total_power: u128 = self.validators.values().map(|v| v.voting_power).sum();
+        if total_power == 0 {
+            return Some(0);
+        }
         self.validators
             .get(validator_address)
-            .map(|v| normalize_voting_power(v.voting_power, total_power))
+            .map(|v| ((v.voting_power * 10_000) / total_power) as u32)
     }
 
-    /// Calculate voting power summary
+    /// Calculate voting power summary — all deterministic integer math
+    /// SECURITY FIX M-01: Eliminates f64 from governance summary.
     pub fn get_summary(&self) -> VotingPowerSummary {
         let votes: Vec<ValidatorVote> = self
             .validators
@@ -250,32 +262,26 @@ impl VotingSystem {
 
         let total_validators = votes.len() as u32;
         let total_stake_void: u128 = votes.iter().map(|v| v.staked_amount_void).sum();
-        let total_voting_power: f64 = votes.iter().map(|v| v.voting_power).sum();
+        let total_voting_power: u128 = votes.iter().map(|v| v.voting_power).sum();
 
         let (max_voting_power, min_voting_power) = if votes.is_empty() {
-            (0.0, 0.0)
+            (0u128, 0u128)
         } else {
-            let max = votes
-                .iter()
-                .map(|v| v.voting_power)
-                .fold(f64::NEG_INFINITY, f64::max);
-            let min = votes
-                .iter()
-                .map(|v| v.voting_power)
-                .fold(f64::INFINITY, f64::min);
+            let max = votes.iter().map(|v| v.voting_power).max().unwrap_or(0);
+            let min = votes.iter().map(|v| v.voting_power).min().unwrap_or(0);
             (max, min)
         };
 
         let average_voting_power = if total_validators > 0 {
-            total_voting_power / total_validators as f64
+            total_voting_power / total_validators as u128
         } else {
-            0.0
+            0
         };
 
-        let concentration_ratio = if total_voting_power > 0.0 {
-            max_voting_power / total_voting_power
+        let concentration_ratio_bps = if total_voting_power > 0 {
+            ((max_voting_power * 10_000) / total_voting_power) as u32
         } else {
-            0.0
+            0
         };
 
         VotingPowerSummary {
@@ -286,70 +292,95 @@ impl VotingSystem {
             average_voting_power,
             max_voting_power,
             min_voting_power,
-            concentration_ratio,
+            concentration_ratio_bps,
         }
     }
 
     /// Reach consensus on a proposal (>50% voting power needed)
-    pub fn calculate_proposal_consensus(&self, proposal_id: &str) -> (f64, f64, bool) {
-        let votes_for: f64 = self
+    /// SECURITY FIX M-01: Returns (votes_for_u128, percentage_bps_u32, consensus_bool)
+    /// percentage_bps: 0-10000 basis points (5000 = 50%, 10000 = 100%)
+    /// Consensus requires >5000 bps (strictly greater than 50%)
+    pub fn calculate_proposal_consensus(&self, proposal_id: &str) -> (u128, u32, bool) {
+        let votes_for: u128 = self
             .validators
             .values()
             .filter(|v| v.is_active && v.vote_preference == proposal_id)
             .map(|v| v.voting_power)
             .sum();
 
-        let total_voting_power: f64 = self
+        let total_voting_power: u128 = self
             .validators
             .values()
             .filter(|v| v.is_active)
             .map(|v| v.voting_power)
             .sum();
 
-        let percentage = if total_voting_power > 0.0 {
-            (votes_for / total_voting_power) * 100.0
+        let percentage_bps: u32 = if total_voting_power > 0 {
+            ((votes_for * 10_000) / total_voting_power) as u32
         } else {
-            0.0
+            0
         };
 
-        let consensus_reached = percentage > 50.0;
+        let consensus_reached = percentage_bps > 5_000; // Strictly > 50%
 
-        (votes_for, percentage, consensus_reached)
+        (votes_for, percentage_bps, consensus_reached)
     }
 
     /// Compare voting power distributions (for testing anti-whale effectiveness)
+    /// SECURITY FIX M-01: Returns basis points (u32) instead of f64 ratios.
+    /// Returns (whale_concentration_bps, distributed_concentration_bps, improvement_bps)
     pub fn compare_scenarios(
         whale_scenario: &[(String, u128)],
         distributed_scenario: &[(String, u128)],
-    ) -> (f64, f64, f64) {
+    ) -> (u32, u32, u32) {
         // Whale scenario
-        let whale_total_power: f64 = whale_scenario
+        let whale_total_power: u128 = whale_scenario
             .iter()
-            .map(|(_, stake)| calculate_voting_power_f64(*stake))
+            .map(|(_, stake)| calculate_voting_power(*stake))
             .sum();
 
         // Distributed scenario
-        let distributed_total_power: f64 = distributed_scenario
+        let distributed_total_power: u128 = distributed_scenario
             .iter()
-            .map(|(_, stake)| calculate_voting_power_f64(*stake))
+            .map(|(_, stake)| calculate_voting_power(*stake))
             .sum();
 
-        let max_whale = whale_scenario
+        let max_whale: u128 = whale_scenario
             .iter()
-            .map(|(_, stake)| calculate_voting_power_f64(*stake))
-            .fold(0.0, f64::max);
+            .map(|(_, stake)| calculate_voting_power(*stake))
+            .max()
+            .unwrap_or(0);
 
-        let max_distributed = distributed_scenario
+        let max_distributed: u128 = distributed_scenario
             .iter()
-            .map(|(_, stake)| calculate_voting_power_f64(*stake))
-            .fold(0.0, f64::max);
+            .map(|(_, stake)| calculate_voting_power(*stake))
+            .max()
+            .unwrap_or(0);
 
-        let whale_concentration = max_whale / whale_total_power;
-        let distributed_concentration = max_distributed / distributed_total_power;
-        let improvement =
-            (whale_concentration - distributed_concentration) / whale_concentration * 100.0;
+        let whale_concentration_bps = if whale_total_power > 0 {
+            ((max_whale * 10_000) / whale_total_power) as u32
+        } else {
+            0
+        };
 
-        (whale_concentration, distributed_concentration, improvement)
+        let distributed_concentration_bps = if distributed_total_power > 0 {
+            ((max_distributed * 10_000) / distributed_total_power) as u32
+        } else {
+            0
+        };
+
+        let improvement_bps = if whale_concentration_bps > 0 {
+            ((whale_concentration_bps as u64 - distributed_concentration_bps as u64) * 10_000
+                / whale_concentration_bps as u64) as u32
+        } else {
+            0
+        };
+
+        (
+            whale_concentration_bps,
+            distributed_concentration_bps,
+            improvement_bps,
+        )
     }
 
     /// Clear all validators
@@ -429,7 +460,7 @@ mod tests {
             )
             .unwrap();
 
-        assert!(power > 0.0);
+        assert!(power > 0);
         assert_eq!(system.get_validator_power("validator1"), Some(power));
     }
 
@@ -451,8 +482,8 @@ mod tests {
         let summary = system.get_summary();
 
         assert_eq!(summary.total_validators, 3);
-        assert!(summary.total_voting_power > 0.0);
-        assert!(summary.average_voting_power > 0.0);
+        assert!(summary.total_voting_power > 0);
+        assert!(summary.average_voting_power > 0);
         assert!(summary.max_voting_power > summary.average_voting_power);
     }
 
@@ -486,10 +517,11 @@ mod tests {
             )
             .unwrap();
 
-        let (votes_for, percentage, consensus) = system.calculate_proposal_consensus("proposal_1");
+        let (votes_for, percentage_bps, consensus) =
+            system.calculate_proposal_consensus("proposal_1");
 
-        assert_eq!(votes_for, calculate_voting_power_f64(1_000 * UAT) * 2.0);
-        assert!(percentage > 50.0); // 2/3 validators (≈66.7%)
+        assert_eq!(votes_for, calculate_voting_power(1_000 * UAT) * 2);
+        assert!(percentage_bps > 5_000); // 2/3 validators (≈6666 bps = 66.7%)
         assert!(consensus); // Passed
     }
 
@@ -515,9 +547,9 @@ mod tests {
             )
             .unwrap();
 
-        let (_, percentage, consensus) = system.calculate_proposal_consensus("proposal_1");
+        let (_, percentage_bps, consensus) = system.calculate_proposal_consensus("proposal_1");
 
-        assert_eq!(percentage, 50.0); // 1/2 validators
+        assert_eq!(percentage_bps, 5_000); // 50% = 5000 bps
         assert!(!consensus); // Needs > 50%, not ≥ 50%
     }
 
@@ -562,7 +594,7 @@ mod tests {
 
         let summary = system.get_summary();
         // Whale voting power: √(10^15) ≈ 31.6M, Small: √(10^14) = 10M
-        // Concentration = 31.6M / (31.6M + 10M) ≈ 0.76
-        assert!(summary.concentration_ratio > 0.5); // Whale has >50% voting power
+        // Concentration ≈ 31.6M / (31.6M + 10M) ≈ 7600 bps (76%)
+        assert!(summary.concentration_ratio_bps > 5_000); // Whale has >50% voting power
     }
 }

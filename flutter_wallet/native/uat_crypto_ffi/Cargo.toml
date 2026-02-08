@@ -22,6 +22,7 @@ hex = "0.4"
 digest = "0.10"
 rand = "0.8"
 rand_chacha = "0.3"
+zeroize = "1"
 
 [patch.crates-io]
 pqcrypto-internals = { path = "pqcrypto-internals-seeded" }

@@ -30,7 +30,7 @@ class _SendScreenState extends State<SendScreen> {
 
       final apiService = context.read<ApiService>();
       final amount =
-          BlockchainConstants.uatToVoid(double.parse(_amountController.text));
+          BlockchainConstants.uatStringToVoid(_amountController.text);
 
       // Sign transaction with Dilithium5 (if available)
       String? signature;

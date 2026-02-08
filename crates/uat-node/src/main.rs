@@ -2318,6 +2318,27 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 // Mainnet: use validated GenesisConfig parser
                 // Testnet: use the raw JSON wallets parser (legacy format)
                 if uat_core::is_mainnet_build() {
+                    // SECURITY FIX: Validate genesis config BEFORE loading accounts.
+                    // Prevents tampered genesis files from silently loading invalid state.
+                    {
+                        let genesis_config: genesis::GenesisConfig =
+                            serde_json::from_str(&genesis_json)
+                                .map_err(|e| {
+                                    format!("Failed to parse genesis JSON for validation: {}", e)
+                                })
+                                .unwrap_or_else(|e| {
+                                    eprintln!("❌ FATAL: {}", e);
+                                    std::process::exit(1);
+                                });
+                        if let Err(e) = genesis::validate_genesis(&genesis_config) {
+                            eprintln!("❌ FATAL: Genesis validation failed: {}", e);
+                            return Err(Box::<dyn std::error::Error>::from(format!(
+                                "Genesis validation failed: {}",
+                                e
+                            )));
+                        }
+                        println!("✅ Genesis config validated (supply, network, addresses)");
+                    }
                     match genesis::load_genesis_from_file(genesis_path) {
                         Ok(accounts) => {
                             let mut loaded_count = 0;

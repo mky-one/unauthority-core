@@ -1466,32 +1466,50 @@ pub async fn start_api_server(
         );
 
     // Combine all routes with rate limiting
-    let routes = root_route // Root endpoint (must be first!)
-        .or(balance_route)
-        .or(supply_route)
-        .or(history_route)
-        .or(peers_route)
-        .or(send_route)
-        .or(burn_route)
-        .or(deploy_route)
-        .or(call_route)
-        .or(get_contract_route)
-        .or(metrics_route)
-        .or(node_info_route) // NEW: Node info endpoint
-        .or(validators_route) // NEW: Validators endpoint
-        .or(balance_alias_route) // NEW: Balance alias for CLI
-        .or(block_route) // NEW: Latest block endpoint
-        .or(faucet_route) // NEW: Faucet endpoint (Functional/Consensus testnet only)
-        .or(blocks_recent_route) // NEW: Recent blocks endpoint
-        .or(whoami_route) // NEW: Node's signing address endpoint
-        .or(account_route) // NEW: Account details endpoint
-        .or(health_route) // NEW: Health check endpoint
-        .or(slashing_route) // NEW: Slashing stats endpoint
-        .or(slashing_profile_route) // NEW: Slashing per-validator
-        .or(block_by_hash_route) // NEW: Block explorer - get block by hash
-        .or(tx_by_hash_route) // NEW: Block explorer - get transaction by hash
-        .or(search_route) // NEW: Block explorer - search
-        .or(sync_route) // NEW: HTTP-based state sync for Tor peers
+    // NOTE: Each route is .boxed() to prevent warp type recursion overflow (E0275)
+    // when compiling in release mode. This breaks the deeply nested type chain.
+    let group1 = root_route
+        .boxed()
+        .or(balance_route.boxed())
+        .or(supply_route.boxed())
+        .or(history_route.boxed())
+        .or(peers_route.boxed())
+        .or(send_route.boxed())
+        .boxed();
+
+    let group2 = burn_route
+        .boxed()
+        .or(deploy_route.boxed())
+        .or(call_route.boxed())
+        .or(get_contract_route.boxed())
+        .or(metrics_route.boxed())
+        .or(node_info_route.boxed())
+        .boxed();
+
+    let group3 = validators_route
+        .boxed()
+        .or(balance_alias_route.boxed())
+        .or(block_route.boxed())
+        .or(faucet_route.boxed())
+        .or(blocks_recent_route.boxed())
+        .or(whoami_route.boxed())
+        .boxed();
+
+    let group4 = account_route
+        .boxed()
+        .or(health_route.boxed())
+        .or(slashing_route.boxed())
+        .or(slashing_profile_route.boxed())
+        .or(block_by_hash_route.boxed())
+        .or(tx_by_hash_route.boxed())
+        .or(search_route.boxed())
+        .or(sync_route.boxed())
+        .boxed();
+
+    let routes = group1
+        .or(group2)
+        .or(group3)
+        .or(group4)
         .with(cors) // Apply CORS
         .with(warp::log("api"))
         .recover(handle_rejection);

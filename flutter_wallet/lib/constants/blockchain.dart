@@ -31,7 +31,8 @@ class BlockchainConstants {
   /// Convert UAT (display unit) to VOID (smallest unit)
   /// ⚠️ DEPRECATED: Uses f64 multiplication which causes off-by-1 VOID errors
   /// on common decimals (0.3, 0.6, 0.7). Use uatStringToVoid() instead.
-  @Deprecated('Use uatStringToVoid() for precision. f64 causes off-by-1 VOID errors.')
+  @Deprecated(
+      'Use uatStringToVoid() for precision. f64 causes off-by-1 VOID errors.')
   static int uatToVoid(double uatAmount) {
     return (uatAmount * voidPerUat).toInt();
   }

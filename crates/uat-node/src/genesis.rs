@@ -190,7 +190,7 @@ pub fn validate_genesis(config: &GenesisConfig) -> Result<(), String> {
 
     // Check timestamp is reasonable (after 2020, before 2100)
     if let Some(ts) = config.genesis_timestamp {
-        if ts < 1577836800 || ts > 4102444800 {
+        if !(1577836800..=4102444800).contains(&ts) {
             return Err("Invalid genesis timestamp".to_string());
         }
     }
@@ -282,15 +282,45 @@ mod tests {
         }
     }
 
+    /// Helper: return the network_id matching the current build target
+    fn current_network_id() -> u64 {
+        if uat_core::is_mainnet_build() {
+            1
+        } else {
+            2
+        }
+    }
+
+    /// Helper: return the network string matching the current build target
+    fn current_network_str() -> &'static str {
+        if uat_core::is_mainnet_build() {
+            "mainnet"
+        } else {
+            "testnet"
+        }
+    }
+
+    /// Helper: return the opposite network_id (for mismatch tests)
+    fn opposite_network_id() -> u64 {
+        if uat_core::is_mainnet_build() {
+            2
+        } else {
+            1
+        }
+    }
+
     #[test]
     fn test_genesis_validation_legacy() {
-        assert!(validate_genesis(&make_legacy_config("testnet", "21936236.00000000")).is_ok());
+        assert!(validate_genesis(&make_legacy_config(
+            current_network_str(),
+            "21936236.00000000"
+        ))
+        .is_ok());
     }
 
     #[test]
     fn test_genesis_validation_generator_format() {
-        // Default build is testnet (network_id=2)
-        let config = make_generator_config(2, 2_193_623_600_000_000_000);
+        let config = make_generator_config(current_network_id(), 2_193_623_600_000_000_000);
         assert!(validate_genesis(&config).is_ok());
     }
 
@@ -301,14 +331,14 @@ mod tests {
 
     #[test]
     fn test_invalid_supply_generator() {
-        let config = make_generator_config(2, 999);
+        let config = make_generator_config(current_network_id(), 999);
         assert!(validate_genesis(&config).is_err());
     }
 
     #[test]
     fn test_network_mismatch_rejected() {
-        // Testnet build should reject mainnet genesis
-        let config = make_generator_config(1, 2_193_623_600_000_000_000);
+        // Opposite network genesis should be rejected
+        let config = make_generator_config(opposite_network_id(), 2_193_623_600_000_000_000);
         assert!(validate_genesis(&config).is_err());
     }
 

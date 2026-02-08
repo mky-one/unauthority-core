@@ -11,6 +11,7 @@ use uat_core::anti_whale::{AntiWhaleConfig, AntiWhaleEngine}; // NEW: Anti-whale
 use uat_core::oracle_consensus::OracleConsensus; // NEW: Oracle consensus
 use uat_core::{AccountState, Block, BlockType, Ledger, MIN_VALIDATOR_STAKE_VOID, VOID_PER_UAT};
 use uat_network::{NetworkEvent, UatNode};
+#[cfg(feature = "vm")]
 use uat_vm::{ContractCall, WasmEngine};
 
 /// Safe mutex lock that recovers from poisoned state instead of panicking.
@@ -96,6 +97,7 @@ struct BurnRequest {
     recipient_address: Option<String>, // Address to receive minted UAT (optional, defaults to sender)
 }
 
+#[cfg(feature = "vm")]
 #[derive(serde::Deserialize, serde::Serialize)]
 struct DeployContractRequest {
     owner: String,
@@ -103,6 +105,7 @@ struct DeployContractRequest {
     initial_state: Option<HashMap<String, String>>,
 }
 
+#[cfg(feature = "vm")]
 #[derive(serde::Deserialize, serde::Serialize)]
 struct CallContractRequest {
     contract_address: String,
@@ -664,102 +667,120 @@ pub async fn start_api_server(
         });
 
     // 7. POST /deploy-contract (PERMISSIONLESS)
-    let wasm_engine = Arc::new(WasmEngine::new());
-    let wasm_deploy = wasm_engine.clone();
-    let deploy_route = warp::path("deploy-contract")
-        .and(warp::post())
-        .and(warp::body::json())
-        .and(with_state(wasm_deploy))
-        .then(
-            |req: DeployContractRequest, engine: Arc<WasmEngine>| async move {
-                // Decode base64 WASM bytecode
-                let bytecode = match base64::decode(&req.bytecode) {
-                    Ok(bytes) => bytes,
-                    Err(_) => {
-                        return warp::reply::json(&serde_json::json!({
+    #[cfg(feature = "vm")]
+    let deploy_route = {
+        let wasm_engine = Arc::new(WasmEngine::new());
+        let wasm_deploy = wasm_engine.clone();
+        let deploy = warp::path("deploy-contract")
+            .and(warp::post())
+            .and(warp::body::json())
+            .and(with_state(wasm_deploy))
+            .then(
+                |req: DeployContractRequest, engine: Arc<WasmEngine>| async move {
+                    // Decode base64 WASM bytecode
+                    let bytecode = match base64::decode(&req.bytecode) {
+                        Ok(bytes) => bytes,
+                        Err(_) => {
+                            return warp::reply::json(&serde_json::json!({
+                                "status": "error",
+                                "msg": "Invalid base64 bytecode"
+                            }))
+                        }
+                    };
+
+                    // Deploy to UVM (permissionless)
+                    let block_number = std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap()
+                        .as_secs();
+
+                    match engine.deploy_contract(
+                        req.owner.clone(),
+                        bytecode,
+                        req.initial_state.unwrap_or_default(),
+                        block_number,
+                    ) {
+                        Ok(contract_addr) => warp::reply::json(&serde_json::json!({
+                            "status": "success",
+                            "contract_address": contract_addr,
+                            "owner": req.owner,
+                            "deployed_at_block": block_number
+                        })),
+                        Err(e) => warp::reply::json(&serde_json::json!({
                             "status": "error",
-                            "msg": "Invalid base64 bytecode"
-                        }))
+                            "msg": e
+                        })),
                     }
-                };
+                },
+            );
 
-                // Deploy to UVM (permissionless)
-                let block_number = std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH)
-                    .unwrap()
-                    .as_secs();
+        // 8. POST /call-contract
+        let wasm_call = wasm_engine.clone();
+        let call = warp::path("call-contract")
+            .and(warp::post())
+            .and(warp::body::json())
+            .and(with_state(wasm_call))
+            .then(
+                |req: CallContractRequest, engine: Arc<WasmEngine>| async move {
+                    let call = ContractCall {
+                        contract: req.contract_address,
+                        function: req.function,
+                        args: req.args,
+                        gas_limit: req.gas_limit.unwrap_or(1000000),
+                    };
 
-                match engine.deploy_contract(
-                    req.owner.clone(),
-                    bytecode,
-                    req.initial_state.unwrap_or_default(),
-                    block_number,
-                ) {
-                    Ok(contract_addr) => warp::reply::json(&serde_json::json!({
+                    match engine.call_contract(call) {
+                        Ok(result) => warp::reply::json(&serde_json::json!({
+                            "status": "success",
+                            "result": result
+                        })),
+                        Err(e) => warp::reply::json(&serde_json::json!({
+                            "status": "error",
+                            "msg": e
+                        })),
+                    }
+                },
+            );
+
+        // 9. GET /contract/:address
+        let wasm_get = wasm_engine.clone();
+        let get_contract = warp::path!("contract" / String)
+            .and(with_state(wasm_get))
+            .map(
+                |addr: String, engine: Arc<WasmEngine>| match engine.get_contract(&addr) {
+                    Ok(contract) => warp::reply::json(&serde_json::json!({
                         "status": "success",
-                        "contract_address": contract_addr,
-                        "owner": req.owner,
-                        "deployed_at_block": block_number
+                        "contract": {
+                            "address": contract.address,
+                            "code_hash": contract.code_hash,
+                            "balance": contract.balance,
+                            "owner": contract.owner,
+                            "created_at_block": contract.created_at_block,
+                            "state": contract.state
+                        }
                     })),
                     Err(e) => warp::reply::json(&serde_json::json!({
                         "status": "error",
                         "msg": e
                     })),
-                }
-            },
-        );
+                },
+            );
 
-    // 8. POST /call-contract
-    let wasm_call = wasm_engine.clone();
-    let call_route = warp::path("call-contract")
-        .and(warp::post())
-        .and(warp::body::json())
-        .and(with_state(wasm_call))
-        .then(
-            |req: CallContractRequest, engine: Arc<WasmEngine>| async move {
-                let call = ContractCall {
-                    contract: req.contract_address,
-                    function: req.function,
-                    args: req.args,
-                    gas_limit: req.gas_limit.unwrap_or(1000000),
-                };
+        deploy.boxed().or(call.boxed()).or(get_contract.boxed()).boxed()
+    };
 
-                match engine.call_contract(call) {
-                    Ok(result) => warp::reply::json(&serde_json::json!({
-                        "status": "success",
-                        "result": result
-                    })),
-                    Err(e) => warp::reply::json(&serde_json::json!({
-                        "status": "error",
-                        "msg": e
-                    })),
-                }
-            },
-        );
-
-    // 9. GET /contract/:address
-    let wasm_get = wasm_engine.clone();
-    let get_contract_route = warp::path!("contract" / String)
-        .and(with_state(wasm_get))
-        .map(
-            |addr: String, engine: Arc<WasmEngine>| match engine.get_contract(&addr) {
-                Ok(contract) => warp::reply::json(&serde_json::json!({
-                    "status": "success",
-                    "contract": {
-                        "address": contract.address,
-                        "code_hash": contract.code_hash,
-                        "balance": contract.balance,
-                        "owner": contract.owner,
-                        "created_at_block": contract.created_at_block,
-                        "state": contract.state
-                    }
-                })),
-                Err(e) => warp::reply::json(&serde_json::json!({
-                    "status": "error",
-                    "msg": e
-                })),
-            },
-        );
+    #[cfg(not(feature = "vm"))]
+    let deploy_route = {
+        let deploy = warp::path("deploy-contract")
+            .and(warp::post())
+            .map(|| warp::reply::json(&serde_json::json!({"status":"error","msg":"VM feature not enabled"})));
+        let call = warp::path("call-contract")
+            .and(warp::post())
+            .map(|| warp::reply::json(&serde_json::json!({"status":"error","msg":"VM feature not enabled"})));
+        let get_contract = warp::path!("contract" / String)
+            .map(|_: String| warp::reply::json(&serde_json::json!({"status":"error","msg":"VM feature not enabled"})));
+        deploy.boxed().or(call.boxed()).or(get_contract.boxed()).boxed()
+    };
 
     // 10. GET /metrics (Prometheus endpoint)
     let metrics_clone = metrics.clone();
@@ -1479,9 +1500,7 @@ pub async fn start_api_server(
 
     let group2 = burn_route
         .boxed()
-        .or(deploy_route.boxed())
-        .or(call_route.boxed())
-        .or(get_contract_route.boxed())
+        .or(deploy_route)
         .or(metrics_route.boxed())
         .or(node_info_route.boxed())
         .boxed();

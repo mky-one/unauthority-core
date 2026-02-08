@@ -2206,10 +2206,37 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Use node-specific wallet file path
     // SECURITY: Wallet keys are encrypted at rest using age encryption.
     // The encryption password is derived from the node ID (for automated startup).
-    // For mainnet, operators SHOULD set UAT_WALLET_PASSWORD env var for stronger protection.
+    // MAINNET: operators MUST set UAT_WALLET_PASSWORD — weak auto-key is rejected.
     let wallet_path = format!("node_data/{}/wallet.json", &node_id);
-    let wallet_password = std::env::var("UAT_WALLET_PASSWORD")
-        .unwrap_or_else(|_| format!("uat-node-{}-autokey", &node_id));
+    let wallet_password = match std::env::var("UAT_WALLET_PASSWORD") {
+        Ok(pw) if pw.len() >= 12 => pw,
+        Ok(pw) if !pw.is_empty() => {
+            if uat_core::is_mainnet_build() {
+                eprintln!(
+                    "❌ FATAL: UAT_WALLET_PASSWORD must be at least 12 characters on mainnet."
+                );
+                return Err(Box::<dyn std::error::Error>::from(
+                    "UAT_WALLET_PASSWORD too short for mainnet (min 12 chars)",
+                ));
+            }
+            pw // Testnet: allow shorter passwords
+        }
+        _ => {
+            if uat_core::is_mainnet_build() {
+                eprintln!(
+                    "❌ FATAL: UAT_WALLET_PASSWORD environment variable is REQUIRED on mainnet."
+                );
+                eprintln!("   export UAT_WALLET_PASSWORD='<strong-password-here>'");
+                return Err(Box::<dyn std::error::Error>::from(
+                    "UAT_WALLET_PASSWORD required for mainnet build",
+                ));
+            }
+            // Testnet: auto-generate weak password (acceptable for testing)
+            let auto = format!("uat-node-{}-autokey", &node_id);
+            println!("⚠️  Using auto-generated wallet password (testnet only)");
+            auto
+        }
+    };
     let keys: uat_crypto::KeyPair = if let Ok(data) = fs::read_to_string(&wallet_path) {
         // Try parsing as encrypted key first, fall back to legacy plaintext
         if let Ok(encrypted) = serde_json::from_str::<uat_crypto::EncryptedKey>(&data) {
@@ -2257,51 +2284,117 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // FIX: Load ledger and genesis BEFORE wrapping in Arc to prevent race condition
     let mut ledger_state = load_from_disk(&database);
 
-    // Load genesis state if testnet genesis file exists
-    // SECURITY: Genesis testnet wallets are ONLY loaded on testnet builds
-    let genesis_path = "testnet-genesis/testnet_wallets.json";
-    if uat_core::is_testnet_build() && std::path::Path::new(genesis_path).exists() {
-        if let Ok(genesis_json) = std::fs::read_to_string(genesis_path) {
-            if let Ok(genesis_data) = serde_json::from_str::<serde_json::Value>(&genesis_json) {
-                if let Some(wallets) = genesis_data["wallets"].as_array() {
-                    let mut loaded_count = 0;
-                    let mut genesis_supply_deducted: u128 = 0;
+    // ══════════════════════════════════════════════════════════════════════
+    // GENESIS LOADING — Network-aware with validation
+    // ══════════════════════════════════════════════════════════════════════
+    //
+    // Mainnet:  Loads from genesis_config.json (gitignored, contains real keys)
+    //           MUST exist and pass full validation. Node refuses to start without it.
+    //           Validates: total_supply=21936236, address format, network="mainnet".
+    //
+    // Testnet:  Loads from testnet-genesis/testnet_wallets.json (git-tracked, test keys)
+    //           Falls back gracefully if missing.
+    //
+    // Both paths use the same insert-if-absent logic to preserve existing state.
+    {
+        let genesis_path = if uat_core::is_mainnet_build() {
+            "genesis_config.json"
+        } else {
+            "testnet-genesis/testnet_wallets.json"
+        };
 
-                    for wallet in wallets {
-                        if let (Some(address), Some(balance_str)) =
-                            (wallet["address"].as_str(), wallet["balance_uat"].as_str())
-                        {
-                            // SECURITY FIX #9: Integer math to avoid f64 precision loss
-                            let balance_voi = genesis::parse_uat_to_void(balance_str).unwrap_or(0);
+        // MAINNET: genesis_config.json is REQUIRED — refuse to start without it
+        if uat_core::is_mainnet_build() && !std::path::Path::new(genesis_path).exists() {
+            eprintln!("❌ FATAL: genesis_config.json not found!");
+            eprintln!("   Mainnet requires genesis_config.json at the working directory root.");
+            eprintln!("   Generate with: cargo run -p genesis --bin genesis");
+            return Err(Box::<dyn std::error::Error>::from(
+                "Missing genesis_config.json for mainnet build",
+            ));
+        }
 
-                            // Only load if account doesn't exist (preserve existing state)
-                            if balance_voi > 0 && !ledger_state.accounts.contains_key(address) {
-                                ledger_state.accounts.insert(
-                                    address.to_string(),
-                                    AccountState {
-                                        head: "0".to_string(),
-                                        balance: balance_voi,
-                                        block_count: 0,
-                                    },
+        if std::path::Path::new(genesis_path).exists() {
+            if let Ok(genesis_json) = std::fs::read_to_string(genesis_path) {
+                // Mainnet: use validated GenesisConfig parser
+                // Testnet: use the raw JSON wallets parser (legacy format)
+                if uat_core::is_mainnet_build() {
+                    match genesis::load_genesis_from_file(genesis_path) {
+                        Ok(accounts) => {
+                            let mut loaded_count = 0;
+                            let mut genesis_supply_deducted: u128 = 0;
+                            for (address, state) in accounts {
+                                if state.balance > 0
+                                    && !ledger_state.accounts.contains_key(&address)
+                                {
+                                    genesis_supply_deducted += state.balance;
+                                    ledger_state.accounts.insert(address, state);
+                                    loaded_count += 1;
+                                }
+                            }
+                            if loaded_count > 0 {
+                                ledger_state.distribution.remaining_supply = ledger_state
+                                    .distribution
+                                    .remaining_supply
+                                    .saturating_sub(genesis_supply_deducted);
+                                save_to_disk_internal(&ledger_state, &database, true);
+                                println!(
+                                    "🏦 MAINNET genesis: loaded {} accounts (deducted {} VOID)",
+                                    loaded_count, genesis_supply_deducted
                                 );
-                                // FIX: Deduct genesis balance from remaining supply
-                                genesis_supply_deducted += balance_voi;
-                                loaded_count += 1;
                             }
                         }
+                        Err(e) => {
+                            eprintln!("❌ FATAL: Invalid genesis_config.json: {}", e);
+                            return Err(Box::<dyn std::error::Error>::from(format!(
+                                "Invalid genesis config: {}",
+                                e
+                            )));
+                        }
                     }
+                } else {
+                    // Testnet: raw JSON with "wallets" array (legacy format)
+                    if let Ok(genesis_data) =
+                        serde_json::from_str::<serde_json::Value>(&genesis_json)
+                    {
+                        if let Some(wallets) = genesis_data["wallets"].as_array() {
+                            let mut loaded_count = 0;
+                            let mut genesis_supply_deducted: u128 = 0;
 
-                    if loaded_count > 0 {
-                        // Deduct genesis allocations from remaining supply
-                        ledger_state.distribution.remaining_supply = ledger_state
-                            .distribution
-                            .remaining_supply
-                            .saturating_sub(genesis_supply_deducted);
-                        save_to_disk_internal(&ledger_state, &database, true); // Force save
-                        println!(
-                            "🎁 Loaded {} genesis accounts (deducted {} VOID from supply)",
-                            loaded_count, genesis_supply_deducted
-                        );
+                            for wallet in wallets {
+                                if let (Some(address), Some(balance_str)) =
+                                    (wallet["address"].as_str(), wallet["balance_uat"].as_str())
+                                {
+                                    let balance_voi =
+                                        genesis::parse_uat_to_void(balance_str).unwrap_or(0);
+                                    if balance_voi > 0
+                                        && !ledger_state.accounts.contains_key(address)
+                                    {
+                                        ledger_state.accounts.insert(
+                                            address.to_string(),
+                                            AccountState {
+                                                head: "0".to_string(),
+                                                balance: balance_voi,
+                                                block_count: 0,
+                                            },
+                                        );
+                                        genesis_supply_deducted += balance_voi;
+                                        loaded_count += 1;
+                                    }
+                                }
+                            }
+
+                            if loaded_count > 0 {
+                                ledger_state.distribution.remaining_supply = ledger_state
+                                    .distribution
+                                    .remaining_supply
+                                    .saturating_sub(genesis_supply_deducted);
+                                save_to_disk_internal(&ledger_state, &database, true);
+                                println!(
+                                    "🎁 Testnet genesis: loaded {} accounts (deducted {} VOID)",
+                                    loaded_count, genesis_supply_deducted
+                                );
+                            }
+                        }
                     }
                 }
             }

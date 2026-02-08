@@ -60,6 +60,10 @@ class _SplashScreenState extends State<SplashScreen> {
 
   Future<void> _checkWallet() async {
     final walletService = context.read<WalletService>();
+
+    // One-time migration: SharedPreferences → FlutterSecureStorage
+    await walletService.migrateFromSharedPreferences();
+
     final wallet = await walletService.getCurrentWallet();
 
     await Future.delayed(const Duration(seconds: 1));

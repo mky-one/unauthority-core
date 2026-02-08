@@ -28,6 +28,9 @@ class DilithiumService {
   static late int Function(Pointer<Uint8>, int, Pointer<Uint8>, int)
       _uatGenerateKeypair;
   static late int Function(
+          Pointer<Uint8>, int, Pointer<Uint8>, int, Pointer<Uint8>, int)
+      _uatGenerateKeypairFromSeed;
+  static late int Function(
       Pointer<Uint8>, int, Pointer<Uint8>, int, Pointer<Uint8>, int) _uatSign;
   static late int Function(
       Pointer<Uint8>, int, Pointer<Uint8>, int, Pointer<Uint8>, int) _uatVerify;
@@ -97,6 +100,12 @@ class DilithiumService {
           Int32 Function(Pointer<Uint8>, Int32, Pointer<Uint8>, Int32),
           int Function(Pointer<Uint8>, int, Pointer<Uint8>,
               int)>('uat_generate_keypair');
+
+      _uatGenerateKeypairFromSeed = _lib!.lookupFunction<
+          Int32 Function(Pointer<Uint8>, Int32, Pointer<Uint8>, Int32,
+              Pointer<Uint8>, Int32),
+          int Function(Pointer<Uint8>, int, Pointer<Uint8>, int, Pointer<Uint8>,
+              int)>('uat_generate_keypair_from_seed');
 
       _uatSign = _lib!.lookupFunction<
           Int32 Function(Pointer<Uint8>, Int32, Pointer<Uint8>, Int32,
@@ -216,6 +225,50 @@ class DilithiumService {
         secretKey: Uint8List.fromList(skPtr.asTypedList(_skBytes)),
       );
     } finally {
+      calloc.free(pkPtr);
+      calloc.free(skPtr);
+    }
+  }
+
+  /// Generate a deterministic Dilithium5 keypair from BIP39 seed.
+  ///
+  /// Same seed always produces the same keypair, enabling wallet recovery
+  /// from mnemonic alone. Uses domain-separated SHA-256 → ChaCha20 DRBG.
+  static DilithiumKeypair generateKeypairFromSeed(List<int> seed) {
+    if (!_available) {
+      throw StateError('Dilithium5 native library not available');
+    }
+    if (seed.length < 32) {
+      throw ArgumentError('Seed must be at least 32 bytes');
+    }
+
+    final seedPtr = calloc<Uint8>(seed.length);
+    final pkPtr = calloc<Uint8>(_pkBytes);
+    final skPtr = calloc<Uint8>(_skBytes);
+
+    try {
+      seedPtr.asTypedList(seed.length).setAll(0, seed);
+
+      final result = _uatGenerateKeypairFromSeed(
+        seedPtr,
+        seed.length,
+        pkPtr,
+        _pkBytes,
+        skPtr,
+        _skBytes,
+      );
+      if (result != 0) {
+        throw StateError('Seeded keypair generation failed: error $result');
+      }
+
+      return DilithiumKeypair(
+        publicKey: Uint8List.fromList(pkPtr.asTypedList(_pkBytes)),
+        secretKey: Uint8List.fromList(skPtr.asTypedList(_skBytes)),
+      );
+    } finally {
+      // Zero the seed memory before freeing
+      seedPtr.asTypedList(seed.length).fillRange(0, seed.length, 0);
+      calloc.free(seedPtr);
       calloc.free(pkPtr);
       calloc.free(skPtr);
     }

@@ -232,3 +232,6 @@ dev_docs/
 **/QUICKSTART.sh
 
 **/copilot-instructions.md
+
+# Patched pqcrypto-internals build artifacts
+flutter_wallet/native/uat_crypto_ffi/pqcrypto-internals-seeded/target/

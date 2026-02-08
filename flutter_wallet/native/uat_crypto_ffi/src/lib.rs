@@ -98,6 +98,87 @@ pub extern "C" fn uat_generate_keypair(
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// KEY GENERATION — Deterministic from BIP39 seed
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+/// Generate a deterministic Dilithium5 keypair from a BIP39 seed.
+///
+/// The seed is used to derive a 32-byte ChaCha20 CSPRNG seed via:
+///   derived = SHA-256( SHA-256("uat-dilithium5-keygen-v1") || bip39_seed )
+///
+/// This ensures the same BIP39 mnemonic always produces the same keypair,
+/// enabling wallet recovery from mnemonic alone.
+///
+/// # Arguments
+/// - `seed`: BIP39 seed bytes (typically 64 bytes from `mnemonicToSeed()`)
+/// - `seed_len`: Length of seed in bytes (must be >= 32)
+/// - `pk_out`: Pre-allocated buffer for public key
+/// - `pk_capacity`: Buffer size
+/// - `sk_out`: Pre-allocated buffer for secret key
+/// - `sk_capacity`: Buffer size
+///
+/// # Returns
+/// 0 on success, negative on error:
+/// - -1: null pointer
+/// - -2: buffer too small
+/// - -4: seed too short (< 32 bytes)
+#[no_mangle]
+pub extern "C" fn uat_generate_keypair_from_seed(
+    seed: *const u8,
+    seed_len: i32,
+    pk_out: *mut u8,
+    pk_capacity: i32,
+    sk_out: *mut u8,
+    sk_capacity: i32,
+) -> i32 {
+    if seed.is_null() || pk_out.is_null() || sk_out.is_null() {
+        return -1;
+    }
+    if seed_len < 32 {
+        return -4;
+    }
+
+    let pk_cap = pk_capacity as usize;
+    let sk_cap = sk_capacity as usize;
+    let pk_size = dilithium5::public_key_bytes();
+    let sk_size = dilithium5::secret_key_bytes();
+
+    if pk_cap < pk_size || sk_cap < sk_size {
+        return -2;
+    }
+
+    let seed_slice = unsafe { std::slice::from_raw_parts(seed, seed_len as usize) };
+
+    // Derive 32-byte deterministic seed for ChaCha20 CSPRNG
+    // Domain separation: SHA-256("uat-dilithium5-keygen-v1") = salt
+    // derived = SHA-256(salt || bip39_seed) → 32 bytes
+    let salt = Sha256::digest(b"uat-dilithium5-keygen-v1");
+    let mut hasher = Sha256::new();
+    hasher.update(salt);
+    hasher.update(seed_slice);
+    let derived: [u8; 32] = hasher.finalize().into();
+
+    // Activate deterministic CSPRNG for pqcrypto's randombytes
+    pqcrypto_internals::set_seeded_rng(derived);
+
+    // Generate keypair — now deterministic via seeded ChaCha20
+    let (pk, sk) = keypair();
+
+    // Revert to OS-RNG
+    pqcrypto_internals::clear_seeded_rng();
+
+    let pk_bytes = pk.as_bytes();
+    let sk_bytes = sk.as_bytes();
+
+    unsafe {
+        std::ptr::copy_nonoverlapping(pk_bytes.as_ptr(), pk_out, pk_bytes.len());
+        std::ptr::copy_nonoverlapping(sk_bytes.as_ptr(), sk_out, sk_bytes.len());
+    }
+
+    0
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // SIGNING — Dilithium5 detached signatures
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
@@ -418,6 +499,83 @@ mod tests {
             pk.as_ptr(), pk_size as i32,
         );
         assert_eq!(invalid, 0, "Should be invalid");
+    }
+
+    #[test]
+    fn test_seeded_keygen_deterministic() {
+        let pk_size = uat_public_key_bytes() as usize;
+        let sk_size = uat_secret_key_bytes() as usize;
+
+        // Simulate a BIP39 seed (64 bytes)
+        let fake_seed = [42u8; 64];
+
+        // Generate keypair #1
+        let mut pk1 = vec![0u8; pk_size];
+        let mut sk1 = vec![0u8; sk_size];
+        let r1 = uat_generate_keypair_from_seed(
+            fake_seed.as_ptr(), 64,
+            pk1.as_mut_ptr(), pk_size as i32,
+            sk1.as_mut_ptr(), sk_size as i32,
+        );
+        assert_eq!(r1, 0);
+
+        // Generate keypair #2 from same seed
+        let mut pk2 = vec![0u8; pk_size];
+        let mut sk2 = vec![0u8; sk_size];
+        let r2 = uat_generate_keypair_from_seed(
+            fake_seed.as_ptr(), 64,
+            pk2.as_mut_ptr(), pk_size as i32,
+            sk2.as_mut_ptr(), sk_size as i32,
+        );
+        assert_eq!(r2, 0);
+
+        // MUST be identical — deterministic from seed
+        assert_eq!(pk1, pk2, "Public keys must match for same seed");
+        assert_eq!(sk1, sk2, "Secret keys must match for same seed");
+
+        // Different seed → different keypair
+        let diff_seed = [99u8; 64];
+        let mut pk3 = vec![0u8; pk_size];
+        let mut sk3 = vec![0u8; sk_size];
+        uat_generate_keypair_from_seed(
+            diff_seed.as_ptr(), 64,
+            pk3.as_mut_ptr(), pk_size as i32,
+            sk3.as_mut_ptr(), sk_size as i32,
+        );
+        assert_ne!(pk1, pk3, "Different seeds must produce different keys");
+    }
+
+    #[test]
+    fn test_seeded_keygen_signatures_valid() {
+        let pk_size = uat_public_key_bytes() as usize;
+        let sk_size = uat_secret_key_bytes() as usize;
+        let sig_size = uat_signature_bytes() as usize;
+
+        let seed = [7u8; 64];
+        let mut pk = vec![0u8; pk_size];
+        let mut sk = vec![0u8; sk_size];
+        uat_generate_keypair_from_seed(
+            seed.as_ptr(), 64,
+            pk.as_mut_ptr(), pk_size as i32,
+            sk.as_mut_ptr(), sk_size as i32,
+        );
+
+        // Sign and verify with seeded keypair
+        let message = b"hello UAT blockchain";
+        let mut sig = vec![0u8; sig_size];
+        let sig_len = uat_sign(
+            message.as_ptr(), message.len() as i32,
+            sk.as_ptr(), sk_size as i32,
+            sig.as_mut_ptr(), sig_size as i32,
+        );
+        assert!(sig_len > 0);
+
+        let valid = uat_verify(
+            message.as_ptr(), message.len() as i32,
+            sig.as_ptr(), sig_len,
+            pk.as_ptr(), pk_size as i32,
+        );
+        assert_eq!(valid, 1, "Seeded keypair must produce valid signatures");
     }
 
     #[test]

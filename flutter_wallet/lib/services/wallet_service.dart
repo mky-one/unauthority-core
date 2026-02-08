@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:typed_data';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:crypto/crypto.dart';
 import 'package:bip39/bip39.dart' as bip39;
@@ -7,8 +8,13 @@ import 'dilithium_service.dart';
 
 /// Wallet Service for UAT Blockchain
 ///
+/// SECURITY: All secret material (seed, private key) is stored in
+/// platform Keychain/Keystore via flutter_secure_storage.
+/// Only the address and crypto_mode are in SharedPreferences (non-sensitive).
+///
 /// Dilithium5 mode (native library available):
 /// - Real CRYSTALS-Dilithium5 keypair (PK: 2592 bytes, SK: 4864 bytes)
+/// - Deterministic from BIP39 seed via HMAC-SHA512 DRBG seeding
 /// - Real UAT address: "UAT" + Base58Check(BLAKE2b-160(pubkey))
 /// - Real post-quantum signatures for transactions
 ///
@@ -18,12 +24,43 @@ import 'dilithium_service.dart';
 ///
 /// Both modes use BIP39 24-word mnemonic for wallet creation/backup.
 class WalletService {
-  static const String _seedKey = 'wallet_seed';
+  // Non-sensitive keys (SharedPreferences — survives app reinstall on some platforms)
   static const String _addressKey = 'wallet_address';
   static const String _importModeKey = 'wallet_import_mode';
+  static const String _cryptoModeKey = 'wallet_crypto_mode';
+
+  // Sensitive keys (flutter_secure_storage — Keychain/Keystore)
+  static const String _seedKey = 'wallet_seed';
   static const String _publicKeyKey = 'wallet_public_key';
   static const String _secretKeyKey = 'wallet_secret_key';
-  static const String _cryptoModeKey = 'wallet_crypto_mode';
+
+  /// Encrypted storage backed by platform Keychain (iOS/macOS) or Keystore (Android)
+  static const _secureStorage = FlutterSecureStorage(
+    aOptions: AndroidOptions(encryptedSharedPreferences: true),
+    iOptions: IOSOptions(accessibility: KeychainAccessibility.first_unlock),
+  );
+
+  /// One-time migration from SharedPreferences → SecureStorage
+  /// Called on app startup. Silent if already migrated.
+  Future<void> migrateFromSharedPreferences() async {
+    final prefs = await SharedPreferences.getInstance();
+    final existingSeed = prefs.getString(_seedKey);
+    if (existingSeed != null) {
+      // Migrate secrets to secure storage
+      await _secureStorage.write(key: _seedKey, value: existingSeed);
+      final pk = prefs.getString(_publicKeyKey);
+      if (pk != null) await _secureStorage.write(key: _publicKeyKey, value: pk);
+      final sk = prefs.getString(_secretKeyKey);
+      if (sk != null) {
+        await _secureStorage.write(key: _secretKeyKey, value: sk);
+      }
+      // Remove secrets from SharedPreferences
+      await prefs.remove(_seedKey);
+      await prefs.remove(_publicKeyKey);
+      await prefs.remove(_secretKeyKey);
+      print('🔒 Migrated wallet secrets to secure storage');
+    }
+  }
 
   /// Whether this wallet uses real Dilithium5 cryptography
   Future<bool> isDilithium5Wallet() async {
@@ -38,20 +75,26 @@ class WalletService {
     String cryptoMode;
 
     if (DilithiumService.isAvailable) {
-      // Real Dilithium5 keypair
-      final keypair = DilithiumService.generateKeypair();
+      // Real Dilithium5 keypair — deterministic from seed
+      final seed = bip39.mnemonicToSeed(mnemonic);
+      final keypair = DilithiumService.generateKeypairFromSeed(seed);
       address = DilithiumService.publicKeyToAddress(keypair.publicKey);
       cryptoMode = 'dilithium5';
 
+      // Secrets → Keychain/Keystore
+      await _secureStorage.write(key: _seedKey, value: mnemonic);
+      await _secureStorage.write(
+          key: _publicKeyKey, value: keypair.publicKeyHex);
+      await _secureStorage.write(
+          key: _secretKeyKey, value: keypair.secretKeyHex);
+
+      // Non-sensitive → SharedPreferences
       final prefs = await SharedPreferences.getInstance();
-      await prefs.setString(_seedKey, mnemonic);
       await prefs.setString(_addressKey, address);
-      await prefs.setString(_publicKeyKey, keypair.publicKeyHex);
-      await prefs.setString(_secretKeyKey, keypair.secretKeyHex);
       await prefs.setString(_importModeKey, 'mnemonic');
       await prefs.setString(_cryptoModeKey, cryptoMode);
 
-      print('🔐 Dilithium5 wallet created');
+      print('🔐 Dilithium5 wallet created (deterministic from seed)');
       print('   Address: $address');
       print('   PK: ${keypair.publicKey.length} bytes');
     } else {
@@ -60,8 +103,9 @@ class WalletService {
       address = _deriveAddressSha256(seed);
       cryptoMode = 'sha256';
 
+      await _secureStorage.write(key: _seedKey, value: mnemonic);
+
       final prefs = await SharedPreferences.getInstance();
-      await prefs.setString(_seedKey, mnemonic);
       await prefs.setString(_addressKey, address);
       await prefs.setString(_importModeKey, 'mnemonic');
       await prefs.setString(_cryptoModeKey, cryptoMode);
@@ -78,8 +122,8 @@ class WalletService {
 
   /// Import wallet from mnemonic.
   ///
-  /// Dilithium5: Generates a NEW keypair (address differs from original).
-  /// SHA256 fallback: Deterministic — same address.
+  /// Dilithium5: Deterministic from seed — same mnemonic = same address.
+  /// SHA256 fallback: Also deterministic.
   Future<Map<String, String>> importWallet(String mnemonic) async {
     if (!bip39.validateMnemonic(mnemonic)) {
       throw Exception('Invalid mnemonic phrase');
@@ -89,39 +133,35 @@ class WalletService {
     String cryptoMode;
 
     if (DilithiumService.isAvailable) {
+      // Deterministic keypair from BIP39 seed
+      final seed = bip39.mnemonicToSeed(mnemonic);
+      final keypair = DilithiumService.generateKeypairFromSeed(seed);
+      address = DilithiumService.publicKeyToAddress(keypair.publicKey);
+      cryptoMode = 'dilithium5';
+
+      // Secrets → Keychain/Keystore
+      await _secureStorage.write(key: _seedKey, value: mnemonic);
+      await _secureStorage.write(
+          key: _publicKeyKey, value: keypair.publicKeyHex);
+      await _secureStorage.write(
+          key: _secretKeyKey, value: keypair.secretKeyHex);
+
+      // Non-sensitive → SharedPreferences
       final prefs = await SharedPreferences.getInstance();
-      final existingSeed = prefs.getString(_seedKey);
-      final existingPk = prefs.getString(_publicKeyKey);
+      await prefs.setString(_addressKey, address);
+      await prefs.setString(_importModeKey, 'mnemonic');
+      await prefs.setString(_cryptoModeKey, cryptoMode);
 
-      if (existingSeed == mnemonic && existingPk != null) {
-        // Same device — reuse existing keypair
-        address = prefs.getString(_addressKey) ?? '';
-        cryptoMode = 'dilithium5';
-        await prefs.setString(_importModeKey, 'mnemonic');
-        print('🔐 Restored Dilithium5 wallet from local storage');
-      } else {
-        // New import — generate new keypair
-        final keypair = DilithiumService.generateKeypair();
-        address = DilithiumService.publicKeyToAddress(keypair.publicKey);
-        cryptoMode = 'dilithium5';
-
-        await prefs.setString(_seedKey, mnemonic);
-        await prefs.setString(_addressKey, address);
-        await prefs.setString(_publicKeyKey, keypair.publicKeyHex);
-        await prefs.setString(_secretKeyKey, keypair.secretKeyHex);
-        await prefs.setString(_importModeKey, 'mnemonic');
-        await prefs.setString(_cryptoModeKey, cryptoMode);
-
-        print('🔐 New Dilithium5 keypair for imported mnemonic');
-        print('   Address: $address');
-      }
+      print('🔐 Dilithium5 wallet restored from mnemonic (deterministic)');
+      print('   Address: $address');
     } else {
       final seed = bip39.mnemonicToSeed(mnemonic);
       address = _deriveAddressSha256(seed);
       cryptoMode = 'sha256';
 
+      await _secureStorage.write(key: _seedKey, value: mnemonic);
+
       final prefs = await SharedPreferences.getInstance();
-      await prefs.setString(_seedKey, mnemonic);
       await prefs.setString(_addressKey, address);
       await prefs.setString(_importModeKey, 'mnemonic');
       await prefs.setString(_cryptoModeKey, cryptoMode);
@@ -144,9 +184,10 @@ class WalletService {
     await prefs.setString(_addressKey, address);
     await prefs.setString(_importModeKey, 'address');
     await prefs.setString(_cryptoModeKey, 'address_only');
-    await prefs.remove(_seedKey);
-    await prefs.remove(_publicKeyKey);
-    await prefs.remove(_secretKeyKey);
+    // Clear any secrets
+    await _secureStorage.delete(key: _seedKey);
+    await _secureStorage.delete(key: _publicKeyKey);
+    await _secureStorage.delete(key: _secretKeyKey);
 
     return {'address': address};
   }
@@ -158,9 +199,9 @@ class WalletService {
     if (address == null) return null;
 
     final result = <String, String>{'address': address};
-    final mnemonic = prefs.getString(_seedKey);
+    final mnemonic = await _secureStorage.read(key: _seedKey);
     if (mnemonic != null) result['mnemonic'] = mnemonic;
-    final pk = prefs.getString(_publicKeyKey);
+    final pk = await _secureStorage.read(key: _publicKeyKey);
     if (pk != null) result['public_key'] = pk;
     final mode = prefs.getString(_cryptoModeKey);
     if (mode != null) result['crypto_mode'] = mode;
@@ -170,19 +211,19 @@ class WalletService {
 
   /// Get hex-encoded public key (for sending with transactions)
   Future<String?> getPublicKeyHex() async {
-    final prefs = await SharedPreferences.getInstance();
-    return prefs.getString(_publicKeyKey);
+    return await _secureStorage.read(key: _publicKeyKey);
   }
 
-  /// Delete wallet
+  /// Delete wallet — wipes all sensitive and non-sensitive data
   Future<void> deleteWallet() async {
     final prefs = await SharedPreferences.getInstance();
-    await prefs.remove(_seedKey);
     await prefs.remove(_addressKey);
     await prefs.remove(_importModeKey);
-    await prefs.remove(_publicKeyKey);
-    await prefs.remove(_secretKeyKey);
     await prefs.remove(_cryptoModeKey);
+    // Wipe secrets from secure storage
+    await _secureStorage.delete(key: _seedKey);
+    await _secureStorage.delete(key: _publicKeyKey);
+    await _secureStorage.delete(key: _secretKeyKey);
   }
 
   /// Clear wallet — alias for deleteWallet
@@ -213,16 +254,16 @@ class WalletService {
     final cryptoMode = wallet['crypto_mode'] ?? 'sha256';
 
     if (cryptoMode == 'dilithium5' && DilithiumService.isAvailable) {
-      final prefs = await SharedPreferences.getInstance();
-      final skHex = prefs.getString(_secretKeyKey);
-      if (skHex == null) throw Exception('Secret key not found');
+      final skHex = await _secureStorage.read(key: _secretKeyKey);
+      if (skHex == null)
+        throw Exception('Secret key not found in secure storage');
 
       final secretKey = DilithiumService.hexToBytes(skHex);
       final message = Uint8List.fromList(utf8.encode(txData));
       final signature = DilithiumService.sign(message, secretKey);
       return DilithiumService.bytesToHex(signature);
     } else {
-      final mnemonic = wallet['mnemonic'];
+      final mnemonic = await _secureStorage.read(key: _seedKey);
       if (mnemonic == null) throw Exception('No mnemonic for signing');
       final seed = bip39.mnemonicToSeed(mnemonic);
       final privateKey = seed.sublist(0, 32);

@@ -5,20 +5,29 @@ class Account {
   final int balance; // In VOID (smallest unit)
   final int voidBalance; // Staked/locked VOID
   final List<Transaction> history;
+  final String? headBlock; // Latest block hash (frontier) — from /account/:addr
+  final int blockCount; // Number of blocks in this account's chain
 
   Account({
     required this.address,
     required this.balance,
     required this.voidBalance,
     required this.history,
+    this.headBlock,
+    this.blockCount = 0,
   });
 
   factory Account.fromJson(Map<String, dynamic> json) {
     return Account(
       address: json['address'] ?? '',
       balance: json['balance'] ?? 0,
-      voidBalance: json['void_balance'] ?? 0,
+      voidBalance: json['void_balance'] ?? json['balance_voi'] ?? 0,
+      headBlock: json['head_block'],
+      blockCount: json['block_count'] ?? 0,
       history: (json['history'] as List?)
+              ?.map((tx) => Transaction.fromJson(tx))
+              .toList() ??
+          (json['transactions'] as List?)
               ?.map((tx) => Transaction.fromJson(tx))
               .toList() ??
           [],

@@ -212,12 +212,15 @@ class ApiService {
 
   // Send Transaction
   // Supports optional Dilithium5 signature + public_key for L2+/mainnet
+  // Supports optional previous (frontier) + work (PoW nonce) for client-signed blocks
   Future<Map<String, dynamic>> sendTransaction({
     required String from,
     required String to,
     required int amount,
     String? signature,
     String? publicKey,
+    String? previous,
+    int? work,
   }) async {
     try {
       final body = <String, dynamic>{
@@ -229,6 +232,13 @@ class ApiService {
       if (signature != null && publicKey != null) {
         body['signature'] = signature;
         body['public_key'] = publicKey;
+      }
+      // Attach frontier hash + PoW nonce if client-constructed
+      if (previous != null) {
+        body['previous'] = previous;
+      }
+      if (work != null) {
+        body['work'] = work;
       }
 
       final response = await _client

@@ -9,10 +9,10 @@ use std::collections::HashMap;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AntiWhaleConfig {
-    pub max_tx_per_block: u32,        // Max transactions per block per address
-    pub fee_scale_multiplier: f64,    // Fee multiplier when spam detected
-    pub max_burn_per_block: u64,      // Max UAT burned per block per address
-    pub voting_power_exponent: f64,   // Exponent for stake (0.5 = quadratic)
+    pub max_tx_per_block: u32,      // Max transactions per block per address
+    pub fee_scale_multiplier: f64,  // Fee multiplier when spam detected
+    pub max_burn_per_block: u64,    // Max UAT burned per block per address
+    pub voting_power_exponent: f64, // Exponent for stake (0.5 = quadratic)
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -83,7 +83,7 @@ impl AntiWhaleEngine {
     /// Advance to next block and reset activity counters
     pub fn new_block(&mut self, block_number: u64) {
         self.current_block = block_number;
-        
+
         // Reset counters for this block
         for activity in self.address_activity.values_mut() {
             if activity.last_block < block_number {
@@ -97,11 +97,7 @@ impl AntiWhaleEngine {
     }
 
     /// Register a transaction and calculate fee multiplier
-    pub fn register_transaction(
-        &mut self,
-        address: String,
-        base_fee: u64,
-    ) -> Result<u64, String> {
+    pub fn register_transaction(&mut self, address: String, base_fee: u64) -> Result<u64, String> {
         let now = Self::now_secs();
         let current_block = self.current_block;
         let activity = self
@@ -224,10 +220,7 @@ impl AntiWhaleEngine {
     }
 
     /// Get statistics on network concentration
-    pub fn get_concentration_stats(
-        &self,
-        validators: HashMap<String, u64>,
-    ) -> ConcentrationStats {
+    pub fn get_concentration_stats(&self, validators: HashMap<String, u64>) -> ConcentrationStats {
         if validators.is_empty() {
             return ConcentrationStats::default();
         }

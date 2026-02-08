@@ -19,8 +19,8 @@ fn safe_lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
 #[derive(Clone)]
 pub struct RateLimiter {
     buckets: Arc<Mutex<HashMap<IpAddr, TokenBucket>>>,
-    max_tokens: u32,           // Maximum tokens (burst capacity)
-    refill_rate: u32,          // Tokens per second
+    max_tokens: u32,            // Maximum tokens (burst capacity)
+    refill_rate: u32,           // Tokens per second
     cleanup_interval: Duration, // How often to cleanup old entries
     last_cleanup: Arc<Mutex<Instant>>,
 }
@@ -32,13 +32,13 @@ struct TokenBucket {
 
 impl RateLimiter {
     /// Create new rate limiter
-    /// 
+    ///
     /// # Arguments
     /// * `requests_per_second` - Maximum average requests per second
     /// * `burst_size` - Maximum burst size (if None, uses 2x requests_per_second)
     pub fn new(requests_per_second: u32, burst_size: Option<u32>) -> Self {
         let max_tokens = burst_size.unwrap_or(requests_per_second * 2);
-        
+
         RateLimiter {
             buckets: Arc::new(Mutex::new(HashMap::new())),
             max_tokens,
@@ -55,7 +55,7 @@ impl RateLimiter {
         self.cleanup_if_needed();
 
         let mut buckets = safe_lock(&self.buckets);
-        
+
         let bucket = buckets.entry(ip).or_insert_with(|| TokenBucket {
             tokens: self.max_tokens as f64,
             last_refill: Instant::now(),
@@ -65,7 +65,7 @@ impl RateLimiter {
         let now = Instant::now();
         let elapsed = now.duration_since(bucket.last_refill).as_secs_f64();
         let tokens_to_add = elapsed * self.refill_rate as f64;
-        
+
         bucket.tokens = (bucket.tokens + tokens_to_add).min(self.max_tokens as f64);
         bucket.last_refill = now;
 
@@ -94,16 +94,16 @@ impl RateLimiter {
     /// Cleanup old entries (IPs that haven't made requests recently)
     fn cleanup_if_needed(&self) {
         let mut last_cleanup = safe_lock(&self.last_cleanup);
-        
+
         if last_cleanup.elapsed() >= self.cleanup_interval {
             let mut buckets = safe_lock(&self.buckets);
             let now = Instant::now();
-            
+
             // Remove buckets idle for > 10 minutes
             buckets.retain(|_, bucket| {
                 now.duration_since(bucket.last_refill) < Duration::from_secs(600)
             });
-            
+
             *last_cleanup = now;
         }
     }
@@ -130,12 +130,12 @@ pub mod filters {
     use warp::Filter;
 
     /// Extract client IP from request
-    pub fn client_ip() -> impl Filter<Extract = (IpAddr,), Error = std::convert::Infallible> + Clone {
-        warp::addr::remote()
-            .map(|addr: Option<std::net::SocketAddr>| {
-                addr.map(|a| a.ip())
-                    .unwrap_or_else(|| IpAddr::from([127, 0, 0, 1]))
-            })
+    pub fn client_ip() -> impl Filter<Extract = (IpAddr,), Error = std::convert::Infallible> + Clone
+    {
+        warp::addr::remote().map(|addr: Option<std::net::SocketAddr>| {
+            addr.map(|a| a.ip())
+                .unwrap_or_else(|| IpAddr::from([127, 0, 0, 1]))
+        })
     }
 
     /// Rate limit filter
@@ -176,11 +176,18 @@ mod tests {
 
         // Should allow burst of 20 requests
         for i in 0..20 {
-            assert!(limiter.check_rate_limit(ip), "Request {} should be allowed", i);
+            assert!(
+                limiter.check_rate_limit(ip),
+                "Request {} should be allowed",
+                i
+            );
         }
 
         // 21st request should be blocked
-        assert!(!limiter.check_rate_limit(ip), "Request 21 should be blocked");
+        assert!(
+            !limiter.check_rate_limit(ip),
+            "Request 21 should be blocked"
+        );
     }
 
     #[test]
@@ -199,7 +206,11 @@ mod tests {
 
         // Should allow 10 more requests
         for i in 0..10 {
-            assert!(limiter.check_rate_limit(ip), "Refilled request {} should be allowed", i);
+            assert!(
+                limiter.check_rate_limit(ip),
+                "Refilled request {} should be allowed",
+                i
+            );
         }
     }
 
@@ -217,7 +228,11 @@ mod tests {
 
         // ip2 should still work (separate bucket)
         for i in 0..5 {
-            assert!(limiter.check_rate_limit(ip2), "IP2 request {} should be allowed", i);
+            assert!(
+                limiter.check_rate_limit(ip2),
+                "IP2 request {} should be allowed",
+                i
+            );
         }
     }
 
@@ -229,14 +244,20 @@ mod tests {
         // Initial tokens should be max (10)
         assert!(limiter.check_rate_limit(ip));
         let tokens = limiter.get_tokens(ip).unwrap();
-        assert!(tokens >= 8.9 && tokens <= 9.1, "Tokens should be ~9 after 1 request");
+        assert!(
+            tokens >= 8.9 && tokens <= 9.1,
+            "Tokens should be ~9 after 1 request"
+        );
 
         // Consume 5 more
         for _ in 0..5 {
             limiter.check_rate_limit(ip);
         }
         let tokens = limiter.get_tokens(ip).unwrap();
-        assert!(tokens >= 3.9 && tokens <= 4.1, "Tokens should be ~4 after 6 requests");
+        assert!(
+            tokens >= 3.9 && tokens <= 4.1,
+            "Tokens should be ~4 after 6 requests"
+        );
     }
 
     #[test]
@@ -260,7 +281,7 @@ mod tests {
     #[test]
     fn test_tracked_ips_count() {
         let limiter = RateLimiter::new(10, Some(10));
-        
+
         assert_eq!(limiter.tracked_ips(), 0);
 
         let ip1 = IpAddr::V4(Ipv4Addr::new(10, 0, 0, 1));

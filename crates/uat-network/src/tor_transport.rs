@@ -14,10 +14,9 @@
 /// The proxy works by creating a local TCP listener for each .onion peer,
 /// then forwarding all data through the SOCKS5 proxy to the remote peer.
 /// libp2p dials the local proxy address transparently.
-
 use std::net::SocketAddr;
-use tokio::net::{TcpListener, TcpStream};
 use tokio::io;
+use tokio::net::{TcpListener, TcpStream};
 
 /// Configuration for Tor connectivity
 #[derive(Debug, Clone)]
@@ -106,13 +105,9 @@ impl TorDialer {
                         let proxy_addr = socks5_addr;
 
                         tokio::spawn(async move {
-                            if let Err(e) = proxy_connection(
-                                inbound,
-                                proxy_addr,
-                                &target_host,
-                                target_port,
-                            )
-                            .await
+                            if let Err(e) =
+                                proxy_connection(inbound, proxy_addr, &target_host, target_port)
+                                    .await
                             {
                                 eprintln!(
                                     "Tor proxy error to {}:{} — {}",
@@ -144,10 +139,9 @@ async fn proxy_connection(
 ) -> Result<(), String> {
     // Connect to target through SOCKS5 (Tor)
     let target = format!("{}:{}", target_host, target_port);
-    let outbound =
-        tokio_socks::tcp::Socks5Stream::connect(socks5_addr, target.as_str())
-            .await
-            .map_err(|e| format!("SOCKS5 connect failed: {}", e))?;
+    let outbound = tokio_socks::tcp::Socks5Stream::connect(socks5_addr, target.as_str())
+        .await
+        .map_err(|e| format!("SOCKS5 connect failed: {}", e))?;
 
     let outbound_stream = outbound.into_inner();
 
@@ -184,7 +178,10 @@ pub fn parse_bootstrap_node(node_str: &str) -> BootstrapNode {
     if trimmed.contains(".onion") {
         let parts: Vec<&str> = trimmed.split(':').collect();
         let host = parts[0].to_string();
-        let port = parts.get(1).and_then(|p| p.parse::<u16>().ok()).unwrap_or(4001);
+        let port = parts
+            .get(1)
+            .and_then(|p| p.parse::<u16>().ok())
+            .unwrap_or(4001);
         return BootstrapNode::Onion { host, port };
     }
 
@@ -206,11 +203,7 @@ pub enum BootstrapNode {
 /// UAT_BOOTSTRAP_NODES=addr1,addr2,addr3
 pub fn load_bootstrap_nodes() -> Vec<BootstrapNode> {
     match std::env::var("UAT_BOOTSTRAP_NODES") {
-        Ok(val) if !val.trim().is_empty() => {
-            val.split(',')
-                .map(|s| parse_bootstrap_node(s))
-                .collect()
-        }
+        Ok(val) if !val.trim().is_empty() => val.split(',').map(parse_bootstrap_node).collect(),
         _ => Vec::new(),
     }
 }

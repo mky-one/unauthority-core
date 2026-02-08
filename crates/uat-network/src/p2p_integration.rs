@@ -1,14 +1,14 @@
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // UNAUTHORITY (UAT) - P2P NETWORK INTEGRATION
-// 
+//
 // Integration layer for Noise Protocol-based secure node communication
 // - Manages encrypted peer-to-peer sessions
 // - Sentry node relays messages for validators
 // - Perfect forward secrecy via Noise Protocol
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use serde::{Serialize, Deserialize};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 /// Encrypted peer session metadata
@@ -81,9 +81,9 @@ pub struct P2PNetworkManager {
 /// Node role in network
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 pub enum NodeRole {
-    Validator,  // Signer node (private)
-    Sentry,     // Public relay node
-    Full,       // Full node (no validation)
+    Validator, // Signer node (private)
+    Sentry,    // Public relay node
+    Full,      // Full node (no validation)
 }
 
 impl P2PNetworkManager {
@@ -116,10 +116,7 @@ impl P2PNetworkManager {
     }
 
     /// Register a peer for encrypted communication
-    pub fn add_peer(
-        &mut self,
-        peer_id: String,
-    ) -> Result<String, String> {
+    pub fn add_peer(&mut self, peer_id: String) -> Result<String, String> {
         if self.peer_sessions.contains_key(&peer_id) {
             return Err(format!("Peer {} already registered", peer_id));
         }
@@ -250,10 +247,7 @@ impl P2PNetworkManager {
 
     /// Get all connected peers
     pub fn get_connected_peers(&self) -> Vec<String> {
-        self.peer_sessions
-            .keys()
-            .cloned()
-            .collect()
+        self.peer_sessions.keys().cloned().collect()
     }
 
     /// Get peer session info
@@ -263,7 +257,8 @@ impl P2PNetworkManager {
 
     /// Process outbound queue (sort by priority)
     pub fn flush_outbound_queue(&mut self) -> Vec<QueuedMessage> {
-        self.outbound_queue.sort_by(|a, b| b.priority.cmp(&a.priority));
+        self.outbound_queue
+            .sort_by(|a, b| b.priority.cmp(&a.priority));
         self.outbound_queue.drain(..).collect()
     }
 
@@ -402,7 +397,7 @@ mod tests {
         );
 
         manager.add_peer("validator-2".to_string()).unwrap();
-        
+
         let result = manager.queue_message(
             "validator-2".to_string(),
             vec![1, 2, 3, 4, 5],
@@ -427,17 +422,17 @@ mod tests {
         manager.add_peer("validator-2".to_string()).unwrap();
         manager.add_peer("validator-3".to_string()).unwrap();
 
-        manager.queue_message(
-            "validator-2".to_string(),
-            vec![1],
-            MessagePriority::Low,
-        ).unwrap();
+        manager
+            .queue_message("validator-2".to_string(), vec![1], MessagePriority::Low)
+            .unwrap();
 
-        manager.queue_message(
-            "validator-3".to_string(),
-            vec![2],
-            MessagePriority::Critical,
-        ).unwrap();
+        manager
+            .queue_message(
+                "validator-3".to_string(),
+                vec![2],
+                MessagePriority::Critical,
+            )
+            .unwrap();
 
         let queue = manager.flush_outbound_queue();
         assert_eq!(queue[0].priority, MessagePriority::Critical);
@@ -454,11 +449,8 @@ mod tests {
         );
 
         manager.add_peer("validator-2".to_string()).unwrap();
-        
-        let result = manager.process_received_message(
-            "validator-2",
-            vec![1, 2, 3],
-        );
+
+        let result = manager.process_received_message("validator-2", vec![1, 2, 3]);
 
         assert!(result.is_ok());
         assert_eq!(manager.stats.total_messages_received, 1);

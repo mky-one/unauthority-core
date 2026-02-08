@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
-use wasmer::{Store, Module, Instance, Value, imports};
+use wasmer::{imports, Instance, Module, Store, Value};
 use wasmer_compiler_cranelift::Cranelift;
 
 // Oracle module for exchange price feeds
@@ -9,7 +9,7 @@ pub mod oracle_connector;
 
 /// Unauthority Virtual Machine (UVM)
 /// Executes WebAssembly smart contracts with permissionless deployment
-
+///
 /// Maximum allowed WASM bytecode size (1 MB)
 const MAX_BYTECODE_SIZE: usize = 1_048_576;
 /// Maximum WASM execution time before timeout (5 seconds)
@@ -78,11 +78,14 @@ impl WasmEngine {
         if bytecode.len() > MAX_BYTECODE_SIZE {
             return Err(format!(
                 "WASM bytecode too large: {} bytes (max {} bytes)",
-                bytecode.len(), MAX_BYTECODE_SIZE
+                bytecode.len(),
+                MAX_BYTECODE_SIZE
             ));
         }
 
-        let mut nonce = self.nonce.lock()
+        let mut nonce = self
+            .nonce
+            .lock()
             .map_err(|_| "Failed to lock nonce".to_string())?;
 
         let owner_nonce = nonce.entry(owner.clone()).or_insert(0);
@@ -90,14 +93,16 @@ impl WasmEngine {
         *owner_nonce = owner_nonce.saturating_add(1);
 
         // Create deterministic address: hash(owner || nonce || block)
-        let address = format!("contract_{}_{}_{}",
+        let address = format!(
+            "contract_{}_{}_{}",
             owner.chars().take(12).collect::<String>(),
             contract_nonce,
             block_number
         );
 
         // Calculate code hash (simplified)
-        let code_hash = format!("{:x}", 
+        let code_hash = format!(
+            "{:x}",
             blake3::hash(&bytecode).as_bytes()[0..16]
                 .iter()
                 .fold(0u64, |acc, &b| (acc << 4) ^ (b as u64))
@@ -113,7 +118,9 @@ impl WasmEngine {
             owner,
         };
 
-        let mut contracts = self.contracts.lock()
+        let mut contracts = self
+            .contracts
+            .lock()
             .map_err(|_| "Failed to lock contracts".to_string())?;
 
         contracts.insert(address.clone(), contract);
@@ -122,21 +129,31 @@ impl WasmEngine {
 
     /// Get contract by address
     pub fn get_contract(&self, address: &str) -> Result<Contract, String> {
-        let contracts = self.contracts.lock()
+        let contracts = self
+            .contracts
+            .lock()
             .map_err(|_| "Failed to lock contracts".to_string())?;
 
-        contracts.get(address)
+        contracts
+            .get(address)
             .cloned()
             .ok_or_else(|| "Contract not found".to_string())
     }
 
     /// Execute real WASM bytecode using wasmer with gas metering and timeout
-    fn execute_wasm(&self, bytecode: &[u8], function: &str, args: &[i32], gas_limit: u64) -> Result<(i32, u64), String> {
+    fn execute_wasm(
+        &self,
+        bytecode: &[u8],
+        function: &str,
+        args: &[i32],
+        gas_limit: u64,
+    ) -> Result<(i32, u64), String> {
         // 1. Bytecode size limit
         if bytecode.len() > MAX_BYTECODE_SIZE {
             return Err(format!(
                 "WASM bytecode too large: {} bytes (max {} bytes)",
-                bytecode.len(), MAX_BYTECODE_SIZE
+                bytecode.len(),
+                MAX_BYTECODE_SIZE
             ));
         }
 
@@ -153,49 +170,62 @@ impl WasmEngine {
         let bytecode_owned = bytecode.to_vec();
         let function_owned = function.to_string();
         let args_owned = args.to_vec();
-        let remaining_gas = gas_limit - compile_gas;
+        let _remaining_gas = gas_limit - compile_gas;
         let abort_flag = Arc::new(std::sync::atomic::AtomicBool::new(false));
         let _abort_clone = Arc::clone(&abort_flag);
 
         // 4. Execute in a separate thread with timeout
         let (result_tx, result_rx) = std::sync::mpsc::channel();
-        
+
         let handle = std::thread::spawn(move || {
             let start = std::time::Instant::now();
-            
+
             let compiler = Cranelift::default();
             let mut store = Store::new(compiler);
-            
+
             let module = match Module::new(&store, &bytecode_owned) {
                 Ok(m) => m,
-                Err(e) => { let _ = result_tx.send(Err(format!("Failed to compile WASM: {}", e))); return; }
+                Err(e) => {
+                    let _ = result_tx.send(Err(format!("Failed to compile WASM: {}", e)));
+                    return;
+                }
             };
 
             let import_object = imports! {};
             let instance = match Instance::new(&mut store, &module, &import_object) {
                 Ok(i) => i,
-                Err(e) => { let _ = result_tx.send(Err(format!("Failed to instantiate WASM: {}", e))); return; }
+                Err(e) => {
+                    let _ = result_tx.send(Err(format!("Failed to instantiate WASM: {}", e)));
+                    return;
+                }
             };
 
             let func = match instance.exports.get_function(&function_owned) {
                 Ok(f) => f,
-                Err(e) => { let _ = result_tx.send(Err(format!("Function '{}' not found: {}", function_owned, e))); return; }
+                Err(e) => {
+                    let _ = result_tx.send(Err(format!(
+                        "Function '{}' not found: {}",
+                        function_owned, e
+                    )));
+                    return;
+                }
             };
 
             let wasm_args: Vec<Value> = args_owned.iter().map(|&v| Value::I32(v)).collect();
-            
+
             let call_result = func.call(&mut store, &wasm_args);
             let elapsed = start.elapsed();
-            
+
             // Calculate execution gas from wall-clock time
             let exec_gas = (elapsed.as_millis() as u64) * GAS_PER_MS_EXECUTION;
-            
+
             match call_result {
                 Ok(results) => {
                     if let Some(Value::I32(val)) = results.first() {
                         let _ = result_tx.send(Ok((*val, exec_gas)));
                     } else {
-                        let _ = result_tx.send(Err("No return value from WASM function".to_string()));
+                        let _ =
+                            result_tx.send(Err("No return value from WASM function".to_string()));
                     }
                 }
                 Err(e) => {
@@ -236,19 +266,29 @@ impl WasmEngine {
 
     /// Execute contract function (Hybrid WASM + Fallback)
     pub fn call_contract(&self, call: ContractCall) -> Result<ContractResult, String> {
-        let mut contracts = self.contracts.lock()
+        let mut contracts = self
+            .contracts
+            .lock()
             .map_err(|_| "Failed to lock contracts".to_string())?;
 
-        let contract = contracts.get_mut(&call.contract)
+        let contract = contracts
+            .get_mut(&call.contract)
             .ok_or("Contract not found".to_string())?;
 
         // Try real WASM execution if bytecode is valid
         if contract.bytecode.len() >= 8 {
-            if let Ok(i32_args) = call.args.iter()
+            if let Ok(i32_args) = call
+                .args
+                .iter()
                 .map(|s| s.parse::<i32>())
-                .collect::<Result<Vec<_>, _>>() 
+                .collect::<Result<Vec<_>, _>>()
             {
-                match self.execute_wasm(&contract.bytecode, &call.function, &i32_args, call.gas_limit) {
+                match self.execute_wasm(
+                    &contract.bytecode,
+                    &call.function,
+                    &i32_args,
+                    call.gas_limit,
+                ) {
                     Ok((result, gas_used)) => {
                         return Ok(ContractResult {
                             success: true,
@@ -257,7 +297,11 @@ impl WasmEngine {
                             state_changes: HashMap::new(),
                         });
                     }
-                    Err(e) if e.contains("Out of gas") || e.contains("timeout") || e.contains("too large") => {
+                    Err(e)
+                        if e.contains("Out of gas")
+                            || e.contains("timeout")
+                            || e.contains("too large") =>
+                    {
                         return Err(e);
                     }
                     Err(_) => {
@@ -273,7 +317,8 @@ impl WasmEngine {
                 if call.args.len() < 2 {
                     return Err("transfer requires: amount, recipient".to_string());
                 }
-                let amount: u128 = call.args[0].parse()
+                let amount: u128 = call.args[0]
+                    .parse()
                     .map_err(|_| "Invalid amount".to_string())?;
 
                 if contract.balance < amount {
@@ -281,23 +326,23 @@ impl WasmEngine {
                 }
 
                 contract.balance -= amount;
-                (
-                    format!("Transferred {} void", amount),
-                    75,
-                    HashMap::new(),
-                )
+                (format!("Transferred {} void", amount), 75, HashMap::new())
             }
             "mint" => {
                 // SECURITY P1-3: Minting via contract is DISABLED
                 // Only the blockchain consensus (VOTE_RES flow) may mint UAT.
                 // Allowing contracts to mint would bypass supply controls.
-                return Err("mint: operation not permitted — UAT minting requires PoB consensus".to_string());
+                return Err(
+                    "mint: operation not permitted — UAT minting requires PoB consensus"
+                        .to_string(),
+                );
             }
             "burn" => {
                 if call.args.is_empty() {
                     return Err("burn requires: amount".to_string());
                 }
-                let amount: u128 = call.args[0].parse()
+                let amount: u128 = call.args[0]
+                    .parse()
                     .map_err(|_| "Invalid amount".to_string())?;
 
                 if contract.balance < amount {
@@ -305,11 +350,7 @@ impl WasmEngine {
                 }
 
                 contract.balance -= amount;
-                (
-                    format!("Burned {} void", amount),
-                    100,
-                    HashMap::new(),
-                )
+                (format!("Burned {} void", amount), 100, HashMap::new())
             }
             "set_state" => {
                 if call.args.len() < 2 {
@@ -320,34 +361,22 @@ impl WasmEngine {
 
                 let mut sc: HashMap<String, String> = HashMap::new();
                 sc.insert(key, value);
-                (
-                    "State updated".to_string(),
-                    60,
-                    sc,
-                )
+                ("State updated".to_string(), 60, sc)
             }
             "get_state" => {
                 if call.args.is_empty() {
                     return Err("get_state requires: key".to_string());
                 }
                 let key = &call.args[0];
-                let value = contract.state.get(key)
+                let value = contract
+                    .state
+                    .get(key)
                     .cloned()
                     .unwrap_or_else(|| "null".to_string());
 
-                (
-                    value,
-                    30,
-                    HashMap::new(),
-                )
+                (value, 30, HashMap::new())
             }
-            "get_balance" => {
-                (
-                    format!("{}", contract.balance),
-                    20,
-                    HashMap::new(),
-                )
-            }
+            "get_balance" => (format!("{}", contract.balance), 20, HashMap::new()),
             _ => {
                 return Err(format!("Unknown function: {}", call.function));
             }
@@ -373,10 +402,13 @@ impl WasmEngine {
 
     /// Send native void to contract
     pub fn send_to_contract(&self, contract_addr: &str, amount: u128) -> Result<(), String> {
-        let mut contracts = self.contracts.lock()
+        let mut contracts = self
+            .contracts
+            .lock()
             .map_err(|_| "Failed to lock contracts".to_string())?;
 
-        let contract = contracts.get_mut(contract_addr)
+        let contract = contracts
+            .get_mut(contract_addr)
             .ok_or("Contract not found")?;
 
         contract.balance = contract.balance.saturating_add(amount);
@@ -385,7 +417,9 @@ impl WasmEngine {
 
     /// Check if contract exists
     pub fn contract_exists(&self, address: &str) -> Result<bool, String> {
-        let contracts = self.contracts.lock()
+        let contracts = self
+            .contracts
+            .lock()
             .map_err(|_| "Failed to lock contracts".to_string())?;
 
         Ok(contracts.contains_key(address))
@@ -393,7 +427,9 @@ impl WasmEngine {
 
     /// List all deployed contracts
     pub fn list_contracts(&self) -> Result<Vec<String>, String> {
-        let contracts = self.contracts.lock()
+        let contracts = self
+            .contracts
+            .lock()
             .map_err(|_| "Failed to lock contracts".to_string())?;
 
         Ok(contracts.keys().cloned().collect())
@@ -401,7 +437,9 @@ impl WasmEngine {
 
     /// Get contract count
     pub fn contract_count(&self) -> Result<usize, String> {
-        let contracts = self.contracts.lock()
+        let contracts = self
+            .contracts
+            .lock()
             .map_err(|_| "Failed to lock contracts".to_string())?;
 
         Ok(contracts.len())
@@ -409,11 +447,12 @@ impl WasmEngine {
 
     /// Get contract state
     pub fn get_contract_state(&self, address: &str) -> Result<HashMap<String, String>, String> {
-        let contracts = self.contracts.lock()
+        let contracts = self
+            .contracts
+            .lock()
             .map_err(|_| "Failed to lock contracts".to_string())?;
 
-        let contract = contracts.get(address)
-            .ok_or("Contract not found")?;
+        let contract = contracts.get(address).ok_or("Contract not found")?;
 
         Ok(contract.state.clone())
     }
@@ -439,14 +478,14 @@ mod tests {
     #[test]
     fn test_deploy_contract() {
         let engine = WasmEngine::new();
-        
+
         // Create minimal WASM bytecode (magic header only)
         let wasm_bytes = b"\0asm\x01\x00\x00\x00".to_vec();
         let owner = "alice".to_string();
 
         let result = engine.deploy_contract(owner, wasm_bytes, HashMap::new(), 1);
         assert!(result.is_ok());
-        
+
         let addr = result.unwrap();
         assert!(addr.contains("contract_"));
         assert_eq!(engine.contract_count().unwrap(), 1);
@@ -457,12 +496,7 @@ mod tests {
         let engine = WasmEngine::new();
         let invalid_bytes = vec![0x00, 0x00, 0x00, 0x00];
 
-        let result = engine.deploy_contract(
-            "alice".to_string(),
-            invalid_bytes,
-            HashMap::new(),
-            1
-        );
+        let result = engine.deploy_contract("alice".to_string(), invalid_bytes, HashMap::new(), 1);
 
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("Invalid WASM"));
@@ -474,7 +508,9 @@ mod tests {
         let wasm_bytes = b"\0asm\x01\x00\x00\x00".to_vec();
         let owner = "bob".to_string();
 
-        let addr = engine.deploy_contract(owner.clone(), wasm_bytes, HashMap::new(), 1).unwrap();
+        let addr = engine
+            .deploy_contract(owner.clone(), wasm_bytes, HashMap::new(), 1)
+            .unwrap();
         let contract = engine.get_contract(&addr).unwrap();
 
         assert_eq!(contract.owner, owner);
@@ -486,12 +522,9 @@ mod tests {
         let engine = WasmEngine::new();
         let wasm_bytes = b"\0asm\x01\x00\x00\x00".to_vec();
 
-        let addr = engine.deploy_contract(
-            "charlie".to_string(),
-            wasm_bytes,
-            HashMap::new(),
-            1
-        ).unwrap();
+        let addr = engine
+            .deploy_contract("charlie".to_string(), wasm_bytes, HashMap::new(), 1)
+            .unwrap();
 
         // Send balance to contract first
         engine.send_to_contract(&addr, 1000).unwrap();
@@ -513,12 +546,9 @@ mod tests {
         let engine = WasmEngine::new();
         let wasm_bytes = b"\0asm\x01\x00\x00\x00".to_vec();
 
-        let addr = engine.deploy_contract(
-            "dave".to_string(),
-            wasm_bytes,
-            HashMap::new(),
-            1
-        ).unwrap();
+        let addr = engine
+            .deploy_contract("dave".to_string(), wasm_bytes, HashMap::new(), 1)
+            .unwrap();
 
         // Set state
         let set_call = ContractCall {
@@ -548,12 +578,9 @@ mod tests {
         let engine = WasmEngine::new();
         let wasm_bytes = b"\0asm\x01\x00\x00\x00".to_vec();
 
-        let addr = engine.deploy_contract(
-            "eve".to_string(),
-            wasm_bytes,
-            HashMap::new(),
-            1
-        ).unwrap();
+        let addr = engine
+            .deploy_contract("eve".to_string(), wasm_bytes, HashMap::new(), 1)
+            .unwrap();
 
         engine.send_to_contract(&addr, 5000).unwrap();
 
@@ -587,12 +614,9 @@ mod tests {
         let engine = WasmEngine::new();
         let wasm_bytes = b"\0asm\x01\x00\x00\x00".to_vec();
 
-        let addr = engine.deploy_contract(
-            "frank".to_string(),
-            wasm_bytes,
-            HashMap::new(),
-            1
-        ).unwrap();
+        let addr = engine
+            .deploy_contract("frank".to_string(), wasm_bytes, HashMap::new(), 1)
+            .unwrap();
 
         let result = engine.send_to_contract(&addr, 2500);
         assert!(result.is_ok());
@@ -607,8 +631,12 @@ mod tests {
         let wasm_bytes = b"\0asm\x01\x00\x00\x00".to_vec();
         let owner = "grace".to_string();
 
-        let addr1 = engine.deploy_contract(owner.clone(), wasm_bytes.clone(), HashMap::new(), 1).unwrap();
-        let addr2 = engine.deploy_contract(owner, wasm_bytes, HashMap::new(), 2).unwrap();
+        let addr1 = engine
+            .deploy_contract(owner.clone(), wasm_bytes.clone(), HashMap::new(), 1)
+            .unwrap();
+        let addr2 = engine
+            .deploy_contract(owner, wasm_bytes, HashMap::new(), 2)
+            .unwrap();
 
         assert_ne!(addr1, addr2);
         assert_eq!(engine.contract_count().unwrap(), 2);
@@ -633,12 +661,9 @@ mod tests {
         let engine = WasmEngine::new();
         let wasm_bytes = b"\0asm\x01\x00\x00\x00".to_vec();
 
-        let addr = engine.deploy_contract(
-            "henry".to_string(),
-            wasm_bytes,
-            HashMap::new(),
-            1
-        ).unwrap();
+        let addr = engine
+            .deploy_contract("henry".to_string(), wasm_bytes, HashMap::new(), 1)
+            .unwrap();
 
         engine.send_to_contract(&addr, 1000).unwrap();
 
@@ -660,12 +685,9 @@ mod tests {
         let engine = WasmEngine::new();
         let wasm_bytes = b"\0asm\x01\x00\x00\x00".to_vec();
 
-        let addr = engine.deploy_contract(
-            "iris".to_string(),
-            wasm_bytes,
-            HashMap::new(),
-            1
-        ).unwrap();
+        let addr = engine
+            .deploy_contract("iris".to_string(), wasm_bytes, HashMap::new(), 1)
+            .unwrap();
 
         let call = ContractCall {
             contract: addr,
@@ -700,12 +722,9 @@ mod tests {
         let engine = WasmEngine::new();
         let wasm_bytes = b"\0asm\x01\x00\x00\x00".to_vec();
 
-        let addr = engine.deploy_contract(
-            "jack".to_string(),
-            wasm_bytes,
-            HashMap::new(),
-            1
-        ).unwrap();
+        let addr = engine
+            .deploy_contract("jack".to_string(), wasm_bytes, HashMap::new(), 1)
+            .unwrap();
 
         // Set some state
         let call = ContractCall {
@@ -726,12 +745,9 @@ mod tests {
         let engine = WasmEngine::new();
         let wasm_bytes = b"\0asm\x01\x00\x00\x00".to_vec();
 
-        let addr = engine.deploy_contract(
-            "kate".to_string(),
-            wasm_bytes,
-            HashMap::new(),
-            1
-        ).unwrap();
+        let addr = engine
+            .deploy_contract("kate".to_string(), wasm_bytes, HashMap::new(), 1)
+            .unwrap();
 
         assert!(engine.contract_exists(&addr).unwrap());
         assert!(!engine.contract_exists("nonexistent").unwrap());
@@ -740,23 +756,23 @@ mod tests {
     #[test]
     fn test_real_wasm_execution() {
         let engine = WasmEngine::new();
-        
+
         // Real WASM bytecode: (module (func (export "add") (param i32 i32) (result i32) local.get 0 local.get 1 i32.add))
         let wasm_bytes = vec![
             0x00, 0x61, 0x73, 0x6d, // magic: \0asm
             0x01, 0x00, 0x00, 0x00, // version: 1
-            0x01, 0x07, 0x01, 0x60, 0x02, 0x7f, 0x7f, 0x01, 0x7f, // type section: (i32,i32)->i32
+            0x01, 0x07, 0x01, 0x60, 0x02, 0x7f, 0x7f, 0x01,
+            0x7f, // type section: (i32,i32)->i32
             0x03, 0x02, 0x01, 0x00, // function section: func 0 uses type 0
-            0x07, 0x07, 0x01, 0x03, 0x61, 0x64, 0x64, 0x00, 0x00, // export section: "add" = func 0
-            0x0a, 0x09, 0x01, 0x07, 0x00, 0x20, 0x00, 0x20, 0x01, 0x6a, 0x0b, // code: local.get 0, local.get 1, i32.add
+            0x07, 0x07, 0x01, 0x03, 0x61, 0x64, 0x64, 0x00,
+            0x00, // export section: "add" = func 0
+            0x0a, 0x09, 0x01, 0x07, 0x00, 0x20, 0x00, 0x20, 0x01, 0x6a,
+            0x0b, // code: local.get 0, local.get 1, i32.add
         ];
 
-        let addr = engine.deploy_contract(
-            "wasm_test".to_string(),
-            wasm_bytes,
-            HashMap::new(),
-            1
-        ).unwrap();
+        let addr = engine
+            .deploy_contract("wasm_test".to_string(), wasm_bytes, HashMap::new(), 1)
+            .unwrap();
 
         let call = ContractCall {
             contract: addr,

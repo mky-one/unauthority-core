@@ -1,6 +1,6 @@
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // UNAUTHORITY (UAT) - DYNAMIC FEE SCALING
-// 
+//
 // Task #3a: Anti-Spam Mechanism
 // - Track transaction rate per address
 // - Apply exponential fee multiplier (x2, x4, x8...)
@@ -8,8 +8,8 @@
 // - Non-persistent penalty system
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use serde::{Serialize, Deserialize};
 
 /// Spam detection threshold (transactions per second)
 pub const SPAM_THRESHOLD_TX_PER_SEC: u32 = 10;
@@ -25,13 +25,13 @@ pub const RATE_LIMIT_WINDOW_SECS: u64 = 1;
 pub struct AddressSpamState {
     /// Recent transaction timestamps (sliding window)
     pub recent_tx_timestamps: Vec<u64>,
-    
+
     /// Current fee multiplier for this address
     pub fee_multiplier: u128,
-    
+
     /// Last multiplier reset time
     pub last_reset_timestamp: u64,
-    
+
     /// Total spam events detected
     pub spam_violations: u32,
 }
@@ -52,10 +52,10 @@ impl Default for AddressSpamState {
 pub struct SpamDetector {
     /// Per-address spam tracking
     address_states: HashMap<String, AddressSpamState>,
-    
+
     /// Spam threshold (tx/sec)
     spam_threshold: u32,
-    
+
     /// Fee scaling factor (multiplier)
     scaling_factor: u32,
 }
@@ -106,12 +106,12 @@ impl SpamDetector {
         let state = self
             .address_states
             .entry(sender_address.to_string())
-            .or_insert_with(AddressSpamState::default);
+            .or_default();
 
         // Clean old timestamps outside the rate limit window
-        state.recent_tx_timestamps.retain(|&ts| {
-            current_timestamp.saturating_sub(ts) < RATE_LIMIT_WINDOW_SECS
-        });
+        state
+            .recent_tx_timestamps
+            .retain(|&ts| current_timestamp.saturating_sub(ts) < RATE_LIMIT_WINDOW_SECS);
 
         let tx_count = state.recent_tx_timestamps.len() as u32;
 
@@ -154,7 +154,8 @@ impl SpamDetector {
     pub fn reset_multiplier(&mut self, sender_address: &str, current_timestamp: u64) {
         if let Some(state) = self.address_states.get_mut(sender_address) {
             // Only reset if enough time has passed
-            if current_timestamp.saturating_sub(state.last_reset_timestamp) > RATE_LIMIT_WINDOW_SECS {
+            if current_timestamp.saturating_sub(state.last_reset_timestamp) > RATE_LIMIT_WINDOW_SECS
+            {
                 state.fee_multiplier = 1;
                 state.recent_tx_timestamps.clear();
                 state.last_reset_timestamp = current_timestamp;
@@ -196,26 +197,23 @@ impl SpamDetector {
 /// Final fee after scaling, respecting MAX_GAS_PER_TX limit
 pub fn apply_fee_multiplier(base_fee: u128, multiplier: u128) -> Result<u128, String> {
     const MAX_GAS_PER_TX: u128 = 10_000_000; // 0.1 UAT
-    
+
     let final_fee = base_fee.saturating_mul(multiplier);
-    
+
     if final_fee > MAX_GAS_PER_TX {
         return Err(format!(
             "Scaled fee {} exceeds maximum {} (base: {}, multiplier: {})",
             final_fee, MAX_GAS_PER_TX, base_fee, multiplier
         ));
     }
-    
+
     Ok(final_fee)
 }
 
 /// Calculate next escalation multiplier
 ///
 /// Given current multiplier and violations, determine if escalation needed
-pub fn calculate_escalation_multiplier(
-    current_violations: u32,
-    base_factor: u32,
-) -> u128 {
+pub fn calculate_escalation_multiplier(current_violations: u32, base_factor: u32) -> u128 {
     if current_violations == 0 {
         return 1;
     }
@@ -334,7 +332,7 @@ mod tests {
         assert_eq!(multipliers[10], 2); // 11th tx: 2^(11-10) = 2
         assert_eq!(multipliers[11], 4); // 12th tx: 2^(12-10) = 4
         assert_eq!(multipliers[12], 8); // 13th tx: 2^(13-10) = 8
-        // Verify exponential escalation
+                                        // Verify exponential escalation
         assert!(multipliers[20] > multipliers[10]); // Escalation continues
     }
 
@@ -388,11 +386,15 @@ mod tests {
         assert_eq!(burn_state.get_capacity_percentage(), 0.0);
 
         // Half full
-        burn_state.try_add_burn(BURN_LIMIT_PER_BLOCK_VOID / 2).unwrap();
+        burn_state
+            .try_add_burn(BURN_LIMIT_PER_BLOCK_VOID / 2)
+            .unwrap();
         assert_eq!(burn_state.get_capacity_percentage(), 50.0);
 
         // Full
-        burn_state.try_add_burn(BURN_LIMIT_PER_BLOCK_VOID / 2).unwrap();
+        burn_state
+            .try_add_burn(BURN_LIMIT_PER_BLOCK_VOID / 2)
+            .unwrap();
         assert_eq!(burn_state.get_capacity_percentage(), 100.0);
     }
 

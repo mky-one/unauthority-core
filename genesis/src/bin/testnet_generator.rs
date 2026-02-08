@@ -7,7 +7,6 @@
 ///
 /// This generator runs ONCE to produce testnet genesis. The output JSON
 /// is committed and shared with all testnet participants.
-
 use bip39::{Language, Mnemonic};
 use std::fs;
 
@@ -45,8 +44,10 @@ fn main() {
     println!("\n12 Wallets: 8 Dev Treasury + 4 Bootstrap Validators\n");
 
     // Integer math: dev allocation = total * 7 / 100
-    let dev_allocation_void = (TOTAL_SUPPLY_UAT * DEV_ALLOCATION_PERCENT_NUM / DEV_ALLOCATION_PERCENT_DEN) * VOID_PER_UAT;
-    let total_bootstrap_allocation_void = BOOTSTRAP_NODE_STAKE_UAT * (BOOTSTRAP_NODE_COUNT as u128) * VOID_PER_UAT;
+    let dev_allocation_void =
+        (TOTAL_SUPPLY_UAT * DEV_ALLOCATION_PERCENT_NUM / DEV_ALLOCATION_PERCENT_DEN) * VOID_PER_UAT;
+    let total_bootstrap_allocation_void =
+        BOOTSTRAP_NODE_STAKE_UAT * (BOOTSTRAP_NODE_COUNT as u128) * VOID_PER_UAT;
     let allocation_per_treasury_void = dev_allocation_void / (DEV_TREASURY_COUNT as u128);
     let treasury_8_balance_void = allocation_per_treasury_void - total_bootstrap_allocation_void;
 
@@ -56,9 +57,8 @@ fn main() {
     println!("TESTNET TREASURY WALLETS (Dilithium5 Post-Quantum)");
     println!("===================================================\n");
 
-    for i in 0..DEV_TREASURY_COUNT {
+    for (i, &seed_phrase) in TESTNET_SEEDS[..DEV_TREASURY_COUNT].iter().enumerate() {
         let wallet_num = i + 1;
-        let seed_phrase = TESTNET_SEEDS[i];
 
         // Validate seed phrase is valid BIP39
         let _mnemonic = Mnemonic::parse_in_normalized(Language::English, seed_phrase)
@@ -81,7 +81,10 @@ fn main() {
 
         println!("Treasury Wallet #{}:", wallet_num);
         println!("  Address:      {}", address);
-        println!("  Balance:      {}.{:011} UAT ({} VOID)", balance_uat, balance_remainder, balance);
+        println!(
+            "  Balance:      {}.{:011} UAT ({} VOID)",
+            balance_uat, balance_remainder, balance
+        );
         println!("  Seed Phrase:  {}", seed_phrase);
         println!("  Public Key:   {}...\n", &pk_hex[..64]);
 
@@ -113,7 +116,10 @@ fn main() {
 
         println!("Bootstrap Validator #{}:", validator_num);
         println!("  Address:      {}", address);
-        println!("  Balance:      {} UAT ({} VOID)", BOOTSTRAP_NODE_STAKE_UAT, balance);
+        println!(
+            "  Balance:      {} UAT ({} VOID)",
+            BOOTSTRAP_NODE_STAKE_UAT, balance
+        );
         println!("  Seed Phrase:  {}", seed_phrase);
         println!("  Public Key:   {}...\n", &pk_hex[..64]);
 
@@ -128,10 +134,19 @@ fn main() {
     println!("ALLOCATION SUMMARY (TESTNET)");
     println!("===================================================");
     println!("Total Supply:     {} UAT", TOTAL_SUPPLY_UAT);
-    println!("Dev Allocation:   {} UAT (7%)", dev_allocation_void / VOID_PER_UAT);
+    println!(
+        "Dev Allocation:   {} UAT (7%)",
+        dev_allocation_void / VOID_PER_UAT
+    );
     println!("Per Treasury:     {} VOID", allocation_per_treasury_void);
-    println!("Treasury 8:       {} VOID (after funding {} nodes)", treasury_8_balance_void, BOOTSTRAP_NODE_COUNT);
-    println!("Validators:       {} x {} UAT", BOOTSTRAP_NODE_COUNT, BOOTSTRAP_NODE_STAKE_UAT);
+    println!(
+        "Treasury 8:       {} VOID (after funding {} nodes)",
+        treasury_8_balance_void, BOOTSTRAP_NODE_COUNT
+    );
+    println!(
+        "Validators:       {} x {} UAT",
+        BOOTSTRAP_NODE_COUNT, BOOTSTRAP_NODE_STAKE_UAT
+    );
     println!("===================================================\n");
 
     // Build JSON manually
@@ -147,8 +162,7 @@ fn main() {
     if let Err(e) = fs::create_dir_all("../testnet-genesis") {
         eprintln!("Warning: Could not create directory: {}", e);
     }
-    fs::write(output_path, &json)
-        .expect("Failed to write testnet_wallets.json");
+    fs::write(output_path, &json).expect("Failed to write testnet_wallets.json");
 
     println!("Testnet genesis saved to: {}", output_path);
     println!("12 wallets with Dilithium5 post-quantum addresses");

@@ -1,5 +1,5 @@
 /// Unauthority gRPC Server Implementation
-/// 
+///
 /// Provides 8 core gRPC services for external integration:
 /// 1. GetBalance - Query account balance
 /// 2. GetAccount - Get full account details
@@ -9,11 +9,10 @@
 /// 6. GetNodeInfo - Get node/oracle/supply info
 /// 7. GetValidators - List all active validators
 /// 8. GetBlockHeight - Get current blockchain height
-
 use std::sync::{Arc, Mutex};
-use tonic::{transport::Server, Request, Response, Status};
 use tokio::sync::mpsc;
-use uat_core::{Ledger, VOID_PER_UAT, MIN_VALIDATOR_STAKE_VOID};
+use tonic::{transport::Server, Request, Response, Status};
+use uat_core::{Ledger, MIN_VALIDATOR_STAKE_VOID, VOID_PER_UAT};
 
 // Include generated protobuf code
 pub mod proto {
@@ -22,14 +21,10 @@ pub mod proto {
 
 use proto::{
     uat_node_server::{UatNode, UatNodeServer},
-    GetBalanceRequest, GetBalanceResponse,
-    GetAccountRequest, GetAccountResponse,
-    GetBlockRequest, GetBlockResponse,
-    GetLatestBlockRequest,
-    SendTransactionRequest, SendTransactionResponse,
-    GetNodeInfoRequest, GetNodeInfoResponse,
-    GetValidatorsRequest, GetValidatorsResponse, ValidatorInfo,
-    GetBlockHeightRequest, GetBlockHeightResponse,
+    GetAccountRequest, GetAccountResponse, GetBalanceRequest, GetBalanceResponse,
+    GetBlockHeightRequest, GetBlockHeightResponse, GetBlockRequest, GetBlockResponse,
+    GetLatestBlockRequest, GetNodeInfoRequest, GetNodeInfoResponse, GetValidatorsRequest,
+    GetValidatorsResponse, SendTransactionRequest, SendTransactionResponse, ValidatorInfo,
 };
 
 /// gRPC Service Implementation
@@ -56,14 +51,15 @@ impl UatGrpcService {
     /// Helper: Convert short address to full address
     fn resolve_address(&self, addr: &str) -> Option<String> {
         let ledger = self.ledger.lock().ok()?;
-        
+
         // If already full address, return
         if ledger.accounts.contains_key(addr) {
             return Some(addr.to_string());
         }
-        
+
         // Try to find by short ID
-        ledger.accounts
+        ledger
+            .accounts
             .keys()
             .find(|k| k.starts_with(addr) || get_short_addr(k) == addr)
             .cloned()
@@ -87,31 +83,40 @@ impl UatNode for UatGrpcService {
         request: Request<GetBalanceRequest>,
     ) -> Result<Response<GetBalanceResponse>, Status> {
         let addr = request.into_inner().address;
-        
-        let full_addr = self.resolve_address(&addr)
+
+        let full_addr = self
+            .resolve_address(&addr)
             .ok_or_else(|| Status::not_found(format!("Address not found: {}", addr)))?;
-        
-        let ledger = self.ledger.lock()
+
+        let ledger = self
+            .ledger
+            .lock()
             .map_err(|_| Status::internal("Failed to lock ledger"))?;
-        
-        let account = ledger.accounts.get(&full_addr)
+
+        let account = ledger
+            .accounts
+            .get(&full_addr)
             .ok_or_else(|| Status::not_found("Account not found"))?;
-        
+
         // FIX V4#21: Use string formatting to avoid u128→u64 truncation
         let balance_uat = account.balance / VOID_PER_UAT;
         let balance_remainder = account.balance % VOID_PER_UAT;
-        
+
         let response = GetBalanceResponse {
             address: full_addr,
-            balance_void: account.balance as u64,  // Note: protobuf limitation, large balances may truncate
+            balance_void: account.balance as u64, // Note: protobuf limitation, large balances may truncate
             balance_uat: balance_uat as f64 + (balance_remainder as f64 / VOID_PER_UAT as f64),
-            block_count: account.block_count as u64,
+            block_count: account.block_count,
             head_block: account.head.clone(),
         };
-        
-        println!("📊 gRPC GetBalance: {} -> {}.{} UAT", 
-            get_short_addr(&response.address), balance_uat, balance_remainder);
-        
+
+        println!(
+            "📊 gRPC GetBalance: {} -> {}.{} UAT",
+            get_short_addr(&response.address),
+            balance_uat,
+            balance_remainder
+        );
+
         Ok(Response::new(response))
     }
 
@@ -121,33 +126,45 @@ impl UatNode for UatGrpcService {
         request: Request<GetAccountRequest>,
     ) -> Result<Response<GetAccountResponse>, Status> {
         let addr = request.into_inner().address;
-        
-        let full_addr = self.resolve_address(&addr)
+
+        let full_addr = self
+            .resolve_address(&addr)
             .ok_or_else(|| Status::not_found(format!("Address not found: {}", addr)))?;
-        
-        let ledger = self.ledger.lock()
+
+        let ledger = self
+            .ledger
+            .lock()
             .map_err(|_| Status::internal("Failed to lock ledger"))?;
-        
-        let account = ledger.accounts.get(&full_addr)
+
+        let account = ledger
+            .accounts
+            .get(&full_addr)
             .ok_or_else(|| Status::not_found("Account not found"))?;
-        
+
         // Check if validator (minimum 1,000 UAT stake)
         let min_stake = MIN_VALIDATOR_STAKE_VOID;
         let is_validator = account.balance >= min_stake;
-        
+
         let response = GetAccountResponse {
             address: full_addr.clone(),
             balance_void: account.balance as u64,
             balance_uat: account.balance as f64 / VOID_PER_UAT as f64,
-            block_count: account.block_count as u64,
+            block_count: account.block_count,
             head_block: account.head.clone(),
             is_validator,
-            stake_void: if is_validator { account.balance as u64 } else { 0 },
+            stake_void: if is_validator {
+                account.balance as u64
+            } else {
+                0
+            },
         };
-        
-        println!("🔍 gRPC GetAccount: {} (validator: {})", 
-            get_short_addr(&full_addr), is_validator);
-        
+
+        println!(
+            "🔍 gRPC GetAccount: {} (validator: {})",
+            get_short_addr(&full_addr),
+            is_validator
+        );
+
         Ok(Response::new(response))
     }
 
@@ -157,19 +174,24 @@ impl UatNode for UatGrpcService {
         request: Request<GetBlockRequest>,
     ) -> Result<Response<GetBlockResponse>, Status> {
         let hash = request.into_inner().block_hash;
-        
-        let ledger = self.ledger.lock()
+
+        let ledger = self
+            .ledger
+            .lock()
             .map_err(|_| Status::internal("Failed to lock ledger"))?;
-        
-        let block = ledger.blocks.get(&hash)
+
+        let block = ledger
+            .blocks
+            .get(&hash)
             .ok_or_else(|| Status::not_found(format!("Block not found: {}", hash)))?;
-        
+
         // Get account balance from ledger (Block itself doesn't have balance field)
-        let account_balance = ledger.accounts
+        let account_balance = ledger
+            .accounts
             .get(&block.account)
             .map(|acc| acc.balance as u64)
             .unwrap_or(0);
-        
+
         let response = GetBlockResponse {
             block_hash: hash.clone(),
             account: block.account.clone(),
@@ -179,13 +201,16 @@ impl UatNode for UatGrpcService {
             amount: block.amount as u64,
             balance: account_balance, // Account balance, not block balance
             signature: block.signature.clone(),
-            timestamp: block.timestamp,  // Use actual block timestamp
+            timestamp: block.timestamp,     // Use actual block timestamp
             representative: "".to_string(), // Not implemented yet
         };
-        
-        println!("📦 gRPC GetBlock: {} (type: {})", 
-            &hash[..12], response.block_type);
-        
+
+        println!(
+            "📦 gRPC GetBlock: {} (type: {})",
+            &hash[..12],
+            response.block_type
+        );
+
         Ok(Response::new(response))
     }
 
@@ -194,23 +219,27 @@ impl UatNode for UatGrpcService {
         &self,
         _request: Request<GetLatestBlockRequest>,
     ) -> Result<Response<GetBlockResponse>, Status> {
-        let ledger = self.ledger.lock()
+        let ledger = self
+            .ledger
+            .lock()
             .map_err(|_| Status::internal("Failed to lock ledger"))?;
-        
+
         // FIX V4#20: Find ACTUAL latest block by timestamp (not random HashMap entry)
-        let latest = ledger.blocks
+        let latest = ledger
+            .blocks
             .iter()
             .max_by_key(|(_, block)| block.timestamp)
             .ok_or_else(|| Status::not_found("No blocks found"))?;
-        
+
         let (hash, block) = latest;
-        
+
         // Get account balance from ledger
-        let account_balance = ledger.accounts
+        let account_balance = ledger
+            .accounts
             .get(&block.account)
             .map(|acc| acc.balance as u64)
             .unwrap_or(0);
-        
+
         let response = GetBlockResponse {
             block_hash: hash.clone(),
             account: block.account.clone(),
@@ -223,9 +252,13 @@ impl UatNode for UatGrpcService {
             timestamp: block.timestamp,
             representative: "".to_string(),
         };
-        
-        println!("🆕 gRPC GetLatestBlock: {} (ts: {})", &hash[..12.min(hash.len())], block.timestamp);
-        
+
+        println!(
+            "🆕 gRPC GetLatestBlock: {} (ts: {})",
+            &hash[..12.min(hash.len())],
+            block.timestamp
+        );
+
         Ok(Response::new(response))
     }
 
@@ -259,23 +292,26 @@ impl UatNode for UatGrpcService {
         &self,
         _request: Request<GetNodeInfoRequest>,
     ) -> Result<Response<GetNodeInfoResponse>, Status> {
-        let ledger = self.ledger.lock()
+        let ledger = self
+            .ledger
+            .lock()
             .map_err(|_| Status::internal("Failed to lock ledger"))?;
-        
+
         // Check if this node is validator
-        let is_validator = ledger.accounts
+        let is_validator = ledger
+            .accounts
             .get(&self.my_address)
             .map(|a| a.balance >= MIN_VALIDATOR_STAKE_VOID)
             .unwrap_or(false);
-        
+
         // Oracle prices not available in gRPC context (use REST /oracle endpoint)
         // Return 0 to indicate no data rather than misleading hardcoded values
         let eth_price = 0.0_f64;
         let btc_price = 0.0_f64;
-        
+
         // Calculate latest block height (count total blocks)
         let latest_height = ledger.blocks.len() as u64;
-        
+
         let response = GetNodeInfoResponse {
             node_address: self.my_address.clone(),
             network_id: uat_core::CHAIN_ID as u32, // CHAIN_ID: 1=mainnet, 2=testnet
@@ -290,10 +326,13 @@ impl UatNode for UatGrpcService {
             latest_block_height: latest_height,
             is_validator,
         };
-        
-        println!("ℹ️  gRPC GetNodeInfo: {} (validator: {})", 
-            get_short_addr(&self.my_address), is_validator);
-        
+
+        println!(
+            "ℹ️  gRPC GetNodeInfo: {} (validator: {})",
+            get_short_addr(&self.my_address),
+            is_validator
+        );
+
         Ok(Response::new(response))
     }
 
@@ -302,39 +341,42 @@ impl UatNode for UatGrpcService {
         &self,
         _request: Request<GetValidatorsRequest>,
     ) -> Result<Response<GetValidatorsResponse>, Status> {
-        let ledger = self.ledger.lock()
+        let ledger = self
+            .ledger
+            .lock()
             .map_err(|_| Status::internal("Failed to lock ledger"))?;
-        
+
         let min_stake = MIN_VALIDATOR_STAKE_VOID;
-        
+
         // Filter accounts with minimum stake
-        let validators: Vec<ValidatorInfo> = ledger.accounts
+        let validators: Vec<ValidatorInfo> = ledger
+            .accounts
             .iter()
             .filter(|(_, acc)| acc.balance >= min_stake)
             .map(|(addr, acc)| {
                 // Quadratic voting power: sqrt(stake)
                 let voting_power = (acc.balance as f64 / VOID_PER_UAT as f64).sqrt();
-                
+
                 ValidatorInfo {
                     address: addr.clone(),
                     stake_void: acc.balance as u64,
                     is_active: true, // TODO: Check uptime
                     voting_power,
-                    rewards_earned: 0, // TODO: Track from gas fees
+                    rewards_earned: 0,     // TODO: Track from gas fees
                     uptime_percent: 100.0, // TODO: Calculate from monitoring
                 }
             })
             .collect();
-        
+
         let total_count = validators.len() as u32;
-        
+
         println!("👥 gRPC GetValidators: {} active validators", total_count);
-        
+
         let response = GetValidatorsResponse {
             validators,
             total_count,
         };
-        
+
         Ok(Response::new(response))
     }
 
@@ -343,26 +385,29 @@ impl UatNode for UatGrpcService {
         &self,
         _request: Request<GetBlockHeightRequest>,
     ) -> Result<Response<GetBlockHeightResponse>, Status> {
-        let ledger = self.ledger.lock()
+        let ledger = self
+            .ledger
+            .lock()
             .map_err(|_| Status::internal("Failed to lock ledger"))?;
-        
+
         // Find latest block by timestamp (or use total count as height)
         let total_blocks = ledger.blocks.len() as u64;
-        
-        let latest_hash = ledger.blocks
+
+        let latest_hash = ledger
+            .blocks
             .iter()
             .max_by_key(|(_, b)| b.timestamp)
             .map(|(h, _)| h.clone())
             .unwrap_or_else(|| "0".to_string());
-        
+
         let response = GetBlockHeightResponse {
             height: total_blocks,
             latest_block_hash: latest_hash,
             timestamp: chrono::Utc::now().timestamp() as u64,
         };
-        
+
         println!("📏 gRPC GetBlockHeight: {}", response.height);
-        
+
         Ok(Response::new(response))
     }
 }
@@ -381,9 +426,9 @@ pub async fn start_grpc_server(
         format!("127.0.0.1:{}", grpc_port)
     };
     let addr = bind_addr.parse()?;
-    
+
     let service = UatGrpcService::new(ledger, my_address.clone(), tx_sender);
-    
+
     println!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
     println!("🚀 gRPC Server STARTED");
     println!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
@@ -391,12 +436,12 @@ pub async fn start_grpc_server(
     println!("   Node: {}", get_short_addr(&my_address));
     println!("   Services: 8 core gRPC endpoints");
     println!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-    
+
     Server::builder()
         .add_service(UatNodeServer::new(service))
         .serve(addr)
         .await?;
-    
+
     Ok(())
 }
 
@@ -416,23 +461,19 @@ mod tests {
                 block_count: 0,
             },
         );
-        
+
         let ledger = Arc::new(Mutex::new(ledger));
         let (tx, _rx) = mpsc::channel(1);
-        
-        let service = UatGrpcService::new(
-            ledger,
-            "node_address".to_string(),
-            tx,
-        );
-        
+
+        let service = UatGrpcService::new(ledger, "node_address".to_string(), tx);
+
         let request = Request::new(GetBalanceRequest {
             address: "test_address".to_string(),
         });
-        
+
         let response = service.get_balance(request).await.unwrap();
         let balance = response.into_inner();
-        
+
         assert_eq!(balance.address, "test_address");
         assert_eq!(balance.balance_void, (500 * VOID_PER_UAT) as u64);
         assert_eq!(balance.balance_uat, 500.0);
@@ -441,7 +482,7 @@ mod tests {
     #[tokio::test]
     async fn test_grpc_get_validators() {
         let mut ledger = Ledger::new();
-        
+
         // Add 2 validators (min 1,000 UAT)
         ledger.accounts.insert(
             "validator1".to_string(),
@@ -459,7 +500,7 @@ mod tests {
                 block_count: 0,
             },
         );
-        
+
         // Add 1 non-validator (below min stake)
         ledger.accounts.insert(
             "regular_user".to_string(),
@@ -469,24 +510,20 @@ mod tests {
                 block_count: 0,
             },
         );
-        
+
         let ledger = Arc::new(Mutex::new(ledger));
         let (tx, _rx) = mpsc::channel(1);
-        
-        let service = UatGrpcService::new(
-            ledger,
-            "node".to_string(),
-            tx,
-        );
-        
+
+        let service = UatGrpcService::new(ledger, "node".to_string(), tx);
+
         let request = Request::new(GetValidatorsRequest {});
         let response = service.get_validators(request).await.unwrap();
         let validators = response.into_inner();
-        
+
         // Should return only 2 validators (min 1,000 UAT stake)
         assert_eq!(validators.total_count, 2);
         assert_eq!(validators.validators.len(), 2);
-        
+
         // Check quadratic voting power
         let val1 = &validators.validators[0];
         assert!(val1.voting_power > 0.0);

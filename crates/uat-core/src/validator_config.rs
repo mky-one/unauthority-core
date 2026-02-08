@@ -41,28 +41,28 @@ impl ValidatorConfig {
     pub fn load_from_env() -> Result<Self, Box<dyn std::error::Error>> {
         let node_id = std::env::var("UAT_NODE_ID")
             .unwrap_or_else(|_| format!("validator-{}", std::process::id()));
-        
-        let address = std::env::var("UAT_VALIDATOR_ADDRESS")
-            .map_err(|_| "UAT_VALIDATOR_ADDRESS not set")?;
-        
+
+        let address =
+            std::env::var("UAT_VALIDATOR_ADDRESS").map_err(|_| "UAT_VALIDATOR_ADDRESS not set")?;
+
         let private_key_path = std::env::var("UAT_PRIVKEY_PATH")
             .unwrap_or_else(|_| format!("/etc/uat/{}/private_key.hex", node_id));
-        
+
         let stake_void: u64 = std::env::var("UAT_STAKE_VOID")
             .unwrap_or_else(|_| "100000000000".to_string())
             .parse()?;
-        
+
         let sentry_public_port: u16 = std::env::var("UAT_SENTRY_PUBLIC_PORT")
             .unwrap_or_else(|_| "30333".to_string())
             .parse()?;
-        
+
         let sentry_private_port: u16 = std::env::var("UAT_SENTRY_PRIVATE_PORT")
             .unwrap_or_else(|_| "31333".to_string())
             .parse()?;
-        
+
         let psk_file = std::env::var("UAT_PSK_FILE")
             .unwrap_or_else(|_| format!("/etc/uat/{}/signer.psk", node_id));
-        
+
         Ok(Self {
             node_id,
             address,
@@ -151,7 +151,7 @@ impl ValidatorManager {
             let entry = entry?;
             let path = entry.path();
 
-            if path.extension().map_or(false, |ext| ext == "toml") {
+            if path.extension().is_some_and(|ext| ext == "toml") {
                 let config = ValidatorConfig::load_from_file(&path)?;
                 config.validate()?;
                 validators.push(config);
@@ -341,7 +341,8 @@ mod tests {
         let v1 = manager.get_validator("validator-1").unwrap();
         assert_eq!(v1.node_id, "validator-1");
 
-        let v_addr = manager.get_validator_by_address("UAT1111111111111111111111111111111111111111");
+        let v_addr =
+            manager.get_validator_by_address("UAT1111111111111111111111111111111111111111");
         assert!(v_addr.is_some());
     }
 

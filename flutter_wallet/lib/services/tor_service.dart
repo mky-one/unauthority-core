@@ -270,7 +270,7 @@ class TorService {
   /// Download Tor Expert Bundle and cache it locally
   Future<String?> _downloadAndCacheTor() async {
     try {
-      final url = _getTorDownloadUrl();
+      final url = await _getTorDownloadUrl();
       if (url == null) {
         print('❌ No Tor download URL for ${Platform.operatingSystem}');
         return null;
@@ -351,15 +351,27 @@ class TorService {
   }
 
   /// Get platform-specific Tor Expert Bundle download URL
-  String? _getTorDownloadUrl() {
+  Future<String?> _getTorDownloadUrl() async {
     // Tor Expert Bundle 14.0.4 (stable as of early 2026)
     const version = '14.0.4';
     const base =
         'https://archive.torproject.org/tor-package-archive/torbrowser/$version';
 
     if (Platform.isMacOS) {
-      // Detect ARM vs Intel
-      return '$base/tor-expert-bundle-macos-aarch64-$version.tar.gz';
+      // Detect ARM (Apple Silicon) vs Intel via uname -m
+      String arch = 'aarch64'; // default to Apple Silicon
+      try {
+        final result = await Process.run('uname', ['-m']);
+        if (result.exitCode == 0) {
+          final uname = result.stdout.toString().trim();
+          if (uname == 'x86_64') {
+            arch = 'x86_64';
+          }
+        }
+      } catch (_) {
+        // Fallback to aarch64 (most common modern Mac)
+      }
+      return '$base/tor-expert-bundle-macos-$arch-$version.tar.gz';
     } else if (Platform.isLinux) {
       return '$base/tor-expert-bundle-linux-x86_64-$version.tar.gz';
     } else if (Platform.isWindows) {

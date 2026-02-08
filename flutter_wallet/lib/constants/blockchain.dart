@@ -29,8 +29,42 @@ class BlockchainConstants {
   }
 
   /// Convert UAT (display unit) to VOID (smallest unit)
+  /// ⚠️ DEPRECATED: Uses f64 multiplication which causes off-by-1 VOID errors
+  /// on common decimals (0.3, 0.6, 0.7). Use uatStringToVoid() instead.
+  @Deprecated('Use uatStringToVoid() for precision. f64 causes off-by-1 VOID errors.')
   static int uatToVoid(double uatAmount) {
     return (uatAmount * voidPerUat).toInt();
+  }
+
+  /// Convert UAT string to VOID using integer-only math.
+  /// Avoids IEEE 754 f64 precision loss that causes off-by-1 VOID errors.
+  ///
+  /// Examples:
+  ///   "0.3"  → 30000000000 VOID (exact)
+  ///   "1.5"  → 150000000000 VOID (exact)
+  ///   "100"  → 10000000000000 VOID (exact)
+  static int uatStringToVoid(String uatStr) {
+    final trimmed = uatStr.trim();
+    if (trimmed.isEmpty) return 0;
+
+    final parts = trimmed.split('.');
+    final wholePart = int.parse(parts[0].isEmpty ? '0' : parts[0]);
+
+    if (parts.length == 1) {
+      // Integer only: "100" → 100 * voidPerUat
+      return wholePart * voidPerUat;
+    }
+
+    // Has decimal: pad/truncate to 11 decimal places (10^11 = voidPerUat)
+    var fracStr = parts[1];
+    if (fracStr.length > decimalPlaces) {
+      fracStr = fracStr.substring(0, decimalPlaces);
+    } else {
+      fracStr = fracStr.padRight(decimalPlaces, '0');
+    }
+
+    final fracVoid = int.parse(fracStr);
+    return wholePart * voidPerUat + fracVoid;
   }
 
   /// Format UAT amount for display with appropriate precision

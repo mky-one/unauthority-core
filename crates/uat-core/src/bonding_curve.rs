@@ -3,6 +3,14 @@ use serde::{Deserialize, Serialize};
 /// Bonding Curve for Unauthority (UAT) distribution
 /// Implements Proof-of-Burn mechanism with dynamic pricing
 /// The curve makes UAT increasingly scarce as supply dwindles
+///
+/// ⚠️ SAFETY: This module uses f64::ln() which is NOT deterministic across CPU
+/// architectures (x87 vs SSE vs ARM). It MUST NOT be used in any consensus-critical
+/// code path. It exists only for off-chain economics estimation / UI display.
+/// Consensus-critical mint/burn logic must use integer-only math.
+///
+/// If this module is ever needed on-chain, replace `ln()` with a fixed-point
+/// integer logarithm approximation that produces identical results on all platforms.
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BondingCurve {
@@ -31,6 +39,12 @@ impl BondingCurve {
 
     /// Calculate UAT amount given BTC/ETH burn amount
     /// Uses logarithmic bonding curve: price increases as supply depletes
+    ///
+    /// ⚠️ WARNING: Uses f64::ln() — NOT deterministic across architectures.
+    /// DO NOT use in consensus-critical code. Off-chain estimation only.
+    #[deprecated(
+        note = "Uses non-deterministic f64::ln(). Do NOT use in consensus code. Off-chain only."
+    )]
     pub fn calculate_uat_for_burn(&self, burned_satoshis: u64) -> BondingCurveResult {
         let remaining = self.total_supply - self.distributed;
 
@@ -63,6 +77,13 @@ impl BondingCurve {
     }
 
     /// Process a burn and distribute UAT
+    ///
+    /// ⚠️ WARNING: Calls calculate_uat_for_burn which uses f64::ln().
+    /// NOT deterministic across architectures. Off-chain estimation only.
+    #[deprecated(
+        note = "Uses non-deterministic f64::ln(). Do NOT use in consensus code. Off-chain only."
+    )]
+    #[allow(deprecated)]
     pub fn process_burn(&mut self, burned_satoshis: u64) -> BondingCurveResult {
         let result = self.calculate_uat_for_burn(burned_satoshis);
         self.distributed += result.uat_amount;
@@ -89,6 +110,12 @@ impl BondingCurve {
     }
 
     /// Calculate "difficulty" for next burn (price needed to get 1 UAT)
+    ///
+    /// ⚠️ WARNING: Uses f64::ln() — NOT deterministic across architectures.
+    /// DO NOT use in consensus-critical code. Off-chain estimation only.
+    #[deprecated(
+        note = "Uses non-deterministic f64::ln(). Do NOT use in consensus code. Off-chain only."
+    )]
     pub fn satoshi_cost_per_uat(&self) -> f64 {
         let remaining = self.total_supply - self.distributed;
         if remaining == 0 {
@@ -140,6 +167,7 @@ impl Default for BondingCurve {
 }
 
 #[cfg(test)]
+#[allow(deprecated)]
 mod tests {
     use super::*;
 

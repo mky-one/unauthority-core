@@ -303,6 +303,8 @@ class DilithiumService {
 
       return Uint8List.fromList(sigPtr.asTypedList(sigLen));
     } finally {
+      // SECURITY FIX S3: Zero secret key memory before freeing to prevent leak
+      skPtr.asTypedList(secretKey.length).fillRange(0, secretKey.length, 0);
       calloc.free(msgPtr);
       calloc.free(skPtr);
       calloc.free(sigPtr);

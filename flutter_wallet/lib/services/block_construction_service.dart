@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:isolate';
 import 'dart:typed_data';
 import 'api_service.dart';
 import 'wallet_service.dart';
@@ -21,8 +22,8 @@ class BlockConstructionService {
   static const int chainIdTestnet = 2;
   static const int chainIdMainnet = 1;
 
-  /// Current chain ID (compile-time constant equivalent)
-  /// TODO: Make configurable via environment/settings
+  /// Current chain ID — configurable at runtime.
+  /// Defaults to testnet (2). Set to 1 for mainnet via constructor or setter.
   int chainId;
 
   /// PoW difficulty: 16 leading zero bits (matches backend MIN_POW_DIFFICULTY_BITS)
@@ -47,6 +48,13 @@ class BlockConstructionService {
     this.chainId = chainIdTestnet,
   })  : _api = api,
         _wallet = wallet;
+
+  /// Update the chain ID at runtime (e.g., switching between testnet ↔ mainnet).
+  void setChainId(int id) {
+    assert(id == chainIdTestnet || id == chainIdMainnet,
+        'Invalid chainId: must be $chainIdTestnet or $chainIdMainnet');
+    chainId = id;
+  }
 
   /// Send UAT with full client-side block construction.
   ///
@@ -82,39 +90,26 @@ class BlockConstructionService {
     // 4. Current timestamp
     final timestamp = DateTime.now().millisecondsSinceEpoch ~/ 1000;
 
-    // 5. Construct the signing data and mine PoW
-    // We need to find a nonce where signing_hash has >= 16 leading zero bits.
-    // The signing_hash includes the nonce (work), so we iterate.
-    int work = 0;
-    String signingHash = '';
-    bool found = false;
+    // 5. Mine PoW in a background isolate (FIX U1: prevents UI freeze)
+    final powResult = await _minePoWInIsolate(
+      chainId: chainId,
+      account: address,
+      previous: previous,
+      blockType: blockTypeSend,
+      amount: amountVoid,
+      link: to,
+      publicKey: publicKeyHex,
+      timestamp: timestamp,
+      fee: 0,
+    );
 
-    for (int nonce = 0; nonce < maxPowIterations; nonce++) {
-      final hash = _computeSigningHash(
-        chainId: chainId,
-        account: address,
-        previous: previous,
-        blockType: blockTypeSend,
-        amount: amountVoid,
-        link: to,
-        publicKey: publicKeyHex,
-        work: nonce,
-        timestamp: timestamp,
-        fee: 0, // Fee is set by the node's anti-whale engine
-      );
-
-      if (_hasLeadingZeroBits(hash, powDifficultyBits)) {
-        work = nonce;
-        signingHash = hash;
-        found = true;
-        break;
-      }
-    }
-
-    if (!found) {
+    if (powResult == null) {
       throw Exception(
           'PoW failed after $maxPowIterations iterations. Try again.');
     }
+
+    final work = powResult['work'] as int;
+    final signingHash = powResult['hash'] as String;
 
     // 6. Sign the signing_hash with Dilithium5
     final signature = await _wallet.signTransaction(signingHash);
@@ -131,13 +126,14 @@ class BlockConstructionService {
     );
   }
 
-  /// Compute the signing_hash — MUST match uat_core::Block::signing_hash() exactly.
+  /// Compute the signing_hash — delegates to static method for isolate compatibility.
+  /// This is kept as a convenience entry point for non-PoW uses.
   ///
   /// Keccak-256 of:
   ///   chain_id (u64 LE) || account || previous || block_type (1 byte) ||
   ///   amount (u128 LE) || link || public_key || work (u64 LE) ||
   ///   timestamp (u64 LE) || fee (u128 LE)
-  String _computeSigningHash({
+  static String computeSigningHash({
     required int chainId,
     required String account,
     required String previous,
@@ -149,69 +145,139 @@ class BlockConstructionService {
     required int timestamp,
     required int fee,
   }) {
-    // Build the pre-image exactly matching the Rust backend
-    final buffer = BytesBuilder();
-
-    // chain_id: u64 little-endian (8 bytes)
-    buffer.add(_u64ToLeBytes(chainId));
-
-    // account: raw bytes of the string
-    buffer.add(utf8.encode(account));
-
-    // previous: raw bytes of the string
-    buffer.add(utf8.encode(previous));
-
-    // block_type: single byte
-    buffer.addByte(blockType);
-
-    // amount: u128 little-endian (16 bytes)
-    buffer.add(_u128ToLeBytes(amount));
-
-    // link: raw bytes of the string
-    buffer.add(utf8.encode(link));
-
-    // public_key: raw bytes of the hex string (NOT decoded bytes!)
-    // The backend does: hasher.update(self.public_key.as_bytes())
-    // which hashes the HEX STRING, not the raw key bytes
-    buffer.add(utf8.encode(publicKey));
-
-    // work: u64 little-endian (8 bytes)
-    buffer.add(_u64ToLeBytes(work));
-
-    // timestamp: u64 little-endian (8 bytes)
-    buffer.add(_u64ToLeBytes(timestamp));
-
-    // fee: u128 little-endian (16 bytes)
-    buffer.add(_u128ToLeBytes(BigInt.from(fee)));
-
-    // Keccak-256 hash
-    return _keccak256Hex(buffer.toBytes());
+    return _computeSigningHashStatic(
+      chainId: chainId,
+      account: account,
+      previous: previous,
+      blockType: blockType,
+      amount: amount,
+      link: link,
+      publicKey: publicKey,
+      work: work,
+      timestamp: timestamp,
+      fee: fee,
+    );
   }
 
-  /// Keccak-256 hash → hex string
-  /// Uses SHA3-256 (Keccak) matching sha3::Keccak256 in Rust
-  String _keccak256Hex(List<int> data) {
-    // The Rust backend uses sha3::Keccak256 (the original Keccak, NOT NIST SHA-3)
-    // Dart's crypto package doesn't have Keccak-256 natively.
-    // We implement it using the pointycastle package or a pure Dart implementation.
-    //
-    // For now, use the Dart `crypto` package's SHA-256 as a temporary bridge.
-    // TODO: Replace with actual Keccak-256 implementation.
-    //
-    // IMPORTANT: This MUST use Keccak-256 (pre-NIST) to match the Rust backend.
-    // Using SHA-256 here would produce wrong hashes and fail signature verification.
-    return _keccak256(Uint8List.fromList(data));
+  /// FIX U1: Mine PoW in a background isolate to prevent UI thread freezing.
+  /// The heavy nonce loop runs off the main thread via Isolate.run().
+  Future<Map<String, dynamic>?> _minePoWInIsolate({
+    required int chainId,
+    required String account,
+    required String previous,
+    required int blockType,
+    required BigInt amount,
+    required String link,
+    required String publicKey,
+    required int timestamp,
+    required int fee,
+  }) async {
+    // Pass all params as a serializable map to the isolate
+    final params = {
+      'chainId': chainId,
+      'account': account,
+      'previous': previous,
+      'blockType': blockType,
+      'amount': amount.toString(), // BigInt → String for isolate transfer
+      'link': link,
+      'publicKey': publicKey,
+      'timestamp': timestamp,
+      'fee': fee,
+      'maxIter': maxPowIterations,
+      'diffBits': powDifficultyBits,
+    };
+
+    return await Isolate.run(() => _minePoWSync(params));
   }
 
-  /// Check if a hex hash string has >= n leading zero bits
-  bool _hasLeadingZeroBits(String hexHash, int requiredBits) {
-    final bytes = _hexToBytes(hexHash);
+  /// Static synchronous PoW mining — runs inside an isolate.
+  /// Must be static/top-level for Isolate.run() compatibility.
+  static Map<String, dynamic>? _minePoWSync(Map<String, dynamic> params) {
+    final chainId = params['chainId'] as int;
+    final account = params['account'] as String;
+    final previous = params['previous'] as String;
+    final blockType = params['blockType'] as int;
+    final amount = BigInt.parse(params['amount'] as String);
+    final link = params['link'] as String;
+    final publicKey = params['publicKey'] as String;
+    final timestamp = params['timestamp'] as int;
+    final fee = params['fee'] as int;
+    final maxIter = params['maxIter'] as int;
+    final diffBits = params['diffBits'] as int;
+
+    for (int nonce = 0; nonce < maxIter; nonce++) {
+      final hash = _computeSigningHashStatic(
+        chainId: chainId,
+        account: account,
+        previous: previous,
+        blockType: blockType,
+        amount: amount,
+        link: link,
+        publicKey: publicKey,
+        work: nonce,
+        timestamp: timestamp,
+        fee: fee,
+      );
+
+      if (_hasLeadingZeroBitsStatic(hash, diffBits)) {
+        return {'work': nonce, 'hash': hash};
+      }
+    }
+    return null; // Failed to find valid nonce
+  }
+
+  /// Static version of _computeSigningHash for isolate use.
+  static String _computeSigningHashStatic({
+    required int chainId,
+    required String account,
+    required String previous,
+    required int blockType,
+    required BigInt amount,
+    required String link,
+    required String publicKey,
+    required int work,
+    required int timestamp,
+    required int fee,
+  }) {
+    final data = <int>[];
+    // chain_id (u64 LE)
+    final cidData = ByteData(8);
+    cidData.setUint64(0, chainId, Endian.little);
+    data.addAll(cidData.buffer.asUint8List());
+    // account bytes
+    data.addAll(utf8.encode(account));
+    // previous
+    data.addAll(utf8.encode(previous));
+    // block_type (1 byte)
+    data.add(blockType);
+    // amount (u128 LE)
+    data.addAll(_u128ToLeBytesStatic(amount));
+    // link
+    data.addAll(utf8.encode(link));
+    // public_key
+    data.addAll(utf8.encode(publicKey));
+    // work (u64 LE)
+    final wData = ByteData(8);
+    wData.setUint64(0, work, Endian.little);
+    data.addAll(wData.buffer.asUint8List());
+    // timestamp (u64 LE)
+    final tData = ByteData(8);
+    tData.setUint64(0, timestamp, Endian.little);
+    data.addAll(tData.buffer.asUint8List());
+    // fee (u128 LE)
+    data.addAll(_u128ToLeBytesStatic(BigInt.from(fee)));
+
+    return _keccak256Static(Uint8List.fromList(data));
+  }
+
+  /// Static leading zero bits check for isolate use.
+  static bool _hasLeadingZeroBitsStatic(String hexHash, int requiredBits) {
+    final bytes = _hexToBytesStatic(hexHash);
     int zeroBits = 0;
     for (final byte in bytes) {
       if (byte == 0) {
         zeroBits += 8;
       } else {
-        // Count leading zeros in this byte
         int b = byte;
         for (int i = 7; i >= 0; i--) {
           if ((b >> i) & 1 == 0) {
@@ -226,29 +292,22 @@ class BlockConstructionService {
     return zeroBits >= requiredBits;
   }
 
-  /// u64 → 8 bytes little-endian
-  Uint8List _u64ToLeBytes(int value) {
-    final data = ByteData(8);
-    data.setUint64(0, value, Endian.little);
-    return data.buffer.asUint8List();
-  }
-
-  /// BigInt (u128) → 16 bytes little-endian
-  Uint8List _u128ToLeBytes(BigInt value) {
+  /// Static u128 LE for isolate use.
+  static Uint8List _u128ToLeBytesStatic(BigInt value) {
     final bytes = Uint8List(16);
     var v = value;
     for (int i = 0; i < 16; i++) {
       bytes[i] = (v & BigInt.from(0xFF)).toInt();
-      v >>= 8;
+      v = v >> 8;
     }
     return bytes;
   }
 
-  /// Hex string → bytes
-  Uint8List _hexToBytes(String hex) {
+  /// Static hex→bytes for isolate use.
+  static Uint8List _hexToBytesStatic(String hex) {
     final result = Uint8List(hex.length ~/ 2);
-    for (int i = 0; i < hex.length; i += 2) {
-      result[i ~/ 2] = int.parse(hex.substring(i, i + 2), radix: 16);
+    for (int i = 0; i < result.length; i++) {
+      result[i] = int.parse(hex.substring(i * 2, i * 2 + 2), radix: 16);
     }
     return result;
   }
@@ -266,26 +325,19 @@ class BlockConstructionService {
   static const int _keccakRate = 136; // bytes
   static const int _keccakRounds = 24;
 
-  String _keccak256(Uint8List input) {
-    // Pad the input (Keccak padding: append 0x01, then zeros, then 0x80)
+  /// Static Keccak-256 for isolate use (same algorithm as instance method).
+  static String _keccak256Static(Uint8List input) {
     final padLen = _keccakRate - (input.length % _keccakRate);
     final padded = Uint8List(input.length + padLen);
     padded.setAll(0, input);
-
     if (padLen == 1) {
-      padded[input.length] = 0x81; // Combined first and last padding byte
+      padded[input.length] = 0x81;
     } else {
-      padded[input.length] =
-          0x01; // First padding byte (Keccak, not SHA-3's 0x06)
-      padded[padded.length - 1] |= 0x80; // Last padding byte
+      padded[input.length] = 0x01;
+      padded[padded.length - 1] |= 0x80;
     }
-
-    // State: 5x5 matrix of 64-bit words = 25 words = 200 bytes
     final state = List<int>.filled(25, 0);
-
-    // Absorb phase
     for (int offset = 0; offset < padded.length; offset += _keccakRate) {
-      // XOR block into state
       for (int i = 0; i < _keccakRate ~/ 8; i++) {
         final idx = offset + i * 8;
         int word = 0;
@@ -294,10 +346,8 @@ class BlockConstructionService {
         }
         state[i] ^= word;
       }
-      _keccakF1600(state);
+      _keccakF1600Static(state);
     }
-
-    // Squeeze phase (only need 32 bytes = 4 words for Keccak-256)
     final output = Uint8List(32);
     for (int i = 0; i < 4; i++) {
       final word = state[i];
@@ -305,12 +355,16 @@ class BlockConstructionService {
         output[i * 8 + b] = (word >> (b * 8)) & 0xFF;
       }
     }
-
     return output.map((b) => b.toRadixString(16).padLeft(2, '0')).join('');
   }
 
-  /// Keccak-f[1600] permutation — 24 rounds
-  void _keccakF1600(List<int> state) {
+  /// Keccak-f[1600] permutation — 24 rounds (static for isolate use)
+  static void _keccakF1600Static(List<int> state) {
+    _keccakF1600Impl(state);
+  }
+
+  /// Shared implementation for static and instance methods
+  static void _keccakF1600Impl(List<int> state) {
     // Round constants
     const rc = [
       0x0000000000000001,
@@ -435,7 +489,7 @@ class BlockConstructionService {
   }
 
   /// 64-bit left rotation
-  int _rotl64(int value, int shift) {
+  static int _rotl64(int value, int shift) {
     if (shift == 0) return value;
     return ((value << shift) | (value >>> (64 - shift)));
   }

@@ -766,20 +766,29 @@ pub async fn start_api_server(
                 },
             );
 
-        deploy.boxed().or(call.boxed()).or(get_contract.boxed()).boxed()
+        deploy
+            .boxed()
+            .or(call.boxed())
+            .or(get_contract.boxed())
+            .boxed()
     };
 
     #[cfg(not(feature = "vm"))]
     let deploy_route = {
-        let deploy = warp::path("deploy-contract")
-            .and(warp::post())
-            .map(|| warp::reply::json(&serde_json::json!({"status":"error","msg":"VM feature not enabled"})));
-        let call = warp::path("call-contract")
-            .and(warp::post())
-            .map(|| warp::reply::json(&serde_json::json!({"status":"error","msg":"VM feature not enabled"})));
-        let get_contract = warp::path!("contract" / String)
-            .map(|_: String| warp::reply::json(&serde_json::json!({"status":"error","msg":"VM feature not enabled"})));
-        deploy.boxed().or(call.boxed()).or(get_contract.boxed()).boxed()
+        let deploy = warp::path("deploy-contract").and(warp::post()).map(|| {
+            warp::reply::json(&serde_json::json!({"status":"error","msg":"VM feature not enabled"}))
+        });
+        let call = warp::path("call-contract").and(warp::post()).map(|| {
+            warp::reply::json(&serde_json::json!({"status":"error","msg":"VM feature not enabled"}))
+        });
+        let get_contract = warp::path!("contract" / String).map(|_: String| {
+            warp::reply::json(&serde_json::json!({"status":"error","msg":"VM feature not enabled"}))
+        });
+        deploy
+            .boxed()
+            .or(call.boxed())
+            .or(get_contract.boxed())
+            .boxed()
     };
 
     // 10. GET /metrics (Prometheus endpoint)

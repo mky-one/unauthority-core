@@ -208,7 +208,9 @@ impl SlashingManager {
             }
 
             // Calculate 1% penalty
-            let slash_amount = (current_stake_void as f64 * DOWNTIME_SLASH_PERCENT / 100.0) as u128;
+            // SECURITY FIX M-02: Use integer math for deterministic slash calculation
+            // 1% of stake = stake / 100, ceiling division for rounding up
+            let slash_amount = current_stake_void.div_ceil(100);
 
             // Mark as slashed (but not permanently banned)
             if profile.status == ValidatorStatus::Active {

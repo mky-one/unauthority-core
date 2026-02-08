@@ -75,6 +75,15 @@ impl OracleConsensus {
         eth_price_usd: f64,
         btc_price_usd: f64,
     ) {
+        // SECURITY P0-5: Reject NaN/Inf/negative prices at submission time
+        if !eth_price_usd.is_finite() || !btc_price_usd.is_finite()
+            || eth_price_usd <= 0.0 || btc_price_usd <= 0.0 {
+            println!("🚨 Rejected invalid oracle price from {}: ETH={}, BTC={}",
+                &validator_address[..std::cmp::min(12, validator_address.len())],
+                eth_price_usd, btc_price_usd);
+            return;
+        }
+
         let timestamp = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
@@ -117,13 +126,26 @@ impl OracleConsensus {
             return None;
         }
         
-        // Extract prices
-        let mut eth_prices: Vec<f64> = recent.iter().map(|s| s.eth_price_usd).collect();
-        let mut btc_prices: Vec<f64> = recent.iter().map(|s| s.btc_price_usd).collect();
+        // Extract prices (filter out NaN/Inf to prevent panic)
+        let mut eth_prices: Vec<f64> = recent.iter()
+            .map(|s| s.eth_price_usd)
+            .filter(|p| p.is_finite() && *p > 0.0)
+            .collect();
+        let mut btc_prices: Vec<f64> = recent.iter()
+            .map(|s| s.btc_price_usd)
+            .filter(|p| p.is_finite() && *p > 0.0)
+            .collect();
         
-        // Sort for median calculation
-        eth_prices.sort_by(|a, b| a.partial_cmp(b).unwrap());
-        btc_prices.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        // Need at least min_submissions of valid prices
+        if eth_prices.len() < self.min_submissions || btc_prices.len() < self.min_submissions {
+            println!("⚠️  Insufficient valid oracle prices after NaN/zero filtering: ETH={}, BTC={}",
+                eth_prices.len(), btc_prices.len());
+            return None;
+        }
+        
+        // Sort for median calculation (safe: all values are finite)
+        eth_prices.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+        btc_prices.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
         
         // Calculate median (Byzantine-resistant)
         let eth_median = self.calculate_median(&eth_prices);

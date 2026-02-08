@@ -1,14 +1,16 @@
 use rand::Rng;
-use sha3::{Digest, Keccak256};
 use std::fs::File;
 use std::io::Write;
 use bip39::Mnemonic;
+use uat_crypto;
 
-const VOID_PER_UAT: u128 = 100_000_000;
+const VOID_PER_UAT: u128 = 100_000_000_000; // 10^11 VOID per UAT
 const DEV_SUPPLY_TOTAL_VOID: u128 = 1_535_536 * VOID_PER_UAT;
+// SECURITY FIX #7: Separate total supply constant (was using DEV_SUPPLY for both)
+const TOTAL_SUPPLY_VOID: u128 = 21_936_236 * VOID_PER_UAT;
 const DEV_WALLET_COUNT: usize = 8;
 const ALLOCATION_PER_DEV_WALLET_VOID: u128 = 191_942 * VOID_PER_UAT;
-const BOOTSTRAP_NODE_COUNT: usize = 3;
+const BOOTSTRAP_NODE_COUNT: usize = 4;
 const ALLOCATION_PER_BOOTSTRAP_NODE_VOID: u128 = 1_000 * VOID_PER_UAT;
 const TOTAL_BOOTSTRAP_ALLOCATION_VOID: u128 = ALLOCATION_PER_BOOTSTRAP_NODE_VOID * (BOOTSTRAP_NODE_COUNT as u128);
 const DEV_WALLET_8_FINAL_VOID: u128 = ALLOCATION_PER_DEV_WALLET_VOID - TOTAL_BOOTSTRAP_ALLOCATION_VOID;
@@ -33,7 +35,7 @@ fn main() {
     println!("\n╔════════════════════════════════════════════════════════════╗");
     println!("║   UNAUTHORITY GENESIS GENERATOR v4.0 (PRODUCTION)         ║");
     println!("╚════════════════════════════════════════════════════════════╝");
-    println!("\n11 Wallets: 8 Dev + 3 Bootstrap Validators\n");
+    println!("\n12 Wallets: 8 Dev + 4 Bootstrap Validators\n");
 
     let mut wallets: Vec<DevWallet> = Vec::new();
     let mut total_allocated_void: u128 = 0;
@@ -127,26 +129,30 @@ fn generate_keys(label: &str) -> (String, String, String) {
         .expect("Failed to generate mnemonic");
     
     let seed_phrase = mnemonic.to_string();
-    let seed = mnemonic.to_seed("");
     
-    // Derive private key from seed (first 64 bytes)
-    let private_key: Vec<u8> = seed[0..64].to_vec();
+    // NOTE: Dilithium5 keypairs are NOT derived from BIP39 seeds (unlike Ed25519/secp256k1).
+    // The BIP39 seed phrase is used to ENCRYPT the private key at rest.
+    // Key recovery requires: seed phrase + encrypted key file.
+    // This is the correct architecture for post-quantum crypto where
+    // deterministic key derivation from seeds is not standardized.
+    let keypair = uat_crypto::generate_keypair();
     
-    // Generate public key (deterministic from private key)
-    let mut pub_hasher = Keccak256::new();
-    pub_hasher.update(&private_key);
-    let public_key = hex::encode(pub_hasher.finalize());
+    let private_key = hex::encode(&keypair.secret_key);
+    let public_key = hex::encode(&keypair.public_key);
 
-    println!("✓ Generated keypair for: {}", label);
+    println!("✓ Generated Dilithium5 keypair for: {}", label);
     
-    (seed_phrase, hex::encode(private_key), public_key)
+    (seed_phrase, private_key, public_key)
 }
 
 fn derive_address(pub_key_hex: &str) -> String {
-    let mut hasher = Keccak256::new();
-    hasher.update(pub_key_hex.as_bytes());
-    let hash_hex = hex::encode(hasher.finalize());
-    format!("UAT{}", &hash_hex[0..40])
+    // Decode hex public key
+    let public_key = hex::decode(pub_key_hex)
+        .expect("Failed to decode public key hex");
+    
+    // Use uat-crypto's Base58Check address derivation
+    // Format: UAT + Base58(0x4A + BLAKE2b160(pubkey) + checksum)
+    uat_crypto::public_key_to_address(&public_key)
 }
 
 fn print_wallet(w: &DevWallet) {
@@ -228,7 +234,7 @@ fn generate_config(wallets: &[DevWallet]) {
 }}
 "#,
         chrono::Utc::now().timestamp(),
-        DEV_SUPPLY_TOTAL_VOID,
+        TOTAL_SUPPLY_VOID,
         DEV_SUPPLY_TOTAL_VOID,
         bootstrap.join(",\n"),
         dev.join(",\n")

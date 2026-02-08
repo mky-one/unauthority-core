@@ -6,8 +6,10 @@ edition = "2021"
 [dependencies]
 libp2p = { version = "0.53", features = ["tcp", "dns", "websocket", "noise", "yamux", "gossipsub", "mdns", "tokio", "macros"] }
 tokio = { version = "1.0", features = ["full"] }
+tokio-socks = "0.5"           # SOCKS5 proxy for Tor .onion connections
 futures = "0.3"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
-uat-core = { path = "../uat-core" } # Menghubungkan network dengan ledger
-uat-consensus = { path = "../uat-consensus" } # Slashing & voting consensus
+log = "0.4"
+uat-core = { path = "../uat-core" }
+uat-consensus = { path = "../uat-consensus" }

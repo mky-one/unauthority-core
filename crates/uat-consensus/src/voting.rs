@@ -14,8 +14,9 @@ use serde::{Serialize, Deserialize};
 /// Voting power calculation precision (decimal places)
 pub const VOTING_POWER_PRECISION: u32 = 6;
 
-/// Minimum stake required to participate in consensus (VOI)
-pub const MIN_STAKE_VOI: u128 = 100_000_000; // 1 UAT
+/// Minimum stake required to participate in consensus (1000 UAT minimum)
+/// 1 UAT = 100_000_000_000 VOID (10^11 precision)
+pub const MIN_STAKE_VOI: u128 = 100_000_000_000_000; // 1000 UAT × 10^11
 
 /// Maximum stake for voting power calculation (prevents overflow)
 pub const MAX_STAKE_FOR_VOTING_VOI: u128 = 2_193_623_600_000_000; // Total supply
@@ -60,27 +61,32 @@ impl ValidatorVote {
 
 /// Calculate voting power using quadratic formula: √(stake in VOI)
 ///
-/// # Formula
-/// voting_power = √(stake_void)
+/// SECURITY P1-4: Uses integer square root for cross-platform determinism.
+/// f64::sqrt() can produce different results across CPU architectures.
+/// We use Newton's method on u128 for exact deterministic results.
 ///
-/// # Example
-/// ```ignore
-/// // Single whale: 1000 UAT (100_000_000_000_VOI)
-/// let whale_power = calculate_voting_power(100_000_000_000);
-/// // Result ≈ 316,227.766
-///
-/// // 10 regular nodes: 100 UAT each (10_000_000_000 VOI each)
-/// let node_power = calculate_voting_power(10_000_000_000);
-/// // Result ≈ 100,000 per node
-/// // Total: 1,000,000 voting power (3x more than whale!)
-/// ```
+/// # Returns
+/// Voting power as f64 (from deterministic integer sqrt), or 0.0 if below minimum stake.
 pub fn calculate_voting_power(staked_amount_void: u128) -> f64 {
     if staked_amount_void < MIN_STAKE_VOI {
         return 0.0; // No voting power below minimum
     }
 
     let clamped_stake = staked_amount_void.min(MAX_STAKE_FOR_VOTING_VOI);
-    (clamped_stake as f64).sqrt()
+    isqrt(clamped_stake) as f64
+}
+
+/// Deterministic integer square root using Newton's method.
+/// Returns floor(√n) for any u128 value.
+fn isqrt(n: u128) -> u128 {
+    if n == 0 { return 0; }
+    let mut x = n;
+    let mut y = (x + 1) / 2;
+    while y < x {
+        x = y;
+        y = (x + n / x) / 2;
+    }
+    x
 }
 
 /// Normalize voting power to [0, 1] range for consensus decisions
@@ -340,35 +346,41 @@ impl VotingSystem {
 #[cfg(test)]
 mod tests {
     use super::*;
+    
+    // 1 UAT = 100_000_000_000 VOID (10^11)
+    // MIN_STAKE_VOI = 1000 UAT = 100_000_000_000_000 VOID (10^14)
+    const UAT: u128 = 100_000_000_000; // 10^11 VOID per UAT
 
     #[test]
     fn test_voting_power_calculation() {
-        // 100 UAT (10,000,000,000 VOI)
-        let power = calculate_voting_power(10_000_000_000);
-        assert!((power - 100_000.0).abs() < 1.0); // √10_000_000_000 ≈ 100_000
+        // 1000 UAT = MIN_STAKE = 100_000_000_000_000 VOID
+        let power = calculate_voting_power(1000 * UAT);
+        assert!((power - 10_000_000.0).abs() < 1.0); // √(10^14) = 10^7
 
-        // 1000 UAT (100,000,000,000 VOI)
-        let power = calculate_voting_power(100_000_000_000);
-        assert!((power - 316_227.766).abs() < 1.0); // √100_000_000_000 ≈ 316_227.766
+        // 10000 UAT = 1_000_000_000_000_000 VOID
+        let power = calculate_voting_power(10_000 * UAT);
+        assert!((power - 31_622_776.6).abs() < 1.0); // √(10^15) ≈ 31,622,776.6
     }
 
     #[test]
     fn test_voting_power_below_minimum() {
-        let power = calculate_voting_power(99_999_999); // Below MIN_STAKE_VOI
+        // 999 UAT = below MIN_STAKE (1000 UAT)
+        let power = calculate_voting_power(999 * UAT);
         assert_eq!(power, 0.0); // No voting power
     }
 
     #[test]
     fn test_anti_whale_effectiveness() {
-        // Scenario 1: Single whale with 1000 UAT
-        let whale_stake = 100_000_000_000u128;
+        // Scenario 1: Single whale with 10000 UAT
+        let whale_stake = 10_000 * UAT;
         let whale_power = calculate_voting_power(whale_stake);
 
-        // Scenario 2: 10 nodes with 100 UAT each
-        let node_stake = 10_000_000_000u128;
+        // Scenario 2: 10 nodes with 1000 UAT each (minimum stake)
+        let node_stake = 1_000 * UAT;
         let nodes_power = calculate_voting_power(node_stake) * 10.0;
 
         // Nodes should have significantly more power
+        // whale: √(10^15) ≈ 31.6M, nodes: √(10^14)*10 = 10M*10 = 100M
         assert!(nodes_power > whale_power);
         let ratio = nodes_power / whale_power;
         assert!(ratio > 3.0); // At least 3x more power
@@ -390,7 +402,7 @@ mod tests {
         let power = system
             .register_validator(
                 "validator1".to_string(),
-                10_000_000_000,
+                1_000 * UAT, // 1000 UAT = minimum stake
                 "proposal_1".to_string(),
                 true,
             )
@@ -404,15 +416,15 @@ mod tests {
     fn test_voting_system_summary() {
         let mut system = VotingSystem::new();
 
-        // Add 3 validators
+        // Add 3 validators with valid stakes (>= 1000 UAT)
         system
-            .register_validator("val1".to_string(), 10_000_000_000, "prop_1".to_string(), true)
+            .register_validator("val1".to_string(), 1_000 * UAT, "prop_1".to_string(), true)
             .unwrap();
         system
-            .register_validator("val2".to_string(), 10_000_000_000, "prop_1".to_string(), true)
+            .register_validator("val2".to_string(), 1_000 * UAT, "prop_1".to_string(), true)
             .unwrap();
         system
-            .register_validator("val3".to_string(), 100_000_000_000, "prop_1".to_string(), true)
+            .register_validator("val3".to_string(), 10_000 * UAT, "prop_1".to_string(), true)
             .unwrap();
 
         let summary = system.get_summary();
@@ -427,21 +439,21 @@ mod tests {
     fn test_consensus_calculation() {
         let mut system = VotingSystem::new();
 
-        // Add validators voting for proposal
+        // Add validators voting for proposal (all >= 1000 UAT)
         system
-            .register_validator("val1".to_string(), 10_000_000_000, "proposal_1".to_string(), true)
+            .register_validator("val1".to_string(), 1_000 * UAT, "proposal_1".to_string(), true)
             .unwrap();
         system
-            .register_validator("val2".to_string(), 10_000_000_000, "proposal_1".to_string(), true)
+            .register_validator("val2".to_string(), 1_000 * UAT, "proposal_1".to_string(), true)
             .unwrap();
         system
-            .register_validator("val3".to_string(), 10_000_000_000, "proposal_2".to_string(), true)
+            .register_validator("val3".to_string(), 1_000 * UAT, "proposal_2".to_string(), true)
             .unwrap();
 
         let (votes_for, percentage, consensus) = system.calculate_proposal_consensus("proposal_1");
 
-        assert_eq!(votes_for, calculate_voting_power(10_000_000_000) * 2.0);
-        assert!(percentage > 50.0); // 2/3 validators
+        assert_eq!(votes_for, calculate_voting_power(1_000 * UAT) * 2.0);
+        assert!(percentage > 50.0); // 2/3 validators (≈66.7%)
         assert!(consensus); // Passed
     }
 
@@ -449,12 +461,12 @@ mod tests {
     fn test_no_consensus_with_split_votes() {
         let mut system = VotingSystem::new();
 
-        // Equal vote split
+        // Equal vote split (both >= 1000 UAT)
         system
-            .register_validator("val1".to_string(), 10_000_000_000, "proposal_1".to_string(), true)
+            .register_validator("val1".to_string(), 1_000 * UAT, "proposal_1".to_string(), true)
             .unwrap();
         system
-            .register_validator("val2".to_string(), 10_000_000_000, "proposal_2".to_string(), true)
+            .register_validator("val2".to_string(), 1_000 * UAT, "proposal_2".to_string(), true)
             .unwrap();
 
         let (_, percentage, consensus) = system.calculate_proposal_consensus("proposal_1");
@@ -468,14 +480,14 @@ mod tests {
         let mut system = VotingSystem::new();
 
         system
-            .register_validator("val1".to_string(), 10_000_000_000, "prop_1".to_string(), true)
+            .register_validator("val1".to_string(), 1_000 * UAT, "prop_1".to_string(), true)
             .unwrap();
 
         let old_power = system.get_validator_power("val1").unwrap();
 
-        // Increase stake
+        // Increase stake (10x)
         system
-            .update_stake("val1", 100_000_000_000)
+            .update_stake("val1", 10_000 * UAT)
             .unwrap();
 
         let new_power = system.get_validator_power("val1").unwrap();
@@ -486,15 +498,17 @@ mod tests {
     fn test_concentration_ratio() {
         let mut system = VotingSystem::new();
 
-        // Highly concentrated
+        // Highly concentrated: whale has 10x more stake
         system
-            .register_validator("whale".to_string(), 100_000_000_000, "prop_1".to_string(), true)
+            .register_validator("whale".to_string(), 10_000 * UAT, "prop_1".to_string(), true)
             .unwrap();
         system
-            .register_validator("small1".to_string(), 1_000_000_000, "prop_1".to_string(), true)
+            .register_validator("small1".to_string(), 1_000 * UAT, "prop_1".to_string(), true)
             .unwrap();
 
         let summary = system.get_summary();
+        // Whale voting power: √(10^15) ≈ 31.6M, Small: √(10^14) = 10M
+        // Concentration = 31.6M / (31.6M + 10M) ≈ 0.76
         assert!(summary.concentration_ratio > 0.5); // Whale has >50% voting power
     }
 }

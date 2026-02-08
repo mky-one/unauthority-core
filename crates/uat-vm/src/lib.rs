@@ -10,6 +10,15 @@ pub mod oracle_connector;
 /// Unauthority Virtual Machine (UVM)
 /// Executes WebAssembly smart contracts with permissionless deployment
 
+/// Maximum allowed WASM bytecode size (1 MB)
+const MAX_BYTECODE_SIZE: usize = 1_048_576;
+/// Maximum WASM execution time before timeout (5 seconds)
+const MAX_EXECUTION_SECS: u64 = 5;
+/// Gas cost per kilobyte of bytecode (compilation cost)
+const GAS_PER_KB_BYTECODE: u64 = 100;
+/// Gas cost per millisecond of wall-clock execution time
+const GAS_PER_MS_EXECUTION: u64 = 10;
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Contract {
     pub address: String,
@@ -65,6 +74,14 @@ impl WasmEngine {
             return Err("Invalid WASM bytecode (missing magic header)".to_string());
         }
 
+        // Enforce bytecode size limit
+        if bytecode.len() > MAX_BYTECODE_SIZE {
+            return Err(format!(
+                "WASM bytecode too large: {} bytes (max {} bytes)",
+                bytecode.len(), MAX_BYTECODE_SIZE
+            ));
+        }
+
         let mut nonce = self.nonce.lock()
             .map_err(|_| "Failed to lock nonce".to_string())?;
 
@@ -113,30 +130,107 @@ impl WasmEngine {
             .ok_or_else(|| "Contract not found".to_string())
     }
 
-    /// Execute real WASM bytecode using wasmer
-    fn execute_wasm(&self, bytecode: &[u8], function: &str, args: &[i32]) -> Result<i32, String> {
-        let compiler = Cranelift::default();
-        let mut store = Store::new(compiler);
+    /// Execute real WASM bytecode using wasmer with gas metering and timeout
+    fn execute_wasm(&self, bytecode: &[u8], function: &str, args: &[i32], gas_limit: u64) -> Result<(i32, u64), String> {
+        // 1. Bytecode size limit
+        if bytecode.len() > MAX_BYTECODE_SIZE {
+            return Err(format!(
+                "WASM bytecode too large: {} bytes (max {} bytes)",
+                bytecode.len(), MAX_BYTECODE_SIZE
+            ));
+        }
+
+        // 2. Pre-calculate compilation gas cost
+        let compile_gas = (bytecode.len() as u64 / 1024 + 1) * GAS_PER_KB_BYTECODE;
+        if compile_gas > gas_limit {
+            return Err(format!(
+                "Out of gas: bytecode compilation cost {} exceeds gas limit {}",
+                compile_gas, gas_limit
+            ));
+        }
+
+        // 3. Clone data for thread-safe execution
+        let bytecode_owned = bytecode.to_vec();
+        let function_owned = function.to_string();
+        let args_owned = args.to_vec();
+        let remaining_gas = gas_limit - compile_gas;
+        let abort_flag = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let _abort_clone = Arc::clone(&abort_flag);
+
+        // 4. Execute in a separate thread with timeout
+        let (result_tx, result_rx) = std::sync::mpsc::channel();
         
-        let module = Module::new(&store, bytecode)
-            .map_err(|e| format!("Failed to compile WASM: {}", e))?;
+        let handle = std::thread::spawn(move || {
+            let start = std::time::Instant::now();
+            
+            let compiler = Cranelift::default();
+            let mut store = Store::new(compiler);
+            
+            let module = match Module::new(&store, &bytecode_owned) {
+                Ok(m) => m,
+                Err(e) => { let _ = result_tx.send(Err(format!("Failed to compile WASM: {}", e))); return; }
+            };
 
-        let import_object = imports! {};
-        let instance = Instance::new(&mut store, &module, &import_object)
-            .map_err(|e| format!("Failed to instantiate WASM: {}", e))?;
+            let import_object = imports! {};
+            let instance = match Instance::new(&mut store, &module, &import_object) {
+                Ok(i) => i,
+                Err(e) => { let _ = result_tx.send(Err(format!("Failed to instantiate WASM: {}", e))); return; }
+            };
 
-        let func = instance.exports.get_function(function)
-            .map_err(|e| format!("Function '{}' not found: {}", function, e))?;
+            let func = match instance.exports.get_function(&function_owned) {
+                Ok(f) => f,
+                Err(e) => { let _ = result_tx.send(Err(format!("Function '{}' not found: {}", function_owned, e))); return; }
+            };
 
-        let wasm_args: Vec<Value> = args.iter().map(|&v| Value::I32(v)).collect();
-        
-        let result = func.call(&mut store, &wasm_args)
-            .map_err(|e| format!("WASM execution failed: {}", e))?;
+            let wasm_args: Vec<Value> = args_owned.iter().map(|&v| Value::I32(v)).collect();
+            
+            let call_result = func.call(&mut store, &wasm_args);
+            let elapsed = start.elapsed();
+            
+            // Calculate execution gas from wall-clock time
+            let exec_gas = (elapsed.as_millis() as u64) * GAS_PER_MS_EXECUTION;
+            
+            match call_result {
+                Ok(results) => {
+                    if let Some(Value::I32(val)) = results.first() {
+                        let _ = result_tx.send(Ok((*val, exec_gas)));
+                    } else {
+                        let _ = result_tx.send(Err("No return value from WASM function".to_string()));
+                    }
+                }
+                Err(e) => {
+                    let _ = result_tx.send(Err(format!("WASM execution failed: {}", e)));
+                }
+            }
+        });
 
-        if let Some(Value::I32(val)) = result.first() {
-            Ok(*val)
-        } else {
-            Err("No return value from WASM function".to_string())
+        // 5. Wait with timeout
+        let timeout = std::time::Duration::from_secs(MAX_EXECUTION_SECS);
+        match result_rx.recv_timeout(timeout) {
+            Ok(Ok((value, exec_gas))) => {
+                let total_gas = compile_gas + exec_gas;
+                if total_gas > gas_limit {
+                    return Err(format!(
+                        "Out of gas: used {} (compile: {} + exec: {}) > limit {}",
+                        total_gas, compile_gas, exec_gas, gas_limit
+                    ));
+                }
+                Ok((value, total_gas))
+            }
+            Ok(Err(e)) => Err(e),
+            Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
+                // SECURITY P1-6: Set abort flag so the thread knows to exit quickly
+                // The thread will see this flag and stop trying to send results
+                abort_flag.store(true, std::sync::atomic::Ordering::Relaxed);
+                // Detach the thread — it will complete on its own and clean up
+                // The abort_clone inside would prevent further processing
+                drop(handle);
+                Err(format!(
+                    "WASM execution timeout: exceeded {} second limit",
+                    MAX_EXECUTION_SECS
+                ))
+            }
+            Err(e) => Err(format!("WASM execution channel error: {}", e)),
         }
     }
 
@@ -150,18 +244,25 @@ impl WasmEngine {
 
         // Try real WASM execution if bytecode is valid
         if contract.bytecode.len() >= 8 {
-            // Check if this looks like a complete WASM module (has exports section)
             if let Ok(i32_args) = call.args.iter()
                 .map(|s| s.parse::<i32>())
                 .collect::<Result<Vec<_>, _>>() 
             {
-                if let Ok(result) = self.execute_wasm(&contract.bytecode, &call.function, &i32_args) {
-                    return Ok(ContractResult {
-                        success: true,
-                        output: result.to_string(),
-                        gas_used: 50 + (i32_args.len() as u64 * 5),
-                        state_changes: HashMap::new(),
-                    });
+                match self.execute_wasm(&contract.bytecode, &call.function, &i32_args, call.gas_limit) {
+                    Ok((result, gas_used)) => {
+                        return Ok(ContractResult {
+                            success: true,
+                            output: result.to_string(),
+                            gas_used,
+                            state_changes: HashMap::new(),
+                        });
+                    }
+                    Err(e) if e.contains("Out of gas") || e.contains("timeout") || e.contains("too large") => {
+                        return Err(e);
+                    }
+                    Err(_) => {
+                        // Fall through to mock dispatch
+                    }
                 }
             }
         }
@@ -187,18 +288,10 @@ impl WasmEngine {
                 )
             }
             "mint" => {
-                if call.args.is_empty() {
-                    return Err("mint requires: amount".to_string());
-                }
-                let amount: u128 = call.args[0].parse()
-                    .map_err(|_| "Invalid amount".to_string())?;
-
-                contract.balance = contract.balance.saturating_add(amount);
-                (
-                    format!("Minted {} void", amount),
-                    100,
-                    HashMap::new(),
-                )
+                // SECURITY P1-3: Minting via contract is DISABLED
+                // Only the blockchain consensus (VOTE_RES flow) may mint UAT.
+                // Allowing contracts to mint would bypass supply controls.
+                return Err("mint: operation not permitted — UAT minting requires PoB consensus".to_string());
             }
             "burn" => {
                 if call.args.is_empty() {

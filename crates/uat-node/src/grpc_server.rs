@@ -13,7 +13,7 @@
 use std::sync::{Arc, Mutex};
 use tonic::{transport::Server, Request, Response, Status};
 use tokio::sync::mpsc;
-use uat_core::{Ledger, VOID_PER_UAT};
+use uat_core::{Ledger, VOID_PER_UAT, MIN_VALIDATOR_STAKE_VOID};
 
 // Include generated protobuf code
 pub mod proto {
@@ -36,6 +36,7 @@ use proto::{
 pub struct UatGrpcService {
     ledger: Arc<Mutex<Ledger>>,
     my_address: String,
+    #[allow(dead_code)] // Reserved for future gRPC send_transaction implementation
     tx_sender: mpsc::Sender<String>, // For broadcasting transactions
 }
 
@@ -96,16 +97,20 @@ impl UatNode for UatGrpcService {
         let account = ledger.accounts.get(&full_addr)
             .ok_or_else(|| Status::not_found("Account not found"))?;
         
+        // FIX V4#21: Use string formatting to avoid u128→u64 truncation
+        let balance_uat = account.balance / VOID_PER_UAT;
+        let balance_remainder = account.balance % VOID_PER_UAT;
+        
         let response = GetBalanceResponse {
             address: full_addr,
-            balance_void: account.balance as u64,
-            balance_uat: account.balance as f64 / VOID_PER_UAT as f64,
+            balance_void: account.balance as u64,  // Note: protobuf limitation, large balances may truncate
+            balance_uat: balance_uat as f64 + (balance_remainder as f64 / VOID_PER_UAT as f64),
             block_count: account.block_count as u64,
             head_block: account.head.clone(),
         };
         
-        println!("📊 gRPC GetBalance: {} -> {} UAT", 
-            get_short_addr(&response.address), response.balance_uat);
+        println!("📊 gRPC GetBalance: {} -> {}.{} UAT", 
+            get_short_addr(&response.address), balance_uat, balance_remainder);
         
         Ok(Response::new(response))
     }
@@ -127,7 +132,7 @@ impl UatNode for UatGrpcService {
             .ok_or_else(|| Status::not_found("Account not found"))?;
         
         // Check if validator (minimum 1,000 UAT stake)
-        let min_stake = 1000 * VOID_PER_UAT;
+        let min_stake = MIN_VALIDATOR_STAKE_VOID;
         let is_validator = account.balance >= min_stake;
         
         let response = GetAccountResponse {
@@ -174,7 +179,7 @@ impl UatNode for UatGrpcService {
             amount: block.amount as u64,
             balance: account_balance, // Account balance, not block balance
             signature: block.signature.clone(),
-            timestamp: chrono::Utc::now().timestamp() as u64,
+            timestamp: block.timestamp,  // Use actual block timestamp
             representative: "".to_string(), // Not implemented yet
         };
         
@@ -184,7 +189,7 @@ impl UatNode for UatGrpcService {
         Ok(Response::new(response))
     }
 
-    /// 4. Get latest block
+    /// 4. Get latest block (by highest timestamp)
     async fn get_latest_block(
         &self,
         _request: Request<GetLatestBlockRequest>,
@@ -192,10 +197,10 @@ impl UatNode for UatGrpcService {
         let ledger = self.ledger.lock()
             .map_err(|_| Status::internal("Failed to lock ledger"))?;
         
-        // Find latest block (just get first for now - simplified)
+        // FIX V4#20: Find ACTUAL latest block by timestamp (not random HashMap entry)
         let latest = ledger.blocks
             .iter()
-            .next()
+            .max_by_key(|(_, block)| block.timestamp)
             .ok_or_else(|| Status::not_found("No blocks found"))?;
         
         let (hash, block) = latest;
@@ -215,75 +220,38 @@ impl UatNode for UatGrpcService {
             amount: block.amount as u64,
             balance: account_balance,
             signature: block.signature.clone(),
-            timestamp: chrono::Utc::now().timestamp() as u64,
-            representative: "".to_string(), // Not implemented
+            timestamp: block.timestamp,
+            representative: "".to_string(),
         };
         
-        println!("🆕 gRPC GetLatestBlock: {}", &hash[..12]);
+        println!("🆕 gRPC GetLatestBlock: {} (ts: {})", &hash[..12.min(hash.len())], block.timestamp);
         
         Ok(Response::new(response))
     }
 
     /// 5. Send transaction
+    /// NOTE: Transaction submission requires client-side signing, PoW, anti-whale checks,
+    /// and consensus flow (CONFIRM_REQ/VOTE_REQ). Use the REST API POST /send endpoint
+    /// which handles all of these. gRPC querying endpoints (GetBalance, GetBlock, etc.) are fully functional.
     async fn send_transaction(
         &self,
-        request: Request<SendTransactionRequest>,
+        _request: Request<SendTransactionRequest>,
     ) -> Result<Response<SendTransactionResponse>, Status> {
-        let req = request.into_inner();
-        
-        // Validate amount
-        if req.amount_void == 0 {
-            return Err(Status::invalid_argument("Amount must be greater than 0"));
-        }
-        
-        // Resolve addresses
-        let from = self.resolve_address(&req.from)
-            .ok_or_else(|| Status::not_found("Sender address not found"))?;
-        
-        let to = self.resolve_address(&req.to)
-            .ok_or_else(|| Status::not_found("Recipient address not found"))?;
-        
-        // Check balance
-        {
-            let ledger = self.ledger.lock()
-                .map_err(|_| Status::internal("Failed to lock ledger"))?;
-            
-            let sender_balance = ledger.accounts
-                .get(&from)
-                .map(|a| a.balance)
-                .unwrap_or(0);
-            
-            if sender_balance < req.amount_void as u128 {
-                return Err(Status::failed_precondition(
-                    format!("Insufficient balance: {} < {}", sender_balance, req.amount_void)
-                ));
-            }
-        }
-        
-        // Broadcast transaction via P2P
-        let tx_msg = format!("SEND:{}:{}:{}", from, to, req.amount_void);
-        
-        self.tx_sender.send(tx_msg).await
-            .map_err(|e| Status::internal(format!("Failed to broadcast: {}", e)))?;
-        
-        // Generate tx hash (simplified - in production use proper hash)
-        let tx_hash = format!("TX_{}", chrono::Utc::now().timestamp());
-        
-        let response = SendTransactionResponse {
-            success: true,
-            tx_hash: tx_hash.clone(),
-            message: "Transaction broadcasted to network".to_string(),
-            estimated_finality_ms: 3000, // aBFT consensus ~3 seconds
-        };
-        
-        println!("💸 gRPC SendTransaction: {} -> {} ({} UAT) [{}]",
-            get_short_addr(&from),
-            get_short_addr(&to),
-            req.amount_void as f64 / VOID_PER_UAT as f64,
-            &tx_hash[..12]
-        );
-        
-        Ok(Response::new(response))
+        // V4#8 FIX: Return UNIMPLEMENTED instead of silently dropping transactions.
+        // The REST API at POST /send handles the full transaction flow:
+        // 1. Client-side Dilithium5 signing
+        // 2. Proof-of-Work computation
+        // 3. Anti-whale fee scaling
+        // 4. CONFIRM_REQ → VOTE_REQ → VOTE_RES → CONFIRM_RES consensus
+        // 5. Auto-Receive for recipient
+        //
+        // gRPC send will be properly implemented when we add streaming support
+        // for consensus feedback (estimated finality, vote progress, etc.)
+        Err(Status::unimplemented(
+            "SendTransaction is not available via gRPC. Use REST API POST /send endpoint which handles \
+             Dilithium5 signing, PoW, anti-whale fees, and aBFT consensus flow. \
+             All gRPC query endpoints (GetBalance, GetBlock, GetValidators, etc.) are fully functional."
+        ))
     }
 
     /// 6. Get node info
@@ -297,19 +265,20 @@ impl UatNode for UatGrpcService {
         // Check if this node is validator
         let is_validator = ledger.accounts
             .get(&self.my_address)
-            .map(|a| a.balance >= 1000 * VOID_PER_UAT)
+            .map(|a| a.balance >= MIN_VALIDATOR_STAKE_VOID)
             .unwrap_or(false);
         
-        // TODO: Get real oracle prices from consensus
-        let eth_price = 50_000_000.0; // Placeholder
-        let btc_price = 1_000_000_000.0; // Placeholder
+        // Oracle prices not available in gRPC context (use REST /oracle endpoint)
+        // Return 0 to indicate no data rather than misleading hardcoded values
+        let eth_price = 0.0_f64;
+        let btc_price = 0.0_f64;
         
         // Calculate latest block height (count total blocks)
         let latest_height = ledger.blocks.len() as u64;
         
         let response = GetNodeInfoResponse {
             node_address: self.my_address.clone(),
-            network_id: 1, // 1 = mainnet
+            network_id: uat_core::CHAIN_ID as u32, // CHAIN_ID: 1=mainnet, 2=testnet
             chain_name: "Unauthority".to_string(),
             version: "0.1.0".to_string(),
             total_supply_void: (21_936_236 * VOID_PER_UAT) as u64,
@@ -336,7 +305,7 @@ impl UatNode for UatGrpcService {
         let ledger = self.ledger.lock()
             .map_err(|_| Status::internal("Failed to lock ledger"))?;
         
-        let min_stake = 1000 * VOID_PER_UAT;
+        let min_stake = MIN_VALIDATOR_STAKE_VOID;
         
         // Filter accounts with minimum stake
         let validators: Vec<ValidatorInfo> = ledger.accounts
@@ -381,9 +350,9 @@ impl UatNode for UatGrpcService {
         let total_blocks = ledger.blocks.len() as u64;
         
         let latest_hash = ledger.blocks
-            .keys()
-            .next()
-            .cloned()
+            .iter()
+            .max_by_key(|(_, b)| b.timestamp)
+            .map(|(h, _)| h.clone())
             .unwrap_or_else(|| "0".to_string());
         
         let response = GetBlockHeightResponse {
@@ -405,7 +374,13 @@ pub async fn start_grpc_server(
     tx_sender: mpsc::Sender<String>,
     grpc_port: u16,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let addr = format!("0.0.0.0:{}", grpc_port).parse()?;
+    // FIX: Respect UAT_BIND_ALL env for Tor safety (same as REST API)
+    let bind_addr = if std::env::var("UAT_BIND_ALL").unwrap_or_default() == "1" {
+        format!("0.0.0.0:{}", grpc_port)
+    } else {
+        format!("127.0.0.1:{}", grpc_port)
+    };
+    let addr = bind_addr.parse()?;
     
     let service = UatGrpcService::new(ledger, my_address.clone(), tx_sender);
     

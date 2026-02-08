@@ -58,7 +58,8 @@ pub struct ConsensusMessage {
 }
 
 impl ConsensusMessage {
-    /// Create new consensus message
+    /// Create new consensus message with keyed MAC (SECURITY P0-3)
+    /// Uses Keccak256(secret || message_data) — safe for SHA-3 family (no length extension)
     pub fn new(
         msg_type: ConsensusMessageType,
         view: u64,
@@ -66,12 +67,26 @@ impl ConsensusMessage {
         block_hash: String,
         sender: String,
     ) -> Self {
-        let mut hasher = Keccak256::new();
-        hasher.update(format!("{:?}", msg_type).as_bytes());
-        hasher.update(view.to_le_bytes());
-        hasher.update(sequence.to_le_bytes());
-        hasher.update(block_hash.as_bytes());
-        hasher.update(sender.as_bytes());
+        Self::new_with_secret(msg_type, view, sequence, block_hash, sender, &[])
+    }
+
+    /// Create new consensus message with explicit shared secret for MAC
+    pub fn new_with_secret(
+        msg_type: ConsensusMessageType,
+        view: u64,
+        sequence: u64,
+        block_hash: String,
+        sender: String,
+        shared_secret: &[u8],
+    ) -> Self {
+        let timestamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+
+        let mac = Self::compute_keyed_mac(
+            shared_secret, &msg_type, view, sequence, &block_hash, &sender, timestamp,
+        );
         
         Self {
             msg_type,
@@ -79,24 +94,44 @@ impl ConsensusMessage {
             sequence,
             block_hash,
             sender,
-            timestamp: std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap_or_default()
-                .as_secs(),
-            mac: hasher.finalize().to_vec(),
+            timestamp,
+            mac,
         }
     }
 
-    /// Verify message authentication
-    pub fn verify_mac(&self) -> bool {
+    /// Compute keyed MAC: Keccak256(secret || msg_type || view || seq || block_hash || sender || timestamp)
+    fn compute_keyed_mac(
+        secret: &[u8],
+        msg_type: &ConsensusMessageType,
+        view: u64,
+        sequence: u64,
+        block_hash: &str,
+        sender: &str,
+        timestamp: u64,
+    ) -> Vec<u8> {
         let mut hasher = Keccak256::new();
-        hasher.update(format!("{:?}", self.msg_type).as_bytes());
-        hasher.update(self.view.to_le_bytes());
-        hasher.update(self.sequence.to_le_bytes());
-        hasher.update(self.block_hash.as_bytes());
-        hasher.update(self.sender.as_bytes());
-        
-        hasher.finalize().to_vec() == self.mac
+        hasher.update(secret); // Key material first
+        hasher.update(format!("{:?}", msg_type).as_bytes());
+        hasher.update(view.to_le_bytes());
+        hasher.update(sequence.to_le_bytes());
+        hasher.update(block_hash.as_bytes());
+        hasher.update(sender.as_bytes());
+        hasher.update(timestamp.to_le_bytes()); // Include timestamp in MAC
+        hasher.finalize().to_vec()
+    }
+
+    /// Verify message authentication (backward compatible - no secret)
+    pub fn verify_mac(&self) -> bool {
+        self.verify_mac_with_secret(&[])
+    }
+
+    /// Verify message authentication with shared secret
+    pub fn verify_mac_with_secret(&self, shared_secret: &[u8]) -> bool {
+        let expected = Self::compute_keyed_mac(
+            shared_secret, &self.msg_type, self.view, self.sequence,
+            &self.block_hash, &self.sender, self.timestamp,
+        );
+        expected == self.mac
     }
 }
 

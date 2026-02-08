@@ -8,7 +8,7 @@
 // - Automatic punishment enforcement
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use serde::{Serialize, Deserialize};
 
 /// Slashing constants
@@ -23,6 +23,7 @@ pub const MIN_UPTIME_PERCENT: f64 = 95.0; // Need 95%+ uptime
 pub enum ViolationType {
     DoubleSigning,
     ExtendedDowntime,
+    FraudulentTransaction,
 }
 
 /// Validator slash record
@@ -65,7 +66,7 @@ pub struct ValidatorSafetyProfile {
     pub total_slashed_void: u128,
     
     /// Recent signatures for double-signing detection
-    pub recent_signatures: Vec<SignatureRecord>,
+    pub recent_signatures: VecDeque<SignatureRecord>,
     
     /// Blocks participated in (for uptime calculation)
     pub blocks_participated: u64,
@@ -89,7 +90,7 @@ impl ValidatorSafetyProfile {
             validator_address,
             status: ValidatorStatus::Active,
             total_slashed_void: 0,
-            recent_signatures: Vec::new(),
+            recent_signatures: VecDeque::new(),
             blocks_participated: 0,
             total_blocks_observed: 0,
             last_participation_timestamp: 0,
@@ -112,7 +113,21 @@ impl ValidatorSafetyProfile {
     }
 }
 
-/// Slashing Manager - core safety enforcement
+/// Slashing proposal - requires multiple validator confirmations before execution
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SlashProposal {
+    pub proposal_id: String,
+    pub offender: String,
+    pub offense_type: ViolationType,
+    pub evidence_hash: String,
+    pub proposed_at: u64,
+    pub proposer: String,
+    pub confirmations: Vec<String>, // Validator addresses that confirmed
+    pub executed: bool,
+    pub staked_amount_void: Option<u128>, // Actual staked amount from ledger (not hardcoded)
+}
+
+/// Slashing Manager - core safety enforcement with multi-validator confirmation
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SlashingManager {
     /// Per-validator safety profiles
@@ -123,6 +138,9 @@ pub struct SlashingManager {
     
     /// Current block height
     current_block_height: u64,
+    
+    /// Pending slash proposals requiring confirmation
+    pending_proposals: HashMap<String, SlashProposal>,
 }
 
 impl SlashingManager {
@@ -132,6 +150,7 @@ impl SlashingManager {
             validators: HashMap::new(),
             slash_events: Vec::new(),
             current_block_height: 0,
+            pending_proposals: HashMap::new(),
         }
     }
 
@@ -168,7 +187,7 @@ impl SlashingManager {
         }
 
         // Record signature
-        profile.recent_signatures.push(SignatureRecord {
+        profile.recent_signatures.push_back(SignatureRecord {
             block_height,
             signature_hash,
             timestamp,
@@ -176,7 +195,7 @@ impl SlashingManager {
 
         // Keep only recent signatures (last 1000 blocks)
         if profile.recent_signatures.len() > 1000 {
-            profile.recent_signatures.remove(0);
+            profile.recent_signatures.pop_front();
         }
 
         Ok(())
@@ -271,8 +290,15 @@ impl SlashingManager {
         if profile.total_blocks_observed >= DOWNTIME_WINDOW_BLOCKS
             && !profile.meets_uptime_requirement()
         {
-            let slash_amount = (staked_amount_void as f64 * (DOWNTIME_SLASH_PERCENT / 100.0))
-                .ceil() as u128;
+            // SECURITY FIX NEW#5: Use integer math instead of f64 for slash calculation
+            // DOWNTIME: 1% of stake. Double-signing: 100% (full slash).
+            // Integer: staked / 100 for 1%, staked for 100%
+            let slash_amount = if DOWNTIME_SLASH_PERCENT >= 100.0 {
+                staked_amount_void
+            } else {
+                // 1% = staked / 100, rounds up via + 99 trick
+                (staked_amount_void + 99) / 100
+            };
 
             profile.total_slashed_void += slash_amount;
             profile.status = ValidatorStatus::Slashed;
@@ -402,6 +428,119 @@ impl SlashingManager {
         self.validators.clear();
         self.slash_events.clear();
         self.current_block_height = 0;
+        self.pending_proposals.clear();
+    }
+
+    /// Propose a slash - requires 2/3+1 validator confirmations before execution
+    pub fn propose_slash(
+        &mut self,
+        offender: String,
+        offense: ViolationType,
+        evidence_hash: String,
+        proposer: String,
+        timestamp: u64,
+    ) -> Result<String, String> {
+        // Check if offender is registered
+        if !self.validators.contains_key(&offender) {
+            return Err(format!("Offender {} not registered", offender));
+        }
+
+        // SECURITY P1-5: Include evidence hash in proposal ID to prevent collision
+        // Old: format!("slash_{}_{}", offender, timestamp) — collides when same offender
+        // is slashed at the same second for different offenses
+        let proposal_id = format!("slash_{}_{}_{}", offender, evidence_hash, timestamp);
+        
+        // Check if proposal already exists
+        if self.pending_proposals.contains_key(&proposal_id) {
+            return Err("Proposal already exists".to_string());
+        }
+        
+        let proposal = SlashProposal {
+            proposal_id: proposal_id.clone(),
+            offender,
+            offense_type: offense,
+            evidence_hash,
+            proposed_at: timestamp,
+            proposer: proposer.clone(),
+            confirmations: vec![proposer], // Proposer auto-confirms
+            executed: false,
+            staked_amount_void: None, // Set later via confirm_slash with actual ledger balance
+        };
+        
+        self.pending_proposals.insert(proposal_id.clone(), proposal);
+        Ok(proposal_id)
+    }
+    
+    /// Confirm a slash proposal - returns true if threshold met and slash executed
+    /// staked_amount_void: actual balance of offender from ledger (used if threshold met)
+    pub fn confirm_slash(
+        &mut self,
+        proposal_id: &str,
+        confirmer: String,
+        total_validators: usize,
+        timestamp: u64,
+        staked_amount_void: Option<u128>,
+    ) -> Result<bool, String> {
+        let proposal = self.pending_proposals.get_mut(proposal_id)
+            .ok_or("Proposal not found")?;
+        
+        // Update staked amount if provided (from ledger at confirmation time)
+        if let Some(amount) = staked_amount_void {
+            proposal.staked_amount_void = Some(amount);
+        }
+        
+        if proposal.executed {
+            return Err("Already executed".to_string());
+        }
+        
+        // Add confirmation if not already confirmed by this validator
+        if !proposal.confirmations.contains(&confirmer) {
+            proposal.confirmations.push(confirmer);
+        }
+        
+        // Require 2/3 + 1 confirmations (Byzantine fault tolerance)
+        let threshold = (total_validators * 2 / 3) + 1;
+        
+        if proposal.confirmations.len() >= threshold {
+            // Execute slash
+            let offender = proposal.offender.clone();
+            let offense_type = proposal.offense_type;
+            
+            // SECURITY FIX V4#7: Use actual staked_amount from the proposal instead of hardcoded 100k
+            // The staked_amount should be provided by the caller or read from ledger
+            let staked_amount = proposal.staked_amount_void.unwrap_or(0);
+            
+            // Execute appropriate slash
+            match offense_type {
+                ViolationType::DoubleSigning => {
+                    self.slash_double_signing(&offender, self.current_block_height, staked_amount, timestamp)?;
+                }
+                ViolationType::ExtendedDowntime => {
+                    if let Some(slash_amt) = self.check_and_slash_downtime(&offender, self.current_block_height, staked_amount, timestamp)? {
+                        // Slash executed
+                        let _ = slash_amt;
+                    }
+                }
+                ViolationType::FraudulentTransaction => {
+                    // Fraudulent transactions (fake burn TXIDs etc) — 100% slash like double signing
+                    self.slash_double_signing(&offender, self.current_block_height, staked_amount, timestamp)?;
+                }
+            }
+            
+            // Mark as executed
+            if let Some(proposal) = self.pending_proposals.get_mut(proposal_id) {
+                proposal.executed = true;
+            }
+            
+            Ok(true)
+        } else {
+            Ok(false)
+        }
+    }
+    
+    /// Get pending slash proposals
+    pub fn get_pending_proposals(&self) -> Vec<SlashProposal> {
+        self.pending_proposals.values().cloned().collect()
     }
 }
 

@@ -116,7 +116,7 @@ impl SlashingManager {
             }
 
             // Add signature to recent records
-            profile.recent_signatures.push(uat_consensus::slashing::SignatureRecord {
+            profile.recent_signatures.push_back(uat_consensus::slashing::SignatureRecord {
                 block_height,
                 signature_hash,
                 timestamp,
@@ -124,7 +124,7 @@ impl SlashingManager {
 
             // Keep only last 1000 signatures
             if profile.recent_signatures.len() > 1000 {
-                profile.recent_signatures.remove(0);
+                profile.recent_signatures.pop_front();
             }
 
             Ok(())

@@ -10,6 +10,8 @@ const DB_PATH: &str = "uat_database";
 const TREE_BLOCKS: &str = "blocks";
 const TREE_ACCOUNTS: &str = "accounts";
 const TREE_META: &str = "metadata";
+const TREE_FAUCET_COOLDOWNS: &str = "faucet_cooldowns";
+const TREE_PEERS: &str = "known_peers";
 
 /// Database wrapper with ACID guarantees
 pub struct UatDatabase {
@@ -50,45 +52,48 @@ impl UatDatabase {
             .map_err(|e| format!("Failed to open metadata tree: {}", e))
     }
 
-    /// Save complete ledger state (ATOMIC)
+    /// Save complete ledger state (TRULY ATOMIC — cross-tree transaction)
+    /// Uses sled's transaction API so blocks, accounts, and metadata
+    /// are committed as a single atomic unit. A crash mid-save won't
+    /// leave partial state.
     pub fn save_ledger(&self, ledger: &Ledger) -> Result<(), String> {
+        use sled::Transactional;
+
         let blocks_tree = self.blocks_tree()?;
         let accounts_tree = self.accounts_tree()?;
         let meta_tree = self.meta_tree()?;
 
-        // Create atomic batch
-        let mut batch = sled::Batch::default();
-
-        // 1. Save all blocks
+        // Pre-serialize all data outside the transaction (transactions should be fast)
+        let mut block_entries: Vec<(Vec<u8>, Vec<u8>)> = Vec::with_capacity(ledger.blocks.len());
         for (hash, block) in &ledger.blocks {
             let block_json = serde_json::to_vec(block)
                 .map_err(|e| format!("Failed to serialize block: {}", e))?;
-            batch.insert(hash.as_bytes(), block_json);
+            block_entries.push((hash.as_bytes().to_vec(), block_json));
         }
 
-        // Apply blocks batch atomically
-        blocks_tree.apply_batch(batch)
-            .map_err(|e| format!("Failed to save blocks: {}", e))?;
-
-        // 2. Save all accounts
-        let mut accounts_batch = sled::Batch::default();
+        let mut account_entries: Vec<(Vec<u8>, Vec<u8>)> = Vec::with_capacity(ledger.accounts.len());
         for (addr, state) in &ledger.accounts {
             let state_json = serde_json::to_vec(state)
                 .map_err(|e| format!("Failed to serialize account: {}", e))?;
-            accounts_batch.insert(addr.as_bytes(), state_json);
+            account_entries.push((addr.as_bytes().to_vec(), state_json));
         }
 
-        accounts_tree.apply_batch(accounts_batch)
-            .map_err(|e| format!("Failed to save accounts: {}", e))?;
-
-        // 3. Save metadata (distribution, etc.)
         let distribution_json = serde_json::to_vec(&ledger.distribution)
             .map_err(|e| format!("Failed to serialize distribution: {}", e))?;
-        
-        meta_tree.insert(b"distribution", distribution_json)
-            .map_err(|e| format!("Failed to save distribution: {}", e))?;
 
-        // 4. Flush to disk (durability guarantee)
+        // Atomic cross-tree transaction: all-or-nothing commit
+        (&blocks_tree, &accounts_tree, &meta_tree).transaction(|(tx_blocks, tx_accounts, tx_meta)| {
+            for (key, value) in &block_entries {
+                tx_blocks.insert(key.as_slice(), value.as_slice())?;
+            }
+            for (key, value) in &account_entries {
+                tx_accounts.insert(key.as_slice(), value.as_slice())?;
+            }
+            tx_meta.insert(b"distribution".as_ref(), distribution_json.as_slice())?;
+            Ok(())
+        }).map_err(|e: sled::transaction::TransactionError<()>| format!("Atomic save failed: {:?}", e))?;
+
+        // Flush to disk (durability guarantee)
         self.db.flush()
             .map_err(|e| format!("Failed to flush to disk: {}", e))?;
 
@@ -135,6 +140,13 @@ impl UatDatabase {
         {
             ledger.distribution = serde_json::from_slice(&dist_bytes)
                 .map_err(|e| format!("Failed to deserialize distribution: {}", e))?;
+        }
+
+        // 4. Rebuild claimed_sends index from loaded Receive blocks (O(1) double-receive check)
+        for block in ledger.blocks.values() {
+            if block.block_type == uat_core::BlockType::Receive {
+                ledger.claimed_sends.insert(block.link.clone());
+            }
         }
 
         Ok(ledger)
@@ -282,6 +294,91 @@ impl UatDatabase {
 
         Ok(())
     }
+
+    // --- Faucet Cooldown Persistence ---
+
+    /// Get faucet cooldowns tree
+    fn faucet_tree(&self) -> Result<Tree, String> {
+        self.db.open_tree(TREE_FAUCET_COOLDOWNS)
+            .map_err(|e| format!("Failed to open faucet cooldowns tree: {}", e))
+    }
+
+    /// Record faucet claim timestamp for an address (persistent across restarts)
+    pub fn record_faucet_claim(&self, address: &str) -> Result<(), String> {
+        let tree = self.faucet_tree()?;
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+        tree.insert(address.as_bytes(), &now.to_le_bytes())
+            .map_err(|e| format!("Failed to record faucet claim: {}", e))?;
+        Ok(())
+    }
+
+    /// Check if address is in faucet cooldown period
+    /// Returns Ok(()) if allowed, Err(seconds_remaining) if in cooldown
+    pub fn check_faucet_cooldown(&self, address: &str, cooldown_secs: u64) -> Result<(), u64> {
+        let tree = self.faucet_tree().map_err(|_| 0u64)?;
+        
+        if let Ok(Some(bytes)) = tree.get(address.as_bytes()) {
+            if bytes.len() == 8 {
+                let last_claim = u64::from_le_bytes(bytes.as_ref().try_into().unwrap_or([0u8; 8]));
+                let now = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_secs();
+                
+                let elapsed = now.saturating_sub(last_claim);
+                if elapsed < cooldown_secs {
+                    return Err(cooldown_secs - elapsed);
+                }
+            }
+        }
+        
+        Ok(())
+    }
+
+    // --- Persistent Peer Storage ---
+
+    /// Get known peers tree
+    fn peers_tree(&self) -> Result<Tree, String> {
+        self.db.open_tree(TREE_PEERS)
+            .map_err(|e| format!("Failed to open peers tree: {}", e))
+    }
+
+    /// Save known peer (short_addr → full_addr mapping)
+    pub fn save_peer(&self, short_addr: &str, full_addr: &str) -> Result<(), String> {
+        let tree = self.peers_tree()?;
+        tree.insert(short_addr.as_bytes(), full_addr.as_bytes())
+            .map_err(|e| format!("Failed to save peer: {}", e))?;
+        Ok(())
+    }
+
+    /// Load all known peers from disk
+    pub fn load_peers(&self) -> Result<std::collections::HashMap<String, String>, String> {
+        let tree = self.peers_tree()?;
+        let mut peers = std::collections::HashMap::new();
+        
+        for item in tree.iter() {
+            let (key, value) = item.map_err(|e| format!("Failed to read peer: {}", e))?;
+            let short = String::from_utf8(key.to_vec())
+                .map_err(|e| format!("Invalid peer key: {}", e))?;
+            let full = String::from_utf8(value.to_vec())
+                .map_err(|e| format!("Invalid peer value: {}", e))?;
+            peers.insert(short, full);
+        }
+        
+        Ok(peers)
+    }
+
+    /// Remove a peer from persistent storage
+    #[allow(dead_code)]
+    pub fn remove_peer(&self, short_addr: &str) -> Result<(), String> {
+        let tree = self.peers_tree()?;
+        tree.remove(short_addr.as_bytes())
+            .map_err(|e| format!("Failed to remove peer: {}", e))?;
+        Ok(())
+    }
 }
 
 /// Database statistics
@@ -344,7 +441,10 @@ mod tests {
             block_type: BlockType::Send,
             amount: 100,
             signature: "sig123".to_string(),
+            public_key: "pubkey123".to_string(),
             work: 0,
+            timestamp: 1234567890,
+            fee: 0,
         };
 
         // Save

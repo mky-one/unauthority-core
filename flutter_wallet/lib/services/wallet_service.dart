@@ -260,15 +260,27 @@ class WalletService {
 
       final secretKey = DilithiumService.hexToBytes(skHex);
       final message = Uint8List.fromList(utf8.encode(txData));
-      final signature = DilithiumService.sign(message, secretKey);
-      return DilithiumService.bytesToHex(signature);
+      try {
+        final signature = DilithiumService.sign(message, secretKey);
+        return DilithiumService.bytesToHex(signature);
+      } finally {
+        // SECURITY FIX L-01: Zero secret key in Dart memory after signing.
+        // FFI layer zeros its copy, but Dart Uint8List remains until GC.
+        secretKey.fillRange(0, secretKey.length, 0);
+      }
     } else {
       final mnemonic = await _secureStorage.read(key: _seedKey);
       if (mnemonic == null) throw Exception('No mnemonic for signing');
       final seed = bip39.mnemonicToSeed(mnemonic);
       final privateKey = seed.sublist(0, 32);
-      final signature = sha256.convert(utf8.encode(txData) + privateKey);
-      return signature.toString();
+      try {
+        final signature = sha256.convert(utf8.encode(txData) + privateKey);
+        return signature.toString();
+      } finally {
+        // SECURITY FIX L-01: Zero private key material after signing
+        privateKey.fillRange(0, privateKey.length, 0);
+        seed.fillRange(0, seed.length, 0);
+      }
     }
   }
 

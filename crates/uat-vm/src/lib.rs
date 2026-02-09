@@ -4,6 +4,13 @@ use std::sync::{Arc, Mutex};
 use wasmer::{imports, Instance, Module, Store, Value};
 use wasmer_compiler_cranelift::Cranelift;
 
+// Provide __rust_probestack stub for wasmer-vm 4.x compatibility with
+// Rust 1.85+ where this symbol was removed from compiler_builtins.
+// Safe on x86_64 Linux: the kernel provides guard pages for stack overflow.
+#[cfg(all(target_arch = "x86_64", target_os = "linux"))]
+#[no_mangle]
+pub extern "C" fn __rust_probestack() {}
+
 // Oracle module for exchange price feeds
 pub mod oracle_connector;
 

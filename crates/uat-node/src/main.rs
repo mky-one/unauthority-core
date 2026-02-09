@@ -210,6 +210,10 @@ pub struct ApiServerConfig {
     pub slashing_manager: Arc<Mutex<SlashingManager>>,
     pub anti_whale: Arc<Mutex<AntiWhaleEngine>>,
     pub node_public_key: Vec<u8>,
+    /// Bootstrap validator addresses loaded from genesis config (NOT hardcoded).
+    /// On mainnet: from genesis_config.json bootstrap_nodes.
+    /// On testnet: from testnet_wallets.json wallets with role="validator".
+    pub bootstrap_validators: Vec<String>,
 }
 
 #[allow(clippy::type_complexity)]
@@ -229,6 +233,7 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
         slashing_manager,
         anti_whale,
         node_public_key,
+        bootstrap_validators,
     } = cfg;
     // Rate Limiter: 100 req/sec per IP, burst 200
     let limiter = RateLimiter::new(100, Some(200));
@@ -909,6 +914,7 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
     let l_info = ledger.clone();
     let ab_info = address_book.clone();
     let my_addr_info = my_address.clone();
+    let bv_info = bootstrap_validators.clone();
     let node_info_route = warp::path("node-info")
         .and(with_state((l_info, ab_info)))
         .map(
@@ -917,12 +923,9 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
                 let total_supply = 21_936_236u128 * VOID_PER_UAT;
                 let circulating = total_supply - l_guard.distribution.remaining_supply;
 
-                // SECURITY FIX #12: Dynamic validator and peer count from actual state
-                let validator_count = l_guard
-                    .accounts
-                    .iter()
-                    .filter(|(_, acc)| acc.balance >= MIN_VALIDATOR_STAKE_VOID)
-                    .count();
+                // Validator count = genesis bootstrap validators
+                // (Does NOT include treasury wallets with high balances)
+                let validator_count = bv_info.len();
                 let peer_count = safe_lock(&ab).len();
                 let network = if uat_core::CHAIN_ID == 1 { "uat-mainnet" } else { "uat-testnet" };
 
@@ -930,7 +933,7 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
                     "chain_id": network,
                     "network": network,
                     "address": my_addr_info,
-                    "version": "1.0.1",
+                    "version": env!("CARGO_PKG_VERSION"),
                     "block_height": l_guard.blocks.len(),
                     "validator_count": validator_count,
                     "peer_count": peer_count,
@@ -941,17 +944,14 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
             },
         );
 
-    // 12. GET /validators (List active bootstrap validators from genesis)
-    // Only return the 4 bootstrap validators — not all high-balance accounts (treasury, etc.)
+    // 12. GET /validators (List active bootstrap validators from genesis config)
+    // Reads bootstrap_validators from genesis — NOT hardcoded.
+    // Mainnet: loaded from genesis_config.json bootstrap_nodes[].address
+    // Testnet: loaded from testnet_wallets.json wallets[] where role="validator"
     let l_validators = ledger.clone();
     let ab_validators = address_book.clone();
     let my_addr_validators = my_address.clone();
-    let bootstrap_addrs: Vec<String> = vec![
-        "UATX8sBoXqggW9xFA8w2nYJS6XQ15XuvFThEb".to_string(),
-        "UATWsxE6mzVKaMFriEmPJ4VEoFKYtaAppz1GU".to_string(),
-        "UATWoWPeNNa2TZCMAxaC5EMTKg4Ws2htiv3Gk".to_string(),
-        "UATXAJaUyAzaY5FE2xQqm2iNT72Q4NXKzMGc4".to_string(),
-    ];
+    let bv_validators = bootstrap_validators.clone();
     let validators_route = warp::path("validators")
         .and(with_state((l_validators, ab_validators)))
         .map(
@@ -959,7 +959,7 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
                 let l_guard = safe_lock(&l);
                 let ab_guard = safe_lock(&ab);
 
-                let validators: Vec<serde_json::Value> = bootstrap_addrs
+                let validators: Vec<serde_json::Value> = bv_validators
                     .iter()
                     .filter_map(|addr| {
                         l_guard.accounts.get(addr.as_str()).map(|acc| {
@@ -1360,7 +1360,7 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
                     "blocks_count": db_stats.blocks_count,
                     "size_on_disk": db_stats.size_on_disk
                 },
-                "version": "1.0.1",
+                "version": env!("CARGO_PKG_VERSION"),
                 "timestamp": std::time::SystemTime::now()
                     .duration_since(std::time::UNIX_EPOCH)
                     .unwrap_or_default()
@@ -2395,6 +2395,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     //           Falls back gracefully if missing.
     //
     // Both paths use the same insert-if-absent logic to preserve existing state.
+    //
+    // bootstrap_validators: Populated from genesis — used by /validators and /node-info
+    // to avoid hardcoding testnet-specific addresses that would break mainnet.
+    let mut bootstrap_validators: Vec<String> = Vec::new();
     {
         let genesis_path = if uat_core::is_mainnet_build() {
             "genesis_config.json"
@@ -2435,6 +2439,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 "Genesis validation failed: {}",
                                 e
                             )));
+                        }
+                        // Extract bootstrap validator addresses from genesis config
+                        if let Some(ref nodes) = genesis_config.bootstrap_nodes {
+                            for node in nodes {
+                                bootstrap_validators.push(node.address.clone());
+                            }
+                            println!("🔍 Loaded {} bootstrap validators from genesis", bootstrap_validators.len());
                         }
                         println!("✅ Genesis config validated (supply, network, addresses)");
                     }
@@ -2505,6 +2516,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                         eprintln!("⚠️ Testnet genesis: skipping wallet {} (balance exceeds total supply)", address);
                                         continue;
                                     }
+                                    // Track validator wallets for /validators endpoint
+                                    // (NOT hardcoded — reads role from genesis config)
+                                    if wallet["role"].as_str() == Some("validator") {
+                                        bootstrap_validators.push(address.to_string());
+                                    }
                                     if !ledger_state.accounts.contains_key(address) {
                                         ledger_state.accounts.insert(
                                             address.to_string(),
@@ -2537,6 +2553,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     "🎁 Testnet genesis: loaded {} accounts ({} VOID pre-allocated)",
                                     loaded_count, genesis_supply_deducted
                                 );
+                                if !bootstrap_validators.is_empty() {
+                                    println!("🔍 Loaded {} bootstrap validators from testnet genesis", bootstrap_validators.len());
+                                }
                             }
                         }
                     }
@@ -2870,6 +2889,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let api_slashing = Arc::clone(&slashing_manager);
     let api_aw = Arc::clone(&anti_whale);
     let api_pk = keys.public_key.clone();
+    let api_bootstrap = bootstrap_validators; // Move — only used by API server
 
     tokio::spawn(async move {
         start_api_server(ApiServerConfig {
@@ -2887,6 +2907,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             slashing_manager: api_slashing,
             anti_whale: api_aw,
             node_public_key: api_pk,
+            bootstrap_validators: api_bootstrap,
         })
         .await;
     });

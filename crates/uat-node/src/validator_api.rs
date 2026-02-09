@@ -49,7 +49,7 @@ pub fn generate_validator_keys() -> Result<GenerateKeysResponse, String> {
     
     let private_key = hex::encode(&keypair.secret_key);
     let public_key = hex::encode(&keypair.public_key);
-    let address = format!("uat_{}", &public_key[..12]); // Short address format
+    let address = uat_crypto::public_key_to_address(&keypair.public_key);
     
     Ok(GenerateKeysResponse {
         seed_phrase,
@@ -65,14 +65,15 @@ pub fn import_private_key(private_key: &str) -> Result<GenerateKeysResponse, Str
     let secret_bytes = hex::decode(private_key)
         .map_err(|_| "Invalid private key hex format".to_string())?;
     
-    if secret_bytes.len() != 32 {
-        return Err("Private key must be 32 bytes".to_string());
+    // Dilithium5 secret keys are 4864 bytes; 32-byte seeds also accepted
+    if secret_bytes.len() != 4864 && secret_bytes.len() != 32 {
+        return Err("Private key must be 4864 bytes (Dilithium5) or 32 bytes (seed)".to_string());
     }
     
     // Derive public key
     let keypair = uat_crypto::keypair_from_secret(&secret_bytes);
     let public_key = hex::encode(&keypair.public_key);
-    let address = format!("uat_{}", &public_key[..12]);
+    let address = uat_crypto::public_key_to_address(&keypair.public_key);
     
     Ok(GenerateKeysResponse {
         seed_phrase: "⚠️ IMPORTED KEY - NO SEED PHRASE AVAILABLE".to_string(),
@@ -94,7 +95,7 @@ pub fn import_seed_phrase(seed_phrase: &str) -> Result<GenerateKeysResponse, Str
     
     let private_key = hex::encode(&keypair.secret_key);
     let public_key = hex::encode(&keypair.public_key);
-    let address = format!("uat_{}", &public_key[..12]);
+    let address = uat_crypto::public_key_to_address(&keypair.public_key);
     
     Ok(GenerateKeysResponse {
         seed_phrase: seed_phrase.to_string(),

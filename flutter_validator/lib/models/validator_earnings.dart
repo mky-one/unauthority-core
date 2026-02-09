@@ -76,7 +76,7 @@ class DailyEarning {
 
   factory DailyEarning.fromJson(Map<String, dynamic> json) {
     return DailyEarning(
-      date: DateTime.parse(json['date']),
+      date: DateTime.tryParse(json['date'] ?? '') ?? DateTime.now(),
       earningsUAT: (json['earnings_uat'] ?? 0).toDouble(),
       transactionsProcessed: json['transactions_processed'] ?? 0,
     );

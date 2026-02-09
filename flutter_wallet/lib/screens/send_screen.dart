@@ -32,6 +32,18 @@ class _SendScreenState extends State<SendScreen> {
       final amount =
           BlockchainConstants.uatStringToVoid(_amountController.text);
 
+      // Balance validation: prevent sending more than available
+      try {
+        final account = await apiService.getBalance(wallet['address']!);
+        if (amount > account.balance) {
+          throw Exception(
+              'Insufficient balance: have ${BlockchainConstants.voidToUat(account.balance).toStringAsFixed(6)} UAT');
+        }
+      } catch (e) {
+        if (e.toString().contains('Insufficient balance')) rethrow;
+        // If balance check fails (network), let the backend reject
+      }
+
       // Sign transaction with Dilithium5 (if available)
       String? signature;
       String? publicKey;

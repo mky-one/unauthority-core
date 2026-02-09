@@ -263,7 +263,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                 child: Text('${block.height}'),
                               ),
                               title: Text(
-                                '${block.hash.substring(0, 16)}...',
+                                block.hash.length >= 16
+                                    ? '${block.hash.substring(0, 16)}...'
+                                    : block.hash,
                                 style: const TextStyle(
                                   fontFamily: 'monospace',
                                   fontSize: 12,

@@ -4,6 +4,7 @@ import 'package:http/http.dart' as http;
 import 'package:http/io_client.dart';
 import 'package:socks5_proxy/socks_client.dart';
 import '../models/account.dart';
+import '../constants/blockchain.dart';
 
 enum NetworkEnvironment { testnet, mainnet }
 
@@ -115,7 +116,8 @@ class ApiService {
   }
 
   // Get Balance
-  // Backend: GET /bal/:address → {balance_uat: string, balance_void: u128-string}
+  // Backend: GET /balance/:address → {balance, balance_uat: string, balance_voi: u128-int}
+  // Backend: GET /bal/:address     → {balance_uat: string, balance_void: u128-int}
   Future<Account> getBalance(String address) async {
     try {
       final response = await _client.get(
@@ -123,23 +125,37 @@ class ApiService {
       );
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
-        // FIX C11-02: Use correct backend field names with type-safe parsing.
-        // balance_void is the canonical VOID amount (u128, may arrive as string).
-        // Fallback to balance_uat (UAT string → VOID conversion) then balance.
+        // FIX C12-01: Backend /balance/:address sends "balance_voi" (no 'd'),
+        // while /bal/:address sends "balance_void". Check both field names.
+        // balance_voi / balance_void is the canonical VOID amount (u128).
+        // balance_uat / balance are formatted UAT strings ("1000.00000000000").
         int balanceVoid;
-        if (data['balance_void'] != null) {
+        if (data['balance_voi'] != null) {
+          balanceVoid = _safeInt(data['balance_voi']);
+        } else if (data['balance_void'] != null) {
           balanceVoid = _safeInt(data['balance_void']);
         } else if (data['balance_uat'] != null) {
           final val = data['balance_uat'];
           if (val is int) {
             balanceVoid = val;
           } else if (val is String) {
-            balanceVoid = int.tryParse(val) ?? 0; // try raw int string first
+            // FIX C12-03: balance_uat is a formatted decimal string like "1000.00000000000"
+            // int.tryParse fails on decimal strings. Use uatStringToVoid for proper conversion.
+            balanceVoid = BlockchainConstants.uatStringToVoid(val);
+          } else {
+            balanceVoid = 0;
+          }
+        } else if (data['balance'] != null) {
+          final val = data['balance'];
+          if (val is int) {
+            balanceVoid = val;
+          } else if (val is String) {
+            balanceVoid = BlockchainConstants.uatStringToVoid(val);
           } else {
             balanceVoid = 0;
           }
         } else {
-          balanceVoid = _safeInt(data['balance']);
+          balanceVoid = 0;
         }
         return Account(
           address: address,
@@ -319,16 +335,26 @@ class ApiService {
   }
 
   // Get Peers
+  // FIX C12-02: Backend returns HashMap<String,String> → JSON object {"addr":"url",...}
+  // NOT a List or {peers: [...]}.
   Future<List<String>> getPeers() async {
     try {
       final response = await _client.get(Uri.parse('$baseUrl/peers'));
       if (response.statusCode == 200) {
         final decoded = json.decode(response.body);
-        // FIX C11-06: Safe cast — filter nulls/non-strings instead of cast<String>()
-        final List<dynamic> data = decoded is List
-            ? decoded
-            : (decoded['peers'] as List<dynamic>?) ?? [];
-        return data.whereType<String>().toList();
+        if (decoded is List) {
+          // Future-proof: if backend ever returns a plain array
+          return decoded.whereType<String>().toList();
+        } else if (decoded is Map) {
+          // Current backend: HashMap<String, String> → JSON object
+          // Keys are peer addresses/IDs, values are URLs
+          if (decoded.containsKey('peers') && decoded['peers'] is List) {
+            return (decoded['peers'] as List).whereType<String>().toList();
+          }
+          // Extract keys (peer addresses) from the map
+          return decoded.keys.cast<String>().toList();
+        }
+        return [];
       }
       throw Exception('Failed to get peers: ${response.statusCode}');
     } catch (e) {

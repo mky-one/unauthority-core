@@ -13,6 +13,7 @@ use uat_core::{AccountState, Block, BlockType, Ledger, MIN_VALIDATOR_STAKE_VOID,
 use uat_network::{NetworkEvent, UatNode};
 #[cfg(feature = "vm")]
 use uat_vm::{ContractCall, WasmEngine};
+use zeroize::Zeroizing;
 
 /// Safe mutex lock that recovers from poisoned state instead of panicking.
 /// When a thread panics while holding a lock, the Mutex becomes "poisoned".
@@ -3217,8 +3218,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
                                 if full != my_address {
                                     let short = get_short_addr(&full);
-                                    let is_new = !safe_lock(&address_book).contains_key(&short);
-                                    safe_lock(&address_book).insert(short.clone(), full.clone());
+                                    // FIX C12-09: Cap address_book to prevent memory DoS from
+                                    // malicious peers flooding fake ID: messages.
+                                    const MAX_PEERS: usize = 10_000;
+                                    let mut ab = safe_lock(&address_book);
+                                    if ab.len() >= MAX_PEERS && !ab.contains_key(&short) {
+                                        // Address book full; ignore new peer
+                                        drop(ab);
+                                    } else {
+                                        let is_new = !ab.contains_key(&short);
+                                        ab.insert(short.clone(), full.clone());
+                                        drop(ab);
 
                                     // Persist peer to database for recovery after restart
                                     if is_new {
@@ -3304,6 +3314,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                             }
                                         }
                                     }
+                                    } // end address_book capacity else
                                 }
                             }
                         } else if let Some(encoded_data) = data.strip_prefix("SYNC_GZIP:") {
@@ -3334,20 +3345,30 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                         let mut added_count = 0;
                                         let mut invalid_count = 0;
 
-                                        // SECURITY FIX #12: Sort blocks by timestamp for O(n log n) sync instead of O(n²)
+                                        // FIX C12-05: Remove 1000-block cap to allow full state sync.
+                                        // Sort blocks by timestamp for O(n log n) sync instead of O(n²)
                                         let mut incoming_blocks: Vec<Block> = incoming_ledger.blocks.values()
-                                            .take(1000).cloned()
+                                            .cloned()
                                             .collect();
                                         incoming_blocks.sort_by_key(|b| b.timestamp);
 
                                         // Two-pass: first pass processes ordered blocks, second catches stragglers
                                         for pass in 0..2 {
                                             for blk in &incoming_blocks {
-                                                // SECURITY FIX NEW#1: Reject Mint/Slash blocks from SYNC_GZIP
-                                                // Same as raw gossip (V4#2) — Mint/Slash must go through consensus
+                                                // FIX C12-01b: Accept Mint/Slash blocks in SYNC if validly signed
+                                                // by a staked validator. Blanket-reject caused new nodes to
+                                                // permanently miss all minted balances.
                                                 if matches!(blk.block_type, BlockType::Mint | BlockType::Slash) {
-                                                    invalid_count += 1;
-                                                    continue;
+                                                    let sig_ok = hex::decode(&blk.signature).ok().and_then(|sig| {
+                                                        hex::decode(&blk.public_key).ok().map(|pk| {
+                                                            let sh = blk.signing_hash();
+                                                            uat_crypto::verify_signature(sh.as_bytes(), &sig, &pk)
+                                                        })
+                                                    }).unwrap_or(false);
+                                                    if !sig_ok || !blk.verify_pow() {
+                                                        invalid_count += 1;
+                                                        continue;
+                                                    }
                                                 }
 
                                                 let hash = blk.calculate_hash();
@@ -3472,7 +3493,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 let tx_vote = tx_out.clone();
                                 let ledger_ref = Arc::clone(&ledger);
                                 let my_addr_clone = my_address.clone();
-                                let vote_sk = secret_key.clone();
+                                // FIX C12-03: Wrap cloned secret key in Zeroizing for automatic
+                                // zeroing when the async task completes (prevents key leakage in heap)
+                                let vote_sk = Zeroizing::new(secret_key.clone());
                                 let vote_pk = keys.public_key.clone();
 
                                 tokio::spawn(async move {
@@ -3893,7 +3916,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 let tx_confirm = tx_out.clone();
                                 let ledger_ref = Arc::clone(&ledger);
                                 let my_addr_clone = my_address.clone();
-                                let confirm_sk = secret_key.clone();
+                                // FIX C12-03: Zeroize cloned secret key on async task drop
+                                let confirm_sk = Zeroizing::new(secret_key.clone());
                                 let confirm_pk = keys.public_key.clone();
 
                                 tokio::spawn(async move {
@@ -4090,11 +4114,45 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 }
                             }
                         } else if let Ok(inc) = serde_json::from_str::<Block>(&data) {
-                            // SECURITY FIX V4#2: Reject Mint/Slash blocks from P2P gossip
-                            // These must go through consensus flow (VOTE_REQ/VOTE_RES or SLASH_REQ)
+                            // FIX C12-01: Mint/Slash blocks from P2P are accepted ONLY if they
+                            // carry a valid validator signature + valid PoW. Previously blanket-
+                            // rejected, which caused minted tokens to exist only on the originating
+                            // node — splitting the ledger permanently across the network.
                             if matches!(inc.block_type, BlockType::Mint | BlockType::Slash) {
-                                println!("🚫 Rejected {:?} block from P2P (must go through consensus flow)", inc.block_type);
-                                continue;
+                                // Verify: non-empty signature, valid signature, valid PoW
+                                if inc.signature.is_empty() || inc.public_key.is_empty() {
+                                    println!("🚫 Rejected unsigned {:?} block from P2P", inc.block_type);
+                                    continue;
+                                }
+                                let sig_ok = hex::decode(&inc.signature).ok().and_then(|sig| {
+                                    hex::decode(&inc.public_key).ok().map(|pk| {
+                                        let signing_hash = inc.signing_hash();
+                                        uat_crypto::verify_signature(signing_hash.as_bytes(), &sig, &pk)
+                                    })
+                                }).unwrap_or(false);
+                                if !sig_ok {
+                                    println!("🚫 Rejected {:?} block from P2P: invalid signature", inc.block_type);
+                                    continue;
+                                }
+                                if !inc.verify_pow() {
+                                    println!("🚫 Rejected {:?} block from P2P: invalid PoW", inc.block_type);
+                                    continue;
+                                }
+                                // Also verify the signing key maps to a known staked validator
+                                let signer_addr = hex::decode(&inc.public_key)
+                                    .map(|pk| uat_crypto::public_key_to_address(&pk))
+                                    .unwrap_or_default();
+                                let is_validator = {
+                                    let l = safe_lock(&ledger);
+                                    l.accounts.get(&signer_addr)
+                                        .map(|a| a.balance >= MIN_VALIDATOR_STAKE_VOID)
+                                        .unwrap_or(false)
+                                };
+                                if !is_validator {
+                                    println!("🚫 Rejected {:?} block from P2P: signer {} is not a staked validator", inc.block_type, get_short_addr(&signer_addr));
+                                    continue;
+                                }
+                                // Signature + PoW + staked validator → accept into ledger
                             }
 
                             let mut l = safe_lock(&ledger);

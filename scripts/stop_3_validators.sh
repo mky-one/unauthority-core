@@ -8,7 +8,7 @@ echo ""
 STOPPED=0
 FAILED=0
 
-for i in 1 2 3; do
+for i in 1 2 3 4; do
     if [ -f node_data/validator-$i/pid.txt ]; then
         PID=$(cat node_data/validator-$i/pid.txt)
         if kill -0 $PID 2>/dev/null; then

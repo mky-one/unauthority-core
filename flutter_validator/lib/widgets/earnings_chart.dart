@@ -123,5 +123,8 @@ class _EarningsChartPainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => true;
+  bool shouldRepaint(covariant _EarningsChartPainter oldDelegate) =>
+      oldDelegate.dailyHistory != dailyHistory ||
+      oldDelegate.maxEarnings != maxEarnings ||
+      oldDelegate.minEarnings != minEarnings;
 }

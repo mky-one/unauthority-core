@@ -105,8 +105,7 @@ class WalletService {
         keypair.secretKey.fillRange(0, keypair.secretKey.length, 0);
 
         print('🔐 Dilithium5 wallet created (deterministic from seed)');
-        print('   Address: $address');
-        print('   PK: ${keypair.publicKey.length} bytes');
+        // NOTE: Do not log address or key sizes to console in production
       } finally {
         seed.fillRange(0, seed.length, 0);
       }
@@ -178,7 +177,7 @@ class WalletService {
         keypair.secretKey.fillRange(0, keypair.secretKey.length, 0);
 
         print('🔐 Dilithium5 wallet restored from mnemonic (deterministic)');
-        print('   Address: $address');
+        // NOTE: Do not log address to console in production
       } finally {
         seed.fillRange(0, seed.length, 0);
       }

@@ -1,4 +1,21 @@
 // Validator Earnings Model - Tracks gas fee revenue
+
+/// Type-safe int parser: handles int, double, String, null from JSON.
+int _parseIntField(dynamic v, [int fallback = 0]) {
+  if (v == null) return fallback;
+  if (v is int) return v;
+  if (v is double) return v.toInt();
+  return int.tryParse(v.toString()) ?? fallback;
+}
+
+/// Type-safe double parser.
+double _parseDoubleField(dynamic v, [double fallback = 0.0]) {
+  if (v == null) return fallback;
+  if (v is double) return v;
+  if (v is int) return v.toDouble();
+  return double.tryParse(v.toString()) ?? fallback;
+}
+
 class ValidatorEarnings {
   final String validatorAddress;
   final double totalEarningsUAT;
@@ -22,13 +39,16 @@ class ValidatorEarnings {
 
   factory ValidatorEarnings.fromJson(Map<String, dynamic> json) {
     return ValidatorEarnings(
-      validatorAddress: json['validator_address'] ?? '',
-      totalEarningsUAT: (json['total_earnings_uat'] ?? 0).toDouble(),
-      last24HoursUAT: (json['last_24h_uat'] ?? 0).toDouble(),
-      last7DaysUAT: (json['last_7d_uat'] ?? 0).toDouble(),
-      last30DaysUAT: (json['last_30d_uat'] ?? 0).toDouble(),
-      revenueSharePercentage: (json['revenue_share_percent'] ?? 0).toDouble(),
-      totalTransactionsProcessed: json['total_transactions_processed'] ?? 0,
+      validatorAddress: (json['validator_address'] ?? '').toString(),
+      // FIX C12-04: Type-safe numeric parsing for all fields
+      totalEarningsUAT: _parseDoubleField(json['total_earnings_uat']),
+      last24HoursUAT: _parseDoubleField(json['last_24h_uat']),
+      last7DaysUAT: _parseDoubleField(json['last_7d_uat']),
+      last30DaysUAT: _parseDoubleField(json['last_30d_uat']),
+      revenueSharePercentage: _parseDoubleField(json['revenue_share_percent']),
+      totalTransactionsProcessed: _parseIntField(
+        json['total_transactions_processed'],
+      ),
       dailyHistory:
           (json['daily_history'] as List<dynamic>?)
               ?.map((item) => DailyEarning.fromJson(item))
@@ -76,9 +96,11 @@ class DailyEarning {
 
   factory DailyEarning.fromJson(Map<String, dynamic> json) {
     return DailyEarning(
-      date: DateTime.tryParse(json['date'] ?? '') ?? DateTime.now(),
-      earningsUAT: (json['earnings_uat'] ?? 0).toDouble(),
-      transactionsProcessed: json['transactions_processed'] ?? 0,
+      date:
+          DateTime.tryParse((json['date'] ?? '').toString()) ?? DateTime.now(),
+      // FIX C12-04: Type-safe numeric parsing
+      earningsUAT: _parseDoubleField(json['earnings_uat']),
+      transactionsProcessed: _parseIntField(json['transactions_processed']),
     );
   }
 

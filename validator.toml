@@ -13,6 +13,7 @@ node_id = "validator-1"
 # Validator-1 → bootstrap_nodes[0]
 # Validator-2 → bootstrap_nodes[1]
 # Validator-3 → bootstrap_nodes[2]
+# Validator-4 → bootstrap_nodes[3]
 address = "${UAT_VALIDATOR_ADDRESS:-UAT3ea85825b3e13862274365118cafed2939fa8947}"
 
 # Private Key Path (stored securely in cold storage)
@@ -41,6 +42,7 @@ listen_addr = "0.0.0.0"
 # Validator-1 → 30333
 # Validator-2 → 30334
 # Validator-3 → 30335
+# Validator-4 → 30336
 listen_port = ${UAT_SENTRY_PORT:-30333}
 
 # Public IP/DNS that peers use to connect
@@ -69,6 +71,7 @@ listen_addr = "127.0.0.1"
 # Validator-1 → 30331
 # Validator-2 → 30332
 # Validator-3 → 30333
+# Validator-4 → 30334
 listen_port = ${UAT_SIGNER_PORT:-30331}
 
 # Must be VPN/encrypted tunnel (Noise Protocol Framework)
@@ -91,7 +94,8 @@ psk_file_path = "/etc/uat-validator/signer.psk"
 bootstrap_peers = [
   "/ip4/146.59.1.100/tcp/30333/p2p/12D3KooPXXjfDKCKvF5V7aWX1D8pVwVcfF3FRsCYB2gB1M2a2P",
   "/ip4/146.59.1.101/tcp/30333/p2p/12D3KooPYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYY",
-  "/ip4/146.59.1.102/tcp/30333/p2p/12D3KooPZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZ"
+  "/ip4/146.59.1.102/tcp/30333/p2p/12D3KooPZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZ",
+  "/ip4/146.59.1.103/tcp/30333/p2p/12D3KooPAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
 ]
 
 # P2P Protocol settings

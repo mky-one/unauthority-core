@@ -32,19 +32,22 @@ class _DashboardScreenState extends State<DashboardScreen> {
     try {
       final apiService = context.read<ApiService>();
 
-      final nodeInfo = await apiService.getNodeInfo();
-      final health = await apiService.getHealth();
-      final validators = await apiService.getValidators();
-      final blocks = await apiService.getRecentBlocks();
-      final peers = await apiService.getPeers();
+      // FIX C12-05: Parallelize independent API calls (critical over Tor)
+      final results = await Future.wait([
+        apiService.getNodeInfo(),
+        apiService.getHealth(),
+        apiService.getValidators(),
+        apiService.getRecentBlocks(),
+        apiService.getPeers(),
+      ]);
 
       if (!mounted) return;
       setState(() {
-        _nodeInfo = nodeInfo;
-        _health = health;
-        _validators = validators;
-        _recentBlocks = blocks;
-        _peers = peers;
+        _nodeInfo = results[0] as Map<String, dynamic>;
+        _health = results[1] as Map<String, dynamic>;
+        _validators = results[2] as List<ValidatorInfo>;
+        _recentBlocks = results[3] as List<BlockInfo>;
+        _peers = results[4] as List<String>;
         _error = null;
         _isLoading = false;
       });
@@ -152,7 +155,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                               Icon(
                                 Icons.favorite,
                                 size: 24,
-                                color: _health?['status'] == 'ok'
+                                color: _health?['status']?.toString() == 'ok'
                                     ? Colors.green
                                     : Colors.red,
                               ),
@@ -169,7 +172,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
                           const Divider(),
                           _buildInfoRow(
                             'Status',
-                            _health?['status']?.toUpperCase() ?? 'UNKNOWN',
+                            _health?['status']?.toString().toUpperCase() ??
+                                'UNKNOWN',
                           ),
                           _buildInfoRow(
                             'Uptime',

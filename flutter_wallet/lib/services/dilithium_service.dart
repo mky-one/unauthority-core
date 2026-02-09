@@ -225,6 +225,8 @@ class DilithiumService {
         secretKey: Uint8List.fromList(skPtr.asTypedList(_skBytes)),
       );
     } finally {
+      // FIX C12-06: Zero secret key memory before freeing
+      skPtr.asTypedList(_skBytes).fillRange(0, _skBytes, 0);
       calloc.free(pkPtr);
       calloc.free(skPtr);
     }
@@ -268,6 +270,8 @@ class DilithiumService {
     } finally {
       // Zero the seed memory before freeing
       seedPtr.asTypedList(seed.length).fillRange(0, seed.length, 0);
+      // FIX C12-06: Zero secret key memory before freeing
+      skPtr.asTypedList(_skBytes).fillRange(0, _skBytes, 0);
       calloc.free(seedPtr);
       calloc.free(pkPtr);
       calloc.free(skPtr);

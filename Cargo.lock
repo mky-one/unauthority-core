@@ -5240,10 +5240,12 @@ dependencies = [
  "log",
  "serde",
  "serde_json",
+ "sha3",
  "tokio",
  "tokio-socks",
  "uat-consensus",
  "uat-core",
+ "zeroize",
 ]
 
 [[package]]
@@ -5273,6 +5275,7 @@ dependencies = [
  "uat-network",
  "uat-vm",
  "warp",
+ "zeroize",
 ]
 
 [[package]]

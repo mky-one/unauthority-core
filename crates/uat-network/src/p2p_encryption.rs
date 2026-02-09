@@ -11,6 +11,7 @@
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use zeroize::Zeroize;
 
 use chacha20poly1305::{
     aead::{Aead, KeyInit},
@@ -29,12 +30,20 @@ pub enum NoisePattern {
 }
 
 /// Encryption key material
+/// FIX C12-04: Implements Drop to zeroize key material, preventing
+/// ChaCha20-Poly1305 session keys from persisting in freed memory.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CipherKey {
     pub key_id: u64,
     pub material: Vec<u8>, // 32 bytes for ChaCha20-Poly1305
     pub nonce_counter: u64,
     pub created_at_timestamp: u64,
+}
+
+impl Drop for CipherKey {
+    fn drop(&mut self) {
+        self.material.zeroize();
+    }
 }
 
 impl CipherKey {
@@ -348,18 +357,14 @@ impl SignerNode {
         if let Some(ref cipher) = session.send_key {
             mac_input.extend_from_slice(&cipher.material);
         }
-        // SHA-256 via std hashing (collision-resistant MAC)
-        use std::collections::hash_map::DefaultHasher;
-        use std::hash::{Hash, Hasher};
-        let mut h1 = DefaultHasher::new();
-        mac_input.hash(&mut h1);
-        let hash1 = h1.finish().to_le_bytes();
-        let mut h2 = DefaultHasher::new();
-        mac_input[..mac_input.len().min(64)].hash(&mut h2);
-        let hash2 = h2.finish().to_le_bytes();
-        let mut mac_tag = Vec::with_capacity(16);
-        mac_tag.extend_from_slice(&hash1);
-        mac_tag.extend_from_slice(&hash2);
+        // FIX C12-10: Use SHA3-256 for cryptographic MAC instead of DefaultHasher (SipHash).
+        // DefaultHasher is NOT cryptographic — an attacker who knows the construction
+        // can forge message authentication tags.
+        use sha3::{Digest, Sha3_256};
+        let mut hasher = Sha3_256::new();
+        hasher.update(&mac_input);
+        let hash_out = hasher.finalize();
+        let mac_tag = hash_out[..16].to_vec(); // 128-bit MAC tag
 
         Ok(EncryptedMessage {
             session_id: tunnel.clone(),

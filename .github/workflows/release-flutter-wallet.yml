@@ -388,5 +388,6 @@ jobs:
             artifacts/wallet-macos/*.dmg
             artifacts/wallet-linux/*.tar.gz
             artifacts/wallet-windows/*.zip
+          overwrite_files: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -44,13 +44,10 @@ class ApiService {
 
     // Configure SOCKS5 proxy for .onion domains using socks5_proxy package
     // Tor Browser uses port 9150, tor daemon uses 9050
-    SocksTCPClient.assignToHttpClient(
-      httpClient,
-      [
-        ProxySettings(InternetAddress.loopbackIPv4, 9150), // Tor Browser
-        ProxySettings(InternetAddress.loopbackIPv4, 9050), // Fallback: tor daemon
-      ],
-    );
+    SocksTCPClient.assignToHttpClient(httpClient, [
+      ProxySettings(InternetAddress.loopbackIPv4, 9150), // Tor Browser
+      ProxySettings(InternetAddress.loopbackIPv4, 9050), // Fallback: tor daemon
+    ]);
 
     // Longer timeout for Tor connections
     httpClient.connectionTimeout = Duration(seconds: 30);
@@ -67,7 +64,8 @@ class ApiService {
         ? testnetOnionUrl
         : mainnetOnionUrl;
     print(
-        '🔄 Switched to ${newEnv == NetworkEnvironment.testnet ? "TESTNET" : "MAINNET"}: $baseUrl');
+      '🔄 Switched to ${newEnv == NetworkEnvironment.testnet ? "TESTNET" : "MAINNET"}: $baseUrl',
+    );
   }
 
   // Node Info
@@ -101,8 +99,9 @@ class ApiService {
   // Get Balance
   Future<Account> getBalance(String address) async {
     try {
-      final response =
-          await _client.get(Uri.parse('$baseUrl/balance/$address'));
+      final response = await _client.get(
+        Uri.parse('$baseUrl/balance/$address'),
+      );
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
         return Account(
@@ -122,8 +121,9 @@ class ApiService {
   // Get Account (with history)
   Future<Account> getAccount(String address) async {
     try {
-      final response =
-          await _client.get(Uri.parse('$baseUrl/account/$address'));
+      final response = await _client.get(
+        Uri.parse('$baseUrl/account/$address'),
+      );
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
         return Account.fromJson(data);
@@ -168,11 +168,7 @@ class ApiService {
       final response = await _client.post(
         Uri.parse('$baseUrl/send'),
         headers: {'Content-Type': 'application/json'},
-        body: json.encode({
-          'from': from,
-          'target': to,
-          'amount': amount,
-        }),
+        body: json.encode({'from': from, 'target': to, 'amount': amount}),
       );
 
       final data = json.decode(response.body);
@@ -223,11 +219,16 @@ class ApiService {
   }
 
   // Get Validators
+  // FIX C-01: Backend wraps in {"validators": [...]}, not bare array
   Future<List<ValidatorInfo>> getValidators() async {
     try {
       final response = await _client.get(Uri.parse('$baseUrl/validators'));
       if (response.statusCode == 200) {
-        final List<dynamic> data = json.decode(response.body);
+        final decoded = json.decode(response.body);
+        // Handle both {"validators": [...]} (backend) and bare [...] (future)
+        final List<dynamic> data = decoded is List
+            ? decoded
+            : (decoded['validators'] as List<dynamic>?) ?? [];
         return data.map((v) => ValidatorInfo.fromJson(v)).toList();
       }
       throw Exception('Failed to get validators: ${response.statusCode}');

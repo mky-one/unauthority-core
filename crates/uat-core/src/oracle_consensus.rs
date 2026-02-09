@@ -97,7 +97,7 @@ impl OracleConsensus {
 
         let timestamp = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
+            .unwrap_or_default()
             .as_secs();
 
         let submission = PriceSubmission {
@@ -123,7 +123,7 @@ impl OracleConsensus {
     pub fn get_consensus_price(&self) -> Option<(f64, f64)> {
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
+            .unwrap_or_default()
             .as_secs();
 
         // Filter recent submissions (within window)
@@ -212,7 +212,7 @@ impl OracleConsensus {
 
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
+            .unwrap_or_default()
             .as_secs();
 
         for (validator, submission) in &self.submissions {
@@ -247,7 +247,7 @@ impl OracleConsensus {
     pub fn cleanup_old(&mut self) {
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
+            .unwrap_or_default()
             .as_secs();
 
         let cutoff = now - (self.submission_window_secs * 2);
@@ -265,7 +265,7 @@ impl OracleConsensus {
     pub fn submission_count(&self) -> usize {
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
+            .unwrap_or_default()
             .as_secs();
 
         self.submissions
@@ -278,7 +278,7 @@ impl OracleConsensus {
     pub fn get_recent_submissions(&self) -> Vec<PriceSubmission> {
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
+            .unwrap_or_default()
             .as_secs();
 
         self.submissions

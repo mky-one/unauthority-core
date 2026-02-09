@@ -4,6 +4,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard};
 use tokio::io::{self, AsyncBufReadExt, BufReader};
 use tokio::sync::mpsc;
+use uat_consensus::abft::ABFTConsensus; // aBFT engine for consensus stats & safety validation
 use uat_consensus::checkpoint::{CheckpointManager, FinalityCheckpoint, CHECKPOINT_INTERVAL}; // Finality checkpoints
 use uat_consensus::slashing::SlashingManager; // Slashing enforcement
 use uat_consensus::voting::calculate_voting_power; // Quadratic voting: Power = √Stake
@@ -237,6 +238,30 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
     let send_limiter = Arc::new(EndpointRateLimiter::new(10, 60)); // /send: 10 tx per 60 seconds
     let burn_limiter = Arc::new(EndpointRateLimiter::new(1, 300)); // /burn: 1 per 5 minutes
     let faucet_limiter = Arc::new(EndpointRateLimiter::new(1, 3600)); // /faucet: 1 per hour
+
+    // aBFT Consensus Engine — tracks consensus parameters and safety invariants
+    let validator_count = {
+        let l = safe_lock(&ledger);
+        l.accounts
+            .iter()
+            .filter(|(_, a)| a.balance >= MIN_VALIDATOR_STAKE_VOID)
+            .count()
+            .max(4)
+    };
+    let abft_consensus = Arc::new(Mutex::new(ABFTConsensus::new(
+        my_address.clone(),
+        validator_count,
+    )));
+    {
+        let abft = safe_lock(&abft_consensus);
+        println!(
+            "🔗 aBFT Consensus: n={}, f={}, quorum={}, safety={}",
+            abft.total_validators,
+            abft.f_max_faulty,
+            abft.get_statistics().quorum_threshold,
+            abft.is_byzantine_safe(0)
+        );
+    }
 
     // 1. GET /bal/:address
     let l_bal = ledger.clone();
@@ -1242,7 +1267,8 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
                     "whoami": "GET /whoami - Node's signing address",
                     "faucet": "POST /faucet {address} - Claim testnet tokens (Functional/Consensus testnet)",
                     "send": "POST /send {from, target, amount} - Send transaction",
-                    "burn": "POST /burn {chain, tx_hash} - Proof-of-burn mint"
+                    "burn": "POST /burn {chain, tx_hash} - Proof-of-burn mint",
+                    "consensus": "GET /consensus - aBFT consensus parameters and safety status"
                 },
                 "docs": "https://github.com/unauthoritymky-6236/unauthority-core",
                 "status": "operational"
@@ -1557,6 +1583,48 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
             },
         );
 
+    // 27. GET /consensus (aBFT consensus parameters and safety status)
+    let abft_consensus_route = abft_consensus.clone();
+    let l_consensus = ledger.clone();
+    let consensus_route = warp::path("consensus")
+        .and(with_state((abft_consensus_route, l_consensus)))
+        .map(
+            |(abft, l): (Arc<Mutex<ABFTConsensus>>, Arc<Mutex<Ledger>>)| {
+                let abft_guard = safe_lock(&abft);
+                let l_guard = safe_lock(&l);
+                let stats = abft_guard.get_statistics();
+                let active_validators = l_guard
+                    .accounts
+                    .iter()
+                    .filter(|(_, a)| a.balance >= MIN_VALIDATOR_STAKE_VOID)
+                    .count();
+
+                warp::reply::json(&serde_json::json!({
+                    "protocol": "aBFT (Weighted Confirmation)",
+                    "safety": {
+                        "byzantine_safe": abft_guard.is_byzantine_safe(0),
+                        "total_validators": stats.total_validators,
+                        "active_validators": active_validators,
+                        "max_faulty": stats.max_faulty_validators,
+                        "quorum_threshold": stats.quorum_threshold,
+                        "formula": "f < n/3, quorum = 2f+1"
+                    },
+                    "confirmation": {
+                        "send_threshold": SEND_CONSENSUS_THRESHOLD,
+                        "burn_threshold": BURN_CONSENSUS_THRESHOLD,
+                        "voting_model": "quadratic (sqrt(stake) * 1000)",
+                        "signature_scheme": "Dilithium5 (post-quantum)"
+                    },
+                    "finality": {
+                        "target_ms": 3000,
+                        "blocks_finalized": stats.blocks_finalized,
+                        "current_view": stats.current_view,
+                        "current_sequence": stats.current_sequence
+                    }
+                }))
+            },
+        );
+
     // Combine all routes with rate limiting
     // NOTE: Each route is .boxed() to prevent warp type recursion overflow (E0275)
     // when compiling in release mode. This breaks the deeply nested type chain.
@@ -1594,6 +1662,7 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
         .or(tx_by_hash_route.boxed())
         .or(search_route.boxed())
         .or(sync_route.boxed())
+        .or(consensus_route.boxed())
         .boxed();
 
     let routes = group1

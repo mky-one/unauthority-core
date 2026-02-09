@@ -25,11 +25,10 @@ class _SendScreenState extends State<SendScreen> {
 
     try {
       final walletService = context.read<WalletService>();
+      final apiService = context.read<ApiService>();
       final wallet = await walletService.getCurrentWallet();
 
       if (wallet == null) throw Exception('No wallet found');
-
-      final apiService = context.read<ApiService>();
 
       // FIX C11-01: Backend expects UAT integer in `amount` field and does
       // × VOID_PER_UAT server-side. Sending VOID here would cause 10^11×

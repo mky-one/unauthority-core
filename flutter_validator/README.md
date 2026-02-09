@@ -24,6 +24,10 @@ Pre-built releases for macOS, Windows, and Linux:
 | Windows | `UAT-Validator-*-windows-x64.zip` |
 | Linux | `UAT-Validator-*-linux-x64.tar.gz` |
 
+> **macOS:** Apple blocks unsigned apps. After install, run:
+> `xattr -cr /Applications/flutter_validator.app`
+> Or: System Settings → Privacy & Security → Open Anyway
+
 ## Build from Source
 
 ### Prerequisites

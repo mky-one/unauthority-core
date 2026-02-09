@@ -33,6 +33,13 @@ Pre-built desktop apps for all platforms. No Tor Browser or command-line needed.
 
 Both apps include **built-in Tor** connectivity and **CRYSTALS-Dilithium5** post-quantum cryptography. No external dependencies required.
 
+> **macOS users:** Apple will block the app on first launch ("cannot verify"). Fix:
+> ```bash
+> xattr -cr /Applications/UAT\ Wallet.app
+> xattr -cr /Applications/flutter_validator.app
+> ```
+> Or: **System Settings → Privacy & Security → Open Anyway**
+
 ---
 
 ## What is Unauthority?

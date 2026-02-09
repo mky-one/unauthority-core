@@ -193,7 +193,7 @@ impl Mempool {
         let expired: Vec<String> = self
             .transactions
             .iter()
-            .filter(|(_, tx)| now - tx.received_at > TX_EXPIRATION_SECS)
+            .filter(|(_, tx)| now.saturating_sub(tx.received_at) > TX_EXPIRATION_SECS)
             .map(|(hash, _)| hash.clone())
             .collect();
 

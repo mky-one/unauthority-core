@@ -38,22 +38,27 @@ class ApiService {
     print('🔗 UAT ApiService initialized with baseUrl: $baseUrl');
   }
 
-  // Create HTTP client with Tor SOCKS proxy support
+  // Create HTTP client with Tor SOCKS proxy support (only for .onion)
   http.Client _createHttpClient() {
     final httpClient = HttpClient();
 
-    // Configure SOCKS5 proxy for .onion domains using socks5_proxy package
-    // Tor Browser uses port 9150, tor daemon uses 9050
-    SocksTCPClient.assignToHttpClient(httpClient, [
-      ProxySettings(InternetAddress.loopbackIPv4, 9150), // Tor Browser
-      ProxySettings(InternetAddress.loopbackIPv4, 9050), // Fallback: tor daemon
-    ]);
+    // Only configure SOCKS5 proxy for .onion domains
+    if (baseUrl.contains('.onion')) {
+      SocksTCPClient.assignToHttpClient(httpClient, [
+        ProxySettings(InternetAddress.loopbackIPv4, 9150), // Tor Browser
+        ProxySettings(InternetAddress.loopbackIPv4, 9050), // Fallback: tor daemon
+      ]);
 
-    // Longer timeout for Tor connections
-    httpClient.connectionTimeout = Duration(seconds: 30);
-    httpClient.idleTimeout = Duration(seconds: 30);
+      // Longer timeout for Tor connections
+      httpClient.connectionTimeout = Duration(seconds: 30);
+      httpClient.idleTimeout = Duration(seconds: 30);
 
-    print('✅ Tor SOCKS5 proxy configured (localhost:9150/9050)');
+      print('✅ Tor SOCKS5 proxy configured (localhost:9150/9050)');
+    } else {
+      httpClient.connectionTimeout = Duration(seconds: 10);
+      print('✅ Direct HTTP client (no Tor proxy for $baseUrl)');
+    }
+
     return IOClient(httpClient);
   }
 
@@ -63,6 +68,8 @@ class ApiService {
     baseUrl = newEnv == NetworkEnvironment.testnet
         ? testnetOnionUrl
         : mainnetOnionUrl;
+    // Recreate HTTP client so proxy settings match new baseUrl
+    _client = _createHttpClient();
     print(
       '🔄 Switched to ${newEnv == NetworkEnvironment.testnet ? "TESTNET" : "MAINNET"}: $baseUrl',
     );

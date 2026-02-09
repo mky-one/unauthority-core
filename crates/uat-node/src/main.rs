@@ -190,23 +190,44 @@ fn with_state<T: Clone + Send>(
     warp::any().map(move || state.clone())
 }
 
+/// Bundles all dependencies for the REST API server,
+/// avoiding the `clippy::too_many_arguments` warning.
 #[allow(clippy::type_complexity)]
-pub async fn start_api_server(
-    ledger: Arc<Mutex<Ledger>>,
-    tx_out: mpsc::Sender<String>,
-    pending_sends: Arc<Mutex<HashMap<String, (Block, u128)>>>,
-    pending_burns: Arc<Mutex<HashMap<String, (f64, f64, String, u128, u64, String)>>>,
-    address_book: Arc<Mutex<HashMap<String, String>>>,
-    my_address: String,
-    secret_key: Vec<u8>,
-    api_port: u16,
-    oracle_consensus: Arc<Mutex<OracleConsensus>>,
-    metrics: Arc<UatMetrics>,
-    database: Arc<UatDatabase>,
-    slashing_manager: Arc<Mutex<SlashingManager>>,
-    anti_whale: Arc<Mutex<AntiWhaleEngine>>,
-    node_public_key: Vec<u8>,
-) {
+pub struct ApiServerConfig {
+    pub ledger: Arc<Mutex<Ledger>>,
+    pub tx_out: mpsc::Sender<String>,
+    pub pending_sends: Arc<Mutex<HashMap<String, (Block, u128)>>>,
+    pub pending_burns: Arc<Mutex<HashMap<String, (f64, f64, String, u128, u64, String)>>>,
+    pub address_book: Arc<Mutex<HashMap<String, String>>>,
+    pub my_address: String,
+    pub secret_key: Vec<u8>,
+    pub api_port: u16,
+    pub oracle_consensus: Arc<Mutex<OracleConsensus>>,
+    pub metrics: Arc<UatMetrics>,
+    pub database: Arc<UatDatabase>,
+    pub slashing_manager: Arc<Mutex<SlashingManager>>,
+    pub anti_whale: Arc<Mutex<AntiWhaleEngine>>,
+    pub node_public_key: Vec<u8>,
+}
+
+#[allow(clippy::type_complexity)]
+pub async fn start_api_server(cfg: ApiServerConfig) {
+    let ApiServerConfig {
+        ledger,
+        tx_out,
+        pending_sends,
+        pending_burns,
+        address_book,
+        my_address,
+        secret_key,
+        api_port,
+        oracle_consensus,
+        metrics,
+        database,
+        slashing_manager,
+        anti_whale,
+        node_public_key,
+    } = cfg;
     // Rate Limiter: 100 req/sec per IP, burst 200
     let limiter = RateLimiter::new(100, Some(200));
     let rate_limit_filter = rate_limit(limiter.clone());
@@ -2353,13 +2374,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 }
                             }
                             if loaded_count > 0 {
-                                ledger_state.distribution.remaining_supply = ledger_state
-                                    .distribution
-                                    .remaining_supply
-                                    .saturating_sub(genesis_supply_deducted);
+                                // NOTE: remaining_supply starts at PUBLIC_SUPPLY_CAP (20,400,700 UAT)
+                                // which already EXCLUDES the dev allocation (7%). Dev wallets are
+                                // a separate pre-genesis allocation, NOT minted from the PoB pool.
+                                // Do NOT deduct genesis wallets from remaining_supply.
                                 save_to_disk_internal(&ledger_state, &database, true);
                                 println!(
-                                    "🏦 MAINNET genesis: loaded {} accounts (deducted {} VOID)",
+                                    "🏦 MAINNET genesis: loaded {} accounts ({} VOID pre-allocated)",
                                     loaded_count, genesis_supply_deducted
                                 );
                             }
@@ -2410,13 +2431,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             }
 
                             if loaded_count > 0 {
-                                ledger_state.distribution.remaining_supply = ledger_state
-                                    .distribution
-                                    .remaining_supply
-                                    .saturating_sub(genesis_supply_deducted);
+                                // NOTE: remaining_supply = PUBLIC_SUPPLY_CAP already excludes
+                                // dev allocation. Genesis wallets are pre-allocated, not PoB-minted.
                                 save_to_disk_internal(&ledger_state, &database, true);
                                 println!(
-                                    "🎁 Testnet genesis: loaded {} accounts (deducted {} VOID)",
+                                    "🎁 Testnet genesis: loaded {} accounts ({} VOID pre-allocated)",
                                     loaded_count, genesis_supply_deducted
                                 );
                             }
@@ -2752,22 +2771,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let api_pk = keys.public_key.clone();
 
     tokio::spawn(async move {
-        start_api_server(
-            api_ledger,
-            api_tx,
-            api_pending_sends,
-            api_pending_burns,
-            api_address_book,
-            api_addr,
-            api_key,
+        start_api_server(ApiServerConfig {
+            ledger: api_ledger,
+            tx_out: api_tx,
+            pending_sends: api_pending_sends,
+            pending_burns: api_pending_burns,
+            address_book: api_address_book,
+            my_address: api_addr,
+            secret_key: api_key,
             api_port,
-            api_oracle,
-            api_metrics,
-            api_database,
-            api_slashing,
-            api_aw,
-            api_pk,
-        )
+            oracle_consensus: api_oracle,
+            metrics: api_metrics,
+            database: api_database,
+            slashing_manager: api_slashing,
+            anti_whale: api_aw,
+            node_public_key: api_pk,
+        })
         .await;
     });
 

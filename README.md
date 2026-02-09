@@ -19,9 +19,9 @@ Pre-built desktop apps for all platforms. No Tor Browser or command-line needed.
 
 | Platform | Download | Install |
 |----------|----------|---------|
-| macOS | [UAT-Wallet-macos.dmg](https://github.com/unauthoritymky-6236/unauthority-core/releases/tag/v1.0.0-testnet) | Open DMG → drag to Applications |
-| Windows | [UAT-Wallet-windows-x64.zip](https://github.com/unauthoritymky-6236/unauthority-core/releases/tag/v1.0.0-testnet) | Extract → run `flutter_wallet.exe` |
-| Linux | [UAT-Wallet-linux-x64.tar.gz](https://github.com/unauthoritymky-6236/unauthority-core/releases/tag/v1.0.0-testnet) | Extract → run `./run.sh` |
+| macOS | [UAT-Wallet-macos.dmg](https://github.com/unauthoritymky-6236/unauthority-core/releases/tag/wallet-v1.0.0-testnet) | Open DMG → drag to Applications |
+| Windows | [UAT-Wallet-windows-x64.zip](https://github.com/unauthoritymky-6236/unauthority-core/releases/tag/wallet-v1.0.0-testnet) | Extract → run `flutter_wallet.exe` |
+| Linux | [UAT-Wallet-linux-x64.tar.gz](https://github.com/unauthoritymky-6236/unauthority-core/releases/tag/wallet-v1.0.0-testnet) | Extract → run `./run.sh` |
 
 ### UAT Validator Dashboard (monitor node, manage keys)
 
@@ -67,7 +67,7 @@ Unauthority is a Layer-1 blockchain built from scratch in Rust. It is designed t
 1. Download the **UAT Wallet** from the table above
 2. Install and open
 3. Click **"Create New Wallet"** — save your 24-word seed phrase securely
-4. Go to **Faucet** tab → click **"Request 100 UAT"** (testnet only)
+4. Go to **Faucet** tab → click **"Request UAT"** (5,000 UAT per claim, testnet only)
 5. Go to **Send** tab → enter a recipient address and amount → send
 
 The wallet connects to the testnet automatically via Tor.
@@ -124,7 +124,7 @@ Every UAT node exposes these endpoints. Default port: `3030`.
 | `/consensus` | GET | aBFT consensus parameters and safety status |
 | `/slashing` | GET | Network slashing statistics |
 | `/slashing/{address}` | GET | Slashing profile for a validator |
-| `/faucet` | POST | Claim testnet tokens (100 UAT, 1hr cooldown) |
+| `/faucet` | POST | Claim testnet tokens (5,000 UAT, 1hr cooldown) |
 | `/send` | POST | Submit signed transaction |
 | `/burn` | POST | Submit Proof-of-Burn mint |
 | `/deploy-contract` | POST | Deploy WASM smart contract |

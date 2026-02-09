@@ -18,7 +18,7 @@ Desktop wallet for the **Unauthority (UAT)** blockchain. Send, receive, and burn
 
 Pre-built releases for macOS, Windows, and Linux:
 
-**[Download from GitHub Releases](https://github.com/unauthoritymky-6236/unauthority-core/releases/tag/v1.0.0-testnet)**
+**[Download from GitHub Releases](https://github.com/unauthoritymky-6236/unauthority-core/releases/tag/wallet-v1.0.0-testnet)**
 
 | Platform | File |
 |----------|------|

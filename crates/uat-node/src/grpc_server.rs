@@ -325,10 +325,13 @@ impl UatNode for UatGrpcService {
             network_id: uat_core::CHAIN_ID as u32, // CHAIN_ID: 1=mainnet, 2=testnet
             chain_name: "Unauthority".to_string(),
             version: "0.1.0".to_string(),
-            // u128 total supply overflows u64 — set legacy field to 0, use string fields
-            total_supply_void: 0,
-            remaining_supply_void: 0,
-            total_burned_usd: ledger.distribution.total_burned_usd as u64,
+            // FIX C11-M4: Use .min() saturation instead of hard-coding 0
+            // u128 total supply overflows u64 — cap at u64::MAX for legacy field
+            total_supply_void: (21_936_236u128 * uat_core::VOID_PER_UAT).min(u64::MAX as u128)
+                as u64,
+            remaining_supply_void: (ledger.distribution.remaining_supply).min(u64::MAX as u128)
+                as u64,
+            total_burned_usd: (ledger.distribution.total_burned_usd).min(u64::MAX as u128) as u64,
             eth_price_usd: eth_price,
             btc_price_usd: btc_price,
             peer_count: 0, // TODO: Get from P2P layer
@@ -370,7 +373,8 @@ impl UatNode for UatGrpcService {
 
                 ValidatorInfo {
                     address: addr.clone(),
-                    stake_void: acc.balance as u64,
+                    // FIX C11-C3: .min() guard prevents wrapping on balances > u64::MAX
+                    stake_void: acc.balance.min(u64::MAX as u128) as u64,
                     is_active: true, // TODO: Check uptime
                     voting_power,
                     rewards_earned: 0,     // TODO: Track from gas fees

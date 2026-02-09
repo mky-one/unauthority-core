@@ -13,6 +13,17 @@ import 'wallet_service.dart';
 ///
 /// This enables fully sovereign transactions — the node only verifies,
 /// it never touches the user's secret key.
+///
+/// ⚠️  KNOWN PROTOCOL ISSUE (C11-07):
+/// The backend's POST /send handler overwrites two signing_hash fields
+/// after block construction:
+///   1. `fee` — set by anti-whale engine (client signs with fee=0)
+///   2. `timestamp` — always uses server's SystemTime::now()
+/// As a result, the client's signing_hash will never match the backend's
+/// until the backend's SendRequest accepts `timestamp` and either a
+/// `fee` field or a fee-estimation endpoint is available.
+/// Client-signed blocks currently fail verification on the backend.
+/// Use L1 testnet mode (node signs) until this protocol gap is resolved.
 class BlockConstructionService {
   final ApiService _api;
   final WalletService _wallet;

@@ -2,6 +2,14 @@ import 'package:flutter/material.dart';
 import 'dart:math' as math;
 import '../constants/blockchain.dart';
 
+/// Type-safe int parser: handles int, double, String, null from JSON.
+int _parseIntField(dynamic v, [int fallback = 0]) {
+  if (v == null) return fallback;
+  if (v is int) return v;
+  if (v is double) return v.toInt();
+  return int.tryParse(v.toString()) ?? fallback;
+}
+
 class Account {
   final String address;
   final int balance; // In VOID (smallest unit)
@@ -76,12 +84,13 @@ class Transaction {
 
   factory Transaction.fromJson(Map<String, dynamic> json) {
     return Transaction(
-      txid: json['txid'] ?? '',
-      from: json['from'] ?? '',
-      to: json['to'] ?? '',
-      amount: json['amount'] ?? 0,
-      timestamp: json['timestamp'] ?? 0,
-      type: json['type'] ?? 'transfer',
+      txid: (json['txid'] ?? json['hash'] ?? '').toString(),
+      from: (json['from'] ?? '').toString(),
+      to: (json['to'] ?? json['target'] ?? '').toString(),
+      // FIX C11-03: Type-safe int parsing for amount & timestamp
+      amount: _parseIntField(json['amount']),
+      timestamp: _parseIntField(json['timestamp']),
+      type: (json['type'] ?? 'transfer').toString(),
     );
   }
 
@@ -104,11 +113,12 @@ class BlockInfo {
 
   factory BlockInfo.fromJson(Map<String, dynamic> json) {
     return BlockInfo(
-      height: json['height'] ?? 0,
-      hash: json['hash'] ?? '',
-      timestamp: json['timestamp'] ?? 0,
+      // FIX C11-05: Type-safe int parsing
+      height: _parseIntField(json['height']),
+      hash: (json['hash'] ?? '').toString(),
+      timestamp: _parseIntField(json['timestamp']),
       // Backend sends "transactions_count"; also accept legacy "tx_count"
-      txCount: json['transactions_count'] ?? json['tx_count'] ?? 0,
+      txCount: _parseIntField(json['transactions_count'] ?? json['tx_count']),
     );
   }
 }
@@ -131,14 +141,26 @@ class ValidatorInfo {
   });
 
   factory ValidatorInfo.fromJson(Map<String, dynamic> json) {
+    // FIX C11-04: Type-safe int/double parsing for all numeric fields
     return ValidatorInfo(
-      address: json['address'] ?? '',
-      stake: json['stake'] ?? 0,
-      isActive: json['is_active'] ?? false,
-      uptimePercentage: (json['uptime_percentage'] ?? 99.5).toDouble(),
-      totalSlashed: json['total_slashed'] ?? 0,
-      status: json['status'] ?? 'active',
+      address: (json['address'] ?? '').toString(),
+      stake: _parseIntField(json['stake']),
+      isActive:
+          json['is_active'] == true ||
+          json['is_active'] == 1 ||
+          (json['status'] ?? '').toString().toLowerCase() == 'active',
+      uptimePercentage: _parseDouble(json['uptime_percentage'], 99.5),
+      totalSlashed: _parseIntField(json['total_slashed']),
+      status: (json['status'] ?? 'active').toString(),
     );
+  }
+
+  /// Type-safe double parser.
+  static double _parseDouble(dynamic v, [double fallback = 0.0]) {
+    if (v == null) return fallback;
+    if (v is double) return v;
+    if (v is int) return v.toDouble();
+    return double.tryParse(v.toString()) ?? fallback;
   }
 
   /// Backend already sends stake as integer UAT (balance / VOID_PER_UAT).

@@ -177,7 +177,8 @@ impl WasmEngine {
         // 4. Execute in a separate thread with timeout
         let (result_tx, result_rx) = std::sync::mpsc::channel();
 
-        let handle = std::thread::spawn(move || {
+        // FIX C11-H5: Thread intentionally not joined on timeout (detached leak)
+        let _handle = std::thread::spawn(move || {
             let start = std::time::Instant::now();
 
             // Check abort flag before each expensive phase
@@ -270,8 +271,11 @@ impl WasmEngine {
                 // SECURITY: Set abort flag so the thread exits at its next checkpoint
                 // instead of continuing to process and sending stale results.
                 abort_flag.store(true, std::sync::atomic::Ordering::Relaxed);
-                // Wait briefly for thread cleanup, then detach
-                let _ = handle.join(); // blocks at most until current WASM call completes
+                // FIX C11-H5: Do NOT join — if WASM entered an infinite loop inside
+                // func.call(), the thread is permanently stuck and join() would block
+                // the calling thread forever. Let the thread leak (bounded damage).
+                // Thread will be cleaned up on process exit.
+                // TODO: Integrate wasmer_middlewares::Metering for instruction-level gas limits.
                 Err(format!(
                     "WASM execution timeout: exceeded {} second limit",
                     MAX_EXECUTION_SECS

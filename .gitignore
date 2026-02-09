@@ -9,6 +9,7 @@
 # Genesis configuration (contains private keys!)
 genesis/genesis_config.json
 genesis_config.json
+testnet-genesis/genesis_config.json
 genesis_backup*.json
 
 # Private keys & wallets

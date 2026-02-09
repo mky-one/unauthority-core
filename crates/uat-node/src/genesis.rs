@@ -234,6 +234,61 @@ pub fn validate_genesis(config: &GenesisConfig) -> Result<(), String> {
         }
     }
 
+    // FIX C11-04: Validate dev_supply_void if present
+    if let Some(dsv) = config.dev_supply_void {
+        let expected_dev = 1_535_536u128 * VOID_PER_UAT;
+        if dsv != expected_dev {
+            return Err(format!(
+                "Invalid dev_supply_void: {} (expected {})",
+                dsv, expected_dev
+            ));
+        }
+    }
+
+    // FIX C11-04: Validate bootstrap_nodes count matches expected (4)
+    if let Some(ref nodes) = config.bootstrap_nodes {
+        if nodes.len() != 4 {
+            return Err(format!(
+                "Invalid bootstrap_nodes count: {} (expected 4)",
+                nodes.len()
+            ));
+        }
+        // Validate each bootstrap node has sufficient stake
+        let min_stake = uat_core::MIN_VALIDATOR_STAKE_VOID;
+        for node in nodes {
+            if let Some(sv) = node.stake_void {
+                if sv < min_stake {
+                    return Err(format!(
+                        "Bootstrap node {} stake {} < minimum {}",
+                        node.address, sv, min_stake
+                    ));
+                }
+            }
+        }
+    }
+
+    // FIX C11-14: Validate aggregate balance doesn't exceed total supply
+    if let Some(tsv) = config.total_supply_void {
+        let mut total_balance: u128 = 0;
+        let all_wallets_for_sum = config
+            .bootstrap_nodes
+            .iter()
+            .flatten()
+            .chain(config.dev_accounts.iter().flatten())
+            .chain(config.wallets.iter().flatten());
+        for wallet in all_wallets_for_sum {
+            if let Ok(balance) = resolve_wallet_balance(wallet) {
+                total_balance = total_balance.saturating_add(balance);
+            }
+        }
+        if total_balance > tsv {
+            return Err(format!(
+                "Aggregate wallet balance {} exceeds total_supply_void {}",
+                total_balance, tsv
+            ));
+        }
+    }
+
     Ok(())
 }
 
@@ -258,22 +313,28 @@ mod tests {
     }
 
     fn make_generator_config(network_id: u64, total_supply_void: u128) -> GenesisConfig {
+        let make_node = |suffix: &str| GenesisWallet {
+            address: format!("UATtest{}", suffix),
+            stake_void: Some(100_000_000_000_000), // 1000 UAT
+            balance_void: None,
+            balance_uat: None,
+            wallet_type: None,
+            seed_phrase: None,
+            public_key: None,
+            private_key: None,
+        };
         GenesisConfig {
             network_id: Some(network_id),
             genesis_timestamp: Some(1770580908),
             total_supply_void: Some(total_supply_void),
             chain_name: Some("Unauthority".to_string()),
             dev_supply_void: Some(153_553_600_000_000_000),
-            bootstrap_nodes: Some(vec![GenesisWallet {
-                address: "UATtest123".to_string(),
-                stake_void: Some(100_000_000_000_000),
-                balance_void: None,
-                balance_uat: None,
-                wallet_type: None,
-                seed_phrase: None,
-                public_key: None,
-                private_key: None,
-            }]),
+            bootstrap_nodes: Some(vec![
+                make_node("1234567890"),
+                make_node("2345678901"),
+                make_node("3456789012"),
+                make_node("4567890123"),
+            ]),
             dev_accounts: Some(vec![]),
             network: None,
             total_supply: None,
@@ -346,8 +407,8 @@ mod tests {
     fn test_load_generator_format() {
         let config = make_generator_config(2, 2_193_623_600_000_000_000);
         let accounts = load_genesis_from_config(&config).unwrap();
-        assert_eq!(accounts.len(), 1);
-        let acc = accounts.get("UATtest123").unwrap();
+        assert_eq!(accounts.len(), 4);
+        let acc = accounts.get("UATtest1234567890").unwrap();
         assert_eq!(acc.balance, 100_000_000_000_000);
     }
 

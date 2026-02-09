@@ -372,7 +372,7 @@ impl VotingSystem {
         };
 
         let improvement_bps = if whale_concentration_bps > 0 {
-            ((whale_concentration_bps as u64 - distributed_concentration_bps as u64) * 10_000
+            ((whale_concentration_bps as u64).saturating_sub(distributed_concentration_bps as u64) * 10_000
                 / whale_concentration_bps as u64) as u32
         } else {
             0

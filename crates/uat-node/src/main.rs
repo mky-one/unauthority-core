@@ -691,7 +691,7 @@ pub async fn start_api_server(
                     // Deploy to UVM (permissionless)
                     let block_number = std::time::SystemTime::now()
                         .duration_since(std::time::UNIX_EPOCH)
-                        .unwrap()
+                        .unwrap_or_default()
                         .as_secs();
 
                     match engine.deploy_contract(
@@ -1946,7 +1946,7 @@ fn save_to_disk_legacy(ledger: &Ledger) {
         let _ = fs::create_dir_all("backups");
         let ts = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
+            .unwrap_or_default()
             .as_secs();
         let backup_path = format!("backups/ledger_{}.json", ts % 100);
         let _ = fs::write(backup_path, data);
@@ -2545,7 +2545,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         "TESTNET:INITIAL:{}",
                         std::time::SystemTime::now()
                             .duration_since(std::time::UNIX_EPOCH)
-                            .unwrap()
+                            .unwrap_or_default()
                             .as_secs()
                     ),
                     signature: "".to_string(),
@@ -2553,7 +2553,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     work: 0,
                     timestamp: std::time::SystemTime::now()
                         .duration_since(std::time::UNIX_EPOCH)
-                        .unwrap()
+                        .unwrap_or_default()
                         .as_secs(),
                     fee: 0,
                 };

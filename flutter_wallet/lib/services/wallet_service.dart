@@ -296,4 +296,12 @@ class WalletService {
         addressBytes.map((b) => b.toRadixString(16).padLeft(2, '0')).join('');
     return 'UAT$hexAddress';
   }
+
+  /// Derive address from mnemonic without persisting any keys.
+  /// Used by AccountManagementScreen to create new sub-accounts
+  /// without overwriting the primary wallet's SecureStorage keys.
+  String deriveAddressFromMnemonic(String mnemonic) {
+    final seed = bip39.mnemonicToSeed(mnemonic);
+    return _deriveAddressSha256(seed);
+  }
 }

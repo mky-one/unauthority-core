@@ -76,7 +76,7 @@ jobs:
           key: ${{ runner.os }}-clippy-${{ hashFiles('**/Cargo.lock') }}
 
       - name: Run clippy
-        run: cargo clippy --workspace --all-features -- -D warnings -A clippy::await_holding_lock -A clippy::too_many_arguments
+        run: cargo clippy --workspace --all-features -- -D warnings -A clippy::too_many_arguments
 
   fmt:
     name: Rustfmt (Code Style)

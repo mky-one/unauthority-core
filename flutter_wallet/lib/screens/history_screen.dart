@@ -29,6 +29,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
   Future<void> _loadTransactionHistory() async {
     try {
       final walletService = context.read<WalletService>();
+      final apiService = context.read<ApiService>();
       final wallet = await walletService.getCurrentWallet();
 
       if (wallet == null) {
@@ -40,7 +41,6 @@ class _HistoryScreenState extends State<HistoryScreen> {
         _address = wallet['address'];
       });
 
-      final apiService = context.read<ApiService>();
       final history = await apiService.getHistory(_address!);
 
       setState(() {

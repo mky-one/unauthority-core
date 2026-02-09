@@ -73,7 +73,7 @@ class _AddressBookScreenState extends State<AddressBookScreen> {
 
     await showDialog(
       context: context,
-      builder: (context) => AlertDialog(
+      builder: (dialogContext) => AlertDialog(
         title: const Text('Add Address'),
         content: Form(
           key: formKey,
@@ -130,7 +130,7 @@ class _AddressBookScreenState extends State<AddressBookScreen> {
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(context),
+            onPressed: () => Navigator.pop(dialogContext),
             child: const Text('CANCEL'),
           ),
           ElevatedButton(
@@ -146,9 +146,9 @@ class _AddressBookScreenState extends State<AddressBookScreen> {
                       : notesController.text.trim(),
                 );
 
-                if (mounted) {
-                  Navigator.pop(context);
-                  ScaffoldMessenger.of(context).showSnackBar(
+                if (dialogContext.mounted) {
+                  Navigator.pop(dialogContext);
+                  ScaffoldMessenger.of(dialogContext).showSnackBar(
                     const SnackBar(
                       content: Text('Address added successfully'),
                       backgroundColor: Colors.green,
@@ -157,8 +157,8 @@ class _AddressBookScreenState extends State<AddressBookScreen> {
                   _loadEntries();
                 }
               } catch (e) {
-                if (mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
+                if (dialogContext.mounted) {
+                  ScaffoldMessenger.of(dialogContext).showSnackBar(
                     SnackBar(
                       content: Text(e.toString()),
                       backgroundColor: Colors.red,
@@ -182,7 +182,7 @@ class _AddressBookScreenState extends State<AddressBookScreen> {
 
     await showDialog(
       context: context,
-      builder: (context) => AlertDialog(
+      builder: (dialogContext) => AlertDialog(
         title: const Text('Edit Address'),
         content: Form(
           key: formKey,
@@ -236,7 +236,7 @@ class _AddressBookScreenState extends State<AddressBookScreen> {
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(context),
+            onPressed: () => Navigator.pop(dialogContext),
             child: const Text('CANCEL'),
           ),
           ElevatedButton(
@@ -253,9 +253,9 @@ class _AddressBookScreenState extends State<AddressBookScreen> {
                       : notesController.text.trim(),
                 );
 
-                if (mounted) {
-                  Navigator.pop(context);
-                  ScaffoldMessenger.of(context).showSnackBar(
+                if (dialogContext.mounted) {
+                  Navigator.pop(dialogContext);
+                  ScaffoldMessenger.of(dialogContext).showSnackBar(
                     const SnackBar(
                       content: Text('Address updated successfully'),
                       backgroundColor: Colors.green,
@@ -264,8 +264,8 @@ class _AddressBookScreenState extends State<AddressBookScreen> {
                   _loadEntries();
                 }
               } catch (e) {
-                if (mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
+                if (dialogContext.mounted) {
+                  ScaffoldMessenger.of(dialogContext).showSnackBar(
                     SnackBar(
                       content: Text(e.toString()),
                       backgroundColor: Colors.red,

@@ -4,7 +4,8 @@ import '../services/wallet_service.dart';
 import '../services/api_service.dart';
 
 /// Proof-of-Burn Screen
-/// Matches backend BurnRequest: { coin_type: "eth"|"btc", txid: String, recipient_address: Option<String> }
+///
+/// Matches backend `BurnRequest`: `{ coin_type: "eth"|"btc", txid: String, recipient_address: Option<String> }`
 class BurnScreen extends StatefulWidget {
   const BurnScreen({super.key});
 
@@ -25,11 +26,10 @@ class _BurnScreenState extends State<BurnScreen> {
 
     try {
       final walletService = context.read<WalletService>();
+      final apiService = context.read<ApiService>();
       final wallet = await walletService.getCurrentWallet();
 
       if (wallet == null) throw Exception('No wallet found');
-
-      final apiService = context.read<ApiService>();
 
       final result = await apiService.submitBurn(
         coinType: _selectedCoin,

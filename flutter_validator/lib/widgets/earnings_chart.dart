@@ -72,6 +72,18 @@ class _EarningsChartPainter extends CustomPainter {
 
     // Calculate points
     final points = <Offset>[];
+
+    // Guard: single data point — can't compute step or draw a line
+    if (dailyHistory.length < 2) {
+      final pointPaint = Paint()
+        ..color = Colors.green
+        ..style = PaintingStyle.fill;
+      canvas.drawCircle(
+        Offset(size.width / 2, size.height / 2), 4, pointPaint,
+      );
+      return;
+    }
+
     final stepX = size.width / (dailyHistory.length - 1);
 
     for (int i = 0; i < dailyHistory.length; i++) {

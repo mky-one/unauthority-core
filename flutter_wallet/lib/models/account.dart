@@ -20,7 +20,8 @@ class Account {
   factory Account.fromJson(Map<String, dynamic> json) {
     return Account(
       address: json['address'] ?? '',
-      balance: json['balance'] ?? 0,
+      // VOID integer: try balance_voi (from /account), balance_void (from /bal)
+      balance: json['balance_voi'] ?? json['balance_void'] ?? json['balance'] ?? 0,
       voidBalance: json['void_balance'] ?? json['balance_voi'] ?? 0,
       headBlock: json['head_block'],
       blockCount: json['block_count'] ?? 0,
@@ -121,6 +122,6 @@ class ValidatorInfo {
     );
   }
 
-  /// Stake in UAT (1 UAT = 10^11 VOID)
-  double get stakeUAT => BlockchainConstants.voidToUat(stake);
+  /// Stake in UAT — backend already sends stake as UAT integer
+  double get stakeUAT => stake.toDouble();
 }

@@ -272,8 +272,13 @@ class _AccountManagementScreenState extends State<AccountManagementScreen> {
 
         if (DilithiumService.isAvailable) {
           final seed = bip39.mnemonicToSeed(mnemonic);
-          final keypair = DilithiumService.generateKeypairFromSeed(seed);
-          address = DilithiumService.publicKeyToAddress(keypair.publicKey);
+          try {
+            final keypair = DilithiumService.generateKeypairFromSeed(seed);
+            address = DilithiumService.publicKeyToAddress(keypair.publicKey);
+          } finally {
+            // Zero BIP39 seed bytes after keypair generation
+            seed.fillRange(0, seed.length, 0);
+          }
         } else {
           // SHA256 fallback — same derivation as WalletService
           final walletService = WalletService();

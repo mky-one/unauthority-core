@@ -2629,8 +2629,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let aw = safe_lock(&anti_whale);
         println!(
             "🐋 Anti-Whale Engine initialized (max {} tx/block, max {} UAT burn/block)",
-            aw.config.max_tx_per_block,
-            aw.config.max_burn_per_block
+            aw.config.max_tx_per_block, aw.config.max_burn_per_block
         );
     }
 
@@ -3035,7 +3034,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     } else {
         println!("📡 REST API     : http://127.0.0.1:{}", api_port);
     }
-    println!("🔌 gRPC API     : 127.0.0.1:{} (8 services)", api_port + 20000);
+    println!(
+        "🔌 gRPC API     : 127.0.0.1:{} (8 services)",
+        api_port + 20000
+    );
     println!("------------------------------------------------------------------");
     println!("📖 COMMANDS:");
     println!("   bal                   - Check balance");

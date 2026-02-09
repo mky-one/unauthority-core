@@ -15,7 +15,12 @@ mod commands;
 struct Cli {
     /// RPC endpoint URL (reads UAT_RPC_URL env var, or defaults to http://localhost:3030)
     /// For Tor: set UAT_RPC_URL=http://your-node.onion
-    #[arg(short, long, env = "UAT_RPC_URL", default_value = "http://localhost:3030")]
+    #[arg(
+        short,
+        long,
+        env = "UAT_RPC_URL",
+        default_value = "http://localhost:3030"
+    )]
     rpc: String,
 
     /// Config directory (default: ~/.uat)

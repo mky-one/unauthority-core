@@ -1,11 +1,11 @@
 {
-    "name": "flutter_validator",
-    "short_name": "flutter_validator",
+    "name": "UAT Validator Node",
+    "short_name": "UAT Validator Node",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#0175C2",
     "theme_color": "#0175C2",
-    "description": "A new Flutter project.",
+    "description": "Unauthority (UAT) Validator Node - Monitor and manage blockchain validators",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
     "icons": [

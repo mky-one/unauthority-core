@@ -2625,11 +2625,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // NEW: Anti-Whale Engine (dynamic fee scaling + burn limits)
     let anti_whale_config = AntiWhaleConfig::new();
     let anti_whale = Arc::new(Mutex::new(AntiWhaleEngine::new(anti_whale_config)));
-    println!(
-        "🐋 Anti-Whale Engine initialized (max {} tx/block, max {} UAT burn/block)",
-        safe_lock(&anti_whale).config.max_tx_per_block,
-        safe_lock(&anti_whale).config.max_burn_per_block
-    );
+    {
+        let aw = safe_lock(&anti_whale);
+        println!(
+            "🐋 Anti-Whale Engine initialized (max {} tx/block, max {} UAT burn/block)",
+            aw.config.max_tx_per_block,
+            aw.config.max_burn_per_block
+        );
+    }
 
     // NEW: Finality Checkpoint Manager (prevents long-range attacks)
     let checkpoint_db_path = format!("node_data/{}/checkpoints", node_id);

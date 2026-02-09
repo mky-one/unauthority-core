@@ -355,10 +355,30 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
 
             let target_addr = {
                 let l_guard = safe_lock(&l);
-                l_guard.accounts.keys().find(|k| get_short_addr(k) == req.target || **k == req.target).cloned()
+                // First: check existing accounts (supports short address lookup)
+                if let Some(found) = l_guard.accounts.keys()
+                    .find(|k| get_short_addr(k) == req.target || **k == req.target).cloned() {
+                    Some(found)
+                // FIX C11-H3: Allow sending to new addresses not yet in ledger
+                // In block-lattice, Send only records target in `link`; recipient
+                // creates their own Receive block later.
+                } else if uat_crypto::validate_address(&req.target) {
+                    Some(req.target.clone())
+                } else {
+                    None
+                }
             };
             if let Some(target) = target_addr {
-                let amt = req.amount * VOID_PER_UAT;
+                // FIX C11-C1: Checked multiplication to prevent u128 wrapping overflow
+                let amt = match req.amount.checked_mul(VOID_PER_UAT) {
+                    Some(v) => v,
+                    None => {
+                        return warp::reply::json(&serde_json::json!({
+                            "status": "error",
+                            "msg": "Amount overflow: value too large"
+                        }));
+                    }
+                };
 
                 // CRITICAL: For client-signed transactions, public_key is REQUIRED
                 let pubkey = if client_signed {
@@ -565,7 +585,12 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
 
             if let Some((amt, prc, sym)) = res {
                 // SECURITY FIX NEW#3: Pure integer math via calculate_mint_void()
-                let uat_to_mint = calculate_mint_void(amt, prc, sym);
+                let uat_to_mint = match calculate_mint_void(amt, prc, sym) {
+                    Ok(v) => v,
+                    Err(e) => {
+                        return warp::reply::json(&serde_json::json!({"error": format!("Mint calculation overflow: {}", e)}));
+                    }
+                };
                 let uat_to_mint_display = uat_to_mint / VOID_PER_UAT;
 
                 if uat_to_mint == 0 {
@@ -1918,8 +1943,8 @@ fn format_balance_precise(void_amount: u128) -> String {
 /// Single f64→u128 conversions have negligible error (~10^-15 relative).
 /// Compounding multiple f64 multiplications is where precision loss occurs,
 /// so we convert each f64 to integer base units FIRST, then multiply as u128.
-/// Returns: amount in VOID (10^11 per UAT), or 0 on overflow.
-fn calculate_mint_void(amt_coin: f64, price_usd: f64, symbol: &str) -> u128 {
+/// FIX C11-C2: Returns Result to prevent silent fund loss on overflow.
+fn calculate_mint_void(amt_coin: f64, price_usd: f64, symbol: &str) -> Result<u128, String> {
     // Convert coin amount to its smallest integer unit (single f64→u128, safe)
     let (amt_base, base_divisor): (u128, u128) = if symbol == "ETH" {
         ((amt_coin * 1e18).round() as u128, 1_000_000_000_000_000_000) // wei
@@ -1930,17 +1955,18 @@ fn calculate_mint_void(amt_coin: f64, price_usd: f64, symbol: &str) -> u128 {
     let price_micro: u128 = (price_usd * 1_000_000.0).round() as u128;
 
     // Integer math: usd_micro = (amt_base * price_micro) / base_divisor
-    let usd_micro = match amt_base.checked_mul(price_micro) {
-        Some(v) => v / base_divisor,
-        None => 0, // overflow protection
-    };
+    let usd_micro = amt_base
+        .checked_mul(price_micro)
+        .ok_or_else(|| "Overflow: burn value × price exceeds calculation range".to_string())?
+        / base_divisor;
 
     // 1 UAT = $0.01 = 10,000 micro-USD
     // void = usd_micro * VOID_PER_UAT / 10,000
-    match usd_micro.checked_mul(VOID_PER_UAT) {
-        Some(v) => v / 10_000,
-        None => 0, // overflow protection
-    }
+    let result = usd_micro
+        .checked_mul(VOID_PER_UAT)
+        .ok_or_else(|| "Overflow: mint amount exceeds u128".to_string())?
+        / 10_000;
+    Ok(result)
 }
 
 fn format_u128(n: u128) -> String {
@@ -2411,11 +2437,23 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 if let (Some(address), Some(balance_str)) =
                                     (wallet["address"].as_str(), balance_str_opt)
                                 {
+                                    // FIX C11-C02: Validate testnet genesis wallet entries
+                                    if !address.starts_with("UAT") || address.len() < 10 {
+                                        eprintln!("⚠️ Testnet genesis: skipping invalid address format: {}", address);
+                                        continue;
+                                    }
                                     let balance_voi =
                                         genesis::parse_uat_to_void(balance_str).unwrap_or(0);
-                                    if balance_voi > 0
-                                        && !ledger_state.accounts.contains_key(address)
-                                    {
+                                    if balance_voi == 0 {
+                                        eprintln!("⚠️ Testnet genesis: skipping zero/invalid balance for {}", address);
+                                        continue;
+                                    }
+                                    // Sanity: no single wallet should exceed total supply
+                                    if balance_voi > 21_936_236u128 * VOID_PER_UAT {
+                                        eprintln!("⚠️ Testnet genesis: skipping wallet {} (balance exceeds total supply)", address);
+                                        continue;
+                                    }
+                                    if !ledger_state.accounts.contains_key(address) {
                                         ledger_state.accounts.insert(
                                             address.to_string(),
                                             AccountState {
@@ -2431,6 +2469,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             }
 
                             if loaded_count > 0 {
+                                // FIX C11-L14: Validate aggregate balance doesn't exceed total supply
+                                let max_supply_void = 21_936_236u128 * VOID_PER_UAT;
+                                if genesis_supply_deducted > max_supply_void {
+                                    eprintln!("❌ FATAL: Testnet genesis aggregate balance ({} VOID) exceeds total supply ({} VOID)",
+                                        genesis_supply_deducted, max_supply_void);
+                                    return Err(Box::<dyn std::error::Error>::from(
+                                        "Testnet genesis aggregate balance exceeds total supply",
+                                    ));
+                                }
                                 // NOTE: remaining_supply = PUBLIC_SUPPLY_CAP already excludes
                                 // dev allocation. Genesis wallets are pre-allocated, not PoB-minted.
                                 save_to_disk_internal(&ledger_state, &database, true);
@@ -3110,7 +3157,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 }; // L dropped
 
                                 // Step 2: Check pending total (PS lock only)
-                                let pending_total: u128 = safe_lock(&pending_sends).values().map(|(b, _)| b.amount).sum();
+                                // FIX C11-M1: Only sum THIS sender's pending txs, not all
+                                let pending_total: u128 = safe_lock(&pending_sends).values()
+                                    .filter(|(b, _)| b.account == my_address)
+                                    .map(|(b, _)| b.amount).sum();
 
                                 if state.balance < (amt + pending_total) {
                                     println!("❌ Insufficient balance! (Balance: {} UAT, In process: {} UAT)",
@@ -3130,7 +3180,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     public_key: hex::encode(&keys.public_key), // Node's public key
                                     work: 0,
                                     timestamp: std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_secs(),
-                                    fee: 0, // CLI sends use zero fee for simplicity
+                                    fee: 100_000, // FIX C11-H1: Use minimum fee (0.001 UAT) — zero-fee blocks rejected by process_block
                                 };
 
                                 solve_pow(&mut blk);
@@ -3779,8 +3829,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     // Step 4: If consensus reached, mint (L lock only)
                                     if let Some((amt_coin, price, sym, mint_recipient)) = consensus_data {
                                         // SECURITY FIX NEW#3: Pure integer math via calculate_mint_void()
-                                        let uat_to_mint = calculate_mint_void(amt_coin, price, &sym);
-                                        if uat_to_mint == 0 { continue; } // overflow or too small
+                                        let uat_to_mint = match calculate_mint_void(amt_coin, price, &sym) {
+                                            Ok(v) => v,
+                                            Err(e) => {
+                                                eprintln!("❌ Mint calculation overflow: {}", e);
+                                                continue;
+                                            }
+                                        };
+                                        if uat_to_mint == 0 { continue; } // too small
 
                                         let mut l = safe_lock(&ledger);
 

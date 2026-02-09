@@ -32,6 +32,11 @@ class ApiService {
   NetworkEnvironment environment;
   final TorService _torService = TorService();
 
+  /// FIX C11-08: Track client initialization future so callers can await
+  /// readiness before making requests. Prevents DNS leaks from using
+  /// the default http.Client on .onion URLs before Tor is ready.
+  late Future<void> _clientReady;
+
   ApiService({
     String? customUrl,
     this.environment = NetworkEnvironment.testnet,
@@ -41,9 +46,13 @@ class ApiService {
     } else {
       baseUrl = _getBaseUrl(environment);
     }
-    _initializeClient();
+    _clientReady = _initializeClient();
     print('🔗 UAT ApiService initialized with baseUrl: $baseUrl');
   }
+
+  /// Await Tor/HTTP client initialization before first request.
+  /// Safe to call multiple times — resolves immediately after first init.
+  Future<void> ensureReady() => _clientReady;
 
   String _getBaseUrl(NetworkEnvironment env) {
     switch (env) {
@@ -114,7 +123,7 @@ class ApiService {
   void switchEnvironment(NetworkEnvironment newEnv) {
     environment = newEnv;
     baseUrl = _getBaseUrl(newEnv);
-    _initializeClient(); // Re-initialize client for new environment
+    _clientReady = _initializeClient(); // Re-initialize and track readiness
     print('🔄 Switched to ${newEnv.name.toUpperCase()}: $baseUrl');
   }
 
@@ -386,7 +395,12 @@ class ApiService {
           .get(Uri.parse('$baseUrl/history/$address'))
           .timeout(_timeout);
       if (response.statusCode == 200) {
-        final List<dynamic> data = json.decode(response.body);
+        // FIX C11-04: Backend returns {"transactions": [...]} wrapper,
+        // not a bare array. Handle both formats for resilience.
+        final decoded = json.decode(response.body);
+        final List<dynamic> data = decoded is List
+            ? decoded
+            : (decoded['transactions'] as List<dynamic>?) ?? [];
         return data.map((tx) => Transaction.fromJson(tx)).toList();
       }
       throw Exception('Failed to get history: ${response.statusCode}');

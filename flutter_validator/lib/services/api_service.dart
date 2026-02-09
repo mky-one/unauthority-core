@@ -106,7 +106,16 @@ class ApiService {
     }
   }
 
+  /// Parse an int from a value that may be int, String, double, or null.
+  static int _safeInt(dynamic v, [int fallback = 0]) {
+    if (v == null) return fallback;
+    if (v is int) return v;
+    if (v is double) return v.toInt();
+    return int.tryParse(v.toString()) ?? fallback;
+  }
+
   // Get Balance
+  // Backend: GET /bal/:address → {balance_uat: string, balance_void: u128-string}
   Future<Account> getBalance(String address) async {
     try {
       final response = await _client.get(
@@ -114,10 +123,28 @@ class ApiService {
       );
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
+        // FIX C11-02: Use correct backend field names with type-safe parsing.
+        // balance_void is the canonical VOID amount (u128, may arrive as string).
+        // Fallback to balance_uat (UAT string → VOID conversion) then balance.
+        int balanceVoid;
+        if (data['balance_void'] != null) {
+          balanceVoid = _safeInt(data['balance_void']);
+        } else if (data['balance_uat'] != null) {
+          final val = data['balance_uat'];
+          if (val is int) {
+            balanceVoid = val;
+          } else if (val is String) {
+            balanceVoid = int.tryParse(val) ?? 0; // try raw int string first
+          } else {
+            balanceVoid = 0;
+          }
+        } else {
+          balanceVoid = _safeInt(data['balance']);
+        }
         return Account(
           address: address,
-          balance: data['balance'] ?? 0,
-          voidBalance: data['void_balance'] ?? 0,
+          balance: balanceVoid,
+          voidBalance: 0,
           history: [],
         );
       }
@@ -169,16 +196,25 @@ class ApiService {
   }
 
   // Send Transaction
+  // Backend POST /send requires: {from, target, amount (UAT int), signature, public_key}
   Future<Map<String, dynamic>> sendTransaction({
     required String from,
     required String to,
     required int amount,
+    required String signature,
+    required String publicKey,
   }) async {
     try {
       final response = await _client.post(
         Uri.parse('$baseUrl/send'),
         headers: {'Content-Type': 'application/json'},
-        body: json.encode({'from': from, 'target': to, 'amount': amount}),
+        body: json.encode({
+          'from': from,
+          'target': to,
+          'amount': amount,
+          'signature': signature,
+          'public_key': publicKey,
+        }),
       );
 
       final data = json.decode(response.body);
@@ -268,7 +304,11 @@ class ApiService {
     try {
       final response = await _client.get(Uri.parse('$baseUrl/blocks/recent'));
       if (response.statusCode == 200) {
-        final List<dynamic> data = json.decode(response.body);
+        final decoded = json.decode(response.body);
+        // FIX C11-07: Handle both bare array and wrapped {"blocks": [...]}
+        final List<dynamic> data = decoded is List
+            ? decoded
+            : (decoded['blocks'] as List<dynamic>?) ?? [];
         return data.map((b) => BlockInfo.fromJson(b)).toList();
       }
       throw Exception('Failed to get recent blocks: ${response.statusCode}');
@@ -283,8 +323,12 @@ class ApiService {
     try {
       final response = await _client.get(Uri.parse('$baseUrl/peers'));
       if (response.statusCode == 200) {
-        final List<dynamic> data = json.decode(response.body);
-        return data.cast<String>();
+        final decoded = json.decode(response.body);
+        // FIX C11-06: Safe cast — filter nulls/non-strings instead of cast<String>()
+        final List<dynamic> data = decoded is List
+            ? decoded
+            : (decoded['peers'] as List<dynamic>?) ?? [];
+        return data.whereType<String>().toList();
       }
       throw Exception('Failed to get peers: ${response.statusCode}');
     } catch (e) {

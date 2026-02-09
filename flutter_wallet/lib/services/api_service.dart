@@ -12,7 +12,8 @@ enum NetworkEnvironment { testnet, mainnet, local }
 class ApiService {
   // Testnet bootstrap .onion — All 4 bootstrap validators share this list.
   // Users connect to whichever is reachable. Updated by setup_tor_testnet.sh.
-  static const String testnetOnionUrl = 'http://uat-testnet-bootstrap1.onion';
+  static const String testnetOnionUrl =
+      'http://u3kilz7tv3ffhl2rafrzarbmiiojfcjz3eg527td5ocmibq44gj4htqd.onion';
 
   // Mainnet .onion — populated before mainnet launch
   static const String mainnetOnionUrl = 'http://uat-mainnet-pending.onion';

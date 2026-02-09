@@ -71,7 +71,7 @@ jobs:
       - name: Bundle native library
         working-directory: flutter_validator
         run: |
-          APP="build/macos/Build/Products/Release/flutter_validator.app"
+          APP="build/macos/Build/Products/Release/UAT Validator Node.app"
           FRAMEWORKS="$APP/Contents/Frameworks"
           mkdir -p "$FRAMEWORKS"
           cp native/uat_crypto_ffi/target/release/libuat_crypto_ffi.dylib "$FRAMEWORKS/"
@@ -86,7 +86,7 @@ jobs:
           if [ "$VERSION" = "$GITHUB_REF_NAME" ]; then VERSION="${{ github.event.inputs.version || '1.0.0-testnet' }}"; fi
 
           mkdir -p release/dmg_staging
-          cp -R "build/macos/Build/Products/Release/flutter_validator.app" release/dmg_staging/
+          cp -R "build/macos/Build/Products/Release/UAT Validator Node.app" release/dmg_staging/
           ln -s /Applications release/dmg_staging/Applications
 
           cat > release/dmg_staging/README.txt << 'EOF'
@@ -96,7 +96,7 @@ jobs:
           ╚══════════════════════════════════════════════════════════════╝
 
           INSTALLATION:
-            Drag "flutter_validator.app" to the Applications folder.
+            Drag "UAT Validator Node.app" to the Applications folder.
 
           FIRST RUN:
             1. Open the app from Applications

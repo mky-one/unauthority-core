@@ -2,14 +2,18 @@ name: "Release Flutter Wallet (Testnet)"
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # Builds UAT Wallet for macOS, Linux & Windows — creates GitHub Release
-# Triggered by testnet tags or manual dispatch
+# Triggered on merge to main (wallet changes), tags, or manual dispatch
 # ═══════════════════════════════════════════════════════════════════════════════
 
 on:
   push:
+    branches: [main]
+    paths:
+      - 'flutter_wallet/**'
+      - '.github/workflows/release-flutter-wallet.yml'
     tags:
-      - 'v*-testnet'
-      - 'v*-testnet.*'
+      - 'wallet-v*-testnet'
+      - 'wallet-v*-testnet.*'
   workflow_dispatch:
     inputs:
       version:
@@ -77,8 +81,10 @@ jobs:
       - name: Create DMG
         working-directory: flutter_wallet
         run: |
-          VERSION="${GITHUB_REF_NAME#v}"
+          VERSION="${GITHUB_REF_NAME#wallet-v}"
           [ -z "$VERSION" ] && VERSION="${{ github.event.inputs.version }}"
+          # For push-to-main (no tag), use default version
+          if [ "$VERSION" = "$GITHUB_REF_NAME" ]; then VERSION="${{ github.event.inputs.version || '1.0.0-testnet' }}"; fi
           
           mkdir -p release/dmg_staging
           cp -R "build/macos/Build/Products/Release/UAT Wallet.app" release/dmg_staging/
@@ -168,8 +174,9 @@ jobs:
       - name: Bundle native library & package
         working-directory: flutter_wallet
         run: |
-          VERSION="${GITHUB_REF_NAME#v}"
+          VERSION="${GITHUB_REF_NAME#wallet-v}"
           [ -z "$VERSION" ] && VERSION="${{ github.event.inputs.version }}"
+          if [ "$VERSION" = "$GITHUB_REF_NAME" ]; then VERSION="${{ github.event.inputs.version || '1.0.0-testnet' }}"; fi
           
           BUNDLE="build/linux/x64/release/bundle"
           
@@ -259,8 +266,8 @@ jobs:
         working-directory: flutter_wallet
         shell: pwsh
         run: |
-          $version = "$env:GITHUB_REF_NAME" -replace '^v',''
-          if (-not $version) { $version = "${{ github.event.inputs.version }}" }
+          $version = "$env:GITHUB_REF_NAME" -replace '^wallet-v',''
+          if (-not $version -or $version -eq $env:GITHUB_REF_NAME) { $version = "${{ github.event.inputs.version || '1.0.0-testnet' }}" }
           
           $bundle = "build\windows\x64\runner\Release"
           
@@ -310,10 +317,14 @@ jobs:
         run: |
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             VERSION="${{ github.event.inputs.version }}"
-            TAG="v${VERSION}"
-          else
+            TAG="wallet-v${VERSION}"
+          elif [[ "${GITHUB_REF_NAME}" == wallet-v* ]]; then
             TAG="${GITHUB_REF_NAME}"
-            VERSION="${TAG#v}"
+            VERSION="${TAG#wallet-v}"
+          else
+            # Push to main (no tag) — use default version
+            VERSION="1.0.0-testnet"
+            TAG="wallet-v${VERSION}"
           fi
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "tag=$TAG" >> $GITHUB_OUTPUT

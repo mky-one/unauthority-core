@@ -2,11 +2,15 @@ name: "Release Flutter Validator (Testnet)"
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # Builds UAT Validator Dashboard for macOS, Linux & Windows — creates GitHub Release
-# Triggered by validator-testnet tags or manual dispatch
+# Triggered on merge to main (validator changes), tags, or manual dispatch
 # ═══════════════════════════════════════════════════════════════════════════════
 
 on:
   push:
+    branches: [main]
+    paths:
+      - 'flutter_validator/**'
+      - '.github/workflows/release-flutter-validator.yml'
     tags:
       - 'validator-v*-testnet'
       - 'validator-v*-testnet.*'
@@ -79,6 +83,7 @@ jobs:
         run: |
           VERSION="${GITHUB_REF_NAME#validator-v}"
           [ -z "$VERSION" ] && VERSION="${{ github.event.inputs.version }}"
+          if [ "$VERSION" = "$GITHUB_REF_NAME" ]; then VERSION="${{ github.event.inputs.version || '1.0.0-testnet' }}"; fi
 
           mkdir -p release/dmg_staging
           cp -R "build/macos/Build/Products/Release/flutter_validator.app" release/dmg_staging/
@@ -170,6 +175,7 @@ jobs:
         run: |
           VERSION="${GITHUB_REF_NAME#validator-v}"
           [ -z "$VERSION" ] && VERSION="${{ github.event.inputs.version }}"
+          if [ "$VERSION" = "$GITHUB_REF_NAME" ]; then VERSION="${{ github.event.inputs.version || '1.0.0-testnet' }}"; fi
 
           BUNDLE="build/linux/x64/release/bundle"
 
@@ -256,7 +262,7 @@ jobs:
         shell: pwsh
         run: |
           $version = "$env:GITHUB_REF_NAME" -replace '^validator-v',''
-          if (-not $version) { $version = "${{ github.event.inputs.version }}" }
+          if (-not $version -or $version -eq $env:GITHUB_REF_NAME) { $version = "${{ github.event.inputs.version || '1.0.0-testnet' }}" }
 
           $bundle = "build\windows\x64\runner\Release"
 
@@ -304,9 +310,13 @@ jobs:
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             VERSION="${{ github.event.inputs.version }}"
             TAG="validator-v${VERSION}"
-          else
+          elif [[ "${GITHUB_REF_NAME}" == validator-v* ]]; then
             TAG="${GITHUB_REF_NAME}"
             VERSION="${TAG#validator-v}"
+          else
+            # Push to main (no tag) — use default version
+            VERSION="1.0.0-testnet"
+            TAG="validator-v${VERSION}"
           fi
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "tag=$TAG" >> $GITHUB_OUTPUT

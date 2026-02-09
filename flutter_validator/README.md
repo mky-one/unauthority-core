@@ -1,6 +1,6 @@
-# UAT Validator Dashboard
+# UAT Validator Node
 
-Desktop monitoring dashboard for **Unauthority (UAT)** blockchain validators. Track node status, manage keys, and monitor consensus participation.
+Validator node dashboard for **Unauthority (UAT)** blockchain. Track node status, manage keys, and monitor consensus participation.
 
 ## Features
 
@@ -25,7 +25,7 @@ Pre-built releases for macOS, Windows, and Linux:
 | Linux | `UAT-Validator-*-linux-x64.tar.gz` |
 
 > **macOS:** Apple blocks unsigned apps. After install, run:
-> `xattr -cr /Applications/flutter_validator.app`
+> `xattr -cr /Applications/UAT\ Validator\ Node.app`
 > Or: System Settings → Privacy & Security → Open Anyway
 
 ## Build from Source

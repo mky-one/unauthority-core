@@ -1,11 +1,11 @@
 {
-    "name": "flutter_wallet",
-    "short_name": "flutter_wallet",
+    "name": "UAT Wallet",
+    "short_name": "UAT Wallet",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#0175C2",
     "theme_color": "#0175C2",
-    "description": "A new Flutter project.",
+    "description": "Unauthority (UAT) Wallet - Secure blockchain wallet with Tor privacy",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
     "icons": [

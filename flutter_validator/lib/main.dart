@@ -39,7 +39,7 @@ class MyApp extends StatelessWidget {
         Provider<WalletService>.value(value: walletService),
       ],
       child: MaterialApp(
-        title: 'UAT Validator Dashboard',
+        title: 'UAT Validator Node',
         debugShowCheckedModeBanner: false,
         theme: ThemeData(
           colorScheme: ColorScheme.fromSeed(

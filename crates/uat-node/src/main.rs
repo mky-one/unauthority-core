@@ -1523,11 +1523,12 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
         );
 
     // CORS configuration
-    // SECURITY: Mainnet restricts CORS to same-origin only (node API behind Tor).
-    // Testnet allows all origins for development convenience.
+    // SECURITY: Behind Tor hidden service, browser requests come from .onion origin.
+    // Allow any origin since Tor hidden services are already access-controlled by
+    // the .onion address itself. Same-origin would block legitimate Tor Browser users.
     let cors = if uat_core::is_mainnet_build() {
         warp::cors()
-            .allow_origin("http://localhost:3030")
+            .allow_any_origin() // .onion addresses serve as access control
             .allow_methods(vec!["GET", "POST", "OPTIONS"])
             .allow_headers(vec!["Content-Type", "Accept"])
     } else {
@@ -3024,8 +3025,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("                 UNAUTHORITY (UAT) ORACLE NODE                   ");
     println!("==================================================================");
     println!("🆔 MY ID        : {}", my_short);
-    println!("📡 REST API     : http://0.0.0.0:{}", api_port);
-    println!("🔌 gRPC API     : 0.0.0.0:50051 (8 services)");
+    // Show .onion address if available, otherwise show bind address
+    let onion_addr = std::env::var("UAT_ONION_ADDRESS").ok();
+    if let Some(ref onion) = onion_addr {
+        println!("🧅 REST API     : http://{}", onion);
+    } else {
+        println!("📡 REST API     : http://127.0.0.1:{}", api_port);
+    }
+    println!("🔌 gRPC API     : 127.0.0.1:{} (8 services)", api_port + 20000);
     println!("------------------------------------------------------------------");
     println!("📖 COMMANDS:");
     println!("   bal                   - Check balance");

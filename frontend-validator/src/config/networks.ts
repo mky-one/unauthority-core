@@ -16,8 +16,8 @@ export const NETWORKS: Record<string, Network> = {
     id: 'testnet',
     name: 'UAT Testnet',
     chainId: 'uat-testnet',
-    rpcUrl: 'http://fhljoiopyz2eflttc7o5qwfj6l6skhtlkjpn4r6yw4atqpy2azydnnqd.onion',
-    explorerUrl: 'http://fhljoiopyz2eflttc7o5qwfj6l6skhtlkjpn4r6yw4atqpy2azydnnqd.onion/explorer',
+    rpcUrl: 'http://uat-testnet-bootstrap1.onion',
+    explorerUrl: 'http://uat-testnet-bootstrap1.onion/explorer',
     faucetEnabled: true,
     description: 'Remote testnet via Tor hidden service'
   },
@@ -25,10 +25,10 @@ export const NETWORKS: Record<string, Network> = {
     id: 'mainnet',
     name: 'UAT Mainnet',
     chainId: 'uat-mainnet',
-    rpcUrl: 'http://localhost:3030',
-    explorerUrl: 'http://localhost:3030/explorer',
+    rpcUrl: 'http://uat-mainnet-pending.onion',
+    explorerUrl: 'http://uat-mainnet-pending.onion/explorer',
     faucetEnabled: false,
-    description: 'Local mainnet node (coming Q2 2026)'
+    description: 'Mainnet via Tor hidden service (coming Q2 2026)'
   }
 };
 

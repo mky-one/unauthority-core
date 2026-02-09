@@ -90,12 +90,15 @@ psk_file_path = "/etc/uat-validator/signer.psk"
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 [network]
-# Bootstrap nodes to connect to
+# Bootstrap nodes — use .onion addresses for privacy-first testnet/mainnet
+# Format: onion://<address>.onion:<port>
+# These are the 4 genesis bootstrap validators running behind Tor hidden services.
+# Replace with your actual .onion addresses after running setup_tor_testnet.sh
 bootstrap_peers = [
-  "/ip4/146.59.1.100/tcp/30333/p2p/12D3KooPXXjfDKCKvF5V7aWX1D8pVwVcfF3FRsCYB2gB1M2a2P",
-  "/ip4/146.59.1.101/tcp/30333/p2p/12D3KooPYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYY",
-  "/ip4/146.59.1.102/tcp/30333/p2p/12D3KooPZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZ",
-  "/ip4/146.59.1.103/tcp/30333/p2p/12D3KooPAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+  "onion://validator1-placeholder.onion:3030",
+  "onion://validator2-placeholder.onion:3031",
+  "onion://validator3-placeholder.onion:3032",
+  "onion://validator4-placeholder.onion:3033"
 ]
 
 # P2P Protocol settings

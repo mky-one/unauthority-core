@@ -92,7 +92,7 @@ class NetworkStatusService extends ChangeNotifier {
           _blockHeight = nodeInfo['block_height'] ?? _blockHeight;
         } catch (e) {
           // Node info failed but health passed, still connected
-          print('⚠️ Node info failed: $e');
+          debugPrint('⚠️ Node info failed: $e');
         }
       } else {
         _status = ConnectionStatus.error;

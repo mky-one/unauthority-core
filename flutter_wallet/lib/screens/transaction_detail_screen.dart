@@ -43,8 +43,8 @@ class TransactionDetailScreen extends StatelessWidget {
           // Status Card
           Card(
             color: isOutgoing
-                ? Colors.red.withOpacity(0.1)
-                : Colors.green.withOpacity(0.1),
+                ? Colors.red.withValues(alpha: 0.1)
+                : Colors.green.withValues(alpha: 0.1),
             child: Padding(
               padding: const EdgeInsets.all(24),
               child: Column(
@@ -162,7 +162,7 @@ class TransactionDetailScreen extends StatelessWidget {
           // Memo (if present)
           if (transaction.memo != null && transaction.memo!.isNotEmpty) ...[
             Card(
-              color: Colors.blue.withOpacity(0.1),
+              color: Colors.blue.withValues(alpha: 0.1),
               child: ListTile(
                 leading: const Icon(Icons.note, color: Colors.blue),
                 title: const Text(

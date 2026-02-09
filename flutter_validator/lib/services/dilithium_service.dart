@@ -1,6 +1,6 @@
 import 'dart:ffi';
 import 'dart:io';
-import 'dart:typed_data';
+import 'package:flutter/foundation.dart';
 import 'package:ffi/ffi.dart';
 
 /// Dilithium5 Post-Quantum cryptography service via native Rust FFI.
@@ -96,7 +96,7 @@ class DilithiumService {
     try {
       _lib = _loadNativeLibrary();
       if (_lib == null) {
-        print(
+        debugPrint(
           '⚠️  Dilithium5 native library not found — using SHA256 fallback',
         );
         _available = false;
@@ -218,12 +218,12 @@ class DilithiumService {
       _maxAddrBytes = _uatMaxAddressBytes();
 
       _available = true;
-      print('✅ Dilithium5 native library loaded');
-      print(
+      debugPrint('✅ Dilithium5 native library loaded');
+      debugPrint(
         '   PK: $_pkBytes bytes, SK: $_skBytes bytes, Sig: $_sigBytes bytes',
       );
     } catch (e) {
-      print('⚠️  Failed to load Dilithium5 native library: $e');
+      debugPrint('⚠️  Failed to load Dilithium5 native library: $e');
       _available = false;
     }
   }
@@ -267,7 +267,7 @@ class DilithiumService {
     for (final path in searchPaths) {
       try {
         final lib = DynamicLibrary.open(path);
-        print('✅ Loaded native library from: $path');
+        debugPrint('✅ Loaded native library from: $path');
         return lib;
       } catch (_) {
         // Try next path

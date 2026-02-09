@@ -1,0 +1,371 @@
+name: "Release Flutter Validator (Testnet)"
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Builds UAT Validator Dashboard for macOS, Linux & Windows — creates GitHub Release
+# Triggered by validator-testnet tags or manual dispatch
+# ═══════════════════════════════════════════════════════════════════════════════
+
+on:
+  push:
+    tags:
+      - 'validator-v*-testnet'
+      - 'validator-v*-testnet.*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version (e.g., 1.0.0-testnet)'
+        required: true
+        default: '1.0.0-testnet'
+
+env:
+  FLUTTER_VERSION: '3.27.3'
+
+jobs:
+  # ══════════════════════════════════════════════════════════════════════════════
+  #  macOS (.dmg)
+  # ══════════════════════════════════════════════════════════════════════════════
+  build-macos:
+    name: "🍎 macOS Validator (.dmg)"
+    runs-on: macos-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            flutter_validator/native/uat_crypto_ffi/target
+          key: macos-validator-rust-${{ hashFiles('flutter_validator/native/uat_crypto_ffi/Cargo.lock') }}
+
+      - name: Build Dilithium5 native library
+        working-directory: flutter_validator/native/uat_crypto_ffi
+        run: |
+          cargo build --release
+          cargo test --release -- --nocapture
+
+      - name: Flutter pub get
+        working-directory: flutter_validator
+        run: flutter pub get
+
+      - name: Flutter build macOS
+        working-directory: flutter_validator
+        run: flutter build macos --release
+
+      - name: Bundle native library
+        working-directory: flutter_validator
+        run: |
+          APP="build/macos/Build/Products/Release/flutter_validator.app"
+          FRAMEWORKS="$APP/Contents/Frameworks"
+          mkdir -p "$FRAMEWORKS"
+          cp native/uat_crypto_ffi/target/release/libuat_crypto_ffi.dylib "$FRAMEWORKS/"
+          install_name_tool -id "@executable_path/../Frameworks/libuat_crypto_ffi.dylib" "$FRAMEWORKS/libuat_crypto_ffi.dylib"
+          codesign --force --deep --sign - "$APP"
+
+      - name: Create DMG
+        working-directory: flutter_validator
+        run: |
+          VERSION="${GITHUB_REF_NAME#validator-v}"
+          [ -z "$VERSION" ] && VERSION="${{ github.event.inputs.version }}"
+
+          mkdir -p release/dmg_staging
+          cp -R "build/macos/Build/Products/Release/flutter_validator.app" release/dmg_staging/
+          ln -s /Applications release/dmg_staging/Applications
+
+          cat > release/dmg_staging/README.txt << 'EOF'
+          ╔══════════════════════════════════════════════════════════════╗
+          ║         UAT VALIDATOR DASHBOARD - TESTNET RELEASE          ║
+          ║                Unauthority Blockchain                      ║
+          ╚══════════════════════════════════════════════════════════════╝
+
+          INSTALLATION:
+            Drag "flutter_validator.app" to the Applications folder.
+
+          FIRST RUN:
+            1. Open the app from Applications
+            2. If blocked: System Settings → Privacy → Open Anyway
+            3. The dashboard auto-configures Tor + Dilithium5 crypto
+          EOF
+
+          hdiutil create \
+            -volname "UAT Validator" \
+            -srcfolder release/dmg_staging \
+            -ov -format UDZO \
+            "release/UAT-Validator-${VERSION}-macos.dmg"
+
+          rm -rf release/dmg_staging
+
+      - name: Upload macOS artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: validator-macos
+          path: flutter_validator/release/*.dmg
+          if-no-files-found: error
+
+  # ══════════════════════════════════════════════════════════════════════════════
+  #  Linux (.tar.gz)
+  # ══════════════════════════════════════════════════════════════════════════════
+  build-linux:
+    name: "🐧 Linux Validator (.tar.gz)"
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Linux build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            clang cmake git ninja-build pkg-config \
+            libgtk-3-dev liblzma-dev libstdc++-12-dev \
+            libsecret-1-dev libjsoncpp-dev
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            flutter_validator/native/uat_crypto_ffi/target
+          key: linux-validator-rust-${{ hashFiles('flutter_validator/native/uat_crypto_ffi/Cargo.lock') }}
+
+      - name: Build Dilithium5 native library
+        working-directory: flutter_validator/native/uat_crypto_ffi
+        run: |
+          cargo build --release
+          cargo test --release -- --nocapture
+
+      - name: Flutter pub get
+        working-directory: flutter_validator
+        run: flutter pub get
+
+      - name: Flutter build Linux
+        working-directory: flutter_validator
+        run: flutter build linux --release
+
+      - name: Bundle native library & package
+        working-directory: flutter_validator
+        run: |
+          VERSION="${GITHUB_REF_NAME#validator-v}"
+          [ -z "$VERSION" ] && VERSION="${{ github.event.inputs.version }}"
+
+          BUNDLE="build/linux/x64/release/bundle"
+
+          cp native/uat_crypto_ffi/target/release/libuat_crypto_ffi.so "$BUNDLE/lib/"
+
+          cat > "$BUNDLE/run.sh" << 'LAUNCHER'
+          #!/bin/bash
+          SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+          export LD_LIBRARY_PATH="${SCRIPT_DIR}/lib:${LD_LIBRARY_PATH}"
+          exec "${SCRIPT_DIR}/flutter_validator" "$@"
+          LAUNCHER
+          chmod +x "$BUNDLE/run.sh"
+
+          cat > "$BUNDLE/README.txt" << 'EOF'
+          ═══════════════════════════════════════════════════════════════
+            UAT VALIDATOR DASHBOARD - TESTNET RELEASE (Linux)
+            Unauthority Blockchain
+          ═══════════════════════════════════════════════════════════════
+
+          INSTALLATION:
+            1. Extract this archive
+            2. Run: ./run.sh
+
+          The validator dashboard connects to your UAT node.
+          EOF
+
+          mkdir -p release
+          cd build/linux/x64/release
+          tar czf "../../../../release/UAT-Validator-${VERSION}-linux-x64.tar.gz" bundle/
+          cd ../../../../
+
+      - name: Upload Linux artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: validator-linux
+          path: flutter_validator/release/*.tar.gz
+          if-no-files-found: error
+
+  # ══════════════════════════════════════════════════════════════════════════════
+  #  Windows (.zip)
+  # ══════════════════════════════════════════════════════════════════════════════
+  build-windows:
+    name: "🪟 Windows Validator (.zip)"
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            flutter_validator/native/uat_crypto_ffi/target
+          key: windows-validator-rust-${{ hashFiles('flutter_validator/native/uat_crypto_ffi/Cargo.lock') }}
+
+      - name: Build Dilithium5 native library
+        working-directory: flutter_validator/native/uat_crypto_ffi
+        run: |
+          cargo build --release
+          cargo test --release -- --nocapture
+
+      - name: Flutter pub get
+        working-directory: flutter_validator
+        run: flutter pub get
+
+      - name: Flutter build Windows
+        working-directory: flutter_validator
+        run: flutter build windows --release
+
+      - name: Bundle native library & package
+        working-directory: flutter_validator
+        shell: pwsh
+        run: |
+          $version = "$env:GITHUB_REF_NAME" -replace '^validator-v',''
+          if (-not $version) { $version = "${{ github.event.inputs.version }}" }
+
+          $bundle = "build\windows\x64\runner\Release"
+
+          Copy-Item "native\uat_crypto_ffi\target\release\uat_crypto_ffi.dll" "$bundle\"
+
+          @"
+          ═══════════════════════════════════════════════════════════════
+            UAT VALIDATOR DASHBOARD - TESTNET RELEASE (Windows)
+            Unauthority Blockchain
+          ═══════════════════════════════════════════════════════════════
+
+          INSTALLATION:
+            1. Extract this archive
+            2. Run: flutter_validator.exe
+
+          The validator dashboard connects to your UAT node.
+          "@ | Out-File -FilePath "$bundle\README.txt" -Encoding utf8
+
+          New-Item -ItemType Directory -Force -Path release | Out-Null
+          Compress-Archive -Path "$bundle\*" -DestinationPath "release\UAT-Validator-${version}-windows-x64.zip" -Force
+
+      - name: Upload Windows artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: validator-windows
+          path: flutter_validator/release/*.zip
+          if-no-files-found: error
+
+  # ══════════════════════════════════════════════════════════════════════════════
+  #  Create GitHub Release
+  # ══════════════════════════════════════════════════════════════════════════════
+  release:
+    name: "📦 Create Validator Release"
+    needs: [build-macos, build-linux, build-windows]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Get version info
+        id: version
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            VERSION="${{ github.event.inputs.version }}"
+            TAG="validator-v${VERSION}"
+          else
+            TAG="${GITHUB_REF_NAME}"
+            VERSION="${TAG#validator-v}"
+          fi
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "tag=$TAG" >> $GITHUB_OUTPUT
+          echo "Version: $VERSION, Tag: $TAG"
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts/
+
+      - name: List artifacts
+        run: find artifacts -type f | sort
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version.outputs.tag }}
+          name: "UAT Validator ${{ steps.version.outputs.version }} (Testnet)"
+          draft: false
+          prerelease: true
+          generate_release_notes: true
+          body: |
+            # 🖥️ UAT Validator Dashboard — Testnet Release `${{ steps.version.outputs.version }}`
+
+            **Post-Quantum Secure** validator monitoring dashboard for the Unauthority blockchain testnet.
+
+            ## 📥 Downloads
+
+            | Platform | File | Install |
+            |----------|------|---------|
+            | 🍎 **macOS** | `UAT-Validator-*-macos.dmg` | Open DMG → drag to Applications |
+            | 🐧 **Linux** | `UAT-Validator-*-linux-x64.tar.gz` | Extract → `./run.sh` |
+            | 🪟 **Windows** | `UAT-Validator-*-windows-x64.zip` | Extract → `flutter_validator.exe` |
+
+            ## ✅ What's Included
+
+            - 🔐 **CRYSTALS-Dilithium5** — Post-quantum digital signatures
+            - 🧅 **Automatic Tor** — Zero-config .onion connectivity
+            - 📊 **Live Dashboard** — Validator stats, peers, blocks, uptime
+            - 🛡️ **Slashing Monitor** — Track validator penalties
+            - 🔑 **Key Management** — Generate/import validator keys with BIP39 seed phrases
+            - ⚡ **aBFT Consensus** — Real-time consensus status and finality tracking
+
+            ## 🚀 First Run
+
+            1. Install & open the validator dashboard
+            2. Import existing keys or generate new ones
+            3. Configure your node endpoint (localhost or .onion)
+            4. Dashboard connects automatically via Tor
+
+            ## ⚠️ Notes
+
+            - This is a **testnet** release — tokens have no real value
+            - Requires a running UAT node (see [Testnet Guide](https://github.com/unauthoritymky-6236/unauthority-core/blob/main/docs/TESTNET_OPERATION.md))
+            - Minimum 1,000 UAT stake for validator participation
+
+          files: |
+            artifacts/validator-macos/*.dmg
+            artifacts/validator-linux/*.tar.gz
+            artifacts/validator-windows/*.zip
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

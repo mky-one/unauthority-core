@@ -1,423 +1,212 @@
-# 📦 Unauthority Installation Guide
+# Installation Guide
 
-Complete guide for installing and running Unauthority Core on all platforms.
-
----
-
-## 🎯 Choose Your Installation Method
-
-### For End Users (Wallet Only)
-- ✅ [Pre-built Desktop Apps](#desktop-wallet-installation) (Recommended)
-- ✅ [Web Browser Version](#web-wallet-installation)
-
-### For Validators & Developers
-- ✅ [Full Node Installation](#full-node-installation)
-- ✅ [Build from Source](#build-from-source)
+Complete guide for installing and running Unauthority on all platforms.
 
 ---
 
-## 📱 Desktop Wallet Installation
+## Quick Start (End Users)
 
-### macOS (DMG)
+Download pre-built desktop apps — no command line needed.
 
-1. **Download:**
-   - Visit: https://github.com/unauthoritymky-6236/unauthority-core/releases/latest
-   - Download: `Unauthority-Wallet-macOS.dmg`
+### UAT Wallet
 
-2. **Install:**
-   ```bash
-   # Open DMG
-   open Unauthority-Wallet-macOS.dmg
-   
-   # Drag to Applications folder
-   # Or double-click installer
-   ```
+| Platform | Download | How to Install |
+|----------|----------|----------------|
+| **macOS** | [UAT-Wallet-macos.dmg](https://github.com/unauthoritymky-6236/unauthority-core/releases/tag/v1.0.0-testnet) | Open DMG, drag to Applications |
+| **Windows** | [UAT-Wallet-windows-x64.zip](https://github.com/unauthoritymky-6236/unauthority-core/releases/tag/v1.0.0-testnet) | Extract zip, run `flutter_wallet.exe` |
+| **Linux** | [UAT-Wallet-linux-x64.tar.gz](https://github.com/unauthoritymky-6236/unauthority-core/releases/tag/v1.0.0-testnet) | Extract, run `./run.sh` |
 
-3. **Run:**
-   - Open from Applications folder
-   - If "Unidentified Developer" warning appears:
-     ```bash
-     # Remove quarantine attribute
-     xattr -d com.apple.quarantine /Applications/Unauthority-Wallet.app
-     ```
+### UAT Validator Dashboard
 
-4. **Connect to Testnet:**
-   - Open Settings → Network Endpoint
-   - Enter: `http://fhljoiopyz2eflttc7o5qwfj6l6skhtlkjpn4r6yw4atqpy2azydnnqd.onion`
-   - **Important:** Requires Tor Browser running
-   - Download Tor: https://www.torproject.org/download/
+| Platform | Download | How to Install |
+|----------|----------|----------------|
+| **macOS** | [UAT-Validator-macos.dmg](https://github.com/unauthoritymky-6236/unauthority-core/releases/tag/validator-v1.0.0-testnet) | Open DMG, drag to Applications |
+| **Windows** | [UAT-Validator-windows-x64.zip](https://github.com/unauthoritymky-6236/unauthority-core/releases/tag/validator-v1.0.0-testnet) | Extract zip, run `flutter_validator.exe` |
+| **Linux** | [UAT-Validator-linux-x64.tar.gz](https://github.com/unauthoritymky-6236/unauthority-core/releases/tag/validator-v1.0.0-testnet) | Extract, run `./run.sh` |
 
-### Windows (EXE)
+### macOS "Unidentified Developer" Warning
 
-1. **Download:**
-   - Visit: https://github.com/unauthoritymky-6236/unauthority-core/releases/latest
-   - Download: `Unauthority-Wallet-Setup.exe`
+If macOS blocks the app:
+```bash
+xattr -d com.apple.quarantine /Applications/UAT\ Wallet.app
+# or for validator:
+xattr -d com.apple.quarantine /Applications/flutter_validator.app
+```
 
-2. **Install:**
-   ```cmd
-   # Double-click installer
-   # Follow setup wizard
-   # Choose installation directory
-   ```
+### First Launch
 
-3. **Run:**
-   - Launch from Start Menu or Desktop shortcut
-   - Windows Defender may show warning (click "More Info" → "Run Anyway")
-
-4. **Connect to Testnet:**
-   - Settings → Network Endpoint
-   - Enter onion address (requires Tor Browser)
-   - Or use local node: `http://localhost:3030`
-
-### Linux (AppImage)
-
-1. **Download:**
-   ```bash
-   cd ~/Downloads
-   wget https://github.com/unauthoritymky-6236/unauthority-core/releases/latest/download/Unauthority-Wallet-Linux.AppImage
-   ```
-
-2. **Make Executable:**
-   ```bash
-   chmod +x Unauthority-Wallet-Linux.AppImage
-   ```
-
-3. **Run:**
-   ```bash
-   ./Unauthority-Wallet-Linux.AppImage
-   ```
-
-4. **Optional - Desktop Integration:**
-   ```bash
-   # Move to /opt
-   sudo mv Unauthority-Wallet-Linux.AppImage /opt/
-   
-   # Create desktop entry
-   cat > ~/.local/share/applications/unauthority-wallet.desktop << EOF
-   [Desktop Entry]
-   Name=Unauthority Wallet
-   Exec=/opt/Unauthority-Wallet-Linux.AppImage
-   Icon=unauthority
-   Type=Application
-   Categories=Finance;
-   EOF
-   ```
+1. Open the Wallet app
+2. Create a new wallet (or import with seed phrase)
+3. Go to Settings and set the node URL to your local testnet or the public .onion address
+4. Use the in-app faucet to request test UAT
 
 ---
 
-## 🌐 Web Wallet Installation
-
-### Quick Start (No Install)
-
-1. **Visit:** https://unauthoritymky-6236.github.io/unauthority-wallet/
-2. **Or run locally:**
-   ```bash
-   git clone https://github.com/unauthoritymky-6236/unauthority-core.git
-   cd unauthority-core/frontend-wallet
-   npm install
-   npm run dev
-   ```
-3. **Open:** http://localhost:5173
-
----
-
-## 🔧 Full Node Installation
+## Build from Source (Developers & Validators)
 
 ### Prerequisites
 
-- **Rust:** 1.75+
-- **Node.js:** 18+
-- **Git**
-- **4GB RAM minimum**
-- **10GB disk space**
+| Tool | Minimum Version | Install |
+|------|-----------------|---------|
+| Rust | 1.75+ | `curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \| sh` |
+| Git | any | `brew install git` / `apt install git` |
+| Flutter | 3.10+ | [flutter.dev/docs/get-started/install](https://flutter.dev/docs/get-started/install) (for wallet/validator apps) |
 
-### Quick Install
+### Build the Validator Node
 
 ```bash
-# 1. Clone repository
 git clone https://github.com/unauthoritymky-6236/unauthority-core.git
 cd unauthority-core
 
-# 2. Build backend (takes 5-10 minutes)
-cargo build --release --bin uat-node
+# Build release binary
+cargo build --release -p uat-node
 
-# 3. Generate wallet (or use existing)
-# Option A: Generate new wallet
-cd genesis && cargo run --release
-# Saves to: genesis/genesis_config.json
-
-# Option B: Use testnet wallet
-cp testnet-genesis/testnet_wallets.json node_data/validator-1/wallet.json
-
-# 4. Start node
-./target/release/uat-node \
-  --port 3030 \
-  --api-port 3030 \
-  --ws-port 9030 \
-  --wallet node_data/validator-1/wallet.json
-
-# Node running at: http://localhost:3030
+# Verify
+./target/release/uat-node --help 2>&1 || echo "Binary built at target/release/uat-node"
 ```
 
-### Verify Installation
+### Build the Flutter Wallet
 
 ```bash
-# Test API
-curl http://localhost:3030/node-info | jq .
+cd flutter_wallet
 
-# Expected output:
-# {
-#   "chain_id": "uat-mainnet",
-#   "version": "1.0.0",
-#   "block_height": 0,
-#   "validator_count": 3,
-#   ...
-# }
+# Install dependencies
+flutter pub get
+
+# Build for your platform
+flutter build macos    # macOS
+flutter build linux    # Linux
+flutter build windows  # Windows
+```
+
+### Build the Flutter Validator Dashboard
+
+```bash
+cd flutter_validator
+
+# Install dependencies
+flutter pub get
+
+# Build for your platform
+flutter build macos    # macOS
+flutter build linux    # Linux
+flutter build windows  # Windows
 ```
 
 ---
 
-## 🧅 Tor Integration (For Privacy)
+## Run a Local Testnet
 
-### macOS/Linux
+### Quick Start (4 validators)
+
+```bash
+chmod +x start.sh stop.sh
+./start.sh
+```
+
+This starts 4 validators on ports 3030-3033. See [dev_docs/TESTNET_RUN_GUIDE.md](../dev_docs/TESTNET_RUN_GUIDE.md) for detailed instructions.
+
+### Single Node (dev mode)
+
+```bash
+export UAT_TESTNET_LEVEL=functional
+export UAT_NODE_ID=validator-1
+./target/release/uat-node 3030
+```
+
+### Verify
+
+```bash
+curl -s http://localhost:3030/node-info | jq .
+curl -s http://localhost:3030/supply | jq .
+```
+
+---
+
+## Tor Integration (Privacy)
+
+The wallet apps have **bundled Tor** — no extra setup needed for end users.
+
+For validators running a node behind Tor:
 
 ```bash
 # Install Tor
-brew install tor  # macOS
-sudo apt install tor  # Ubuntu/Debian
+brew install tor        # macOS
+sudo apt install tor    # Ubuntu/Debian
 
-# Start Tor service
-brew services start tor  # macOS
-sudo systemctl start tor  # Linux
+# Create hidden service config
+mkdir -p ~/.tor-uat
+cat > ~/.tor-uat/torrc << 'EOF'
+HiddenServiceDir ~/.tor-uat/hidden_service
+HiddenServicePort 80 127.0.0.1:3030
+SocksPort 0
+DataDirectory ~/.tor-uat/data
+EOF
 
-# Or run Tor manually
-tor
+# Start Tor
+tor -f ~/.tor-uat/torrc &
 
-# Use torsocks for terminal access
-torsocks curl http://fhljoiopyz2eflttc7o5qwfj6l6skhtlkjpn4r6yw4atqpy2azydnnqd.onion/node-info
+# Get your .onion address (after ~30 seconds)
+cat ~/.tor-uat/hidden_service/hostname
 ```
-
-### Windows
-
-1. **Download Tor Expert Bundle:**
-   - Visit: https://www.torproject.org/download/tor/
-   - Download: Windows Expert Bundle
-
-2. **Extract and Run:**
-   ```cmd
-   cd tor-win64
-   tor.exe
-   ```
-
-3. **Configure Wallet:**
-   - Set SOCKS5 proxy: `127.0.0.1:9050`
-   - Or use Tor Browser
 
 ---
 
-## 🚀 Deploy Your Own Testnet
+## System Requirements
 
-### One-Command Tor Deployment
+### Wallet App (End User)
 
-```bash
-cd unauthority-core
-./scripts/setup_tor_mainnet.sh
+| | Minimum |
+|--|---------|
+| OS | Windows 10, macOS 11+, Ubuntu 20.04+ |
+| RAM | 2 GB |
+| Disk | 200 MB |
 
-# Output:
-# ✅ TOR HIDDEN SERVICE AKTIF!
-# 🧅 MAINNET .ONION ADDRESS:
-#    http://your-unique-address.onion
-# 
-# Keep running:
-# - Node: localhost:3030
-# - Tor: PID shown
-```
+### Validator Node
 
-### Manual Deployment Steps
-
-1. **Start Local Node:**
-   ```bash
-   ./target/release/uat-node \
-     --port 3030 \
-     --api-port 3030 \
-     --ws-port 9030 \
-     --wallet node_data/validator-1/wallet.json
-   ```
-
-2. **Configure Tor:**
-   ```bash
-   # Create torrc config
-   mkdir -p ~/.tor-unauthority
-   cat > ~/.tor-unauthority/torrc << EOF
-   HiddenServiceDir ~/.tor-unauthority/hidden_service
-   HiddenServicePort 80 127.0.0.1:3030
-   SocksPort 0
-   DataDirectory ~/.tor-unauthority/data
-   EOF
-   ```
-
-3. **Start Tor:**
-   ```bash
-   tor -f ~/.tor-unauthority/torrc &
-   
-   # Wait 60 seconds for .onion address
-   sleep 60
-   cat ~/.tor-unauthority/hidden_service/hostname
-   ```
-
-4. **Share .onion Address:**
-   - Give to users
-   - They need Tor Browser to access
+| | Recommended |
+|--|-------------|
+| OS | Linux (Ubuntu 22.04 LTS) |
+| CPU | 4 cores |
+| RAM | 8 GB |
+| Disk | 50 GB SSD |
+| Network | 10 Mbps upload |
+| Uptime | 99.9% |
 
 ---
 
-## 🎮 First-Time Setup
+## Troubleshooting
 
-### Create New Wallet
-
-1. Open wallet application
-2. Click **"Create New Wallet"**
-3. **CRITICAL:** Write down your 12-word seed phrase
-4. Confirm seed phrase
-5. Wallet created! 🎉
-
-### Import Testnet Wallet
-
-For testing with pre-funded accounts:
-
+### Node won't start - port in use
 ```bash
-# Use Treasury 1 (2,000,000 UAT)
-# Seed: abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about
-```
-
-1. Click **"Import Wallet"**
-2. Paste seed phrase above
-3. Click **"Import"**
-4. Balance: 2,000,000 UAT ✅
-
-### Request Testnet Tokens
-
-1. Go to **Faucet** tab (💧)
-2. Click **"Request 100 UAT"**
-3. Wait 1 hour between requests
-4. Check balance in Dashboard
-
----
-
-## 🔍 Troubleshooting
-
-### Node Won't Start
-
-```bash
-# Check if port is already in use
 lsof -i :3030
+pkill -f uat-node
+```
 
-# Kill existing process
-pkill -9 uat-node
-
-# Remove database lock (if exists)
+### Database lock error
+```bash
+./stop.sh
 rm -f node_data/validator-1/uat_database/LOCK
-
-# Restart
-./target/release/uat-node --port 3030 --api-port 3030 \
-  --ws-port 9030 --wallet node_data/validator-1/wallet.json
+./start.sh
 ```
 
-### Wallet Shows "Node Offline"
-
+### Build fails
 ```bash
-# Test connection
-curl http://localhost:3030/node-info
-
-# If fails, check node is running:
-ps aux | grep uat-node
-
-# Check API endpoint in Settings:
-# Should be: http://localhost:3030
-# Or: http://your-onion-address.onion (for Tor)
-```
-
-### Tor Connection Issues
-
-```bash
-# Test Tor is running
-curl --socks5-hostname 127.0.0.1:9050 \
-  http://fhljoiopyz2eflttc7o5qwfj6l6skhtlkjpn4r6yw4atqpy2azydnnqd.onion/node-info
-
-# If fails, restart Tor:
-killall tor
-brew services restart tor  # macOS
-sudo systemctl restart tor  # Linux
-```
-
-### Build Errors
-
-```bash
-# Update Rust
 rustup update
-
-# Clean build cache
 cargo clean
-
-# Rebuild
-cargo build --release --bin uat-node
-
-# If still fails, check Rust version:
-rustc --version  # Should be 1.75+
+cargo build --release -p uat-node
 ```
 
----
-
-## 📊 System Requirements
-
-### Minimum (User Wallet)
-- **OS:** Windows 10, macOS 11, Ubuntu 20.04
-- **RAM:** 2GB
-- **Disk:** 500MB
-- **Internet:** 1 Mbps
-
-### Recommended (Validator Node)
-- **OS:** Linux (Ubuntu 22.04 LTS recommended)
-- **CPU:** 4 cores
-- **RAM:** 8GB
-- **Disk:** 50GB SSD
-- **Internet:** 10 Mbps upload
-- **Uptime:** 99.9%
+### Wallet shows "Node Offline"
+Check the node URL in Settings. For local testnet: `http://localhost:3030`
 
 ---
 
-## 🔗 Useful Links
+## Links
 
-- **Releases:** https://github.com/unauthoritymky-6236/unauthority-core/releases
-- **Documentation:** https://github.com/unauthoritymky-6236/unauthority-core/tree/main/docs
-- **API Reference:** https://github.com/unauthoritymky-6236/unauthority-core/tree/main/api_docs
-- **Test Report:** [TEST_REPORT.md](../TEST_REPORT.md)
-- **Tor Browser:** https://www.torproject.org/download/
-
----
-
-## 📞 Support
-
-- **Issues:** https://github.com/unauthoritymky-6236/unauthority-core/issues
-- **Discussions:** https://github.com/unauthoritymky-6236/unauthority-core/discussions
-
----
-
-**Installation Status Check:**
-
-```bash
-# Verify everything is working:
-curl http://localhost:3030/health | jq .
-
-# Expected:
-# {
-#   "status": "healthy",
-#   "chain": {
-#     "accounts": 14,
-#     "blocks": 1
-#   },
-#   "version": "1.0.0"
-# }
-```
-
-**✅ Ready to use!**
+| | |
+|--|--|
+| Releases | https://github.com/unauthoritymky-6236/unauthority-core/releases |
+| API Reference | [api_docs/API_REFERENCE.md](../api_docs/API_REFERENCE.md) |
+| Testnet Guide | [dev_docs/TESTNET_RUN_GUIDE.md](../dev_docs/TESTNET_RUN_GUIDE.md) |
+| Whitepaper | [docs/WHITEPAPER.md](WHITEPAPER.md) |

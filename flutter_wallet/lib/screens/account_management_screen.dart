@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:bip39/bip39.dart' as bip39;
 import '../models/account_profile.dart';
 import '../services/account_management_service.dart';
+import '../services/dilithium_service.dart';
 import '../services/wallet_service.dart';
 
 class AccountManagementScreen extends StatefulWidget {
@@ -261,15 +263,28 @@ class _AccountManagementScreenState extends State<AccountManagementScreen> {
           return;
         }
 
-        // Generate new wallet
-        final walletService = WalletService();
-        final wallet = await walletService.generateWallet();
+        // Generate new wallet keys WITHOUT overwriting primary wallet storage.
+        // We derive address from a fresh BIP39 mnemonic in-memory only;
+        // the seed phrase is persisted by AccountManagementService in
+        // FlutterSecureStorage keyed by the new account ID.
+        final mnemonic = bip39.generateMnemonic(strength: 256);
+        String address;
 
-        // Create account
+        if (DilithiumService.isAvailable) {
+          final seed = bip39.mnemonicToSeed(mnemonic);
+          final keypair = DilithiumService.generateKeypairFromSeed(seed);
+          address = DilithiumService.publicKeyToAddress(keypair.publicKey);
+        } else {
+          // SHA256 fallback — same derivation as WalletService
+          final walletService = WalletService();
+          address = walletService.deriveAddressFromMnemonic(mnemonic);
+        }
+
+        // Create account — seed stored in SecureStorage, not SharedPrefs
         await _accountService.createAccount(
           name: accountName,
-          address: wallet['address']!,
-          seedPhrase: wallet['mnemonic']!,
+          address: address,
+          seedPhrase: mnemonic,
         );
 
         await _loadAccounts();
@@ -283,7 +298,7 @@ class _AccountManagementScreenState extends State<AccountManagementScreen> {
           );
 
           // Show seed phrase backup dialog
-          _showSeedPhraseBackup(accountName, wallet['mnemonic']!);
+          _showSeedPhraseBackup(accountName, mnemonic);
         }
       } catch (e) {
         if (mounted) {

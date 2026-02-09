@@ -309,8 +309,9 @@ impl SlashingManager {
             let slash_amount = if DOWNTIME_SLASH_BPS >= 10_000 {
                 staked_amount_void
             } else {
-                // 1% = staked / 100, rounds up via ceiling division
-                staked_amount_void.div_ceil(100)
+                // FIX M-2: Use DOWNTIME_SLASH_BPS constant properly
+                // slash = stake * bps / 10_000, rounds up via ceiling division
+                (staked_amount_void * DOWNTIME_SLASH_BPS as u128).div_ceil(10_000)
             };
 
             profile.total_slashed_void += slash_amount;

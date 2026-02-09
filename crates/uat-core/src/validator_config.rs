@@ -1,6 +1,47 @@
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Serialize, Deserializer, Serializer};
 use std::fs;
 use std::path::Path;
+
+/// Serde adapter for u128 ↔ TOML: serialize as string, deserialize from string or integer.
+/// TOML crate doesn't natively support u128, so we round-trip through strings.
+mod u128_toml {
+    use super::*;
+
+    pub fn serialize<S: Serializer>(val: &u128, s: S) -> Result<S::Ok, S::Error> {
+        s.serialize_str(&val.to_string())
+    }
+
+    pub fn deserialize<'de, D: Deserializer<'de>>(d: D) -> Result<u128, D::Error> {
+        use serde::de::{self, Visitor};
+        struct U128Visitor;
+
+        impl<'de> Visitor<'de> for U128Visitor {
+            type Value = u128;
+
+            fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+                f.write_str("a u128 as a string or integer")
+            }
+
+            fn visit_str<E: de::Error>(self, v: &str) -> Result<u128, E> {
+                v.parse().map_err(E::custom)
+            }
+
+            fn visit_u64<E: de::Error>(self, v: u64) -> Result<u128, E> {
+                Ok(v as u128)
+            }
+
+            fn visit_i64<E: de::Error>(self, v: i64) -> Result<u128, E> {
+                if v >= 0 {
+                    Ok(v as u128)
+                } else {
+                    Err(E::custom("negative value for u128"))
+                }
+            }
+        }
+
+        d.deserialize_any(U128Visitor)
+    }
+}
 
 /// Dynamic validator configuration system
 /// Allows each node instance to have unique validator settings
@@ -10,7 +51,8 @@ pub struct ValidatorConfig {
     pub node_id: String,
     pub address: String,
     pub private_key_path: String,
-    pub stake_void: u64,
+    #[serde(with = "u128_toml")]
+    pub stake_void: u128,
     pub sentry_public: SentryPublicConfig,
     pub sentry_private: SentryPrivateConfig,
 }
@@ -48,8 +90,8 @@ impl ValidatorConfig {
         let private_key_path = std::env::var("UAT_PRIVKEY_PATH")
             .unwrap_or_else(|_| format!("/etc/uat/{}/private_key.hex", node_id));
 
-        let stake_void: u64 = std::env::var("UAT_STAKE_VOID")
-            .unwrap_or_else(|_| "100000000000".to_string())
+        let stake_void: u128 = std::env::var("UAT_STAKE_VOID")
+            .unwrap_or_else(|_| "100000000000000".to_string())
             .parse()?;
 
         let sentry_public_port: u16 = std::env::var("UAT_SENTRY_PUBLIC_PORT")
@@ -97,9 +139,9 @@ impl ValidatorConfig {
             return Err("Invalid UAT address format".to_string());
         }
 
-        if self.stake_void < 1_000_000_000_000 {
-            // Minimum 10 UAT stake
-            return Err("Stake must be >= 10 UAT (1000000000000 void)".to_string());
+        if self.stake_void < 100_000_000_000_000 {
+            // Minimum 1,000 UAT stake (matches MIN_VALIDATOR_STAKE_VOID)
+            return Err("Stake must be >= 1000 UAT (100000000000000 void)".to_string());
         }
 
         if self.sentry_public.listen_port == 0 {
@@ -200,7 +242,7 @@ impl ValidatorManager {
     }
 
     /// Get total staked amount
-    pub fn total_stake(&self) -> u64 {
+    pub fn total_stake(&self) -> u128 {
         self.validators.iter().map(|v| v.stake_void).sum()
     }
 
@@ -227,7 +269,7 @@ mod tests {
             node_id: "validator-1".to_string(),
             address: "UAT1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b".to_string(),
             private_key_path: "/etc/uat/private_key.hex".to_string(),
-            stake_void: 1_000_000_000_000,
+            stake_void: 100_000_000_000_000,
             sentry_public: SentryPublicConfig {
                 listen_addr: "0.0.0.0".to_string(),
                 listen_port: 30333,
@@ -249,7 +291,7 @@ mod tests {
             node_id: "validator-1".to_string(),
             address: "INVALID".to_string(),
             private_key_path: "/etc/uat/private_key.hex".to_string(),
-            stake_void: 100_000_000_000,
+            stake_void: 100_000_000_000_000,
             sentry_public: SentryPublicConfig {
                 listen_addr: "0.0.0.0".to_string(),
                 listen_port: 30333,
@@ -264,7 +306,7 @@ mod tests {
         assert!(config.validate().is_err());
 
         config.address = "UAT1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b".to_string();
-        config.stake_void = 1_000_000_000_000;
+        config.stake_void = 100_000_000_000_000;
         assert!(config.validate().is_ok());
     }
 
@@ -277,7 +319,7 @@ mod tests {
             node_id: "validator-1".to_string(),
             address: "UAT1234567890abcdef1234567890abcdef123456".to_string(),
             private_key_path: "/etc/uat/private_key.hex".to_string(),
-            stake_void: 100_000_000_000,
+            stake_void: 100_000_000_000_000,
             sentry_public: SentryPublicConfig {
                 listen_addr: "0.0.0.0".to_string(),
                 listen_port: 30333,
@@ -304,7 +346,7 @@ mod tests {
             node_id: "validator-1".to_string(),
             address: "UAT1111111111111111111111111111111111111111".to_string(),
             private_key_path: "/etc/uat/1/key.hex".to_string(),
-            stake_void: 1_000_000_000_000,
+            stake_void: 100_000_000_000_000,
             sentry_public: SentryPublicConfig {
                 listen_addr: "0.0.0.0".to_string(),
                 listen_port: 30333,
@@ -320,7 +362,7 @@ mod tests {
             node_id: "validator-2".to_string(),
             address: "UAT2222222222222222222222222222222222222222".to_string(),
             private_key_path: "/etc/uat/2/key.hex".to_string(),
-            stake_void: 1_500_000_000_000,
+            stake_void: 150_000_000_000_000,
             sentry_public: SentryPublicConfig {
                 listen_addr: "0.0.0.0".to_string(),
                 listen_port: 30334,
@@ -336,7 +378,7 @@ mod tests {
         assert!(manager.add_validator(config2.clone()).is_ok());
 
         assert_eq!(manager.count(), 2);
-        assert_eq!(manager.total_stake(), 2_500_000_000_000);
+        assert_eq!(manager.total_stake(), 250_000_000_000_000);
 
         let v1 = manager.get_validator("validator-1").unwrap();
         assert_eq!(v1.node_id, "validator-1");
@@ -352,7 +394,7 @@ mod tests {
             node_id: "validator-1".to_string(),
             address: "UAT1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b".to_string(),
             private_key_path: "/etc/uat/private_key.hex".to_string(),
-            stake_void: 1_000_000_000_000,
+            stake_void: 100_000_000_000_000,
             sentry_public: SentryPublicConfig {
                 listen_addr: "0.0.0.0".to_string(),
                 listen_port: 30333,

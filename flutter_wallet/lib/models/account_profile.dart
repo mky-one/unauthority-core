@@ -34,12 +34,14 @@ class AccountProfile {
     );
   }
 
+  /// Serialize for SharedPreferences — NEVER includes seed phrase.
+  /// Seed phrases are stored separately in FlutterSecureStorage.
   Map<String, dynamic> toJson() {
     return {
       'id': id,
       'name': name,
       'address': address,
-      'seed_phrase': seedPhrase,
+      // seed_phrase intentionally omitted — stored in SecureStorage only
       'public_key': publicKey,
       'created_at': createdAt.toIso8601String(),
       'is_hardware_wallet': isHardwareWallet,

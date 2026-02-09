@@ -311,6 +311,14 @@ impl Ledger {
                 }
             }
             BlockType::Send => {
+                // FIX C11-H1: Enforce minimum transaction fee to prevent zero-fee spam
+                const MIN_TX_FEE_VOID: u128 = 100_000; // 0.001 UAT minimum fee
+                if block.fee < MIN_TX_FEE_VOID {
+                    return Err(format!(
+                        "Fee too low: {} VOID < minimum {} VOID (0.001 UAT)",
+                        block.fee, MIN_TX_FEE_VOID
+                    ));
+                }
                 let total_debit = block
                     .amount
                     .checked_add(block.fee)

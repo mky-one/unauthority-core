@@ -146,6 +146,11 @@ impl PriceOracle for ExchangeOracle {
     fn get_oracle_consensus(&self) -> Result<OracleConsensusPrice, String> {
         let median = self.get_uat_price_usd()?;
 
+        // FIX C11-M3: Guard against zero/negative median price
+        if median <= 0.0 {
+            return Err("Invalid median price: zero or negative".to_string());
+        }
+
         // Calculate confidence (how close are prices to each other?)
         let prices: Vec<f64> = self.price_feeds.values().map(|p| p.price).collect();
         let max_price = prices.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
@@ -163,6 +168,10 @@ impl PriceOracle for ExchangeOracle {
 
     fn verify_price_sanity(&self, price: f64) -> Result<bool, String> {
         let median = self.get_uat_price_usd()?;
+        // FIX C11-M3: Guard against zero/negative median price
+        if median <= 0.0 {
+            return Err("Invalid median price: zero or negative".to_string());
+        }
         let deviation = ((price - median).abs() / median) * 100.0;
 
         // Reject if price deviates more than 10% from oracle consensus

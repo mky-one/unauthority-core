@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import '../services/wallet_service.dart';
 import '../services/api_service.dart';
 import '../constants/blockchain.dart';
+import '../utils/address_validator.dart';
 
 class SendScreen extends StatefulWidget {
   const SendScreen({super.key});
@@ -29,42 +30,43 @@ class _SendScreenState extends State<SendScreen> {
       if (wallet == null) throw Exception('No wallet found');
 
       final apiService = context.read<ApiService>();
-      final amount =
-          BlockchainConstants.uatStringToVoid(_amountController.text);
+
+      // FIX C11-01: Backend expects UAT integer in `amount` field and does
+      // × VOID_PER_UAT server-side. Sending VOID here would cause 10^11×
+      // inflation. Parse user input as UAT double, round to integer UAT.
+      final amountDouble = double.parse(_amountController.text.trim());
+      final amountUat = amountDouble.round();
+      if (amountUat <= 0) {
+        throw Exception('Minimum send amount is 1 UAT');
+      }
 
       // Balance validation: prevent sending more than available
+      // Compare in UAT to avoid unit mismatch
       try {
         final account = await apiService.getBalance(wallet['address']!);
-        if (amount > account.balance) {
+        if (amountDouble > account.balanceUAT) {
           throw Exception(
-              'Insufficient balance: have ${BlockchainConstants.voidToUat(account.balance).toStringAsFixed(6)} UAT');
+              'Insufficient balance: have ${BlockchainConstants.formatUat(account.balanceUAT)} UAT');
         }
       } catch (e) {
         if (e.toString().contains('Insufficient balance')) rethrow;
         // If balance check fails (network), let the backend reject
       }
 
-      // Sign transaction with Dilithium5 (if available)
+      // FIX C11-02/C11-03: For L1 testnet, let the node sign the block.
+      // Client-side signing (via BlockConstructionService) requires fee
+      // negotiation protocol not yet available — sending a mismatched
+      // signature causes guaranteed rejection. Omit signature so the
+      // backend signs for node-owned addresses.
+      // TODO: Route through BlockConstructionService once backend supports
+      //       client timestamp/fee in SendRequest for L2+ signing.
       String? signature;
       String? publicKey;
-      try {
-        final sigData =
-            '${wallet['address']}${_toController.text.trim()}$amount';
-        signature = await walletService.signTransaction(sigData);
-        publicKey = await walletService.getPublicKeyHex();
-        // Don't send placeholder signatures
-        if (signature == 'address-only-no-local-signing') {
-          signature = null;
-          publicKey = null;
-        }
-      } catch (_) {
-        // Signing failed — node will sign in L1 testnet
-      }
 
       final result = await apiService.sendTransaction(
         from: wallet['address']!,
         to: _toController.text.trim(),
-        amount: amount,
+        amount: amountUat,
         signature: signature,
         publicKey: publicKey,
       );
@@ -119,15 +121,9 @@ class _SendScreenState extends State<SendScreen> {
                     if (value == null || value.trim().isEmpty) {
                       return 'Please enter recipient address';
                     }
-                    if (!value.trim().startsWith('UAT')) {
-                      return 'Address must start with UAT';
-                    }
-                    // Accept both SHA256 (43 chars) and Dilithium5 Base58Check (~37 chars)
-                    final len = value.trim().length;
-                    if (len < 30 || len > 60) {
-                      return 'Invalid address length';
-                    }
-                    return null;
+                    // FIX C11-09: Use AddressValidator for consistent
+                    // hex/Base58 character validation across all screens
+                    return AddressValidator.getValidationError(value.trim());
                   },
                 ),
                 const SizedBox(height: 16),

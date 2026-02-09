@@ -31,8 +31,8 @@ class Account {
 
   factory Account.fromJson(Map<String, dynamic> json) {
     // Parse balance robustly: backend may send int, String, or formatted "X.Y" UAT
-    final int parsedBalance = _parseIntField(json['balance_voi'])
-        != 0 ? _parseIntField(json['balance_voi'])
+    final int parsedBalance = _parseIntField(json['balance_voi']) != 0
+        ? _parseIntField(json['balance_voi'])
         : _parseIntField(json['balance_void']) != 0
             ? _parseIntField(json['balance_void'])
             : _parseIntField(json['balance']);
@@ -64,7 +64,7 @@ class Transaction {
   final String txid;
   final String from;
   final String to;
-  final int amount;
+  final int amount; // In VOID (smallest unit) for internal consistency
   final int timestamp;
   final String type;
   final String? memo;
@@ -81,14 +81,38 @@ class Transaction {
     this.signature,
   });
 
+  /// Parse amount from backend which may be:
+  /// - int (from /account endpoint: UAT integer, needs ×VOID_PER_UAT)
+  /// - double (rare but possible)
+  /// - String like "10.00000000000" (from /history endpoint: formatted UAT)
+  /// Returns value in VOID for internal consistency.
+  static int _parseAmount(dynamic value) {
+    if (value == null) return 0;
+    if (value is int) {
+      // /account endpoint returns amount as UAT integer (block.amount / VOID_PER_UAT)
+      // Convert to VOID for consistent internal representation
+      return value * BlockchainConstants.voidPerUat;
+    }
+    if (value is double) {
+      return (value * BlockchainConstants.voidPerUat).toInt();
+    }
+    if (value is String) {
+      // /history endpoint returns "10.00000000000" (formatted UAT string)
+      return BlockchainConstants.uatStringToVoid(value);
+    }
+    return 0;
+  }
+
   factory Transaction.fromJson(Map<String, dynamic> json) {
     return Transaction(
-      txid: json['txid'] ?? '',
-      from: json['from'] ?? '',
-      to: json['to'] ?? '',
-      amount: json['amount'] ?? 0,
+      // FIX C11-06: Backend returns "hash" not "txid" — map both
+      txid: json['txid'] ?? json['hash'] ?? '',
+      from: json['from'] ?? json['account'] ?? '',
+      to: json['to'] ?? json['link'] ?? '',
+      // FIX C11-05: Robust amount parsing for int/String/double
+      amount: _parseAmount(json['amount']),
       timestamp: json['timestamp'] ?? 0,
-      type: json['type'] ?? 'transfer',
+      type: (json['type'] ?? 'transfer').toString().toLowerCase(),
       memo: json['memo'],
       signature: json['signature'],
     );

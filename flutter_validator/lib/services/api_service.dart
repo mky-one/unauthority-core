@@ -122,8 +122,9 @@ class ApiService {
 
   // Node Info
   Future<Map<String, dynamic>> getNodeInfo() async {
+    await ensureReady();
     try {
-      final response = await _client.get(Uri.parse('$baseUrl/node-info'));
+      final response = await _client.get(Uri.parse('$baseUrl/node-info')).timeout(_timeout);
       if (response.statusCode == 200) {
         return json.decode(response.body);
       }
@@ -136,8 +137,9 @@ class ApiService {
 
   // Health Check
   Future<Map<String, dynamic>> getHealth() async {
+    await ensureReady();
     try {
-      final response = await _client.get(Uri.parse('$baseUrl/health'));
+      final response = await _client.get(Uri.parse('$baseUrl/health')).timeout(_timeout);
       if (response.statusCode == 200) {
         return json.decode(response.body);
       }
@@ -160,10 +162,11 @@ class ApiService {
   // Backend: GET /balance/:address → {balance, balance_uat: string, balance_voi: u128-int}
   // Backend: GET /bal/:address     → {balance_uat: string, balance_void: u128-int}
   Future<Account> getBalance(String address) async {
+    await ensureReady();
     try {
       final response = await _client.get(
         Uri.parse('$baseUrl/balance/$address'),
-      );
+      ).timeout(_timeout);
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
         // FIX C12-01: Backend /balance/:address sends "balance_voi" (no 'd'),
@@ -214,10 +217,11 @@ class ApiService {
 
   // Get Account (with history)
   Future<Account> getAccount(String address) async {
+    await ensureReady();
     try {
       final response = await _client.get(
         Uri.parse('$baseUrl/account/$address'),
-      );
+      ).timeout(_timeout);
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
         return Account.fromJson(data);
@@ -231,6 +235,7 @@ class ApiService {
 
   // Request Faucet
   Future<Map<String, dynamic>> requestFaucet(String address) async {
+    await ensureReady();
     try {
       final response = await _client.post(
         Uri.parse('$baseUrl/faucet'),
@@ -261,6 +266,7 @@ class ApiService {
     required String signature,
     required String publicKey,
   }) async {
+    await ensureReady();
     try {
       final response = await _client.post(
         Uri.parse('$baseUrl/send'),
@@ -295,6 +301,7 @@ class ApiService {
     required String ethTxid,
     required int amount,
   }) async {
+    await ensureReady();
     try {
       final response = await _client.post(
         Uri.parse('$baseUrl/burn'),
@@ -324,8 +331,9 @@ class ApiService {
   // Get Validators
   // FIX C-01: Backend wraps in {"validators": [...]}, not bare array
   Future<List<ValidatorInfo>> getValidators() async {
+    await ensureReady();
     try {
-      final response = await _client.get(Uri.parse('$baseUrl/validators'));
+      final response = await _client.get(Uri.parse('$baseUrl/validators')).timeout(_timeout);
       if (response.statusCode == 200) {
         final decoded = json.decode(response.body);
         // Handle both {"validators": [...]} (backend) and bare [...] (future)
@@ -343,8 +351,9 @@ class ApiService {
 
   // Get Latest Block
   Future<BlockInfo> getLatestBlock() async {
+    await ensureReady();
     try {
-      final response = await _client.get(Uri.parse('$baseUrl/block'));
+      final response = await _client.get(Uri.parse('$baseUrl/block')).timeout(_timeout);
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
         return BlockInfo.fromJson(data);
@@ -358,8 +367,9 @@ class ApiService {
 
   // Get Recent Blocks
   Future<List<BlockInfo>> getRecentBlocks() async {
+    await ensureReady();
     try {
-      final response = await _client.get(Uri.parse('$baseUrl/blocks/recent'));
+      final response = await _client.get(Uri.parse('$baseUrl/blocks/recent')).timeout(_timeout);
       if (response.statusCode == 200) {
         final decoded = json.decode(response.body);
         // FIX C11-07: Handle both bare array and wrapped {"blocks": [...]}
@@ -379,8 +389,9 @@ class ApiService {
   // FIX C12-02: Backend returns HashMap<String,String> → JSON object {"addr":"url",...}
   // NOT a List or {peers: [...]}.
   Future<List<String>> getPeers() async {
+    await ensureReady();
     try {
-      final response = await _client.get(Uri.parse('$baseUrl/peers'));
+      final response = await _client.get(Uri.parse('$baseUrl/peers')).timeout(_timeout);
       if (response.statusCode == 200) {
         final decoded = json.decode(response.body);
         if (decoded is List) {

@@ -24,14 +24,27 @@ Download pre-built desktop apps — no command line needed.
 | **Windows** | [UAT-Validator-windows-x64.zip](https://github.com/unauthoritymky-6236/unauthority-core/releases/tag/validator-v1.0.0-testnet) | Extract zip, run `flutter_validator.exe` |
 | **Linux** | [UAT-Validator-linux-x64.tar.gz](https://github.com/unauthoritymky-6236/unauthority-core/releases/tag/validator-v1.0.0-testnet) | Extract, run `./run.sh` |
 
-### macOS "Unidentified Developer" Warning
+### macOS "Cannot Verify" / Gatekeeper Warning
 
-If macOS blocks the app:
+Apple blocks unsigned apps on first launch. This is normal — our apps are not Apple-notarized (requires paid Apple Developer account). 
+
+**Option 1 — Terminal (recommended):**
 ```bash
-xattr -d com.apple.quarantine /Applications/UAT\ Wallet.app
-# or for validator:
-xattr -d com.apple.quarantine /Applications/flutter_validator.app
+# For Wallet:
+xattr -cr /Applications/UAT\ Wallet.app
+
+# For Validator:
+xattr -cr /Applications/flutter_validator.app
 ```
+
+**Option 2 — GUI:**
+1. Open **System Settings → Privacy & Security**
+2. Scroll down — you'll see the blocked app
+3. Click **"Open Anyway"**
+
+**Option 3 — Right-click:**
+1. Right-click the app in Finder
+2. Click **Open** → click **Open** again in the dialog
 
 ### First Launch
 

@@ -26,6 +26,10 @@ Pre-built releases for macOS, Windows, and Linux:
 | Windows | `UAT-Wallet-*-windows-x64.zip` |
 | Linux | `UAT-Wallet-*-linux-x64.tar.gz` |
 
+> **macOS:** Apple blocks unsigned apps. After install, run:
+> `xattr -cr /Applications/UAT\ Wallet.app`
+> Or: System Settings → Privacy & Security → Open Anyway
+
 ## Build from Source
 
 ### Prerequisites

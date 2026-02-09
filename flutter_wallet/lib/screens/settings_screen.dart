@@ -43,9 +43,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
   void _copySeedPhrase() {
     if (_seedPhrase != null) {
       Clipboard.setData(ClipboardData(text: _seedPhrase!));
+      // FIX M-01: Auto-clear clipboard after 30 seconds for security
+      Future.delayed(const Duration(seconds: 30), () {
+        Clipboard.setData(const ClipboardData(text: ''));
+      });
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Seed phrase copied to clipboard'),
+          content: Text('Seed phrase copied to clipboard (auto-clears in 30s)'),
           backgroundColor: Colors.orange,
           duration: Duration(seconds: 2),
         ),

@@ -26,21 +26,41 @@ class DilithiumService {
   static late int Function() _uatSignatureBytes;
   static late int Function() _uatMaxAddressBytes;
   static late int Function(Pointer<Uint8>, int, Pointer<Uint8>, int)
-      _uatGenerateKeypair;
+  _uatGenerateKeypair;
   static late int Function(
-          Pointer<Uint8>, int, Pointer<Uint8>, int, Pointer<Uint8>, int)
-      _uatGenerateKeypairFromSeed;
+    Pointer<Uint8>,
+    int,
+    Pointer<Uint8>,
+    int,
+    Pointer<Uint8>,
+    int,
+  )
+  _uatGenerateKeypairFromSeed;
   static late int Function(
-      Pointer<Uint8>, int, Pointer<Uint8>, int, Pointer<Uint8>, int) _uatSign;
+    Pointer<Uint8>,
+    int,
+    Pointer<Uint8>,
+    int,
+    Pointer<Uint8>,
+    int,
+  )
+  _uatSign;
   static late int Function(
-      Pointer<Uint8>, int, Pointer<Uint8>, int, Pointer<Uint8>, int) _uatVerify;
+    Pointer<Uint8>,
+    int,
+    Pointer<Uint8>,
+    int,
+    Pointer<Uint8>,
+    int,
+  )
+  _uatVerify;
   static late int Function(Pointer<Uint8>, int, Pointer<Uint8>, int)
-      _uatPublicKeyToAddress;
+  _uatPublicKeyToAddress;
   static late int Function(Pointer<Uint8>, int) _uatValidateAddress;
   static late int Function(Pointer<Uint8>, int, Pointer<Uint8>, int)
-      _uatBytesToHex;
+  _uatBytesToHex;
   static late int Function(Pointer<Uint8>, int, Pointer<Uint8>, int)
-      _uatHexToBytes;
+  _uatHexToBytes;
 
   // Cached sizes
   static int _pkBytes = 0;
@@ -77,7 +97,8 @@ class DilithiumService {
       _lib = _loadNativeLibrary();
       if (_lib == null) {
         print(
-            '⚠️  Dilithium5 native library not found — using SHA256 fallback');
+          '⚠️  Dilithium5 native library not found — using SHA256 fallback',
+        );
         _available = false;
         return;
       }
@@ -85,58 +106,110 @@ class DilithiumService {
       // Bind FFI functions
       _uatPublicKeyBytes = _lib!
           .lookupFunction<Int32 Function(), int Function()>(
-              'uat_public_key_bytes');
+            'uat_public_key_bytes',
+          );
       _uatSecretKeyBytes = _lib!
           .lookupFunction<Int32 Function(), int Function()>(
-              'uat_secret_key_bytes');
+            'uat_secret_key_bytes',
+          );
       _uatSignatureBytes = _lib!
           .lookupFunction<Int32 Function(), int Function()>(
-              'uat_signature_bytes');
+            'uat_signature_bytes',
+          );
       _uatMaxAddressBytes = _lib!
           .lookupFunction<Int32 Function(), int Function()>(
-              'uat_max_address_bytes');
+            'uat_max_address_bytes',
+          );
 
-      _uatGenerateKeypair = _lib!.lookupFunction<
-          Int32 Function(Pointer<Uint8>, Int32, Pointer<Uint8>, Int32),
-          int Function(Pointer<Uint8>, int, Pointer<Uint8>,
-              int)>('uat_generate_keypair');
+      _uatGenerateKeypair = _lib!
+          .lookupFunction<
+            Int32 Function(Pointer<Uint8>, Int32, Pointer<Uint8>, Int32),
+            int Function(Pointer<Uint8>, int, Pointer<Uint8>, int)
+          >('uat_generate_keypair');
 
-      _uatGenerateKeypairFromSeed = _lib!.lookupFunction<
-          Int32 Function(Pointer<Uint8>, Int32, Pointer<Uint8>, Int32,
-              Pointer<Uint8>, Int32),
-          int Function(Pointer<Uint8>, int, Pointer<Uint8>, int, Pointer<Uint8>,
-              int)>('uat_generate_keypair_from_seed');
+      _uatGenerateKeypairFromSeed = _lib!
+          .lookupFunction<
+            Int32 Function(
+              Pointer<Uint8>,
+              Int32,
+              Pointer<Uint8>,
+              Int32,
+              Pointer<Uint8>,
+              Int32,
+            ),
+            int Function(
+              Pointer<Uint8>,
+              int,
+              Pointer<Uint8>,
+              int,
+              Pointer<Uint8>,
+              int,
+            )
+          >('uat_generate_keypair_from_seed');
 
-      _uatSign = _lib!.lookupFunction<
-          Int32 Function(Pointer<Uint8>, Int32, Pointer<Uint8>, Int32,
-              Pointer<Uint8>, Int32),
-          int Function(Pointer<Uint8>, int, Pointer<Uint8>, int, Pointer<Uint8>,
-              int)>('uat_sign');
+      _uatSign = _lib!
+          .lookupFunction<
+            Int32 Function(
+              Pointer<Uint8>,
+              Int32,
+              Pointer<Uint8>,
+              Int32,
+              Pointer<Uint8>,
+              Int32,
+            ),
+            int Function(
+              Pointer<Uint8>,
+              int,
+              Pointer<Uint8>,
+              int,
+              Pointer<Uint8>,
+              int,
+            )
+          >('uat_sign');
 
-      _uatVerify = _lib!.lookupFunction<
-          Int32 Function(Pointer<Uint8>, Int32, Pointer<Uint8>, Int32,
-              Pointer<Uint8>, Int32),
-          int Function(Pointer<Uint8>, int, Pointer<Uint8>, int, Pointer<Uint8>,
-              int)>('uat_verify');
+      _uatVerify = _lib!
+          .lookupFunction<
+            Int32 Function(
+              Pointer<Uint8>,
+              Int32,
+              Pointer<Uint8>,
+              Int32,
+              Pointer<Uint8>,
+              Int32,
+            ),
+            int Function(
+              Pointer<Uint8>,
+              int,
+              Pointer<Uint8>,
+              int,
+              Pointer<Uint8>,
+              int,
+            )
+          >('uat_verify');
 
-      _uatPublicKeyToAddress = _lib!.lookupFunction<
-          Int32 Function(Pointer<Uint8>, Int32, Pointer<Uint8>, Int32),
-          int Function(Pointer<Uint8>, int, Pointer<Uint8>,
-              int)>('uat_public_key_to_address');
+      _uatPublicKeyToAddress = _lib!
+          .lookupFunction<
+            Int32 Function(Pointer<Uint8>, Int32, Pointer<Uint8>, Int32),
+            int Function(Pointer<Uint8>, int, Pointer<Uint8>, int)
+          >('uat_public_key_to_address');
 
-      _uatValidateAddress = _lib!.lookupFunction<
-          Int32 Function(Pointer<Uint8>, Int32),
-          int Function(Pointer<Uint8>, int)>('uat_validate_address');
+      _uatValidateAddress = _lib!
+          .lookupFunction<
+            Int32 Function(Pointer<Uint8>, Int32),
+            int Function(Pointer<Uint8>, int)
+          >('uat_validate_address');
 
-      _uatBytesToHex = _lib!.lookupFunction<
-          Int32 Function(Pointer<Uint8>, Int32, Pointer<Uint8>, Int32),
-          int Function(
-              Pointer<Uint8>, int, Pointer<Uint8>, int)>('uat_bytes_to_hex');
+      _uatBytesToHex = _lib!
+          .lookupFunction<
+            Int32 Function(Pointer<Uint8>, Int32, Pointer<Uint8>, Int32),
+            int Function(Pointer<Uint8>, int, Pointer<Uint8>, int)
+          >('uat_bytes_to_hex');
 
-      _uatHexToBytes = _lib!.lookupFunction<
-          Int32 Function(Pointer<Uint8>, Int32, Pointer<Uint8>, Int32),
-          int Function(
-              Pointer<Uint8>, int, Pointer<Uint8>, int)>('uat_hex_to_bytes');
+      _uatHexToBytes = _lib!
+          .lookupFunction<
+            Int32 Function(Pointer<Uint8>, Int32, Pointer<Uint8>, Int32),
+            int Function(Pointer<Uint8>, int, Pointer<Uint8>, int)
+          >('uat_hex_to_bytes');
 
       // Query sizes
       _pkBytes = _uatPublicKeyBytes();
@@ -147,7 +220,8 @@ class DilithiumService {
       _available = true;
       print('✅ Dilithium5 native library loaded');
       print(
-          '   PK: $_pkBytes bytes, SK: $_skBytes bytes, Sig: $_sigBytes bytes');
+        '   PK: $_pkBytes bytes, SK: $_skBytes bytes, Sig: $_sigBytes bytes',
+      );
     } catch (e) {
       print('⚠️  Failed to load Dilithium5 native library: $e');
       _available = false;
@@ -169,8 +243,10 @@ class DilithiumService {
 
     // Try multiple locations in order of priority
     final sep = Platform.pathSeparator;
-    final execDir =
-        Platform.resolvedExecutable.replaceAll(RegExp(r'[/\\][^/\\]+$'), '');
+    final execDir = Platform.resolvedExecutable.replaceAll(
+      RegExp(r'[/\\][^/\\]+$'),
+      '',
+    );
     final searchPaths = <String>[
       // 1. macOS app bundle (release): .app/Contents/Frameworks/
       '$execDir$sep..${sep}Frameworks$sep$libName',
@@ -225,6 +301,8 @@ class DilithiumService {
         secretKey: Uint8List.fromList(skPtr.asTypedList(_skBytes)),
       );
     } finally {
+      // FIX H-01: Zero secret key native buffer before freeing
+      skPtr.asTypedList(_skBytes).fillRange(0, _skBytes, 0);
       calloc.free(pkPtr);
       calloc.free(skPtr);
     }
@@ -268,6 +346,8 @@ class DilithiumService {
     } finally {
       // Zero the seed memory before freeing
       seedPtr.asTypedList(seed.length).fillRange(0, seed.length, 0);
+      // FIX H-02: Zero secret key native buffer before freeing
+      skPtr.asTypedList(_skBytes).fillRange(0, _skBytes, 0);
       calloc.free(seedPtr);
       calloc.free(pkPtr);
       calloc.free(skPtr);
@@ -313,7 +393,10 @@ class DilithiumService {
 
   /// Verify a Dilithium5 signature.
   static bool verify(
-      Uint8List message, Uint8List signature, Uint8List publicKey) {
+    Uint8List message,
+    Uint8List signature,
+    Uint8List publicKey,
+  ) {
     if (!_available) return false;
 
     final msgPtr = calloc<Uint8>(message.length);
@@ -398,8 +481,12 @@ class DilithiumService {
 
     try {
       inPtr.asTypedList(bytes.length).setAll(0, bytes);
-      final hexLen =
-          _uatBytesToHex(inPtr, bytes.length, outPtr, bytes.length * 2 + 1);
+      final hexLen = _uatBytesToHex(
+        inPtr,
+        bytes.length,
+        outPtr,
+        bytes.length * 2 + 1,
+      );
       if (hexLen < 0) {
         return bytes.map((b) => b.toRadixString(16).padLeft(2, '0')).join('');
       }
@@ -426,8 +513,12 @@ class DilithiumService {
 
     try {
       inPtr.asTypedList(hexBytes.length).setAll(0, hexBytes);
-      final bytesLen =
-          _uatHexToBytes(inPtr, hexBytes.length, outPtr, hexBytes.length);
+      final bytesLen = _uatHexToBytes(
+        inPtr,
+        hexBytes.length,
+        outPtr,
+        hexBytes.length,
+      );
       if (bytesLen < 0) {
         throw StateError('Hex decode failed: $bytesLen');
       }

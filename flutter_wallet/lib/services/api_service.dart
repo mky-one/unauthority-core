@@ -26,7 +26,9 @@ class ApiService {
   static const Duration _torTimeout = Duration(seconds: 60);
 
   late String baseUrl;
-  late http.Client _client;
+  // FIX H-01: Initialize with safe default to prevent LateInitializationError
+  // _initializeClient() replaces with Tor client asynchronously when needed
+  http.Client _client = http.Client();
   NetworkEnvironment environment;
   final TorService _torService = TorService();
 

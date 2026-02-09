@@ -266,13 +266,13 @@ impl UatDatabase {
             "accounts_count": accounts.len(),
             "timestamp": std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
+                .unwrap_or_default()
                 .as_secs()
         });
 
         std::fs::write(
             format!("{}/snapshot_meta.json", path),
-            serde_json::to_string_pretty(&backup_data).unwrap(),
+            serde_json::to_string_pretty(&backup_data).unwrap_or_else(|_| "{}".to_string()),
         )
         .map_err(|e| format!("Failed to write snapshot metadata: {}", e))?;
 

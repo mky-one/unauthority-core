@@ -377,5 +377,6 @@ jobs:
             artifacts/validator-macos/*.dmg
             artifacts/validator-linux/*.tar.gz
             artifacts/validator-windows/*.zip
+          overwrite_files: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -105,17 +105,22 @@ class WalletService {
     } else {
       // SHA256 fallback for testnet L1
       final seed = bip39.mnemonicToSeed(mnemonic);
-      address = _deriveAddressSha256(seed);
-      cryptoMode = 'sha256';
+      try {
+        address = _deriveAddressSha256(seed);
+        cryptoMode = 'sha256';
 
-      await _secureStorage.write(key: _seedKey, value: mnemonic);
+        await _secureStorage.write(key: _seedKey, value: mnemonic);
 
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setString(_addressKey, address);
-      await prefs.setString(_importModeKey, 'mnemonic');
-      await prefs.setString(_cryptoModeKey, cryptoMode);
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setString(_addressKey, address);
+        await prefs.setString(_importModeKey, 'mnemonic');
+        await prefs.setString(_cryptoModeKey, cryptoMode);
 
-      print('⚠️ SHA256 fallback wallet (Dilithium5 native lib not loaded)');
+        print('⚠️ SHA256 fallback wallet (Dilithium5 native lib not loaded)');
+      } finally {
+        // FIX C12-05: Zero BIP39 seed bytes in SHA256 fallback path too
+        seed.fillRange(0, seed.length, 0);
+      }
     }
 
     return {

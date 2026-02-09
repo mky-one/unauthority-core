@@ -27,6 +27,7 @@ chrono = "0.4"
 sled = "0.34.7"
 prometheus = { version = "0.14.0", features = ["process"] }
 rand = "0.8"  # For faucet rate limiting
+zeroize = "1.7"  # FIX C12-03: Zeroize secret key clones in async tasks
 
 [features]
 default = ["vm"]

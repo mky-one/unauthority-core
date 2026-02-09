@@ -2,12 +2,12 @@
 set -e
 
 echo "╔════════════════════════════════════════════════════════════╗"
-echo "║      UNAUTHORITY 3-VALIDATOR TESTNET LAUNCHER             ║"
+echo "║      UNAUTHORITY 4-VALIDATOR TESTNET LAUNCHER             ║"
 echo "╚════════════════════════════════════════════════════════════╝"
 echo ""
 
 # Create directories
-mkdir -p node_data/validator-{1,2,3}/logs
+mkdir -p node_data/validator-{1,2,3,4}/logs
 
 # Ensure binary is built
 if [ ! -f "target/release/uat-node" ]; then
@@ -39,6 +39,13 @@ nohup ./target/release/uat-node 3032 > node_data/validator-3/logs/node.log 2>&1 
 echo $! > node_data/validator-3/pid.txt
 echo "   ✓ PID: $(cat node_data/validator-3/pid.txt)"
 
+# Node 4
+echo "▶️  Starting Validator-4 (REST:3033, gRPC:23033)..."
+export UAT_NODE_ID="validator-4"
+nohup ./target/release/uat-node 3033 > node_data/validator-4/logs/node.log 2>&1 &
+echo $! > node_data/validator-4/pid.txt
+echo "   ✓ PID: $(cat node_data/validator-4/pid.txt)"
+
 echo ""
 echo "⏳ Waiting 5 seconds for node initialization..."
 sleep 5
@@ -52,7 +59,7 @@ echo "━━━━━━━━━━━━━━━━━━━━━━━━�
 echo ""
 
 # Check each node
-for port in 3030 3031 3032; do
+for port in 3030 3031 3032 3033; do
     if curl -sf http://localhost:$port/node-info > /dev/null 2>&1; then
         echo "✅ Node on port $port: ONLINE"
         ADDR=$(curl -s http://localhost:$port/whoami | jq -r '.short' 2>/dev/null || echo "unknown")
@@ -75,5 +82,5 @@ echo "━━━━━━━━━━━━━━━━━━━━━━━━�
 echo "🛑 STOP ALL NODES"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo ""
-echo "   ./stop_3_validators.sh"
+echo "   ./stop.sh"
 echo ""

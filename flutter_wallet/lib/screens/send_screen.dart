@@ -40,6 +40,12 @@ class _SendScreenState extends State<SendScreen> {
         throw Exception('Minimum send amount is 1 UAT (whole numbers only)');
       }
 
+      // FIX H-06: Prevent sending to own address
+      final toAddress = _toController.text.trim();
+      if (toAddress == wallet['address']) {
+        throw Exception('Cannot send to your own address');
+      }
+
       // Balance validation: prevent sending more than available
       // Compare in UAT to avoid unit mismatch
       try {

@@ -10,9 +10,11 @@ void main() async {
 
   // Initialize Dilithium5 post-quantum crypto (loads native lib if available)
   await DilithiumService.initialize();
-  print(DilithiumService.isAvailable
-      ? '🔐 Dilithium5 ready (PK: ${DilithiumService.publicKeyBytes}B, SK: ${DilithiumService.secretKeyBytes}B)'
-      : '⚠️  Dilithium5 not available — SHA256 fallback active');
+  debugPrint(
+    DilithiumService.isAvailable
+        ? '🔐 Dilithium5 ready (PK: ${DilithiumService.publicKeyBytes}B, SK: ${DilithiumService.secretKeyBytes}B)'
+        : '⚠️  Dilithium5 not available — SHA256 fallback active',
+  );
 
   // Migrate any plaintext secrets from SharedPreferences → SecureStorage
   final walletService = WalletService();

@@ -1,5 +1,5 @@
 import 'dart:convert';
-import 'dart:typed_data';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:crypto/crypto.dart';
@@ -58,7 +58,7 @@ class WalletService {
       await prefs.remove(_seedKey);
       await prefs.remove(_publicKeyKey);
       await prefs.remove(_secretKeyKey);
-      print('🔒 Migrated wallet secrets to secure storage');
+      debugPrint('🔒 Migrated wallet secrets to secure storage');
     }
   }
 
@@ -95,9 +95,9 @@ class WalletService {
         await prefs.setString(_importModeKey, 'mnemonic');
         await prefs.setString(_cryptoModeKey, cryptoMode);
 
-        print('🔐 Dilithium5 wallet created (deterministic from seed)');
-        print('   Address: $address');
-        print('   PK: ${keypair.publicKey.length} bytes');
+        debugPrint('🔐 Dilithium5 wallet created (deterministic from seed)');
+        debugPrint('   Address: $address');
+        debugPrint('   PK: ${keypair.publicKey.length} bytes');
       } finally {
         // FIX M-04: Zero BIP39 seed bytes in Dart memory after keypair generation
         seed.fillRange(0, seed.length, 0);
@@ -116,7 +116,8 @@ class WalletService {
         await prefs.setString(_importModeKey, 'mnemonic');
         await prefs.setString(_cryptoModeKey, cryptoMode);
 
-        print('⚠️ SHA256 fallback wallet (Dilithium5 native lib not loaded)');
+        debugPrint(
+            '⚠️ SHA256 fallback wallet (Dilithium5 native lib not loaded)');
       } finally {
         // FIX C12-05: Zero BIP39 seed bytes in SHA256 fallback path too
         seed.fillRange(0, seed.length, 0);
@@ -163,8 +164,9 @@ class WalletService {
         await prefs.setString(_importModeKey, 'mnemonic');
         await prefs.setString(_cryptoModeKey, cryptoMode);
 
-        print('🔐 Dilithium5 wallet restored from mnemonic (deterministic)');
-        print('   Address: $address');
+        debugPrint(
+            '🔐 Dilithium5 wallet restored from mnemonic (deterministic)');
+        debugPrint('   Address: $address');
       } finally {
         // FIX M-04: Zero BIP39 seed bytes in Dart memory
         seed.fillRange(0, seed.length, 0);
@@ -211,15 +213,20 @@ class WalletService {
     return {'address': address};
   }
 
-  /// Get current wallet info
-  Future<Map<String, String>?> getCurrentWallet() async {
+  /// Get current wallet info.
+  /// FIX H-03: Does NOT return mnemonic by default. Use [includeMnemonic]
+  /// only when user explicitly requests seed phrase (e.g. settings backup).
+  Future<Map<String, String>?> getCurrentWallet(
+      {bool includeMnemonic = false}) async {
     final prefs = await SharedPreferences.getInstance();
     final address = prefs.getString(_addressKey);
     if (address == null) return null;
 
     final result = <String, String>{'address': address};
-    final mnemonic = await _secureStorage.read(key: _seedKey);
-    if (mnemonic != null) result['mnemonic'] = mnemonic;
+    if (includeMnemonic) {
+      final mnemonic = await _secureStorage.read(key: _seedKey);
+      if (mnemonic != null) result['mnemonic'] = mnemonic;
+    }
     final pk = await _secureStorage.read(key: _publicKeyKey);
     if (pk != null) result['public_key'] = pk;
     final mode = prefs.getString(_cryptoModeKey);
@@ -274,8 +281,9 @@ class WalletService {
 
     if (cryptoMode == 'dilithium5' && DilithiumService.isAvailable) {
       final skHex = await _secureStorage.read(key: _secretKeyKey);
-      if (skHex == null)
+      if (skHex == null) {
         throw Exception('Secret key not found in secure storage');
+      }
 
       final secretKey = DilithiumService.hexToBytes(skHex);
       final message = Uint8List.fromList(utf8.encode(txData));

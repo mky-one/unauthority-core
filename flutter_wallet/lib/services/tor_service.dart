@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'dart:async';
+import 'package:flutter/foundation.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as path;
 
@@ -33,7 +34,7 @@ class TorService {
   /// Returns true if a SOCKS proxy is available, false if all methods failed.
   Future<bool> start() async {
     if (_isRunning) {
-      print('🔵 Tor already running on $_activeProxy');
+      debugPrint('🔵 Tor already running on $_activeProxy');
       return true;
     }
 
@@ -42,7 +43,7 @@ class TorService {
     if (existing['found'] == true) {
       _activeProxy = existing['proxy'] as String;
       _isRunning = true;
-      print('✅ Using existing ${existing['type']}: $_activeProxy');
+      debugPrint('✅ Using existing ${existing['type']}: $_activeProxy');
       return true;
     }
 
@@ -50,18 +51,18 @@ class TorService {
     String? torBinary = await _findTorBinary();
 
     if (torBinary == null) {
-      print('🔍 No Tor binary found, attempting auto-install...');
+      debugPrint('🔍 No Tor binary found, attempting auto-install...');
       torBinary = await _autoInstallTor();
     }
 
     if (torBinary == null) {
-      print('📥 Auto-install failed, attempting download...');
+      debugPrint('📥 Auto-install failed, attempting download...');
       torBinary = await _downloadAndCacheTor();
     }
 
     if (torBinary == null) {
-      print('❌ Could not find, install, or download Tor');
-      print('   The wallet will not be able to connect to .onion nodes');
+      debugPrint('❌ Could not find, install, or download Tor');
+      debugPrint('   The wallet will not be able to connect to .onion nodes');
       return false;
     }
 
@@ -72,13 +73,13 @@ class TorService {
   /// Stop Tor daemon
   Future<void> stop() async {
     if (_torProcess != null) {
-      print('🛑 Stopping Tor daemon...');
+      debugPrint('🛑 Stopping Tor daemon...');
       _torProcess!.kill(ProcessSignal.sigterm);
       await Future.delayed(const Duration(milliseconds: 500));
       _torProcess = null;
       _isRunning = false;
       _activeProxy = null;
-      print('✅ Tor stopped');
+      debugPrint('✅ Tor stopped');
     }
   }
 
@@ -95,7 +96,7 @@ class TorService {
       if (result.exitCode == 0) {
         final torPath = result.stdout.toString().trim().split('\n').first;
         if (torPath.isNotEmpty && await File(torPath).exists()) {
-          print('✅ Found system tor: $torPath');
+          debugPrint('✅ Found system tor: $torPath');
           return torPath;
         }
       }
@@ -124,7 +125,7 @@ class TorService {
 
     for (final torPath in commonPaths) {
       if (await File(torPath).exists()) {
-        print('✅ Found tor at: $torPath');
+        debugPrint('✅ Found tor at: $torPath');
         return torPath;
       }
     }
@@ -166,7 +167,7 @@ class TorService {
         if (!Platform.isWindows) {
           await Process.run('chmod', ['+x', location]);
         }
-        print('✅ Found bundled tor: $location');
+        debugPrint('✅ Found bundled tor: $location');
         return location;
       }
     }
@@ -183,7 +184,7 @@ class TorService {
       final cachedPath = path.join(torBinDir, binaryName);
 
       if (await File(cachedPath).exists()) {
-        print('✅ Found cached tor: $cachedPath');
+        debugPrint('✅ Found cached tor: $cachedPath');
         return cachedPath;
       }
     } catch (_) {}
@@ -201,7 +202,8 @@ class TorService {
         // Check if Homebrew is available
         final brewCheck = await Process.run('which', ['brew']);
         if (brewCheck.exitCode == 0) {
-          print('📦 Installing Tor via Homebrew (this may take a minute)...');
+          debugPrint(
+              '📦 Installing Tor via Homebrew (this may take a minute)...');
           final installResult = await Process.run(
             'brew',
             ['install', 'tor'],
@@ -213,7 +215,7 @@ class TorService {
             final whichResult = await Process.run('which', ['tor']);
             if (whichResult.exitCode == 0) {
               final torPath = whichResult.stdout.toString().trim();
-              print('✅ Tor installed via Homebrew: $torPath');
+              debugPrint('✅ Tor installed via Homebrew: $torPath');
               return torPath;
             }
             // Try common Homebrew paths
@@ -221,14 +223,14 @@ class TorService {
               if (await File(p).exists()) return p;
             }
           } else {
-            print('⚠️  brew install tor failed: ${installResult.stderr}');
+            debugPrint('⚠️  brew install tor failed: ${installResult.stderr}');
           }
         }
       } else if (Platform.isLinux) {
         // Try apt (Debian/Ubuntu)
         final aptCheck = await Process.run('which', ['apt-get']);
         if (aptCheck.exitCode == 0) {
-          print('📦 Installing Tor via apt...');
+          debugPrint('📦 Installing Tor via apt...');
           // Note: This might need sudo, which won't work non-interactively
           // unless the user has passwordless sudo for apt
           final result = await Process.run(
@@ -245,7 +247,7 @@ class TorService {
         // Try dnf (Fedora/RHEL)
         final dnfCheck = await Process.run('which', ['dnf']);
         if (dnfCheck.exitCode == 0) {
-          print('📦 Installing Tor via dnf...');
+          debugPrint('📦 Installing Tor via dnf...');
           final result = await Process.run(
             'dnf',
             ['install', '-y', 'tor'],
@@ -258,7 +260,7 @@ class TorService {
         }
       }
     } catch (e) {
-      print('⚠️  Auto-install failed: $e');
+      debugPrint('⚠️  Auto-install failed: $e');
     }
     return null;
   }
@@ -272,7 +274,7 @@ class TorService {
     try {
       final url = await _getTorDownloadUrl();
       if (url == null) {
-        print('❌ No Tor download URL for ${Platform.operatingSystem}');
+        debugPrint('❌ No Tor download URL for ${Platform.operatingSystem}');
         return null;
       }
 
@@ -282,8 +284,8 @@ class TorService {
 
       final downloadPath = path.join(torBinDir, 'tor-expert-bundle.tar.gz');
 
-      print('📥 Downloading Tor Expert Bundle...');
-      print('   URL: $url');
+      debugPrint('📥 Downloading Tor Expert Bundle...');
+      debugPrint('   URL: $url');
 
       // Download using system curl (more reliable for HTTPS)
       final curlResult = await Process.run(
@@ -293,17 +295,17 @@ class TorService {
       ).timeout(const Duration(minutes: 10));
 
       if (curlResult.exitCode != 0) {
-        print('❌ Download failed: ${curlResult.stderr}');
+        debugPrint('❌ Download failed: ${curlResult.stderr}');
         return null;
       }
 
       final downloadFile = File(downloadPath);
       if (!await downloadFile.exists() || await downloadFile.length() < 1000) {
-        print('❌ Download appears incomplete or empty');
+        debugPrint('❌ Download appears incomplete or empty');
         return null;
       }
 
-      print('📦 Extracting Tor binary...');
+      debugPrint('📦 Extracting Tor binary...');
 
       // Extract the tarball
       final extractResult = await Process.run(
@@ -313,7 +315,7 @@ class TorService {
       );
 
       if (extractResult.exitCode != 0) {
-        print('❌ Extraction failed: ${extractResult.stderr}');
+        debugPrint('❌ Extraction failed: ${extractResult.stderr}');
         return null;
       }
 
@@ -338,14 +340,14 @@ class TorService {
           await downloadFile.delete();
         } catch (_) {}
 
-        print('✅ Tor downloaded and cached: $stablePath');
+        debugPrint('✅ Tor downloaded and cached: $stablePath');
         return stablePath;
       }
 
-      print('❌ Could not find tor binary in extracted archive');
+      debugPrint('❌ Could not find tor binary in extracted archive');
       return null;
     } catch (e) {
-      print('❌ Download/extract failed: $e');
+      debugPrint('❌ Download/extract failed: $e');
       return null;
     }
   }
@@ -421,9 +423,9 @@ class TorService {
   /// Start a Tor process with custom configuration
   Future<bool> _startTorProcess(String torBinary) async {
     try {
-      print('🚀 Starting Tor daemon...');
-      print('   Binary: $torBinary');
-      print('   SOCKS: localhost:$_socksPort');
+      debugPrint('🚀 Starting Tor daemon...');
+      debugPrint('   Binary: $torBinary');
+      debugPrint('   SOCKS: localhost:$_socksPort');
 
       // Setup data directory
       final appDir = await getApplicationSupportDirectory();
@@ -447,21 +449,21 @@ class TorService {
             output.contains('Tor has successfully opened a circuit')) {
           _isRunning = true;
           _activeProxy = 'localhost:$_socksPort';
-          print('✅ Tor ready! SOCKS proxy: $_activeProxy');
+          debugPrint('✅ Tor ready! SOCKS proxy: $_activeProxy');
         }
       });
 
       _torProcess!.stderr.listen((data) {
         final error = String.fromCharCodes(data);
         if (error.contains('error') || error.contains('Error')) {
-          print('⚠️  Tor: $error');
+          debugPrint('⚠️  Tor: $error');
         }
       });
 
       // Handle process exit
       _torProcess!.exitCode.then((code) {
         if (code != 0 && _isRunning) {
-          print('⚠️  Tor process exited with code $code');
+          debugPrint('⚠️  Tor process exited with code $code');
         }
         _isRunning = false;
       });
@@ -475,14 +477,14 @@ class TorService {
       }
 
       if (!_isRunning) {
-        print('❌ Tor failed to bootstrap within 120 seconds');
+        debugPrint('❌ Tor failed to bootstrap within 120 seconds');
         await stop();
         return false;
       }
 
       return true;
     } catch (e) {
-      print('❌ Failed to start Tor: $e');
+      debugPrint('❌ Failed to start Tor: $e');
       return false;
     }
   }

@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/io_client.dart';
 import 'package:socks5_proxy/socks_client.dart';
@@ -47,7 +48,7 @@ class ApiService {
       baseUrl = _getBaseUrl(environment);
     }
     _clientReady = _initializeClient();
-    print('🔗 UAT ApiService initialized with baseUrl: $baseUrl');
+    debugPrint('🔗 UAT ApiService initialized with baseUrl: $baseUrl');
   }
 
   /// Await Tor/HTTP client initialization before first request.
@@ -76,7 +77,7 @@ class ApiService {
     } else {
       // Local/direct connection — no SOCKS proxy needed
       _client = http.Client();
-      print('✅ Direct HTTP client (no Tor proxy needed for $baseUrl)');
+      debugPrint('✅ Direct HTTP client (no Tor proxy needed for $baseUrl)');
     }
   }
 
@@ -91,17 +92,18 @@ class ApiService {
     if (existing['found'] == true) {
       final proxy = existing['proxy'] as String;
       socksPort = int.parse(proxy.split(':').last);
-      print('✅ Using existing Tor: ${existing['type']} ($proxy)');
+      debugPrint('✅ Using existing Tor: ${existing['type']} ($proxy)');
     } else {
       // Start bundled Tor daemon
       final started = await _torService.start();
       if (started) {
         socksPort = 9250; // Bundled Tor port
-        print('✅ Bundled Tor started on port $socksPort');
+        debugPrint('✅ Bundled Tor started on port $socksPort');
       } else {
         // Fallback: try Tor Browser port
         socksPort = 9150;
-        print('⚠️ Bundled Tor failed, trying Tor Browser on port $socksPort');
+        debugPrint(
+            '⚠️ Bundled Tor failed, trying Tor Browser on port $socksPort');
       }
     }
 
@@ -115,7 +117,7 @@ class ApiService {
     httpClient.connectionTimeout = const Duration(seconds: 30);
     httpClient.idleTimeout = const Duration(seconds: 30);
 
-    print('✅ Tor SOCKS5 proxy configured (localhost:$socksPort)');
+    debugPrint('✅ Tor SOCKS5 proxy configured (localhost:$socksPort)');
     return IOClient(httpClient);
   }
 
@@ -124,7 +126,7 @@ class ApiService {
     environment = newEnv;
     baseUrl = _getBaseUrl(newEnv);
     _clientReady = _initializeClient(); // Re-initialize and track readiness
-    print('🔄 Switched to ${newEnv.name.toUpperCase()}: $baseUrl');
+    debugPrint('🔄 Switched to ${newEnv.name.toUpperCase()}: $baseUrl');
   }
 
   // Node Info
@@ -138,7 +140,7 @@ class ApiService {
       }
       throw Exception('Failed to get node info: ${response.statusCode}');
     } catch (e) {
-      print('❌ getNodeInfo error: $e');
+      debugPrint('❌ getNodeInfo error: $e');
       rethrow;
     }
   }
@@ -154,7 +156,7 @@ class ApiService {
       }
       throw Exception('Failed to get health: ${response.statusCode}');
     } catch (e) {
-      print('❌ getHealth error: $e');
+      debugPrint('❌ getHealth error: $e');
       rethrow;
     }
   }
@@ -177,7 +179,7 @@ class ApiService {
       }
       throw Exception('Failed to get balance: ${response.statusCode}');
     } catch (e) {
-      print('❌ getBalance error: $e');
+      debugPrint('❌ getBalance error: $e');
       rethrow;
     }
   }
@@ -199,7 +201,7 @@ class ApiService {
       }
       throw Exception('Failed to get account: ${response.statusCode}');
     } catch (e) {
-      print('❌ getAccount error: $e');
+      debugPrint('❌ getAccount error: $e');
       rethrow;
     }
   }
@@ -225,7 +227,7 @@ class ApiService {
 
       return data;
     } catch (e) {
-      print('❌ requestFaucet error: $e');
+      debugPrint('❌ requestFaucet error: $e');
       rethrow;
     }
   }
@@ -279,7 +281,7 @@ class ApiService {
 
       return data;
     } catch (e) {
-      print('❌ sendTransaction error: $e');
+      debugPrint('❌ sendTransaction error: $e');
       rethrow;
     }
   }
@@ -317,7 +319,7 @@ class ApiService {
 
       return data;
     } catch (e) {
-      print('❌ submitBurn error: $e');
+      debugPrint('❌ submitBurn error: $e');
       rethrow;
     }
   }
@@ -338,7 +340,7 @@ class ApiService {
       }
       throw Exception('Failed to get validators: ${response.statusCode}');
     } catch (e) {
-      print('❌ getValidators error: $e');
+      debugPrint('❌ getValidators error: $e');
       rethrow;
     }
   }
@@ -355,7 +357,7 @@ class ApiService {
       }
       throw Exception('Failed to get latest block: ${response.statusCode}');
     } catch (e) {
-      print('❌ getLatestBlock error: $e');
+      debugPrint('❌ getLatestBlock error: $e');
       rethrow;
     }
   }
@@ -377,7 +379,7 @@ class ApiService {
       }
       throw Exception('Failed to get recent blocks: ${response.statusCode}');
     } catch (e) {
-      print('❌ getRecentBlocks error: $e');
+      debugPrint('❌ getRecentBlocks error: $e');
       rethrow;
     }
   }
@@ -402,7 +404,7 @@ class ApiService {
       }
       throw Exception('Failed to get peers: ${response.statusCode}');
     } catch (e) {
-      print('❌ getPeers error: $e');
+      debugPrint('❌ getPeers error: $e');
       rethrow;
     }
   }
@@ -425,7 +427,7 @@ class ApiService {
       }
       throw Exception('Failed to get history: ${response.statusCode}');
     } catch (e) {
-      print('❌ getHistory error: $e');
+      debugPrint('❌ getHistory error: $e');
       rethrow;
     }
   }

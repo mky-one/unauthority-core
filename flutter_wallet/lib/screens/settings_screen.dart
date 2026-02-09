@@ -21,23 +21,36 @@ class _SettingsScreenState extends State<SettingsScreen> {
   @override
   void initState() {
     super.initState();
-    _loadWalletData();
+    _loadNetworkState();
   }
 
-  Future<void> _loadWalletData() async {
-    final walletService = context.read<WalletService>();
-    final wallet = await walletService.getCurrentWallet();
-
-    if (wallet != null && mounted) {
+  /// FIX H-02: Only load network state on init; seed phrase is loaded
+  /// lazily when user explicitly taps the reveal button.
+  Future<void> _loadNetworkState() async {
+    final apiService = context.read<ApiService>();
+    if (mounted) {
       setState(() {
-        _seedPhrase = wallet['mnemonic']; // Changed from 'seed' to 'mnemonic'
+        _currentNetwork = apiService.environment;
       });
     }
+  }
 
-    final apiService = context.read<ApiService>();
-    setState(() {
-      _currentNetwork = apiService.environment;
-    });
+  /// FIX H-02: Lazy-load seed phrase only when user taps reveal.
+  /// Prevents keeping mnemonic in widget state longer than necessary.
+  Future<void> _revealSeedPhrase() async {
+    if (_seedPhrase != null) {
+      // Already loaded — just toggle visibility
+      setState(() => _showSeedPhrase = !_showSeedPhrase);
+      return;
+    }
+    final walletService = context.read<WalletService>();
+    final wallet = await walletService.getCurrentWallet(includeMnemonic: true);
+    if (wallet != null && mounted) {
+      setState(() {
+        _seedPhrase = wallet['mnemonic'];
+        _showSeedPhrase = true;
+      });
+    }
   }
 
   void _copySeedPhrase() {
@@ -195,8 +208,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     icon: Icon(_showSeedPhrase
                         ? Icons.visibility_off
                         : Icons.visibility),
-                    onPressed: () =>
-                        setState(() => _showSeedPhrase = !_showSeedPhrase),
+                    onPressed: _revealSeedPhrase,
                   ),
                 ),
                 if (_showSeedPhrase && _seedPhrase != null) ...[
@@ -205,7 +217,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     margin: const EdgeInsets.all(16),
                     padding: const EdgeInsets.all(16),
                     decoration: BoxDecoration(
-                      color: Colors.orange.withOpacity(0.1),
+                      color: const Color(0x1AFF9800), // orange at 10% opacity
                       borderRadius: BorderRadius.circular(8),
                       border: Border.all(color: Colors.orange),
                     ),
@@ -283,7 +295,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           // Danger Zone
           Card(
             margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            color: Colors.red.withOpacity(0.1),
+            color: const Color(0x1AF44336), // red at 10% opacity
             child: ListTile(
               leading: const Icon(Icons.logout, color: Colors.red),
               title: const Text(

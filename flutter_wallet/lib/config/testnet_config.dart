@@ -1,3 +1,7 @@
+library;
+
+import 'package:flutter/foundation.dart';
+
 /// UNAUTHORITY FLUTTER WALLET - GRADUATED TESTNET CONFIGURATION
 ///
 /// Aligns with backend graduated testnet levels:
@@ -7,7 +11,6 @@
 ///
 /// For wallet, Level 2 and Level 3 are identical from UX perspective.
 /// The difference is backend behavior, not wallet behavior.
-library;
 
 enum TestnetLevel {
   /// Level 1: Functional testing
@@ -134,10 +137,11 @@ class WalletConfig {
   /// Switch network configuration
   static void setConfig(WalletTestnetConfig config) {
     _current = config;
-    print('🔄 Wallet switched to: ${config.networkName}');
-    print('   API: ${config.apiUrl}');
-    print('   Faucet: ${config.faucetAvailable ? "Available" : "Disabled"}');
-    print(
+    debugPrint('🔄 Wallet switched to: ${config.networkName}');
+    debugPrint('   API: ${config.apiUrl}');
+    debugPrint(
+        '   Faucet: ${config.faucetAvailable ? "Available" : "Disabled"}');
+    debugPrint(
         '   Confirmation: ${config.expectedConfirmationTime.inMilliseconds}ms');
   }
 
@@ -165,7 +169,7 @@ class WalletConfig {
         useMainnet();
         break;
       default:
-        print('⚠️ Unknown UAT_TESTNET_LEVEL: $env, using functional');
+        debugPrint('⚠️ Unknown UAT_TESTNET_LEVEL: $env, using functional');
         useFunctionalTestnet();
     }
   }

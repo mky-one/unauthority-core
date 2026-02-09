@@ -30,10 +30,11 @@ class Account {
   }
 
   factory Account.fromJson(Map<String, dynamic> json) {
-    // Parse balance robustly: backend may send int, String, or formatted "X.Y" UAT
-    final int parsedBalance = _parseIntField(json['balance_voi']) != 0
+    // FIX M-01: Use containsKey instead of != 0 so real zero balances
+    // are not skipped. A zero balance from balance_voi is still valid data.
+    final int parsedBalance = json.containsKey('balance_voi')
         ? _parseIntField(json['balance_voi'])
-        : _parseIntField(json['balance_void']) != 0
+        : json.containsKey('balance_void')
             ? _parseIntField(json['balance_void'])
             : _parseIntField(json['balance']);
 

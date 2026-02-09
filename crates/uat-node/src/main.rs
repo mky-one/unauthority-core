@@ -548,7 +548,12 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
             let (in_ledger, my_power) = {
                 let l_guard = safe_lock(&l);
                 let exists = l_guard.blocks.values().any(|b| b.block_type == BlockType::Mint && b.link.contains(&clean_txid));
-                let pwr = l_guard.accounts.get(&my_addr).map(|a| a.balance).unwrap_or(0) / VOID_PER_UAT;
+                // SECURITY FIX C-03: Self-vote must use quadratic voting power
+                // consistent with external VOTE_RES accumulation (× 1000 scale).
+                // Previously: balance / VOID_PER_UAT (raw UAT, e.g. 1000)
+                // Now: calculate_voting_power(balance) * 1000 (matches VOTE_RES path)
+                let balance = l_guard.accounts.get(&my_addr).map(|a| a.balance).unwrap_or(0);
+                let pwr = calculate_voting_power(balance) * 1000;
                 (exists, pwr)
             };
 
@@ -1067,7 +1072,7 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
                 }));
             }
 
-            let faucet_amount = 100_000u128 * VOID_PER_UAT; // 100k UAT
+            let faucet_amount = 5_000u128 * VOID_PER_UAT; // 5k UAT (reduced from 100k to prevent exceeding validator stake)
 
             let mut l_guard = safe_lock(&l);
 
@@ -3110,11 +3115,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 println!("✅ Valid TXID: {:.6} {} detected.", amt, sym);
 
                                 // --- SELF-VOTING FEATURE (INITIAL POWER) ---
-                                // Get our own balance to use as initial Power
-                                let my_power = {
+                                // SECURITY FIX C-03: Use quadratic voting power × 1000
+                                // to match VOTE_RES accumulation scale.
+                                let my_balance = {
                                     let l = safe_lock(&ledger);
-                                    l.accounts.get(&my_address).map(|a| a.balance).unwrap_or(0) / VOID_PER_UAT
+                                    l.accounts.get(&my_address).map(|a| a.balance).unwrap_or(0)
                                 };
+                                let my_power = calculate_voting_power(my_balance) * 1000;
 
                                 // Insert to pending with initial Power = our balance
                                 safe_lock(&pending_burns).insert(clean_txid.clone(), (amt, prc, sym.to_string(), my_power, std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_secs(), my_address.clone()));

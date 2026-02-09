@@ -1,5 +1,5 @@
 import 'dart:convert';
-import 'dart:typed_data';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:crypto/crypto.dart';
@@ -60,7 +60,7 @@ class WalletService {
       await prefs.remove(_seedKey);
       await prefs.remove(_publicKeyKey);
       await prefs.remove(_secretKeyKey);
-      print('🔒 Migrated wallet secrets to secure storage');
+      debugPrint('🔒 Migrated wallet secrets to secure storage');
     }
   }
 
@@ -104,7 +104,7 @@ class WalletService {
         // Zero Dart-side secret key copy
         keypair.secretKey.fillRange(0, keypair.secretKey.length, 0);
 
-        print('🔐 Dilithium5 wallet created (deterministic from seed)');
+        debugPrint('🔐 Dilithium5 wallet created (deterministic from seed)');
         // NOTE: Do not log address or key sizes to console in production
       } finally {
         seed.fillRange(0, seed.length, 0);
@@ -123,7 +123,9 @@ class WalletService {
         await prefs.setString(_importModeKey, 'mnemonic');
         await prefs.setString(_cryptoModeKey, cryptoMode);
 
-        print('⚠️ SHA256 fallback wallet (Dilithium5 native lib not loaded)');
+        debugPrint(
+          '⚠️ SHA256 fallback wallet (Dilithium5 native lib not loaded)',
+        );
       } finally {
         seed.fillRange(0, seed.length, 0);
       }
@@ -176,7 +178,9 @@ class WalletService {
         // Zero Dart-side secret key copy
         keypair.secretKey.fillRange(0, keypair.secretKey.length, 0);
 
-        print('🔐 Dilithium5 wallet restored from mnemonic (deterministic)');
+        debugPrint(
+          '🔐 Dilithium5 wallet restored from mnemonic (deterministic)',
+        );
         // NOTE: Do not log address to console in production
       } finally {
         seed.fillRange(0, seed.length, 0);
@@ -223,15 +227,21 @@ class WalletService {
     return {'address': address};
   }
 
-  /// Get current wallet info
-  Future<Map<String, String>?> getCurrentWallet() async {
+  /// Get current wallet info.
+  /// FIX C-02: Does NOT return mnemonic by default. Use [includeMnemonic]
+  /// only when the user explicitly requests seed phrase (e.g. settings backup).
+  Future<Map<String, String>?> getCurrentWallet({
+    bool includeMnemonic = false,
+  }) async {
     final prefs = await SharedPreferences.getInstance();
     final address = prefs.getString(_addressKey);
     if (address == null) return null;
 
     final result = <String, String>{'address': address};
-    final mnemonic = await _secureStorage.read(key: _seedKey);
-    if (mnemonic != null) result['mnemonic'] = mnemonic;
+    if (includeMnemonic) {
+      final mnemonic = await _secureStorage.read(key: _seedKey);
+      if (mnemonic != null) result['mnemonic'] = mnemonic;
+    }
     final pk = await _secureStorage.read(key: _publicKeyKey);
     if (pk != null) result['public_key'] = pk;
     final mode = prefs.getString(_cryptoModeKey);

@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/io_client.dart';
 import 'package:socks5_proxy/socks_client.dart';
@@ -36,7 +37,7 @@ class ApiService {
           : mainnetOnionUrl;
     }
     _client = _createHttpClient();
-    print('🔗 UAT ApiService initialized with baseUrl: $baseUrl');
+    debugPrint('🔗 UAT ApiService initialized with baseUrl: $baseUrl');
   }
 
   // Create HTTP client with Tor SOCKS proxy support (only for .onion)
@@ -57,10 +58,10 @@ class ApiService {
       httpClient.connectionTimeout = Duration(seconds: 30);
       httpClient.idleTimeout = Duration(seconds: 30);
 
-      print('✅ Tor SOCKS5 proxy configured (localhost:9150/9050)');
+      debugPrint('✅ Tor SOCKS5 proxy configured (localhost:9150/9050)');
     } else {
       httpClient.connectionTimeout = Duration(seconds: 10);
-      print('✅ Direct HTTP client (no Tor proxy for $baseUrl)');
+      debugPrint('✅ Direct HTTP client (no Tor proxy for $baseUrl)');
     }
 
     return IOClient(httpClient);
@@ -74,7 +75,7 @@ class ApiService {
         : mainnetOnionUrl;
     // Recreate HTTP client so proxy settings match new baseUrl
     _client = _createHttpClient();
-    print(
+    debugPrint(
       '🔄 Switched to ${newEnv == NetworkEnvironment.testnet ? "TESTNET" : "MAINNET"}: $baseUrl',
     );
   }
@@ -88,7 +89,7 @@ class ApiService {
       }
       throw Exception('Failed to get node info: ${response.statusCode}');
     } catch (e) {
-      print('❌ getNodeInfo error: $e');
+      debugPrint('❌ getNodeInfo error: $e');
       rethrow;
     }
   }
@@ -102,7 +103,7 @@ class ApiService {
       }
       throw Exception('Failed to get health: ${response.statusCode}');
     } catch (e) {
-      print('❌ getHealth error: $e');
+      debugPrint('❌ getHealth error: $e');
       rethrow;
     }
   }
@@ -166,7 +167,7 @@ class ApiService {
       }
       throw Exception('Failed to get balance: ${response.statusCode}');
     } catch (e) {
-      print('❌ getBalance error: $e');
+      debugPrint('❌ getBalance error: $e');
       rethrow;
     }
   }
@@ -183,7 +184,7 @@ class ApiService {
       }
       throw Exception('Failed to get account: ${response.statusCode}');
     } catch (e) {
-      print('❌ getAccount error: $e');
+      debugPrint('❌ getAccount error: $e');
       rethrow;
     }
   }
@@ -206,7 +207,7 @@ class ApiService {
 
       return data;
     } catch (e) {
-      print('❌ requestFaucet error: $e');
+      debugPrint('❌ requestFaucet error: $e');
       rethrow;
     }
   }
@@ -242,7 +243,7 @@ class ApiService {
 
       return data;
     } catch (e) {
-      print('❌ sendTransaction error: $e');
+      debugPrint('❌ sendTransaction error: $e');
       rethrow;
     }
   }
@@ -275,7 +276,7 @@ class ApiService {
 
       return data;
     } catch (e) {
-      print('❌ submitBurn error: $e');
+      debugPrint('❌ submitBurn error: $e');
       rethrow;
     }
   }
@@ -295,7 +296,7 @@ class ApiService {
       }
       throw Exception('Failed to get validators: ${response.statusCode}');
     } catch (e) {
-      print('❌ getValidators error: $e');
+      debugPrint('❌ getValidators error: $e');
       rethrow;
     }
   }
@@ -310,7 +311,7 @@ class ApiService {
       }
       throw Exception('Failed to get latest block: ${response.statusCode}');
     } catch (e) {
-      print('❌ getLatestBlock error: $e');
+      debugPrint('❌ getLatestBlock error: $e');
       rethrow;
     }
   }
@@ -329,7 +330,7 @@ class ApiService {
       }
       throw Exception('Failed to get recent blocks: ${response.statusCode}');
     } catch (e) {
-      print('❌ getRecentBlocks error: $e');
+      debugPrint('❌ getRecentBlocks error: $e');
       rethrow;
     }
   }
@@ -358,7 +359,7 @@ class ApiService {
       }
       throw Exception('Failed to get peers: ${response.statusCode}');
     } catch (e) {
-      print('❌ getPeers error: $e');
+      debugPrint('❌ getPeers error: $e');
       rethrow;
     }
   }

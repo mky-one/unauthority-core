@@ -18,7 +18,7 @@ class NetworkBadge extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
       decoration: BoxDecoration(
-        color: _parseColor(config.badgeColor).withOpacity(0.1),
+        color: _parseColor(config.badgeColor).withValues(alpha: 0.1),
         border: Border.all(
           color: _parseColor(config.badgeColor),
           width: 1.5,
@@ -66,8 +66,8 @@ class NetworkWarningBanner extends StatelessWidget {
       margin: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: config.testnetLevel == TestnetLevel.functional
-            ? Colors.blue.withOpacity(0.1)
-            : Colors.orange.withOpacity(0.1),
+            ? Colors.blue.withValues(alpha: 0.1)
+            : Colors.orange.withValues(alpha: 0.1),
         border: Border.all(
           color: config.testnetLevel == TestnetLevel.functional
               ? Colors.blue

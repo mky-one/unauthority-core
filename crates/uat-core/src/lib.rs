@@ -357,10 +357,24 @@ impl Ledger {
                             send_block.amount, block.amount
                         ));
                     }
-                    // 4. Double-receive prevention: O(1) check via claimed_sends index
+                    // 4. Double-receive prevention:
+                    // O(1) fast path via claimed_sends cache.
+                    // FIX C12-02: If cache was pruned, fall back to O(n) scan of blocks
+                    // to prevent double-receive after claimed_sends eviction.
                     if self.claimed_sends.contains(&block.link) {
                         return Err(format!(
-                            "Receive Error: Send block {} already received",
+                            "Receive Error: Send block {} already received (cache hit)",
+                            block.link
+                        ));
+                    }
+                    // Full-scan fallback: check if ANY existing Receive block already claims this Send
+                    let already_received = self
+                        .blocks
+                        .values()
+                        .any(|b| b.block_type == BlockType::Receive && b.link == block.link);
+                    if already_received {
+                        return Err(format!(
+                            "Receive Error: Send block {} already received (ledger scan)",
                             block.link
                         ));
                     }

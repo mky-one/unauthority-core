@@ -34,8 +34,9 @@ services:
       --grpc-listen 0.0.0.0:50051
       --metrics-listen 0.0.0.0:9090
     restart: unless-stopped
+    # FIX C12-03: Use uat-cli instead of curl (curl not installed in image)
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8080/node-info"]
+      test: ["CMD", "/usr/local/bin/uat-cli", "node-info"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -78,9 +79,8 @@ services:
       validator-1:
         condition: service_healthy
     restart: unless-stopped
-    # FIX C11-09: Add healthcheck to all validators for consistent liveness detection
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8080/node-info"]
+      test: ["CMD", "/usr/local/bin/uat-cli", "node-info"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -127,13 +127,13 @@ services:
         condition: service_healthy
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8080/node-info"]
+      test: ["CMD", "/usr/local/bin/uat-cli", "node-info"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 60s
 
-  # FIX C11-05: Bootstrap Validator 4 (genesis defines 4 bootstrap nodes; aBFT n=4,f=1)
+  # Bootstrap Validator 4 (genesis defines 4 bootstrap nodes; aBFT n=4,f=1) (genesis defines 4 bootstrap nodes; aBFT n=4,f=1)
   validator-4:
     build:
       context: .
@@ -147,7 +147,7 @@ services:
       - "8083:8080"
       - "50054:50051"
       - "9003:9000"
-      - "9093:9090"
+      - "9193:9090"
     volumes:
       - ./node_data/validator-4:/data
       - ./validator.toml:/config/validator.toml:ro
@@ -177,7 +177,7 @@ services:
         condition: service_healthy
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8080/node-info"]
+      test: ["CMD", "/usr/local/bin/uat-cli", "node-info"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -192,9 +192,10 @@ services:
       uat-network:
         ipv4_address: 172.20.0.20
     ports:
-      - "9093:9090"
+      - "9094:9090"
     volumes:
-      - ./docs/prometheus-alerts.yml:/etc/prometheus/prometheus.yml:ro
+      - ./docs/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./docs/prometheus-alerts.yml:/etc/prometheus/alerts.yml:ro
       - prometheus-data:/prometheus
     command:
       - '--config.file=/etc/prometheus/prometheus.yml'
@@ -235,7 +236,7 @@ networks:
     driver: bridge
     ipam:
       config:
-        - subnet: 172.20.0.0/16
+        - subnet: 172.20.0.0/24
 
 volumes:
   prometheus-data:

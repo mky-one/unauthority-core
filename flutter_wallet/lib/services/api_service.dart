@@ -129,6 +129,7 @@ class ApiService {
 
   // Node Info
   Future<Map<String, dynamic>> getNodeInfo() async {
+    await ensureReady();
     try {
       final response =
           await _client.get(Uri.parse('$baseUrl/node-info')).timeout(_timeout);
@@ -144,6 +145,7 @@ class ApiService {
 
   // Health Check
   Future<Map<String, dynamic>> getHealth() async {
+    await ensureReady();
     try {
       final response =
           await _client.get(Uri.parse('$baseUrl/health')).timeout(_timeout);
@@ -159,6 +161,7 @@ class ApiService {
 
   // Get Balance
   Future<Account> getBalance(String address) async {
+    await ensureReady();
     try {
       final response = await _client
           .get(Uri.parse('$baseUrl/bal/$address'))
@@ -181,6 +184,7 @@ class ApiService {
 
   // Get Account (with history)
   Future<Account> getAccount(String address) async {
+    await ensureReady();
     try {
       final response = await _client
           .get(Uri.parse('$baseUrl/account/$address'))
@@ -202,6 +206,7 @@ class ApiService {
 
   // Request Faucet
   Future<Map<String, dynamic>> requestFaucet(String address) async {
+    await ensureReady();
     try {
       final response = await _client
           .post(
@@ -237,6 +242,7 @@ class ApiService {
     String? previous,
     int? work,
   }) async {
+    await ensureReady();
     try {
       final body = <String, dynamic>{
         'from': from,
@@ -284,6 +290,7 @@ class ApiService {
     required String txid,
     String? recipientAddress,
   }) async {
+    await ensureReady();
     try {
       final body = <String, dynamic>{
         'coin_type': coinType,
@@ -317,6 +324,7 @@ class ApiService {
 
   // Get Validators
   Future<List<ValidatorInfo>> getValidators() async {
+    await ensureReady();
     try {
       final response =
           await _client.get(Uri.parse('$baseUrl/validators')).timeout(_timeout);
@@ -337,6 +345,7 @@ class ApiService {
 
   // Get Latest Block
   Future<BlockInfo> getLatestBlock() async {
+    await ensureReady();
     try {
       final response =
           await _client.get(Uri.parse('$baseUrl/block')).timeout(_timeout);
@@ -353,6 +362,7 @@ class ApiService {
 
   // Get Recent Blocks
   Future<List<BlockInfo>> getRecentBlocks() async {
+    await ensureReady();
     try {
       final response = await _client
           .get(Uri.parse('$baseUrl/blocks/recent'))
@@ -373,13 +383,22 @@ class ApiService {
   }
 
   // Get Peers
+  // FIX C12-03: Backend GET /peers returns HashMap<String,String> (JSON object),
+  // not a JSON array. Handle both Map and List for resilience.
   Future<List<String>> getPeers() async {
+    await ensureReady();
     try {
       final response =
           await _client.get(Uri.parse('$baseUrl/peers')).timeout(_timeout);
       if (response.statusCode == 200) {
-        final List<dynamic> data = json.decode(response.body);
-        return data.cast<String>();
+        final decoded = json.decode(response.body);
+        if (decoded is Map) {
+          // Backend returns {"addr1": "addr2", ...} — extract keys as peer list
+          return decoded.keys.cast<String>().toList();
+        } else if (decoded is List) {
+          return decoded.cast<String>();
+        }
+        return [];
       }
       throw Exception('Failed to get peers: ${response.statusCode}');
     } catch (e) {
@@ -390,6 +409,7 @@ class ApiService {
 
   // Get Transaction History for address
   Future<List<Transaction>> getHistory(String address) async {
+    await ensureReady();
     try {
       final response = await _client
           .get(Uri.parse('$baseUrl/history/$address'))
@@ -412,6 +432,7 @@ class ApiService {
 
   /// Cleanup: stop bundled Tor when no longer needed
   Future<void> dispose() async {
+    _client.close();
     await _torService.stop();
   }
 }

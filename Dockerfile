@@ -6,6 +6,7 @@ RUN apt-get update && apt-get install -y \
     pkg-config \
     libssl-dev \
     protobuf-compiler \
+    jq \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /build
@@ -14,10 +15,16 @@ WORKDIR /build
 COPY Cargo.toml Cargo.lock ./
 COPY crates ./crates
 COPY genesis ./genesis
+COPY genesis_config.json ./
 COPY uat.proto ./
 
 # Build release binaries
 RUN cargo build --release --workspace
+
+# Strip private keys and seed phrases from genesis config for the Docker image
+# Only addresses, public keys, balances and stakes are needed at runtime
+RUN jq 'del(.bootstrap_nodes[].private_key, .bootstrap_nodes[].seed_phrase, .dev_accounts[].private_key, .dev_accounts[].seed_phrase)' \
+    genesis_config.json > genesis_config_stripped.json
 
 # Final minimal image
 FROM debian:bookworm-slim
@@ -44,7 +51,8 @@ COPY --from=builder /build/target/release/genesis_generator /usr/local/bin/
 COPY validator.toml /config/validator.toml.template
 
 # Copy genesis configuration files (required for node startup)
-COPY genesis_config.json /opt/uat/genesis_config.json
+# SECURITY: Use stripped version without private keys / seed phrases
+COPY --from=builder /build/genesis_config_stripped.json /opt/uat/genesis_config.json
 COPY testnet-genesis/ /opt/uat/testnet-genesis/
 
 USER uat

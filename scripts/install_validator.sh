@@ -1,5 +1,5 @@
 #!/bin/bash
-cd /Users/moonkey-code/Documents/monkey-one/project/unauthority-core/frontend-validator
+cd "$(dirname "$0")/../frontend-validator"
 npm install
 echo "✅ Validator dependencies installed!"
 cd ..

@@ -34,17 +34,17 @@ class _SendScreenState extends State<SendScreen> {
       // FIX C11-01: Backend expects UAT integer in `amount` field and does
       // × VOID_PER_UAT server-side. Sending VOID here would cause 10^11×
       // inflation. Parse user input as UAT double, round to integer UAT.
-      final amountDouble = double.parse(_amountController.text.trim());
-      final amountUat = amountDouble.round();
-      if (amountUat <= 0) {
-        throw Exception('Minimum send amount is 1 UAT');
+      // FIX C12-01: Parse as integer only — sub-UAT amounts not supported.
+      final amountUat = int.tryParse(_amountController.text.trim());
+      if (amountUat == null || amountUat <= 0) {
+        throw Exception('Minimum send amount is 1 UAT (whole numbers only)');
       }
 
       // Balance validation: prevent sending more than available
       // Compare in UAT to avoid unit mismatch
       try {
         final account = await apiService.getBalance(wallet['address']!);
-        if (amountDouble > account.balanceUAT) {
+        if (amountUat > account.balanceUAT) {
           throw Exception(
               'Insufficient balance: have ${BlockchainConstants.formatUat(account.balanceUAT)} UAT');
         }
@@ -131,19 +131,20 @@ class _SendScreenState extends State<SendScreen> {
                   controller: _amountController,
                   decoration: const InputDecoration(
                     labelText: 'Amount (UAT)',
-                    hintText: '0.000000',
+                    hintText: '1',
+                    helperText: 'Whole UAT only (no decimals)',
                     border: OutlineInputBorder(),
                     prefixIcon: Icon(Icons.attach_money),
                   ),
                   keyboardType:
-                      const TextInputType.numberWithOptions(decimal: true),
+                      const TextInputType.numberWithOptions(decimal: false),
                   validator: (value) {
                     if (value == null || value.trim().isEmpty) {
                       return 'Please enter amount';
                     }
-                    final amount = double.tryParse(value.trim());
+                    final amount = int.tryParse(value.trim());
                     if (amount == null || amount <= 0) {
-                      return 'Please enter valid amount';
+                      return 'Please enter a whole number greater than 0';
                     }
                     return null;
                   },

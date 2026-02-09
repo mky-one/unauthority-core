@@ -22,7 +22,10 @@ class MyApp extends StatelessWidget {
     return MultiProvider(
       providers: [
         Provider<WalletService>(create: (_) => WalletService()),
-        Provider<ApiService>(create: (_) => ApiService()),
+        Provider<ApiService>(
+          create: (_) => ApiService(),
+          dispose: (_, api) => api.dispose(),
+        ),
       ],
       child: MaterialApp(
         title: 'UAT Wallet',

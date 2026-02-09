@@ -20,7 +20,8 @@ class Account {
       address: json['address'] ?? '',
       balance: json['balance'] ?? 0,
       voidBalance: json['void_balance'] ?? 0,
-      history: (json['history'] as List?)
+      history:
+          (json['history'] as List?)
               ?.map((tx) => Transaction.fromJson(tx))
               .toList() ??
           [],
@@ -116,9 +117,9 @@ class ValidatorInfo {
     );
   }
 
-  /// Convert stake from VOID to UAT for display
-  /// 1 UAT = 100,000,000,000 VOID (10^11)
-  double get stakeUAT => BlockchainConstants.voidToUat(stake);
+  /// Backend already sends stake as integer UAT (balance / VOID_PER_UAT).
+  /// FIX C-02: Do NOT divide again — value is already in UAT.
+  double get stakeUAT => stake.toDouble();
 
   /// Quadratic voting power: sqrt(stake in UAT)
   /// Matches backend: calculate_voting_power() in anti_whale.rs

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'screens/home_screen.dart';
 import 'screens/wallet_setup_screen.dart';
+import 'services/account_management_service.dart';
 import 'services/wallet_service.dart';
 import 'services/api_service.dart';
 import 'services/dilithium_service.dart';
@@ -63,6 +64,10 @@ class _SplashScreenState extends State<SplashScreen> {
 
     // One-time migration: SharedPreferences → FlutterSecureStorage
     await walletService.migrateFromSharedPreferences();
+
+    // One-time migration: account seed phrases → SecureStorage
+    final accountService = AccountManagementService();
+    await accountService.migrateSecretsFromSharedPreferences();
 
     final wallet = await walletService.getCurrentWallet();
 

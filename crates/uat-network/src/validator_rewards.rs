@@ -342,7 +342,8 @@ pub fn get_validator_stats(
         .get(validator_address)
         .ok_or_else(|| "Validator not found".to_string())?;
 
-    let total_uat = account.total_rewards_void as f64 / 100_000_000.0;
+    // FIX C-3: Use correct VOID_PER_UAT (10^11), was 10^8 (1000x wrong)
+    let total_uat = account.total_rewards_void as f64 / 100_000_000_000.0;
     let avg_fee = if account.blocks_produced > 0 {
         account.total_rewards_void as f64 / account.blocks_produced as f64
     } else {
@@ -366,7 +367,8 @@ pub fn get_all_validator_stats(
     rewards
         .iter()
         .map(|(address, account)| {
-            let total_uat = account.total_rewards_void as f64 / 100_000_000.0;
+            // FIX C-3: Use correct VOID_PER_UAT (10^11)
+            let total_uat = account.total_rewards_void as f64 / 100_000_000_000.0;
             let avg_fee = if account.blocks_produced > 0 {
                 account.total_rewards_void as f64 / account.blocks_produced as f64
             } else {
@@ -421,13 +423,13 @@ mod tests {
 
         let reward = distribute_transaction_fees(
             "UAT_VALIDATOR_1",
-            100_000_000, // 1 UAT
+            100_000_000_000, // 1 UAT = 10^11 VOID
             &mut account,
         );
 
-        assert_eq!(account.pending_rewards_void, 100_000_000);
-        assert_eq!(account.total_rewards_void, 100_000_000);
-        assert_eq!(reward.collected_fees_void, 100_000_000);
+        assert_eq!(account.pending_rewards_void, 100_000_000_000);
+        assert_eq!(account.total_rewards_void, 100_000_000_000);
+        assert_eq!(reward.collected_fees_void, 100_000_000_000);
     }
 
     #[test]

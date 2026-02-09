@@ -155,7 +155,7 @@ impl UatNode for UatGrpcService {
             head_block: account.head.clone(),
             is_validator,
             stake_void: if is_validator {
-                account.balance as u64
+                account.balance.min(u64::MAX as u128) as u64
             } else {
                 0
             },
@@ -197,7 +197,7 @@ impl UatNode for UatGrpcService {
         let account_balance = ledger
             .accounts
             .get(&block.account)
-            .map(|acc| acc.balance as u64)
+            .map(|acc| acc.balance.min(u64::MAX as u128) as u64)
             .unwrap_or(0);
 
         let response = GetBlockResponse {
@@ -206,7 +206,7 @@ impl UatNode for UatGrpcService {
             previous_block: block.previous.clone(),
             link: block.link.clone(),
             block_type: format!("{:?}", block.block_type),
-            amount: block.amount as u64,
+            amount: block.amount.min(u64::MAX as u128) as u64,
             balance: account_balance, // Account balance, not block balance
             signature: block.signature.clone(),
             timestamp: block.timestamp,     // Use actual block timestamp
@@ -245,7 +245,7 @@ impl UatNode for UatGrpcService {
         let account_balance = ledger
             .accounts
             .get(&block.account)
-            .map(|acc| acc.balance as u64)
+            .map(|acc| acc.balance.min(u64::MAX as u128) as u64)
             .unwrap_or(0);
 
         let response = GetBlockResponse {
@@ -254,7 +254,7 @@ impl UatNode for UatGrpcService {
             previous_block: block.previous.clone(),
             link: block.link.clone(),
             block_type: format!("{:?}", block.block_type),
-            amount: block.amount as u64,
+            amount: block.amount.min(u64::MAX as u128) as u64,
             balance: account_balance,
             signature: block.signature.clone(),
             timestamp: block.timestamp,

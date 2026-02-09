@@ -3221,14 +3221,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     // FIX C12-09: Cap address_book to prevent memory DoS from
                                     // malicious peers flooding fake ID: messages.
                                     const MAX_PEERS: usize = 10_000;
-                                    let mut ab = safe_lock(&address_book);
-                                    if ab.len() >= MAX_PEERS && !ab.contains_key(&short) {
-                                        // Address book full; ignore new peer
-                                        drop(ab);
-                                    } else {
-                                        let is_new = !ab.contains_key(&short);
-                                        ab.insert(short.clone(), full.clone());
-                                        drop(ab);
+                                    let is_new = {
+                                        let mut ab = safe_lock(&address_book);
+                                        if ab.len() >= MAX_PEERS && !ab.contains_key(&short) {
+                                            None // Address book full; ignore new peer
+                                        } else {
+                                            let is_new = !ab.contains_key(&short);
+                                            ab.insert(short.clone(), full.clone());
+                                            Some(is_new)
+                                        }
+                                    }; // ab dropped — no MutexGuard held past this point
+                                    if let Some(is_new) = is_new {
 
                                     // Persist peer to database for recovery after restart
                                     if is_new {
@@ -3276,15 +3279,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     }; // L dropped
 
                                     // Step 2: Pending transaction resend (PS lock only)
-                                    {
+                                    let retry_msgs: Vec<(String, String)> = {
                                         let pending_map = safe_lock(&pending_sends);
-                                        for (hash, (blk, _)) in pending_map.iter() {
+                                        pending_map.iter().map(|(hash, (blk, _))| {
                                             let ts = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_millis();
-                                            let retry_msg = format!("CONFIRM_REQ:{}:{}:{}:{}", hash, blk.account, blk.amount, ts);
-                                            let _ = tx_out.send(retry_msg).await;
-                                            println!("📡 Resending confirmation request to new peer for TX: {}", &hash[..8]);
-                                        }
-                                    } // PS dropped
+                                            (format!("CONFIRM_REQ:{}:{}:{}:{}", hash, blk.account, blk.amount, ts), hash[..8].to_string())
+                                        }).collect()
+                                    }; // PS dropped
+                                    for (retry_msg, hash_short) in &retry_msgs {
+                                        let _ = tx_out.send(retry_msg.clone()).await;
+                                        println!("📡 Resending confirmation request to new peer for TX: {}", hash_short);
+                                    }
 
                                     // Step 3: Send identity and state to new peer
                                     if is_new {
@@ -3314,7 +3319,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                             }
                                         }
                                     }
-                                    } // end address_book capacity else
+                                    } // end is_new scope
                                 }
                             }
                         } else if let Some(encoded_data) = data.strip_prefix("SYNC_GZIP:") {
@@ -3710,47 +3715,54 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
                                 if should_execute {
                                     // Consensus reached — execute the slash
-                                    let mut l = safe_lock(&ledger);
+                                    let slash_gossip: Option<String> = {
+                                        let mut l = safe_lock(&ledger);
+                                        let mut gossip = None;
 
-                                    if let Some(state) = l.accounts.get(&cheater_addr).cloned() {
-                                        if state.balance > 0 {
-                                            // Penalty: 10% of total balance
-                                            let penalty_amount = state.balance / 10;
+                                        if let Some(state) = l.accounts.get(&cheater_addr).cloned() {
+                                            if state.balance > 0 {
+                                                // Penalty: 10% of total balance
+                                                let penalty_amount = state.balance / 10;
 
-                                            let mut slash_blk = Block {
-                                                account: cheater_addr.clone(),
-                                                previous: state.head.clone(),
-                                                block_type: BlockType::Slash,
-                                                amount: penalty_amount,
-                                                link: format!("PENALTY:FAKE_TXID:{}", fake_txid),
-                                                signature: "".to_string(),
-                                                public_key: hex::encode(&keys.public_key),
-                                                work: 0,
-                                                timestamp: std::time::SystemTime::now()
-                                                    .duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_secs(),
-                                                fee: 0,
-                                            };
+                                                let mut slash_blk = Block {
+                                                    account: cheater_addr.clone(),
+                                                    previous: state.head.clone(),
+                                                    block_type: BlockType::Slash,
+                                                    amount: penalty_amount,
+                                                    link: format!("PENALTY:FAKE_TXID:{}", fake_txid),
+                                                    signature: "".to_string(),
+                                                    public_key: hex::encode(&keys.public_key),
+                                                    work: 0,
+                                                    timestamp: std::time::SystemTime::now()
+                                                        .duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_secs(),
+                                                    fee: 0,
+                                                };
 
-                                            solve_pow(&mut slash_blk);
-                                            if let Ok(sig) = uat_crypto::sign_message(slash_blk.signing_hash().as_bytes(), &secret_key) {
-                                                slash_blk.signature = hex::encode(sig);
+                                                solve_pow(&mut slash_blk);
+                                                if let Ok(sig) = uat_crypto::sign_message(slash_blk.signing_hash().as_bytes(), &secret_key) {
+                                                    slash_blk.signature = hex::encode(sig);
 
-                                                match l.process_block(&slash_blk) {
-                                                    Ok(hash) => {
-                                                        SAVE_DIRTY.store(true, Ordering::Relaxed);
-                                                        let _ = tx_out.send(serde_json::to_string(&slash_blk).unwrap_or_default()).await;
-                                                        println!("🔨 SLASHED (consensus 2/3+1)! {} penalized {} UAT (block: {})",
-                                                            get_short_addr(&cheater_addr),
-                                                            penalty_amount / VOID_PER_UAT,
-                                                            &hash[..8]
-                                                        );
-                                                    },
-                                                    Err(e) => println!("⚠️ Slash block failed for {}: {}", get_short_addr(&cheater_addr), e),
+                                                    match l.process_block(&slash_blk) {
+                                                        Ok(hash) => {
+                                                            SAVE_DIRTY.store(true, Ordering::Relaxed);
+                                                            gossip = Some(serde_json::to_string(&slash_blk).unwrap_or_default());
+                                                            println!("🔨 SLASHED (consensus 2/3+1)! {} penalized {} UAT (block: {})",
+                                                                get_short_addr(&cheater_addr),
+                                                                penalty_amount / VOID_PER_UAT,
+                                                                &hash[..8]
+                                                            );
+                                                        },
+                                                        Err(e) => println!("⚠️ Slash block failed for {}: {}", get_short_addr(&cheater_addr), e),
+                                                    }
+                                                } else {
+                                                    println!("⚠️ Slash signing failed for {}", get_short_addr(&cheater_addr));
                                                 }
-                                            } else {
-                                                println!("⚠️ Slash signing failed for {}", get_short_addr(&cheater_addr));
                                             }
                                         }
+                                        gossip
+                                    }; // l dropped
+                                    if let Some(msg) = slash_gossip {
+                                        let _ = tx_out.send(msg).await;
                                     }
                                 } else {
                                     println!("⏳ Slash proposal registered, waiting for more validator votes...");
@@ -3861,44 +3873,48 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                         };
                                         if uat_to_mint == 0 { continue; } // too small
 
-                                        let mut l = safe_lock(&ledger);
+                                        let mint_gossip: Option<String> = {
+                                            let mut l = safe_lock(&ledger);
 
-                                        // Ensure recipient account exists
-                                        if !l.accounts.contains_key(&mint_recipient) {
-                                            l.accounts.insert(mint_recipient.clone(), AccountState {
+                                            // Ensure recipient account exists
+                                            if !l.accounts.contains_key(&mint_recipient) {
+                                                l.accounts.insert(mint_recipient.clone(), AccountState {
+                                                    head: "0".to_string(), balance: 0, block_count: 0
+                                                });
+                                            }
+                                            let state = l.accounts.get(&mint_recipient).cloned().unwrap_or(AccountState {
                                                 head: "0".to_string(), balance: 0, block_count: 0
                                             });
+
+                                            let mut mint_blk = Block {
+                                                account: mint_recipient.clone(),
+                                                previous: state.head.clone(),
+                                                block_type: BlockType::Mint,
+                                                amount: uat_to_mint,
+                                                link: format!("Src:{}:{}:{}", sym, txid, price as u128),
+                                                signature: "".to_string(),
+                                                public_key: hex::encode(&keys.public_key),
+                                                work: 0,
+                                                timestamp: std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_secs(),
+                                                fee: 0,
+                                            };
+
+                                            solve_pow(&mut mint_blk);
+                                            let signing_hash = mint_blk.signing_hash();
+                                            mint_blk.signature = hex::encode(uat_crypto::sign_message(signing_hash.as_bytes(), &secret_key).expect("BUG: signing failed — key corrupted"));
+
+                                            match l.process_block(&mint_blk) {
+                                                Ok(_) => {
+                                                    SAVE_DIRTY.store(true, Ordering::Relaxed);
+                                                    println!("🔥 Minting Successful: +{} UAT to {}!", format_u128(uat_to_mint / VOID_PER_UAT), get_short_addr(&mint_recipient));
+                                                    Some(serde_json::to_string(&mint_blk).unwrap_or_default())
+                                                },
+                                                Err(e) => { println!("❌ Failed to process Mint block: {}", e); None },
+                                            }
+                                        }; // L dropped
+                                        if let Some(msg) = mint_gossip {
+                                            let _ = tx_out.send(msg).await;
                                         }
-                                        let state = l.accounts.get(&mint_recipient).cloned().unwrap_or(AccountState {
-                                            head: "0".to_string(), balance: 0, block_count: 0
-                                        });
-
-                                        let mut mint_blk = Block {
-                                            account: mint_recipient.clone(),
-                                            previous: state.head.clone(),
-                                            block_type: BlockType::Mint,
-                                            amount: uat_to_mint,
-                                            link: format!("Src:{}:{}:{}", sym, txid, price as u128),
-                                            signature: "".to_string(),
-                                            public_key: hex::encode(&keys.public_key),
-                                            work: 0,
-                                            timestamp: std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_secs(),
-                                            fee: 0,
-                                        };
-
-                                        solve_pow(&mut mint_blk);
-                                        let signing_hash = mint_blk.signing_hash();
-                                        mint_blk.signature = hex::encode(uat_crypto::sign_message(signing_hash.as_bytes(), &secret_key).expect("BUG: signing failed — key corrupted"));
-
-                                        match l.process_block(&mint_blk) {
-                                            Ok(_) => {
-                                                SAVE_DIRTY.store(true, Ordering::Relaxed);
-                                                let _ = tx_out.send(serde_json::to_string(&mint_blk).unwrap_or_default()).await;
-                                                println!("🔥 Minting Successful: +{} UAT to {}!", format_u128(uat_to_mint / VOID_PER_UAT), get_short_addr(&mint_recipient));
-                                            },
-                                            Err(e) => println!("❌ Failed to process Mint block: {}", e),
-                                        }
-                                        drop(l); // L dropped
 
                                         // Step 5: Remove from pending (PB lock only)
                                         safe_lock(&pending_burns).remove(&txid);
@@ -4070,41 +4086,45 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                             if blk_to_finalize.block_type == BlockType::Send && blk_to_finalize.link == my_address {
                                                 let send_hash = blk_to_finalize.calculate_hash();
 
-                                                let mut l = safe_lock(&ledger);
-                                                if !l.accounts.contains_key(&my_address) {
-                                                    l.accounts.insert(my_address.clone(), AccountState {
-                                                        head: "0".to_string(), balance: 0, block_count: 0,
-                                                    });
-                                                }
-                                                if let Some(recv_state) = l.accounts.get(&my_address).cloned() {
-                                                    let mut recv_blk = Block {
-                                                        account: my_address.clone(),
-                                                        previous: recv_state.head,
-                                                        block_type: BlockType::Receive,
-                                                        amount: blk_to_finalize.amount,
-                                                        link: send_hash,
-                                                        signature: "".to_string(),
-                                                        public_key: hex::encode(&keys.public_key),
-                                                        work: 0,
-                                                        timestamp: std::time::SystemTime::now()
-                                                            .duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_secs(),
-                                                        fee: 0,
-                                                    };
-                                                    solve_pow(&mut recv_blk);
-                                                    recv_blk.signature = hex::encode(
-                                                        uat_crypto::sign_message(recv_blk.signing_hash().as_bytes(), &secret_key).expect("BUG: signing failed — key corrupted")
-                                                    );
-                                                    match l.process_block(&recv_blk) {
-                                                        Ok(_) => {
-                                                            SAVE_DIRTY.store(true, Ordering::Relaxed);
-                                                            let _ = tx_out.send(serde_json::to_string(&recv_blk).unwrap_or_default()).await;
-                                                            println!("📨 Auto-Receive created for self: +{} VOID",
-                                                                blk_to_finalize.amount);
-                                                        },
-                                                        Err(e) => println!("⚠️ Auto-Receive failed: {}", e),
+                                                let recv_gossip: Option<String> = {
+                                                    let mut l = safe_lock(&ledger);
+                                                    if !l.accounts.contains_key(&my_address) {
+                                                        l.accounts.insert(my_address.clone(), AccountState {
+                                                            head: "0".to_string(), balance: 0, block_count: 0,
+                                                        });
                                                     }
+                                                    if let Some(recv_state) = l.accounts.get(&my_address).cloned() {
+                                                        let mut recv_blk = Block {
+                                                            account: my_address.clone(),
+                                                            previous: recv_state.head,
+                                                            block_type: BlockType::Receive,
+                                                            amount: blk_to_finalize.amount,
+                                                            link: send_hash,
+                                                            signature: "".to_string(),
+                                                            public_key: hex::encode(&keys.public_key),
+                                                            work: 0,
+                                                            timestamp: std::time::SystemTime::now()
+                                                                .duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_secs(),
+                                                            fee: 0,
+                                                        };
+                                                        solve_pow(&mut recv_blk);
+                                                        recv_blk.signature = hex::encode(
+                                                            uat_crypto::sign_message(recv_blk.signing_hash().as_bytes(), &secret_key).expect("BUG: signing failed — key corrupted")
+                                                        );
+                                                        match l.process_block(&recv_blk) {
+                                                            Ok(_) => {
+                                                                SAVE_DIRTY.store(true, Ordering::Relaxed);
+                                                                println!("📨 Auto-Receive created for self: +{} VOID",
+                                                                    blk_to_finalize.amount);
+                                                                Some(serde_json::to_string(&recv_blk).unwrap_or_default())
+                                                            },
+                                                            Err(e) => { println!("⚠️ Auto-Receive failed: {}", e); None },
+                                                        }
+                                                    } else { None }
+                                                }; // l dropped
+                                                if let Some(msg) = recv_gossip {
+                                                    let _ = tx_out.send(msg).await;
                                                 }
-                                                drop(l);
                                             }
                                         }
                                         // Step 5: Remove from pending (PS lock only)
@@ -4155,11 +4175,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 // Signature + PoW + staked validator → accept into ledger
                             }
 
-                            let mut l = safe_lock(&ledger);
-                            if !l.accounts.contains_key(&inc.account) {
-                                l.accounts.insert(inc.account.clone(), AccountState { head: "0".to_string(), balance: 0, block_count: 0 });
-                            }
-
                             // 🛡️ SLASHING INTEGRATION: Check for double-signing before processing
                             let block_hash = inc.calculate_hash();
                             let timestamp = std::time::SystemTime::now()
@@ -4167,151 +4182,176 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 .unwrap_or_default()
                                 .as_secs();
 
-                            let double_sign_detected = {
-                                let mut sm = safe_lock(&slashing_clone);
-                                // Register validator if not exists
-                                if sm.get_profile(&inc.account).is_none() {
-                                    if let Some(acc) = l.accounts.get(&inc.account) {
-                                        if acc.balance >= MIN_VALIDATOR_STAKE_VOID {
-                                            sm.register_validator(inc.account.clone());
+                            // Phase 1: Account init + double-sign detection + optional slash (all synchronous)
+                            let (double_sign_detected, ds_gossip) = {
+                                let mut l = safe_lock(&ledger);
+                                if !l.accounts.contains_key(&inc.account) {
+                                    l.accounts.insert(inc.account.clone(), AccountState { head: "0".to_string(), balance: 0, block_count: 0 });
+                                }
+
+                                let double_sign_detected = {
+                                    let mut sm = safe_lock(&slashing_clone);
+                                    // Register validator if not exists
+                                    if sm.get_profile(&inc.account).is_none() {
+                                        if let Some(acc) = l.accounts.get(&inc.account) {
+                                            if acc.balance >= MIN_VALIDATOR_STAKE_VOID {
+                                                sm.register_validator(inc.account.clone());
+                                            }
                                         }
                                     }
-                                }
 
-                                // SECURITY FIX V4#3: Use account's block_count as height
-                                // (was hardcoded 0 → false double-signing detection after every 2nd block)
-                                let block_height = l.accounts.get(&inc.account)
-                                    .map(|a| a.block_count)
-                                    .unwrap_or(0);
-                                sm.record_signature(&inc.account, block_height, block_hash.clone(), timestamp).is_err()
-                            };
+                                    // SECURITY FIX V4#3: Use account's block_count as height
+                                    // (was hardcoded 0 → false double-signing detection after every 2nd block)
+                                    let block_height = l.accounts.get(&inc.account)
+                                        .map(|a| a.block_count)
+                                        .unwrap_or(0);
+                                    sm.record_signature(&inc.account, block_height, block_hash.clone(), timestamp).is_err()
+                                };
 
-                            if double_sign_detected {
-                                println!("🚨 DOUBLE-SIGNING DETECTED from {}! Slashing...", get_short_addr(&inc.account));
+                                let mut gossip = None;
+                                if double_sign_detected {
+                                    println!("🚨 DOUBLE-SIGNING DETECTED from {}! Slashing...", get_short_addr(&inc.account));
 
-                                // Slash validator for double-signing (100%) via proper Slash block
-                                let staked_amount = l.accounts.get(&inc.account).map(|a| a.balance).unwrap_or(0);
-                                let mut sm = safe_lock(&slashing_clone);
-                                if let Ok(slashed) = sm.slash_double_signing(&inc.account, l.blocks.len() as u64, staked_amount, timestamp) {
-                                    println!("⚖️ Validator {} slashed {} VOID (100%) for double-signing",
-                                        get_short_addr(&inc.account), slashed);
-                                    drop(sm);
+                                    // Slash validator for double-signing (100%) via proper Slash block
+                                    let staked_amount = l.accounts.get(&inc.account).map(|a| a.balance).unwrap_or(0);
+                                    let mut sm = safe_lock(&slashing_clone);
+                                    if let Ok(slashed) = sm.slash_double_signing(&inc.account, l.blocks.len() as u64, staked_amount, timestamp) {
+                                        println!("⚖️ Validator {} slashed {} VOID (100%) for double-signing",
+                                            get_short_addr(&inc.account), slashed);
+                                        drop(sm);
 
-                                    // FIX: Create proper Slash block instead of direct balance mutation
-                                    // This ensures all nodes see the slash in the blockchain
-                                    let cheater_state = l.accounts.get(&inc.account).cloned().unwrap_or(AccountState {
-                                        head: "0".to_string(), balance: 0, block_count: 0,
-                                    });
-                                    let mut slash_blk = Block {
-                                        account: inc.account.clone(),
-                                        previous: cheater_state.head.clone(),
-                                        block_type: BlockType::Slash,
-                                        amount: slashed,
-                                        link: format!("PENALTY:DOUBLE_SIGN:{}", block_hash),
-                                        signature: "".to_string(),
-                                        public_key: hex::encode(&keys.public_key),
-                                        work: 0,
-                                        timestamp,
-                                        fee: 0,
-                                    };
-                                    solve_pow(&mut slash_blk);
-                                    slash_blk.signature = hex::encode(
-                                        uat_crypto::sign_message(slash_blk.signing_hash().as_bytes(), &secret_key)
-                                            .expect("BUG: signing failed")
-                                    );
-                                    match l.process_block(&slash_blk) {
-                                        Ok(_) => {
-                                            let _ = tx_out.send(serde_json::to_string(&slash_blk).unwrap_or_default()).await;
-                                            println!("⚖️ Slash block created and broadcast for {}", get_short_addr(&inc.account));
-                                        },
-                                        Err(e) => eprintln!("⚠️ Slash block failed: {}", e),
+                                        // FIX: Create proper Slash block instead of direct balance mutation
+                                        // This ensures all nodes see the slash in the blockchain
+                                        let cheater_state = l.accounts.get(&inc.account).cloned().unwrap_or(AccountState {
+                                            head: "0".to_string(), balance: 0, block_count: 0,
+                                        });
+                                        let mut slash_blk = Block {
+                                            account: inc.account.clone(),
+                                            previous: cheater_state.head.clone(),
+                                            block_type: BlockType::Slash,
+                                            amount: slashed,
+                                            link: format!("PENALTY:DOUBLE_SIGN:{}", block_hash),
+                                            signature: "".to_string(),
+                                            public_key: hex::encode(&keys.public_key),
+                                            work: 0,
+                                            timestamp,
+                                            fee: 0,
+                                        };
+                                        solve_pow(&mut slash_blk);
+                                        slash_blk.signature = hex::encode(
+                                            uat_crypto::sign_message(slash_blk.signing_hash().as_bytes(), &secret_key)
+                                                .expect("BUG: signing failed")
+                                        );
+                                        match l.process_block(&slash_blk) {
+                                            Ok(_) => {
+                                                gossip = Some(serde_json::to_string(&slash_blk).unwrap_or_default());
+                                                println!("⚖️ Slash block created and broadcast for {}", get_short_addr(&inc.account));
+                                            },
+                                            Err(e) => eprintln!("⚠️ Slash block failed: {}", e),
+                                        }
+                                        SAVE_DIRTY.store(true, Ordering::Relaxed);
                                     }
-                                    SAVE_DIRTY.store(true, Ordering::Relaxed);
                                 }
-                                drop(l);
+                                (double_sign_detected, gossip)
+                            }; // l dropped — Phase 1 complete
+
+                            if let Some(msg) = ds_gossip {
+                                let _ = tx_out.send(msg).await;
+                            }
+                            if double_sign_detected {
                                 continue; // Don't process the original block
                             }
 
-                            match l.process_block(&inc) {
-                                Ok(block_hash) => {
-                                    // 🛡️ SLASHING INTEGRATION: Record block participation for uptime tracking
-                                    {
-                                        let mut sm = safe_lock(&slashing_clone);
-                                        let global_height = l.blocks.len() as u64;
-                                        let _ = sm.record_block_participation(&inc.account, global_height, timestamp);
+                            // Phase 2: Process incoming block + tracking + auto-receive (all synchronous)
+                            let phase2_gossip: Vec<String> = {
+                                let mut l = safe_lock(&ledger);
+                                let mut msgs = Vec::new();
 
-                                        // Check for downtime and slash if needed
-                                        if let Some(acc) = l.accounts.get(&inc.account) {
-                                            if let Ok(Some(slashed)) = sm.check_and_slash_downtime(
-                                                &inc.account,
-                                                global_height,
-                                                acc.balance,
-                                                timestamp
-                                            ) {
-                                                println!("⚖️ Validator {} downtime penalty: {} VOID (1%)",
-                                                    get_short_addr(&inc.account), slashed);
+                                match l.process_block(&inc) {
+                                    Ok(block_hash) => {
+                                        // 🛡️ SLASHING INTEGRATION: Record block participation for uptime tracking
+                                        {
+                                            let mut sm = safe_lock(&slashing_clone);
+                                            let global_height = l.blocks.len() as u64;
+                                            let _ = sm.record_block_participation(&inc.account, global_height, timestamp);
 
-                                                // Create proper Slash block for downtime penalty
-                                                let dt_state = l.accounts.get(&inc.account).cloned().unwrap_or(AccountState {
-                                                    head: "0".to_string(), balance: 0, block_count: 0,
-                                                });
-                                                let mut dt_slash = Block {
-                                                    account: inc.account.clone(),
-                                                    previous: dt_state.head.clone(),
-                                                    block_type: BlockType::Slash,
-                                                    amount: slashed,
-                                                    link: format!("PENALTY:DOWNTIME:{}", global_height),
-                                                    signature: "".to_string(),
-                                                    public_key: hex::encode(&keys.public_key),
-                                                    work: 0,
-                                                    timestamp,
-                                                    fee: 0,
-                                                };
-                                                solve_pow(&mut dt_slash);
-                                                dt_slash.signature = hex::encode(
-                                                    uat_crypto::sign_message(dt_slash.signing_hash().as_bytes(), &secret_key)
-                                                        .expect("BUG: signing failed")
-                                                );
-                                                if l.process_block(&dt_slash).is_ok() {
-                                                    let _ = tx_out.send(serde_json::to_string(&dt_slash).unwrap_or_default()).await;
+                                            // Check for downtime and slash if needed
+                                            if let Some(acc) = l.accounts.get(&inc.account) {
+                                                if let Ok(Some(slashed)) = sm.check_and_slash_downtime(
+                                                    &inc.account,
+                                                    global_height,
+                                                    acc.balance,
+                                                    timestamp
+                                                ) {
+                                                    println!("⚖️ Validator {} downtime penalty: {} VOID (1%)",
+                                                        get_short_addr(&inc.account), slashed);
+
+                                                    // Create proper Slash block for downtime penalty
+                                                    let dt_state = l.accounts.get(&inc.account).cloned().unwrap_or(AccountState {
+                                                        head: "0".to_string(), balance: 0, block_count: 0,
+                                                    });
+                                                    let mut dt_slash = Block {
+                                                        account: inc.account.clone(),
+                                                        previous: dt_state.head.clone(),
+                                                        block_type: BlockType::Slash,
+                                                        amount: slashed,
+                                                        link: format!("PENALTY:DOWNTIME:{}", global_height),
+                                                        signature: "".to_string(),
+                                                        public_key: hex::encode(&keys.public_key),
+                                                        work: 0,
+                                                        timestamp,
+                                                        fee: 0,
+                                                    };
+                                                    solve_pow(&mut dt_slash);
+                                                    dt_slash.signature = hex::encode(
+                                                        uat_crypto::sign_message(dt_slash.signing_hash().as_bytes(), &secret_key)
+                                                            .expect("BUG: signing failed")
+                                                    );
+                                                    if l.process_block(&dt_slash).is_ok() {
+                                                        msgs.push(serde_json::to_string(&dt_slash).unwrap_or_default());
+                                                    }
                                                 }
                                             }
                                         }
-                                    }
 
-                                    if inc.block_type == BlockType::Mint {
-                                        let burn_val = inc.amount / VOID_PER_UAT;
-                                        println!("🔥 Network Mint Verified: +{} UAT", format_u128(burn_val));
-                                    }
-                                    SAVE_DIRTY.store(true, Ordering::Relaxed);
-                                    println!("✅ Block Verified: {:?} from {}", inc.block_type, get_short_addr(&inc.account));
-
-                                    if inc.block_type == BlockType::Send && inc.link == my_address {
-                                        if !l.accounts.contains_key(&my_address) {
-                                            l.accounts.insert(my_address.clone(), AccountState { head: "0".to_string(), balance: 0, block_count: 0 });
+                                        if inc.block_type == BlockType::Mint {
+                                            let burn_val = inc.amount / VOID_PER_UAT;
+                                            println!("🔥 Network Mint Verified: +{} UAT", format_u128(burn_val));
                                         }
-                                        if let Some(state) = l.accounts.get(&my_address).cloned() {
-                                            let mut rb = Block {
-                                                account: my_address.clone(), previous: state.head, block_type: BlockType::Receive,
-                                                amount: inc.amount, link: block_hash, signature: "".to_string(),
-                                                public_key: hex::encode(&keys.public_key), // Node's public key
-                                                work: 0,
-                                                timestamp: std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_secs(),
-                                                fee: 0,
-                                            };
-                                            solve_pow(&mut rb);
-                                            rb.signature = hex::encode(uat_crypto::sign_message(rb.signing_hash().as_bytes(), &secret_key).expect("BUG: signing failed — key corrupted"));
-                                            if l.process_block(&rb).is_ok() {
-                                                SAVE_DIRTY.store(true, Ordering::Relaxed);
-                                                let _ = tx_out.send(serde_json::to_string(&rb).unwrap_or_default()).await;
-                                                println!("📥 Incoming Transfer Received Automatically!");
+                                        SAVE_DIRTY.store(true, Ordering::Relaxed);
+                                        println!("✅ Block Verified: {:?} from {}", inc.block_type, get_short_addr(&inc.account));
+
+                                        if inc.block_type == BlockType::Send && inc.link == my_address {
+                                            if !l.accounts.contains_key(&my_address) {
+                                                l.accounts.insert(my_address.clone(), AccountState { head: "0".to_string(), balance: 0, block_count: 0 });
+                                            }
+                                            if let Some(state) = l.accounts.get(&my_address).cloned() {
+                                                let mut rb = Block {
+                                                    account: my_address.clone(), previous: state.head, block_type: BlockType::Receive,
+                                                    amount: inc.amount, link: block_hash, signature: "".to_string(),
+                                                    public_key: hex::encode(&keys.public_key), // Node's public key
+                                                    work: 0,
+                                                    timestamp: std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_secs(),
+                                                    fee: 0,
+                                                };
+                                                solve_pow(&mut rb);
+                                                rb.signature = hex::encode(uat_crypto::sign_message(rb.signing_hash().as_bytes(), &secret_key).expect("BUG: signing failed — key corrupted"));
+                                                if l.process_block(&rb).is_ok() {
+                                                    SAVE_DIRTY.store(true, Ordering::Relaxed);
+                                                    msgs.push(serde_json::to_string(&rb).unwrap_or_default());
+                                                    println!("📥 Incoming Transfer Received Automatically!");
+                                                }
                                             }
                                         }
+                                    },
+                                    Err(e) => {
+                                        println!("❌ Block Rejected: {:?} (Sender: {})", e, get_short_addr(&inc.account));
                                     }
-                                },
-                                Err(e) => {
-                                    println!("❌ Block Rejected: {:?} (Sender: {})", e, get_short_addr(&inc.account));
                                 }
+                                msgs
+                            }; // l dropped — Phase 2 complete
+                            for msg in phase2_gossip {
+                                let _ = tx_out.send(msg).await;
                             }
                         }
                     }

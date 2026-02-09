@@ -16,8 +16,8 @@ export const NETWORKS: Record<string, Network> = {
     id: 'testnet',
     name: 'UAT Testnet',
     chainId: 'uat-testnet',
-    rpcUrl: 'http://uat-testnet-bootstrap1.onion',
-    explorerUrl: 'http://uat-testnet-bootstrap1.onion/explorer',
+    rpcUrl: 'http://u3kilz7tv3ffhl2rafrzarbmiiojfcjz3eg527td5ocmibq44gj4htqd.onion',
+    explorerUrl: 'http://u3kilz7tv3ffhl2rafrzarbmiiojfcjz3eg527td5ocmibq44gj4htqd.onion/explorer',
     faucetEnabled: true,
     description: 'Remote testnet via Tor hidden service'
   },

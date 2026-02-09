@@ -10,14 +10,14 @@ import 'tor_service.dart';
 enum NetworkEnvironment { testnet, mainnet, local }
 
 class ApiService {
-  // Testnet .onion (online) — matches testnet_config.dart
-  static const String testnetOnionUrl =
-      'http://ozpxrb6t5qvvfpa6ejuflmogipmmvwazxdlxckwi6oiubywj6drmhiqd.onion';
+  // Testnet bootstrap .onion — All 4 bootstrap validators share this list.
+  // Users connect to whichever is reachable. Updated by setup_tor_testnet.sh.
+  static const String testnetOnionUrl = 'http://uat-testnet-bootstrap1.onion';
 
-  // Mainnet (coming soon - offline)
-  static const String mainnetOnionUrl = 'http://mainnet-coming-soon.onion';
+  // Mainnet .onion — populated before mainnet launch
+  static const String mainnetOnionUrl = 'http://uat-mainnet-pending.onion';
 
-  // Local development
+  // Local development (ONLY for localhost debugging, NOT for real testnet)
   static const String defaultLocalUrl = 'http://localhost:3030';
 
   /// Default timeout for API calls

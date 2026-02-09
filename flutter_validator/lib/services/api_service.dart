@@ -6,78 +6,117 @@ import 'package:http/io_client.dart';
 import 'package:socks5_proxy/socks_client.dart';
 import '../models/account.dart';
 import '../constants/blockchain.dart';
+import 'tor_service.dart';
 
-enum NetworkEnvironment { testnet, mainnet }
+enum NetworkEnvironment { testnet, mainnet, local }
 
 class ApiService {
-  // Testnet .onion (online)
-  static const String testnetOnionUrl =
-      'http://fhljoiopyz2eflttc7o5qwfj6l6skhtlkjpn4r6yw4atqpy2azydnnqd.onion';
+  // Testnet bootstrap .onion — same nodes as flutter_wallet.
+  // Updated by setup_tor_testnet.sh when you run your own testnet.
+  static const String testnetOnionUrl = 'http://uat-testnet-bootstrap1.onion';
 
-  // Mainnet (coming soon - offline)
-  static const String mainnetOnionUrl = 'http://mainnet-coming-soon.onion';
+  // Mainnet .onion — populated before mainnet launch
+  static const String mainnetOnionUrl = 'http://uat-mainnet-pending.onion';
 
-  // Local development
+  // Local development (ONLY for localhost debugging, NOT for real testnet)
   static const String defaultLocalUrl = 'http://localhost:3030';
 
+  /// Default timeout for API calls
+  static const Duration _defaultTimeout = Duration(seconds: 30);
+
+  /// Longer timeout for Tor connections
+  static const Duration _torTimeout = Duration(seconds: 60);
+
   late String baseUrl;
-  late http.Client _client;
+  http.Client _client = http.Client();
   NetworkEnvironment environment;
+  final TorService _torService = TorService();
+
+  /// Track client initialization so callers can await readiness
+  late Future<void> _clientReady;
 
   ApiService({
     String? customUrl,
-    this.environment = NetworkEnvironment.testnet, // Default to testnet
+    this.environment = NetworkEnvironment.testnet,
   }) {
     if (customUrl != null) {
       baseUrl = customUrl;
     } else {
-      // Auto-select based on environment
-      baseUrl = environment == NetworkEnvironment.testnet
-          ? testnetOnionUrl
-          : mainnetOnionUrl;
+      baseUrl = _getBaseUrl(environment);
     }
-    _client = _createHttpClient();
-    debugPrint('🔗 UAT ApiService initialized with baseUrl: $baseUrl');
+    _clientReady = _initializeClient();
+    debugPrint(
+        '🔗 UAT Validator ApiService initialized with baseUrl: $baseUrl');
   }
 
-  // Create HTTP client with Tor SOCKS proxy support (only for .onion)
-  http.Client _createHttpClient() {
-    final httpClient = HttpClient();
+  /// Await Tor/HTTP client initialization before first request.
+  Future<void> ensureReady() => _clientReady;
 
-    // Only configure SOCKS5 proxy for .onion domains
+  String _getBaseUrl(NetworkEnvironment env) {
+    switch (env) {
+      case NetworkEnvironment.testnet:
+        return testnetOnionUrl;
+      case NetworkEnvironment.mainnet:
+        return mainnetOnionUrl;
+      case NetworkEnvironment.local:
+        return defaultLocalUrl;
+    }
+  }
+
+  /// Get appropriate timeout based on whether using Tor
+  Duration get _timeout =>
+      baseUrl.contains('.onion') ? _torTimeout : _defaultTimeout;
+
+  /// Initialize HTTP client — tries bundled Tor first, then existing Tor, then direct
+  Future<void> _initializeClient() async {
     if (baseUrl.contains('.onion')) {
-      SocksTCPClient.assignToHttpClient(httpClient, [
-        ProxySettings(InternetAddress.loopbackIPv4, 9150), // Tor Browser
-        ProxySettings(
-          InternetAddress.loopbackIPv4,
-          9050,
-        ), // Fallback: tor daemon
-      ]);
-
-      // Longer timeout for Tor connections
-      httpClient.connectionTimeout = Duration(seconds: 30);
-      httpClient.idleTimeout = Duration(seconds: 30);
-
-      debugPrint('✅ Tor SOCKS5 proxy configured (localhost:9150/9050)');
+      _client = await _createTorClient();
     } else {
-      httpClient.connectionTimeout = Duration(seconds: 10);
-      debugPrint('✅ Direct HTTP client (no Tor proxy for $baseUrl)');
+      _client = http.Client();
+      debugPrint('✅ Direct HTTP client (no Tor proxy needed for $baseUrl)');
+    }
+  }
+
+  /// Create Tor-enabled HTTP client
+  Future<http.Client> _createTorClient() async {
+    final httpClient = HttpClient();
+    int socksPort = 9250;
+
+    final existing = await _torService.detectExistingTor();
+    if (existing['found'] == true) {
+      final proxy = existing['proxy'] as String;
+      socksPort = int.parse(proxy.split(':').last);
+      debugPrint('✅ Using existing Tor: ${existing['type']} ($proxy)');
+    } else {
+      final started = await _torService.start();
+      if (started) {
+        socksPort = 9250;
+        debugPrint('✅ Bundled Tor started on port $socksPort');
+      } else {
+        socksPort = 9150;
+        debugPrint(
+            '⚠️ Bundled Tor failed, trying Tor Browser on port $socksPort');
+      }
     }
 
+    SocksTCPClient.assignToHttpClient(
+      httpClient,
+      [ProxySettings(InternetAddress.loopbackIPv4, socksPort)],
+    );
+
+    httpClient.connectionTimeout = const Duration(seconds: 30);
+    httpClient.idleTimeout = const Duration(seconds: 30);
+
+    debugPrint('✅ Tor SOCKS5 proxy configured (localhost:$socksPort)');
     return IOClient(httpClient);
   }
 
   // Switch network environment
   void switchEnvironment(NetworkEnvironment newEnv) {
     environment = newEnv;
-    baseUrl = newEnv == NetworkEnvironment.testnet
-        ? testnetOnionUrl
-        : mainnetOnionUrl;
-    // Recreate HTTP client so proxy settings match new baseUrl
-    _client = _createHttpClient();
-    debugPrint(
-      '🔄 Switched to ${newEnv == NetworkEnvironment.testnet ? "TESTNET" : "MAINNET"}: $baseUrl',
-    );
+    baseUrl = _getBaseUrl(newEnv);
+    _clientReady = _initializeClient();
+    debugPrint('🔄 Switched to ${newEnv.name.toUpperCase()}: $baseUrl');
   }
 
   // Node Info

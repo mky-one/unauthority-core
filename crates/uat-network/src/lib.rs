@@ -108,8 +108,15 @@ impl UatNode {
         let topic = gossipsub::IdentTopic::new("uat-blocks");
         swarm.behaviour_mut().gossipsub.subscribe(&topic)?;
 
-        // Listen on configured port (fixed for Tor hidden service forwarding)
-        let listen_addr = format!("/ip4/0.0.0.0/tcp/{}", tor_config.listen_port);
+        // Listen on configured port
+        // SECURITY: When Tor SOCKS5 is configured, bind 127.0.0.1 only to prevent IP leaks.
+        // The Tor hidden service forwards external traffic to this local port.
+        let bind_ip = if tor_config.socks5_proxy.is_some() {
+            "127.0.0.1"
+        } else {
+            "0.0.0.0"
+        };
+        let listen_addr = format!("/ip4/{}/tcp/{}", bind_ip, tor_config.listen_port);
         swarm.listen_on(listen_addr.parse()?)?;
         println!("📡 P2P listening on port {}", tor_config.listen_port);
 

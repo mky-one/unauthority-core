@@ -124,7 +124,8 @@ class ApiService {
   Future<Map<String, dynamic>> getNodeInfo() async {
     await ensureReady();
     try {
-      final response = await _client.get(Uri.parse('$baseUrl/node-info')).timeout(_timeout);
+      final response =
+          await _client.get(Uri.parse('$baseUrl/node-info')).timeout(_timeout);
       if (response.statusCode == 200) {
         return json.decode(response.body);
       }
@@ -139,7 +140,8 @@ class ApiService {
   Future<Map<String, dynamic>> getHealth() async {
     await ensureReady();
     try {
-      final response = await _client.get(Uri.parse('$baseUrl/health')).timeout(_timeout);
+      final response =
+          await _client.get(Uri.parse('$baseUrl/health')).timeout(_timeout);
       if (response.statusCode == 200) {
         return json.decode(response.body);
       }
@@ -164,9 +166,11 @@ class ApiService {
   Future<Account> getBalance(String address) async {
     await ensureReady();
     try {
-      final response = await _client.get(
-        Uri.parse('$baseUrl/balance/$address'),
-      ).timeout(_timeout);
+      final response = await _client
+          .get(
+            Uri.parse('$baseUrl/balance/$address'),
+          )
+          .timeout(_timeout);
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
         // FIX C12-01: Backend /balance/:address sends "balance_voi" (no 'd'),
@@ -219,9 +223,11 @@ class ApiService {
   Future<Account> getAccount(String address) async {
     await ensureReady();
     try {
-      final response = await _client.get(
-        Uri.parse('$baseUrl/account/$address'),
-      ).timeout(_timeout);
+      final response = await _client
+          .get(
+            Uri.parse('$baseUrl/account/$address'),
+          )
+          .timeout(_timeout);
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
         return Account.fromJson(data);
@@ -333,7 +339,8 @@ class ApiService {
   Future<List<ValidatorInfo>> getValidators() async {
     await ensureReady();
     try {
-      final response = await _client.get(Uri.parse('$baseUrl/validators')).timeout(_timeout);
+      final response =
+          await _client.get(Uri.parse('$baseUrl/validators')).timeout(_timeout);
       if (response.statusCode == 200) {
         final decoded = json.decode(response.body);
         // Handle both {"validators": [...]} (backend) and bare [...] (future)
@@ -353,7 +360,8 @@ class ApiService {
   Future<BlockInfo> getLatestBlock() async {
     await ensureReady();
     try {
-      final response = await _client.get(Uri.parse('$baseUrl/block')).timeout(_timeout);
+      final response =
+          await _client.get(Uri.parse('$baseUrl/block')).timeout(_timeout);
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
         return BlockInfo.fromJson(data);
@@ -369,7 +377,9 @@ class ApiService {
   Future<List<BlockInfo>> getRecentBlocks() async {
     await ensureReady();
     try {
-      final response = await _client.get(Uri.parse('$baseUrl/blocks/recent')).timeout(_timeout);
+      final response = await _client
+          .get(Uri.parse('$baseUrl/blocks/recent'))
+          .timeout(_timeout);
       if (response.statusCode == 200) {
         final decoded = json.decode(response.body);
         // FIX C11-07: Handle both bare array and wrapped {"blocks": [...]}
@@ -391,7 +401,8 @@ class ApiService {
   Future<List<String>> getPeers() async {
     await ensureReady();
     try {
-      final response = await _client.get(Uri.parse('$baseUrl/peers')).timeout(_timeout);
+      final response =
+          await _client.get(Uri.parse('$baseUrl/peers')).timeout(_timeout);
       if (response.statusCode == 200) {
         final decoded = json.decode(response.body);
         if (decoded is List) {

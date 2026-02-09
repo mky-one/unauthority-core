@@ -234,6 +234,9 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
     let limiter = RateLimiter::new(100, Some(200));
     let rate_limit_filter = rate_limit(limiter.clone());
 
+    // Track node startup time for uptime calculation
+    let start_time = std::time::Instant::now();
+
     // Per-address endpoint rate limiters
     let send_limiter = Arc::new(EndpointRateLimiter::new(10, 60)); // /send: 10 tx per 60 seconds
     let burn_limiter = Arc::new(EndpointRateLimiter::new(1, 300)); // /burn: 1 per 5 minutes
@@ -905,11 +908,11 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
     // 11. GET /node-info (Network metadata for CLI)
     let l_info = ledger.clone();
     let ab_info = address_book.clone();
+    let my_addr_info = my_address.clone();
     let node_info_route = warp::path("node-info")
         .and(with_state((l_info, ab_info)))
         .map(
-            #[allow(clippy::type_complexity)]
-            |(l, ab): (Arc<Mutex<Ledger>>, Arc<Mutex<HashMap<String, String>>>)| {
+            move |(l, ab): (Arc<Mutex<Ledger>>, Arc<Mutex<HashMap<String, String>>>)| {
                 let l_guard = safe_lock(&l);
                 let total_supply = 21_936_236u128 * VOID_PER_UAT;
                 let circulating = total_supply - l_guard.distribution.remaining_supply;
@@ -921,10 +924,13 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
                     .filter(|(_, acc)| acc.balance >= MIN_VALIDATOR_STAKE_VOID)
                     .count();
                 let peer_count = safe_lock(&ab).len();
+                let network = if uat_core::CHAIN_ID == 1 { "uat-mainnet" } else { "uat-testnet" };
 
                 warp::reply::json(&serde_json::json!({
-                    "chain_id": if uat_core::CHAIN_ID == 1 { "uat-mainnet" } else { "uat-testnet" },
-                    "version": "1.0.0",
+                    "chain_id": network,
+                    "network": network,
+                    "address": my_addr_info,
+                    "version": "1.0.1",
                     "block_height": l_guard.blocks.len(),
                     "validator_count": validator_count,
                     "peer_count": peer_count,
@@ -935,75 +941,48 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
             },
         );
 
-    // 12. GET /validators (List active validators - Functional testnet aggregates from all nodes)
+    // 12. GET /validators (List active bootstrap validators from genesis)
+    // Only return the 4 bootstrap validators — not all high-balance accounts (treasury, etc.)
     let l_validators = ledger.clone();
+    let ab_validators = address_book.clone();
+    let my_addr_validators = my_address.clone();
+    let bootstrap_addrs: Vec<String> = vec![
+        "UATX8sBoXqggW9xFA8w2nYJS6XQ15XuvFThEb".to_string(),
+        "UATWsxE6mzVKaMFriEmPJ4VEoFKYtaAppz1GU".to_string(),
+        "UATWoWPeNNa2TZCMAxaC5EMTKg4Ws2htiv3Gk".to_string(),
+        "UATXAJaUyAzaY5FE2xQqm2iNT72Q4NXKzMGc4".to_string(),
+    ];
     let validators_route = warp::path("validators")
-        .and(with_state(l_validators))
-        .and_then(|l: Arc<Mutex<Ledger>>| async move {
-            // Get local validators (collect quickly then drop lock)
-            let local_validators: Vec<serde_json::Value> = {
+        .and(with_state((l_validators, ab_validators)))
+        .map(
+            move |(l, ab): (Arc<Mutex<Ledger>>, Arc<Mutex<HashMap<String, String>>>)| {
                 let l_guard = safe_lock(&l);
-                l_guard
-                    .accounts
+                let ab_guard = safe_lock(&ab);
+
+                let validators: Vec<serde_json::Value> = bootstrap_addrs
                     .iter()
-                    .filter(|(_, acc)| acc.balance >= MIN_VALIDATOR_STAKE_VOID)
-                    .map(|(addr, acc)| {
-                        serde_json::json!({
-                            "address": addr,
-                            "stake": acc.balance / VOID_PER_UAT,
-                            "is_active": true,
-                            "active": true,
-                            "uptime_percentage": 99.9
+                    .filter_map(|addr| {
+                        l_guard.accounts.get(addr.as_str()).map(|acc| {
+                            // Validator is "active" if it is self or appears in address_book
+                            let is_self = addr == &my_addr_validators;
+                            let in_peers = ab_guard.values().any(|v| v.contains(addr.as_str()));
+                            let active = is_self || in_peers || acc.balance >= MIN_VALIDATOR_STAKE_VOID;
+                            serde_json::json!({
+                                "address": addr,
+                                "stake": acc.balance / VOID_PER_UAT,
+                                "is_active": active,
+                                "active": active,
+                                "uptime_percentage": if active { 99.9 } else { 0.0 }
+                            })
                         })
                     })
-                    .collect()
-            }; // Lock dropped here
+                    .collect();
 
-            // Functional Testnet: Aggregate from all 3 bootstrap nodes
-            // Production: Return only local validator set
-            let mut all_validators = local_validators.clone();
-
-            if !testnet_config::get_testnet_config().should_enable_consensus() {
-                let client = reqwest::Client::new();
-                let bootstrap_ports = vec![3031, 3032]; // Skip self to avoid circular call
-
-                for port in bootstrap_ports {
-                    match client
-                        .get(format!("http://localhost:{}/validators", port))
-                        .timeout(std::time::Duration::from_millis(500))
-                        .send()
-                        .await
-                    {
-                        Ok(resp) => {
-                            match resp.json::<serde_json::Value>().await {
-                                Ok(data) => {
-                                    if let Some(vals) = data["validators"].as_array() {
-                                        for v in vals {
-                                            // Deduplicate by address
-                                            if let Some(addr) = v["address"].as_str() {
-                                                if !all_validators.iter().any(|existing| {
-                                                    existing["address"].as_str() == Some(addr)
-                                                }) {
-                                                    all_validators.push(v.clone());
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                                Err(e) => {
-                                    eprintln!("Failed to parse response from port {}: {}", port, e)
-                                }
-                            }
-                        }
-                        Err(e) => eprintln!("Failed to connect to port {}: {}", port, e),
-                    }
-                }
-            }
-
-            Ok::<_, warp::Rejection>(warp::reply::json(&serde_json::json!({
-                "validators": all_validators
-            })))
-        });
+                warp::reply::json(&serde_json::json!({
+                    "validators": validators
+                }))
+            },
+        );
 
     // 13. GET /balance/:address (Check balance - alias for CLI compatibility)
     let l_balance_alias = ledger.clone();
@@ -1360,7 +1339,7 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
     let db_health = database.clone();
     let health_route = warp::path("health")
         .and(with_state((l_health, db_health)))
-        .map(|(l, db): (Arc<Mutex<Ledger>>, Arc<UatDatabase>)| {
+        .map(move |(l, db): (Arc<Mutex<Ledger>>, Arc<UatDatabase>)| {
             let l_guard = safe_lock(&l);
             let db_stats = db.stats();
 
@@ -1370,10 +1349,7 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
 
             warp::reply::json(&serde_json::json!({
                 "status": status,
-                "uptime_seconds": std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH)
-                    .unwrap_or_default()
-                    .as_secs(),
+                "uptime_seconds": start_time.elapsed().as_secs(),
                 "chain": {
                     "id": if uat_core::is_mainnet_build() { "uat-mainnet" } else { "uat-testnet" },
                     "accounts": l_guard.accounts.len(),
@@ -1384,7 +1360,7 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
                     "blocks_count": db_stats.blocks_count,
                     "size_on_disk": db_stats.size_on_disk
                 },
-                "version": "1.0.0",
+                "version": "1.0.1",
                 "timestamp": std::time::SystemTime::now()
                     .duration_since(std::time::UNIX_EPOCH)
                     .unwrap_or_default()

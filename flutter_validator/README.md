@@ -16,7 +16,7 @@ Validator node dashboard for **Unauthority (UAT)** blockchain. Track node status
 
 Pre-built releases for macOS, Windows, and Linux:
 
-**[Download from GitHub Releases](https://github.com/unauthoritymky-6236/unauthority-core/releases/tag/validator-v1.0.0-testnet)**
+**[Download from GitHub Releases](https://github.com/unauthoritymky-6236/unauthority-core/releases/tag/validator-v1.0.1-testnet)**
 
 | Platform | File |
 |----------|------|

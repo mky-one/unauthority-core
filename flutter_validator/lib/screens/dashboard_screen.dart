@@ -76,267 +76,275 @@ class _DashboardScreenState extends State<DashboardScreen> {
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
           : _error != null
-          ? Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  const Icon(Icons.error_outline, size: 64, color: Colors.red),
-                  const SizedBox(height: 16),
-                  Text(
-                    'Error: $_error',
-                    style: const TextStyle(color: Colors.red),
-                  ),
-                  const SizedBox(height: 16),
-                  ElevatedButton(
-                    onPressed: _loadDashboard,
-                    child: const Text('RETRY'),
-                  ),
-                ],
-              ),
-            )
-          : RefreshIndicator(
-              onRefresh: _loadDashboard,
-              child: ListView(
-                padding: const EdgeInsets.all(16),
-                children: [
-                  // Node Info Card
-                  Card(
-                    child: Padding(
-                      padding: const EdgeInsets.all(16.0),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Row(
-                            children: [
-                              Icon(Icons.dns, size: 24),
-                              SizedBox(width: 8),
-                              Text(
-                                'Node Information',
-                                style: TextStyle(
-                                  fontSize: 18,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                            ],
-                          ),
-                          const Divider(),
-                          _buildInfoRow(
-                            'Address',
-                            _nodeInfo?['address'] ?? 'N/A',
-                          ),
-                          _buildInfoRow(
-                            'Version',
-                            _nodeInfo?['version'] ?? 'N/A',
-                          ),
-                          _buildInfoRow(
-                            'Network',
-                            _nodeInfo?['network'] ?? 'N/A',
-                          ),
-                          _buildInfoRow(
-                            'Block Height',
-                            '${_nodeInfo?['block_height'] ?? 0}',
-                          ),
-                        ],
+              ? Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      const Icon(Icons.error_outline,
+                          size: 64, color: Colors.red),
+                      const SizedBox(height: 16),
+                      Text(
+                        'Error: $_error',
+                        style: const TextStyle(color: Colors.red),
                       ),
-                    ),
-                  ),
-
-                  const SizedBox(height: 16),
-
-                  // Health Status Card
-                  Card(
-                    child: Padding(
-                      padding: const EdgeInsets.all(16.0),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            children: [
-                              Icon(
-                                Icons.favorite,
-                                size: 24,
-                                color: _health?['status']?.toString() == 'ok'
-                                    ? Colors.green
-                                    : Colors.red,
-                              ),
-                              const SizedBox(width: 8),
-                              const Text(
-                                'Health Status',
-                                style: TextStyle(
-                                  fontSize: 18,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                            ],
-                          ),
-                          const Divider(),
-                          _buildInfoRow(
-                            'Status',
-                            _health?['status']?.toString().toUpperCase() ??
-                                'UNKNOWN',
-                          ),
-                          _buildInfoRow(
-                            'Uptime',
-                            '${_health?['uptime'] ?? 0}s',
-                          ),
-                          _buildInfoRow('Peers', '${_peers.length}'),
-                        ],
+                      const SizedBox(height: 16),
+                      ElevatedButton(
+                        onPressed: _loadDashboard,
+                        child: const Text('RETRY'),
                       ),
-                    ),
+                    ],
                   ),
-
-                  const SizedBox(height: 16),
-
-                  // Validators Card
-                  Card(
-                    child: Padding(
-                      padding: const EdgeInsets.all(16.0),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Row(
+                )
+              : RefreshIndicator(
+                  onRefresh: _loadDashboard,
+                  child: ListView(
+                    padding: const EdgeInsets.all(16),
+                    children: [
+                      // Node Info Card
+                      Card(
+                        child: Padding(
+                          padding: const EdgeInsets.all(16.0),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Icon(Icons.verified_user, size: 24),
-                              SizedBox(width: 8),
-                              Text(
-                                'Active Validators',
-                                style: TextStyle(
-                                  fontSize: 18,
-                                  fontWeight: FontWeight.bold,
-                                ),
+                              const Row(
+                                children: [
+                                  Icon(Icons.dns, size: 24),
+                                  SizedBox(width: 8),
+                                  Text(
+                                    'Node Information',
+                                    style: TextStyle(
+                                      fontSize: 18,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const Divider(),
+                              _buildInfoRow(
+                                'Network',
+                                _nodeInfo?['network'] ??
+                                    _nodeInfo?['chain_id'] ??
+                                    'N/A',
+                              ),
+                              _buildInfoRow(
+                                'Version',
+                                _nodeInfo?['version'] ?? 'N/A',
+                              ),
+                              _buildInfoRow(
+                                'Block Height',
+                                '${_nodeInfo?['block_height'] ?? 0}',
+                              ),
+                              _buildInfoRow(
+                                'Validators',
+                                '${_nodeInfo?['validator_count'] ?? 0}',
+                              ),
+                              _buildInfoRow(
+                                'Peers',
+                                '${_nodeInfo?['peer_count'] ?? 0}',
                               ),
                             ],
                           ),
-                          const Divider(),
-                          ..._validators.map(
-                            (v) => ListTile(
-                              leading: Icon(
-                                Icons.check_circle,
-                                color: v.isActive ? Colors.green : Colors.grey,
-                              ),
-                              title: Text(
-                                v.address,
-                                style: const TextStyle(
-                                  fontSize: 12,
-                                  fontFamily: 'monospace',
-                                ),
-                              ),
-                              subtitle: Text(
-                                'Stake: ${v.stakeUAT.toStringAsFixed(6)} UAT',
-                              ),
-                              trailing: Text(
-                                v.isActive ? 'ACTIVE' : 'INACTIVE',
-                                style: TextStyle(
-                                  color: v.isActive
-                                      ? Colors.green
-                                      : Colors.grey,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                            ),
-                          ),
-                        ],
+                        ),
                       ),
-                    ),
-                  ),
 
-                  const SizedBox(height: 16),
+                      const SizedBox(height: 16),
 
-                  // Recent Blocks Card
-                  Card(
-                    child: Padding(
-                      padding: const EdgeInsets.all(16.0),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Row(
+                      // Health Status Card
+                      Card(
+                        child: Padding(
+                          padding: const EdgeInsets.all(16.0),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Icon(Icons.view_module, size: 24),
-                              SizedBox(width: 8),
-                              Text(
-                                'Recent Blocks',
-                                style: TextStyle(
-                                  fontSize: 18,
-                                  fontWeight: FontWeight.bold,
-                                ),
+                              Row(
+                                children: [
+                                  Icon(
+                                    Icons.favorite,
+                                    size: 24,
+                                    color: _health?['status']?.toString() ==
+                                            'healthy'
+                                        ? Colors.green
+                                        : Colors.red,
+                                  ),
+                                  const SizedBox(width: 8),
+                                  const Text(
+                                    'Health Status',
+                                    style: TextStyle(
+                                      fontSize: 18,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const Divider(),
+                              _buildInfoRow(
+                                'Status',
+                                _health?['status']?.toString().toUpperCase() ??
+                                    'UNKNOWN',
+                              ),
+                              _buildInfoRow(
+                                'Uptime',
+                                _formatUptime(_health?['uptime_seconds']),
                               ),
                             ],
                           ),
-                          const Divider(),
-                          ..._recentBlocks.map(
-                            (block) => ListTile(
-                              leading: CircleAvatar(
-                                child: Text('${block.height}'),
+                        ),
+                      ),
+
+                      const SizedBox(height: 16),
+
+                      // Validators Card
+                      Card(
+                        child: Padding(
+                          padding: const EdgeInsets.all(16.0),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Row(
+                                children: [
+                                  Icon(Icons.verified_user, size: 24),
+                                  SizedBox(width: 8),
+                                  Text(
+                                    'Active Validators',
+                                    style: TextStyle(
+                                      fontSize: 18,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                ],
                               ),
-                              title: Text(
-                                block.hash.length >= 16
-                                    ? '${block.hash.substring(0, 16)}...'
-                                    : block.hash,
-                                style: const TextStyle(
-                                  fontFamily: 'monospace',
-                                  fontSize: 12,
-                                ),
-                              ),
-                              subtitle: Text(
-                                DateFormat('MMM dd, yyyy HH:mm:ss').format(
-                                  DateTime.fromMillisecondsSinceEpoch(
-                                    block.timestamp * 1000,
+                              const Divider(),
+                              ..._validators.map(
+                                (v) => ListTile(
+                                  leading: Icon(
+                                    Icons.check_circle,
+                                    color:
+                                        v.isActive ? Colors.green : Colors.grey,
+                                  ),
+                                  title: Text(
+                                    v.address,
+                                    style: const TextStyle(
+                                      fontSize: 12,
+                                      fontFamily: 'monospace',
+                                    ),
+                                  ),
+                                  subtitle: Text(
+                                    'Stake: ${v.stakeUAT.toStringAsFixed(6)} UAT',
+                                  ),
+                                  trailing: Text(
+                                    v.isActive ? 'ACTIVE' : 'INACTIVE',
+                                    style: TextStyle(
+                                      color: v.isActive
+                                          ? Colors.green
+                                          : Colors.grey,
+                                      fontWeight: FontWeight.bold,
+                                    ),
                                   ),
                                 ),
                               ),
-                              trailing: Text('${block.txCount} TXs'),
-                            ),
+                            ],
                           ),
-                        ],
+                        ),
                       ),
-                    ),
-                  ),
 
-                  const SizedBox(height: 16),
+                      const SizedBox(height: 16),
 
-                  // Peers Card
-                  Card(
-                    child: Padding(
-                      padding: const EdgeInsets.all(16.0),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
+                      // Recent Blocks Card
+                      Card(
+                        child: Padding(
+                          padding: const EdgeInsets.all(16.0),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              const Icon(
-                                Icons.connect_without_contact,
-                                size: 24,
+                              const Row(
+                                children: [
+                                  Icon(Icons.view_module, size: 24),
+                                  SizedBox(width: 8),
+                                  Text(
+                                    'Recent Blocks',
+                                    style: TextStyle(
+                                      fontSize: 18,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                ],
                               ),
-                              const SizedBox(width: 8),
-                              Text(
-                                'Connected Peers (${_peers.length})',
-                                style: const TextStyle(
-                                  fontSize: 18,
-                                  fontWeight: FontWeight.bold,
+                              const Divider(),
+                              ..._recentBlocks.map(
+                                (block) => ListTile(
+                                  leading: CircleAvatar(
+                                    child: Text('${block.height}'),
+                                  ),
+                                  title: Text(
+                                    block.hash.length >= 16
+                                        ? '${block.hash.substring(0, 16)}...'
+                                        : block.hash,
+                                    style: const TextStyle(
+                                      fontFamily: 'monospace',
+                                      fontSize: 12,
+                                    ),
+                                  ),
+                                  subtitle: Text(
+                                    DateFormat('MMM dd, yyyy HH:mm:ss').format(
+                                      DateTime.fromMillisecondsSinceEpoch(
+                                        block.timestamp * 1000,
+                                      ),
+                                    ),
+                                  ),
+                                  trailing: Text('${block.txCount} TXs'),
                                 ),
                               ),
                             ],
                           ),
-                          const Divider(),
-                          ..._peers.map(
-                            (peer) => ListTile(
-                              leading: const Icon(Icons.router, size: 20),
-                              title: Text(
-                                peer,
-                                style: const TextStyle(
-                                  fontSize: 12,
-                                  fontFamily: 'monospace',
+                        ),
+                      ),
+
+                      const SizedBox(height: 16),
+
+                      // Peers Card
+                      Card(
+                        child: Padding(
+                          padding: const EdgeInsets.all(16.0),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                children: [
+                                  const Icon(
+                                    Icons.connect_without_contact,
+                                    size: 24,
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Text(
+                                    'Connected Peers (${_peers.length})',
+                                    style: const TextStyle(
+                                      fontSize: 18,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const Divider(),
+                              ..._peers.map(
+                                (peer) => ListTile(
+                                  leading: const Icon(Icons.router, size: 20),
+                                  title: Text(
+                                    peer,
+                                    style: const TextStyle(
+                                      fontSize: 12,
+                                      fontFamily: 'monospace',
+                                    ),
+                                  ),
                                 ),
                               ),
-                            ),
+                            ],
                           ),
-                        ],
+                        ),
                       ),
-                    ),
+                    ],
                   ),
-                ],
-              ),
-            ),
+                ),
     );
   }
 
@@ -347,9 +355,32 @@ class _DashboardScreenState extends State<DashboardScreen> {
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
           Text(label, style: const TextStyle(color: Colors.grey)),
-          Text(value, style: const TextStyle(fontWeight: FontWeight.bold)),
+          Flexible(
+            child: Text(
+              value,
+              style: const TextStyle(fontWeight: FontWeight.bold),
+              textAlign: TextAlign.end,
+            ),
+          ),
         ],
       ),
     );
+  }
+
+  /// Format uptime from Unix epoch timestamp to human-readable duration
+  String _formatUptime(dynamic uptimeSeconds) {
+    if (uptimeSeconds == null) return 'N/A';
+    // Backend sends epoch timestamp, not actual uptime — calculate difference
+    final now = DateTime.now().millisecondsSinceEpoch ~/ 1000;
+    final up = uptimeSeconds is int
+        ? uptimeSeconds
+        : int.tryParse(uptimeSeconds.toString()) ?? 0;
+    // If the value looks like an epoch timestamp (> year 2020), calculate real uptime
+    final seconds = up > 1577836800 ? (now - up).abs() : up;
+    if (seconds < 60) return '${seconds}s';
+    if (seconds < 3600) return '${seconds ~/ 60}m ${seconds % 60}s';
+    if (seconds < 86400)
+      return '${seconds ~/ 3600}h ${(seconds % 3600) ~/ 60}m';
+    return '${seconds ~/ 86400}d ${(seconds % 86400) ~/ 3600}h';
   }
 }

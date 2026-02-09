@@ -152,14 +152,14 @@ class ApiService {
   Future<Account> getBalance(String address) async {
     try {
       final response = await _client
-          .get(Uri.parse('$baseUrl/balance/$address'))
+          .get(Uri.parse('$baseUrl/bal/$address'))
           .timeout(_timeout);
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
         return Account(
           address: address,
-          balance: data['balance'] ?? 0,
-          voidBalance: data['void_balance'] ?? 0,
+          balance: data['balance_void'] ?? 0,
+          voidBalance: 0,
           history: [],
         );
       }
@@ -308,7 +308,11 @@ class ApiService {
       final response =
           await _client.get(Uri.parse('$baseUrl/validators')).timeout(_timeout);
       if (response.statusCode == 200) {
-        final List<dynamic> data = json.decode(response.body);
+        final decoded = json.decode(response.body);
+        // Handle both {"validators": [...]} wrapper and bare [...]
+        final List<dynamic> data = decoded is List
+            ? decoded
+            : (decoded['validators'] as List<dynamic>?) ?? [];
         return data.map((v) => ValidatorInfo.fromJson(v)).toList();
       }
       throw Exception('Failed to get validators: ${response.statusCode}');

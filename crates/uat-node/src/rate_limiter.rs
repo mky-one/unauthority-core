@@ -245,7 +245,7 @@ mod tests {
         assert!(limiter.check_rate_limit(ip));
         let tokens = limiter.get_tokens(ip).unwrap();
         assert!(
-            tokens >= 8.9 && tokens <= 9.1,
+            (8.9..=9.1).contains(&tokens),
             "Tokens should be ~9 after 1 request"
         );
 
@@ -255,7 +255,7 @@ mod tests {
         }
         let tokens = limiter.get_tokens(ip).unwrap();
         assert!(
-            tokens >= 3.9 && tokens <= 4.1,
+            (3.9..=4.1).contains(&tokens),
             "Tokens should be ~4 after 6 requests"
         );
     }

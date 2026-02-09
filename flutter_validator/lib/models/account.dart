@@ -91,7 +91,7 @@ class BlockInfo {
 
 class ValidatorInfo {
   final String address;
-  final int stake; // In VOID
+  final int stake; // In UAT (backend already divides by VOID_PER_UAT)
   final bool isActive;
   final double uptimePercentage;
   final int totalSlashed; // In VOID

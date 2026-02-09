@@ -172,13 +172,18 @@ impl WasmEngine {
         let args_owned = args.to_vec();
         let _remaining_gas = gas_limit - compile_gas;
         let abort_flag = Arc::new(std::sync::atomic::AtomicBool::new(false));
-        let _abort_clone = Arc::clone(&abort_flag);
+        let abort_clone = Arc::clone(&abort_flag);
 
         // 4. Execute in a separate thread with timeout
         let (result_tx, result_rx) = std::sync::mpsc::channel();
 
         let handle = std::thread::spawn(move || {
             let start = std::time::Instant::now();
+
+            // Check abort flag before each expensive phase
+            if abort_clone.load(std::sync::atomic::Ordering::Relaxed) {
+                return;
+            }
 
             let compiler = Cranelift::default();
             let mut store = Store::new(compiler);
@@ -190,6 +195,10 @@ impl WasmEngine {
                     return;
                 }
             };
+
+            if abort_clone.load(std::sync::atomic::Ordering::Relaxed) {
+                return;
+            }
 
             let import_object = imports! {};
             let instance = match Instance::new(&mut store, &module, &import_object) {
@@ -211,10 +220,19 @@ impl WasmEngine {
                 }
             };
 
+            if abort_clone.load(std::sync::atomic::Ordering::Relaxed) {
+                return;
+            }
+
             let wasm_args: Vec<Value> = args_owned.iter().map(|&v| Value::I32(v)).collect();
 
             let call_result = func.call(&mut store, &wasm_args);
             let elapsed = start.elapsed();
+
+            // If aborted during execution, don't send results
+            if abort_clone.load(std::sync::atomic::Ordering::Relaxed) {
+                return;
+            }
 
             // Calculate execution gas from wall-clock time
             let exec_gas = (elapsed.as_millis() as u64) * GAS_PER_MS_EXECUTION;
@@ -249,12 +267,11 @@ impl WasmEngine {
             }
             Ok(Err(e)) => Err(e),
             Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
-                // SECURITY P1-6: Set abort flag so the thread knows to exit quickly
-                // The thread will see this flag and stop trying to send results
+                // SECURITY: Set abort flag so the thread exits at its next checkpoint
+                // instead of continuing to process and sending stale results.
                 abort_flag.store(true, std::sync::atomic::Ordering::Relaxed);
-                // Detach the thread — it will complete on its own and clean up
-                // The abort_clone inside would prevent further processing
-                drop(handle);
+                // Wait briefly for thread cleanup, then detach
+                let _ = handle.join(); // blocks at most until current WASM call completes
                 Err(format!(
                     "WASM execution timeout: exceeded {} second limit",
                     MAX_EXECUTION_SECS

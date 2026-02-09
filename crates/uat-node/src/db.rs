@@ -92,6 +92,11 @@ impl UatDatabase {
                     tx_accounts.insert(key.as_slice(), value.as_slice())?;
                 }
                 tx_meta.insert(b"distribution".as_ref(), distribution_json.as_slice())?;
+                // FIX C11-H2: Persist accumulated_fees_void (lives on Ledger, not DistributionState)
+                tx_meta.insert(
+                    b"accumulated_fees_void".as_ref(),
+                    &ledger.accumulated_fees_void.to_le_bytes() as &[u8],
+                )?;
                 Ok(())
             })
             .map_err(|e: sled::transaction::TransactionError<()>| {
@@ -147,6 +152,18 @@ impl UatDatabase {
         {
             ledger.distribution = serde_json::from_slice(&dist_bytes)
                 .map_err(|e| format!("Failed to deserialize distribution: {}", e))?;
+        }
+
+        // FIX C11-H2: Restore accumulated_fees_void from persistent storage
+        if let Some(fee_bytes) = meta_tree
+            .get(b"accumulated_fees_void")
+            .map_err(|e| format!("Failed to read accumulated_fees: {}", e))?
+        {
+            if fee_bytes.len() >= 16 {
+                let mut buf = [0u8; 16];
+                buf.copy_from_slice(&fee_bytes[..16]);
+                ledger.accumulated_fees_void = u128::from_le_bytes(buf);
+            }
         }
 
         // 4. Rebuild claimed_sends index from loaded Receive blocks (O(1) double-receive check)

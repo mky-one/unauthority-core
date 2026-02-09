@@ -52,12 +52,13 @@ USER uat
 # Data directory for blockchain state
 VOLUME ["/data", "/config"]
 
-# Expose ports
-# 8080-8082: REST API
-# 50051-50053: gRPC
+# Expose ports (single container binds)
+# FIX C11-12: Only expose ports this single container binds (not multi-container)
+# 8080: REST API
+# 50051: gRPC
 # 9000: P2P
 # 9090: Prometheus metrics
-EXPOSE 8080 8081 8082 50051 50052 50053 9000 9090
+EXPOSE 8080 50051 9000 9090
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \

@@ -41,8 +41,8 @@ fn create_new_wallet(name: &str, config_dir: &Path) -> Result<(), Box<dyn std::e
         return Ok(());
     }
 
-    if password.len() < 8 {
-        print_error("Password must be at least 8 characters!");
+    if password.len() < 12 {
+        print_error("Password must be at least 12 characters!");
         return Ok(());
     }
 

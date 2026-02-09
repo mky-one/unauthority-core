@@ -249,16 +249,14 @@ impl SlashingManager {
         current_stake_void: u128,
     ) -> Option<SlashEvent> {
         if let Some(profile) = self.validator_profiles.get_mut(validator_address) {
+            // Track total blocks observed as a monotonically growing counter.
+            // Use block_height directly so the observation window grows correctly.
+            profile.total_blocks_observed = block_height;
+
             // Only check if we have a full observation window
             if profile.total_blocks_observed < DOWNTIME_WINDOW_BLOCKS {
-                profile.total_blocks_observed =
-                    block_height.saturating_sub(profile.total_blocks_observed);
                 return None;
             }
-
-            // Update observation window
-            profile.total_blocks_observed =
-                block_height.saturating_sub(profile.total_blocks_observed);
 
             // Calculate uptime in basis points (10000 = 100%) — integer math for determinism
             let uptime_bps: u32 = if profile.total_blocks_observed > 0 {

@@ -78,9 +78,7 @@ class _EarningsChartPainter extends CustomPainter {
       final pointPaint = Paint()
         ..color = Colors.green
         ..style = PaintingStyle.fill;
-      canvas.drawCircle(
-        Offset(size.width / 2, size.height / 2), 4, pointPaint,
-      );
+      canvas.drawCircle(Offset(size.width / 2, size.height / 2), 4, pointPaint);
       return;
     }
 

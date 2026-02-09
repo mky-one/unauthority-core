@@ -38,6 +38,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
       final blocks = await apiService.getRecentBlocks();
       final peers = await apiService.getPeers();
 
+      if (!mounted) return;
       setState(() {
         _nodeInfo = nodeInfo;
         _health = health;
@@ -48,6 +49,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
         _isLoading = false;
       });
     } catch (e) {
+      if (!mounted) return;
       setState(() {
         _error = e.toString();
         _isLoading = false;

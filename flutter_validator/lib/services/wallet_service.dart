@@ -87,9 +87,13 @@ class WalletService {
         // Secrets → Keychain/Keystore
         await _secureStorage.write(key: _seedKey, value: mnemonic);
         await _secureStorage.write(
-            key: _publicKeyKey, value: keypair.publicKeyHex);
+          key: _publicKeyKey,
+          value: keypair.publicKeyHex,
+        );
         await _secureStorage.write(
-            key: _secretKeyKey, value: keypair.secretKeyHex);
+          key: _secretKeyKey,
+          value: keypair.secretKeyHex,
+        );
 
         // Non-sensitive → SharedPreferences
         final prefs = await SharedPreferences.getInstance();
@@ -156,9 +160,13 @@ class WalletService {
         // Secrets → Keychain/Keystore
         await _secureStorage.write(key: _seedKey, value: mnemonic);
         await _secureStorage.write(
-            key: _publicKeyKey, value: keypair.publicKeyHex);
+          key: _publicKeyKey,
+          value: keypair.publicKeyHex,
+        );
         await _secureStorage.write(
-            key: _secretKeyKey, value: keypair.secretKeyHex);
+          key: _secretKeyKey,
+          value: keypair.secretKeyHex,
+        );
 
         // Non-sensitive → SharedPreferences
         final prefs = await SharedPreferences.getInstance();
@@ -318,8 +326,9 @@ class WalletService {
     try {
       final publicKeyHash = sha256.convert(privateKey);
       final addressBytes = publicKeyHash.bytes.sublist(0, 20);
-      final hexAddress =
-          addressBytes.map((b) => b.toRadixString(16).padLeft(2, '0')).join('');
+      final hexAddress = addressBytes
+          .map((b) => b.toRadixString(16).padLeft(2, '0'))
+          .join('');
       return 'UAT$hexAddress';
     } finally {
       privateKey.fillRange(0, privateKey.length, 0);

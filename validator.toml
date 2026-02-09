@@ -20,8 +20,8 @@ address = "${UAT_VALIDATOR_ADDRESS:-UAT3ea85825b3e13862274365118cafed2939fa8947}
 # Use environment variables instead: export UAT_VALIDATOR_PRIVKEY_PATH=/path/to/key
 private_key_path = "${UAT_VALIDATOR_PRIVKEY_PATH}"
 
-# Initial Stake (minimum 1000 UAT = 100,000,000,000 VOI)
-stake_void = 100000000000  # 1000 UAT
+# Initial Stake (minimum 1000 UAT = 100,000,000,000,000 VOID)
+stake_void = 100000000000000  # 1000 UAT
 
 # Enable automatic reward claiming
 auto_claim_rewards = true

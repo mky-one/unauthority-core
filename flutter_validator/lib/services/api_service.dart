@@ -46,7 +46,10 @@ class ApiService {
     if (baseUrl.contains('.onion')) {
       SocksTCPClient.assignToHttpClient(httpClient, [
         ProxySettings(InternetAddress.loopbackIPv4, 9150), // Tor Browser
-        ProxySettings(InternetAddress.loopbackIPv4, 9050), // Fallback: tor daemon
+        ProxySettings(
+          InternetAddress.loopbackIPv4,
+          9050,
+        ), // Fallback: tor daemon
       ]);
 
       // Longer timeout for Tor connections
@@ -288,5 +291,10 @@ class ApiService {
       print('❌ getPeers error: $e');
       rethrow;
     }
+  }
+
+  /// Release HTTP client resources. Called by Provider.dispose.
+  void dispose() {
+    _client.close();
   }
 }

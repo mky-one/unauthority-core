@@ -307,6 +307,11 @@ impl ABFTConsensus {
     fn finalize_block(&mut self, sequence: u64) -> Result<bool, String> {
         if let Some(block) = self.locked_block.clone() {
             self.finalized_blocks.push_back(block);
+            // Trim to prevent unbounded memory growth
+            const MAX_FINALIZED_BLOCKS: usize = 10_000;
+            while self.finalized_blocks.len() > MAX_FINALIZED_BLOCKS {
+                self.finalized_blocks.pop_front();
+            }
             self.blocks_finalized += 1;
             self.finality_timestamp = std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)

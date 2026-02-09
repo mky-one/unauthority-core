@@ -18,16 +18,24 @@ void main() async {
   final walletService = WalletService();
   await walletService.migrateFromSharedPreferences();
 
-  runApp(const MyApp());
+  runApp(MyApp(walletService: walletService));
 }
 
 class MyApp extends StatelessWidget {
-  const MyApp({super.key});
+  final WalletService walletService;
+
+  const MyApp({super.key, required this.walletService});
 
   @override
   Widget build(BuildContext context) {
-    return Provider<ApiService>(
-      create: (_) => ApiService(),
+    return MultiProvider(
+      providers: [
+        Provider<ApiService>(
+          create: (_) => ApiService(),
+          dispose: (_, api) => api.dispose(),
+        ),
+        Provider<WalletService>.value(value: walletService),
+      ],
       child: MaterialApp(
         title: 'UAT Validator Dashboard',
         debugShowCheckedModeBanner: false,

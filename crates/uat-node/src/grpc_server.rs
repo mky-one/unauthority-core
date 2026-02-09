@@ -325,8 +325,9 @@ impl UatNode for UatGrpcService {
             network_id: uat_core::CHAIN_ID as u32, // CHAIN_ID: 1=mainnet, 2=testnet
             chain_name: "Unauthority".to_string(),
             version: "0.1.0".to_string(),
-            total_supply_void: (21_936_236 * VOID_PER_UAT) as u64,
-            remaining_supply_void: ledger.distribution.remaining_supply as u64,
+            // u128 total supply overflows u64 — set legacy field to 0, use string fields
+            total_supply_void: 0,
+            remaining_supply_void: 0,
             total_burned_usd: ledger.distribution.total_burned_usd as u64,
             eth_price_usd: eth_price,
             btc_price_usd: btc_price,

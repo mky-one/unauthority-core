@@ -83,7 +83,8 @@ class AccountManagementService {
         final seed = await _secureStorage.read(
           key: '$_seedKeyPrefix${account.id}',
         );
-        accounts.add(seed != null ? account.copyWith(seedPhrase: seed) : account);
+        accounts
+            .add(seed != null ? account.copyWith(seedPhrase: seed) : account);
       }
 
       return AccountsList(

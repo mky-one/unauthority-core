@@ -366,8 +366,13 @@ class _AccountManagementScreenState extends State<AccountManagementScreen> {
           ElevatedButton.icon(
             onPressed: () {
               Clipboard.setData(ClipboardData(text: seedPhrase));
+              // FIX M-01: Auto-clear clipboard after 30s for security
+              Future.delayed(const Duration(seconds: 30), () {
+                Clipboard.setData(const ClipboardData(text: ''));
+              });
               ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Seed phrase copied')),
+                const SnackBar(
+                    content: Text('Seed phrase copied (auto-clears in 30s)')),
               );
             },
             icon: const Icon(Icons.copy, size: 18),

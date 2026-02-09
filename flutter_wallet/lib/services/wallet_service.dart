@@ -77,26 +77,31 @@ class WalletService {
     if (DilithiumService.isAvailable) {
       // Real Dilithium5 keypair — deterministic from seed
       final seed = bip39.mnemonicToSeed(mnemonic);
-      final keypair = DilithiumService.generateKeypairFromSeed(seed);
-      address = DilithiumService.publicKeyToAddress(keypair.publicKey);
-      cryptoMode = 'dilithium5';
+      try {
+        final keypair = DilithiumService.generateKeypairFromSeed(seed);
+        address = DilithiumService.publicKeyToAddress(keypair.publicKey);
+        cryptoMode = 'dilithium5';
 
-      // Secrets → Keychain/Keystore
-      await _secureStorage.write(key: _seedKey, value: mnemonic);
-      await _secureStorage.write(
-          key: _publicKeyKey, value: keypair.publicKeyHex);
-      await _secureStorage.write(
-          key: _secretKeyKey, value: keypair.secretKeyHex);
+        // Secrets → Keychain/Keystore
+        await _secureStorage.write(key: _seedKey, value: mnemonic);
+        await _secureStorage.write(
+            key: _publicKeyKey, value: keypair.publicKeyHex);
+        await _secureStorage.write(
+            key: _secretKeyKey, value: keypair.secretKeyHex);
 
-      // Non-sensitive → SharedPreferences
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setString(_addressKey, address);
-      await prefs.setString(_importModeKey, 'mnemonic');
-      await prefs.setString(_cryptoModeKey, cryptoMode);
+        // Non-sensitive → SharedPreferences
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setString(_addressKey, address);
+        await prefs.setString(_importModeKey, 'mnemonic');
+        await prefs.setString(_cryptoModeKey, cryptoMode);
 
-      print('🔐 Dilithium5 wallet created (deterministic from seed)');
-      print('   Address: $address');
-      print('   PK: ${keypair.publicKey.length} bytes');
+        print('🔐 Dilithium5 wallet created (deterministic from seed)');
+        print('   Address: $address');
+        print('   PK: ${keypair.publicKey.length} bytes');
+      } finally {
+        // FIX M-04: Zero BIP39 seed bytes in Dart memory after keypair generation
+        seed.fillRange(0, seed.length, 0);
+      }
     } else {
       // SHA256 fallback for testnet L1
       final seed = bip39.mnemonicToSeed(mnemonic);
@@ -135,36 +140,45 @@ class WalletService {
     if (DilithiumService.isAvailable) {
       // Deterministic keypair from BIP39 seed
       final seed = bip39.mnemonicToSeed(mnemonic);
-      final keypair = DilithiumService.generateKeypairFromSeed(seed);
-      address = DilithiumService.publicKeyToAddress(keypair.publicKey);
-      cryptoMode = 'dilithium5';
+      try {
+        final keypair = DilithiumService.generateKeypairFromSeed(seed);
+        address = DilithiumService.publicKeyToAddress(keypair.publicKey);
+        cryptoMode = 'dilithium5';
 
-      // Secrets → Keychain/Keystore
-      await _secureStorage.write(key: _seedKey, value: mnemonic);
-      await _secureStorage.write(
-          key: _publicKeyKey, value: keypair.publicKeyHex);
-      await _secureStorage.write(
-          key: _secretKeyKey, value: keypair.secretKeyHex);
+        // Secrets → Keychain/Keystore
+        await _secureStorage.write(key: _seedKey, value: mnemonic);
+        await _secureStorage.write(
+            key: _publicKeyKey, value: keypair.publicKeyHex);
+        await _secureStorage.write(
+            key: _secretKeyKey, value: keypair.secretKeyHex);
 
-      // Non-sensitive → SharedPreferences
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setString(_addressKey, address);
-      await prefs.setString(_importModeKey, 'mnemonic');
-      await prefs.setString(_cryptoModeKey, cryptoMode);
+        // Non-sensitive → SharedPreferences
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setString(_addressKey, address);
+        await prefs.setString(_importModeKey, 'mnemonic');
+        await prefs.setString(_cryptoModeKey, cryptoMode);
 
-      print('🔐 Dilithium5 wallet restored from mnemonic (deterministic)');
-      print('   Address: $address');
+        print('🔐 Dilithium5 wallet restored from mnemonic (deterministic)');
+        print('   Address: $address');
+      } finally {
+        // FIX M-04: Zero BIP39 seed bytes in Dart memory
+        seed.fillRange(0, seed.length, 0);
+      }
     } else {
       final seed = bip39.mnemonicToSeed(mnemonic);
-      address = _deriveAddressSha256(seed);
-      cryptoMode = 'sha256';
+      try {
+        address = _deriveAddressSha256(seed);
+        cryptoMode = 'sha256';
 
-      await _secureStorage.write(key: _seedKey, value: mnemonic);
+        await _secureStorage.write(key: _seedKey, value: mnemonic);
 
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setString(_addressKey, address);
-      await prefs.setString(_importModeKey, 'mnemonic');
-      await prefs.setString(_cryptoModeKey, cryptoMode);
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setString(_addressKey, address);
+        await prefs.setString(_importModeKey, 'mnemonic');
+        await prefs.setString(_cryptoModeKey, cryptoMode);
+      } finally {
+        seed.fillRange(0, seed.length, 0);
+      }
     }
 
     return {

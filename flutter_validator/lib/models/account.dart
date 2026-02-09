@@ -16,12 +16,35 @@ class Account {
   });
 
   factory Account.fromJson(Map<String, dynamic> json) {
+    // Backend returns balance_voi / balance_void as integer VOID,
+    // and balance / balance_uat as formatted strings.
+    int parsedBalance;
+    if (json['balance_voi'] != null) {
+      final v = json['balance_voi'];
+      parsedBalance = v is int ? v : int.tryParse(v.toString()) ?? 0;
+    } else if (json['balance_void'] != null) {
+      final v = json['balance_void'];
+      parsedBalance = v is int ? v : int.tryParse(v.toString()) ?? 0;
+    } else if (json['balance'] != null) {
+      final val = json['balance'];
+      if (val is int) {
+        parsedBalance = val;
+      } else if (val is String) {
+        parsedBalance = BlockchainConstants.uatStringToVoid(val);
+      } else {
+        parsedBalance = 0;
+      }
+    } else {
+      parsedBalance = 0;
+    }
+
     return Account(
       address: json['address'] ?? '',
-      balance: json['balance'] ?? 0,
-      voidBalance: json['void_balance'] ?? 0,
+      balance: parsedBalance,
+      voidBalance: 0,
+      // Backend sends "transactions", not "history"
       history:
-          (json['history'] as List?)
+          ((json['transactions'] ?? json['history']) as List?)
               ?.map((tx) => Transaction.fromJson(tx))
               .toList() ??
           [],
@@ -84,7 +107,8 @@ class BlockInfo {
       height: json['height'] ?? 0,
       hash: json['hash'] ?? '',
       timestamp: json['timestamp'] ?? 0,
-      txCount: json['tx_count'] ?? 0,
+      // Backend sends "transactions_count"; also accept legacy "tx_count"
+      txCount: json['transactions_count'] ?? json['tx_count'] ?? 0,
     );
   }
 }

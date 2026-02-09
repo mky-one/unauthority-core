@@ -17,18 +17,36 @@ class Account {
     this.blockCount = 0,
   });
 
+  /// Parse a dynamic value (int, String, double, null) into int safely.
+  static int _parseIntField(dynamic value) {
+    if (value == null) return 0;
+    if (value is int) return value;
+    if (value is double) return value.toInt();
+    if (value is String) {
+      // Try direct int parse first, then UAT string → VOID conversion
+      return int.tryParse(value) ?? BlockchainConstants.uatStringToVoid(value);
+    }
+    return 0;
+  }
+
   factory Account.fromJson(Map<String, dynamic> json) {
+    // Parse balance robustly: backend may send int, String, or formatted "X.Y" UAT
+    final int parsedBalance = _parseIntField(json['balance_voi'])
+        != 0 ? _parseIntField(json['balance_voi'])
+        : _parseIntField(json['balance_void']) != 0
+            ? _parseIntField(json['balance_void'])
+            : _parseIntField(json['balance']);
+
     return Account(
       address: json['address'] ?? '',
-      // VOID integer: try balance_voi (from /account), balance_void (from /bal)
-      balance: json['balance_voi'] ?? json['balance_void'] ?? json['balance'] ?? 0,
-      voidBalance: json['void_balance'] ?? json['balance_voi'] ?? 0,
+      balance: parsedBalance,
+      voidBalance: _parseIntField(json['void_balance']),
       headBlock: json['head_block'],
       blockCount: json['block_count'] ?? 0,
-      history: (json['history'] as List?)
+      history: (json['transactions'] as List?)
               ?.map((tx) => Transaction.fromJson(tx))
               .toList() ??
-          (json['transactions'] as List?)
+          (json['history'] as List?)
               ?.map((tx) => Transaction.fromJson(tx))
               .toList() ??
           [],

@@ -19,7 +19,8 @@ pub const VOTING_POWER_PRECISION: u32 = 6;
 pub const MIN_STAKE_VOI: u128 = 100_000_000_000_000; // 1000 UAT × 10^11
 
 /// Maximum stake for voting power calculation (prevents overflow)
-pub const MAX_STAKE_FOR_VOTING_VOI: u128 = 2_193_623_600_000_000; // Total supply
+/// Total supply = 21,936,236 UAT × 10^11 VOID_PER_UAT
+pub const MAX_STAKE_FOR_VOTING_VOI: u128 = 2_193_623_600_000_000_000_000; // Total supply in VOID
 
 /// Validator voting information
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]

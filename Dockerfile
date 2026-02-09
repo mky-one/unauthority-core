@@ -43,6 +43,10 @@ COPY --from=builder /build/target/release/genesis_generator /usr/local/bin/
 # Copy configuration template
 COPY validator.toml /config/validator.toml.template
 
+# Copy genesis configuration files (required for node startup)
+COPY genesis_config.json /opt/uat/genesis_config.json
+COPY testnet-genesis/ /opt/uat/testnet-genesis/
+
 USER uat
 
 # Data directory for blockchain state
@@ -57,7 +61,7 @@ EXPOSE 8080 8081 8082 50051 50052 50053 9000 9090
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
-    CMD ["/usr/local/bin/uat-cli", "node-info", "||", "exit", "1"]
+    CMD /usr/local/bin/uat-cli node-info || exit 1
 
 ENTRYPOINT ["/usr/local/bin/uat-node"]
 CMD ["--config", "/config/validator.toml", "--data-dir", "/data"]

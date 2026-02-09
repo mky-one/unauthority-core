@@ -178,6 +178,10 @@ class ApiService {
           .timeout(_timeout);
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
+        // Backend /account/:address may not include 'address' field — inject it
+        if (data is Map<String, dynamic> && !data.containsKey('address')) {
+          data['address'] = address;
+        }
         return Account.fromJson(data);
       }
       throw Exception('Failed to get account: ${response.statusCode}');
@@ -345,7 +349,11 @@ class ApiService {
           .get(Uri.parse('$baseUrl/blocks/recent'))
           .timeout(_timeout);
       if (response.statusCode == 200) {
-        final List<dynamic> data = json.decode(response.body);
+        final decoded = json.decode(response.body);
+        // Handle both {"blocks": [...]} wrapper and bare [...]
+        final List<dynamic> data = decoded is List
+            ? decoded
+            : (decoded['blocks'] as List<dynamic>?) ?? [];
         return data.map((b) => BlockInfo.fromJson(b)).toList();
       }
       throw Exception('Failed to get recent blocks: ${response.statusCode}');

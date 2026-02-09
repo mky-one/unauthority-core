@@ -229,6 +229,9 @@ impl AntiWhaleEngine {
         stakes.sort_by(|a, b| b.cmp(a));
 
         let total_stake: u64 = stakes.iter().sum();
+        if total_stake == 0 {
+            return ConcentrationStats::default();
+        }
         let top_3_stake: u64 = stakes.iter().take(3).sum();
         let top_10_stake: u64 = stakes.iter().take(10).sum();
 

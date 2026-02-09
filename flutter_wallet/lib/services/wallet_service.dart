@@ -316,6 +316,10 @@ class WalletService {
   /// without overwriting the primary wallet's SecureStorage keys.
   String deriveAddressFromMnemonic(String mnemonic) {
     final seed = bip39.mnemonicToSeed(mnemonic);
-    return _deriveAddressSha256(seed);
+    try {
+      return _deriveAddressSha256(seed);
+    } finally {
+      seed.fillRange(0, seed.length, 0);
+    }
   }
 }

@@ -38,9 +38,12 @@ class WalletService {
   static const String _secretKeyKey = 'wallet_secret_key';
 
   /// Encrypted storage backed by platform Keychain (iOS/macOS) or Keystore (Android)
+  /// useDataProtectionKeyChain: false = legacy file-based keychain (works with ad-hoc signing)
+  /// macOS will ask for login password ONCE → click "Always Allow" → never asks again.
   static const _secureStorage = FlutterSecureStorage(
     aOptions: AndroidOptions(encryptedSharedPreferences: true),
     iOptions: IOSOptions(accessibility: KeychainAccessibility.first_unlock),
+    mOptions: MacOsOptions(useDataProtectionKeyChain: false),
   );
 
   /// One-time migration from SharedPreferences → SecureStorage

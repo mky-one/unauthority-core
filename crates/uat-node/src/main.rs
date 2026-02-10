@@ -90,6 +90,8 @@ struct SendRequest {
     public_key: Option<String>, // Sender's public key (hex-encoded, REQUIRED for signature verification)
     previous: Option<String>,   // Previous block hash (for client-side signing)
     work: Option<u64>,          // PoW nonce (if client pre-computed)
+    timestamp: Option<u64>,     // Client timestamp (used when client_signed to match signing_hash)
+    fee: Option<u128>,          // Client fee (used when client_signed to match signing_hash)
 }
 
 #[derive(serde::Deserialize, serde::Serialize)]
@@ -487,8 +489,15 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
                     signature: "".to_string(),
                     public_key: pubkey,
                     work: req.work.unwrap_or(0),
-                    timestamp: std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_secs(),
-                    fee: 0, // Set after anti-whale calculation
+                    // When client-signed, use client's timestamp (part of signing_hash)
+                    timestamp: if client_signed {
+                        req.timestamp.unwrap_or_else(|| std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_secs())
+                    } else {
+                        std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_secs()
+                    },
+                    // When client-signed, use client's fee (part of signing_hash)
+                    // Server still validates the fee is >= base_fee
+                    fee: if client_signed { req.fee.unwrap_or(0) } else { 0 },
                 };
 
                 let initial_power: u128;
@@ -547,7 +556,19 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
                 }
 
                 // Set fee on block BEFORE PoW/signing (fee is part of signing_hash)
-                blk.fee = final_fee;
+                // When client-signed, validate that client fee >= server-calculated fee
+                if client_signed {
+                    let client_fee = blk.fee;
+                    if client_fee < final_fee {
+                        return warp::reply::json(&serde_json::json!({
+                            "status": "error",
+                            "msg": format!("Client fee {} VOID is below minimum required fee {} VOID", client_fee, final_fee)
+                        }));
+                    }
+                    // Keep client's fee (already set on blk) — it's part of their signing_hash
+                } else {
+                    blk.fee = final_fee;
+                }
 
                 // Compute PoW if not provided by client
                 if req.work.is_none() {

@@ -40,10 +40,12 @@ class BlockConstructionService {
   /// PoW difficulty: 16 leading zero bits (matches backend MIN_POW_DIFFICULTY_BITS)
   static const int powDifficultyBits = 16;
 
+  /// Minimum base fee in VOID (0.001 UAT = 100,000 VOID)
+  /// Must match backend base_fee to pass fee validation.
+  static const int baseFeeVoid = 100000;
+
   /// Maximum PoW iterations before giving up
   static const int maxPowIterations = 50000000;
-
-  /// Block type byte encoding (matches backend BlockType)
   static const int blockTypeSend = 0;
   static const int blockTypeReceive = 1;
   static const int blockTypeChange = 2;
@@ -111,7 +113,7 @@ class BlockConstructionService {
       link: to,
       publicKey: publicKeyHex,
       timestamp: timestamp,
-      fee: 0,
+      fee: baseFeeVoid,
     );
 
     if (powResult == null) {
@@ -134,6 +136,8 @@ class BlockConstructionService {
       publicKey: publicKeyHex,
       previous: previous,
       work: work,
+      timestamp: timestamp,
+      fee: baseFeeVoid,
     );
   }
 

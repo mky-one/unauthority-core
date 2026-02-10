@@ -239,6 +239,8 @@ class ApiService {
     String? publicKey,
     String? previous,
     int? work,
+    int? timestamp,
+    int? fee,
   }) async {
     await ensureReady();
     debugPrint(
@@ -260,6 +262,13 @@ class ApiService {
       }
       if (work != null) {
         body['work'] = work;
+      }
+      // Attach timestamp and fee for client-signed blocks (part of signing_hash)
+      if (timestamp != null) {
+        body['timestamp'] = timestamp;
+      }
+      if (fee != null) {
+        body['fee'] = fee;
       }
 
       final response = await _client

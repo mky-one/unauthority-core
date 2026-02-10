@@ -1,40 +1,42 @@
-# 📚 Unauthority Documentation
+# Unauthority Documentation
 
-Welcome to the Unauthority documentation. Choose your path:
+All documentation for the Unauthority (UAT) blockchain — v1.0.3-testnet.
 
----
+## User Guides
 
-## 👤 For Users
+| Document | Description |
+|----------|-------------|
+| [JOIN_TESTNET.md](JOIN_TESTNET.md) | Quick start — download wallet, get testnet UAT, send tokens |
+| [INSTALLATION.md](INSTALLATION.md) | Build from source on macOS/Linux/Windows |
+| [WALLET_GUIDE.md](WALLET_GUIDE.md) | Complete wallet features: create, send, receive, burn-to-mint |
 
-- **[Quickstart Guide](user/QUICKSTART.md)** - Get started in 5 minutes
-- **[Wallet Testing Guide](user/WALLET_TESTING_GUIDE.md)** - Create & manage UAT wallet
-- **[Validator Setup Guide](user/VALIDATOR_SETUP_GUIDE.md)** - Run a validator node
-- **[Testnet Launch](user/TESTNET_LAUNCH.md)** - Join testnet
-- **[Launch Guide](user/LAUNCH_GUIDE.md)** - Network launch instructions
+## Operator Guides
 
----
+| Document | Description |
+|----------|-------------|
+| [VALIDATOR_GUIDE.md](VALIDATOR_GUIDE.md) | Run a validator node — setup, staking, monitoring |
+| [DOCKER_DEPLOYMENT.md](DOCKER_DEPLOYMENT.md) | Deploy 4-node testnet via Docker Compose |
+| [TOR_SETUP.md](TOR_SETUP.md) | Configure Tor hidden services for node privacy |
 
-## 👨‍💻 For Developers
+## Technical Reference
 
-- **[Frontend Architecture](developer/FRONTEND_ARCHITECTURE.md)** - UI implementation
-- **[API Reference](../api_docs/API_REFERENCE.md)** - REST & gRPC endpoints
-- **[Deployment Instructions](developer/DEPLOYMENT_INSTRUCTIONS.md)** - Production deployment
-- **[Oracle Integration](developer/ORACLE_CONSENSUS_INTEGRATION.md)** - Oracle system
+| Document | Description |
+|----------|-------------|
+| [ARCHITECTURE.md](ARCHITECTURE.md) | System design — crates, block-lattice, aBFT, crypto |
+| [API_REFERENCE.md](API_REFERENCE.md) | All 27 REST endpoints + 8 gRPC RPCs |
+| [CLI_REFERENCE.md](CLI_REFERENCE.md) | `uat-cli` command reference |
+| [WHITEPAPER.md](WHITEPAPER.md) | Full technical whitepaper |
 
----
+## Configuration Files
 
-## 📖 Technical Specifications
+| File | Purpose |
+|------|---------|
+| [`genesis_config.json`](../genesis_config.json) | Mainnet genesis allocation (21,936,236 UAT) |
+| [`testnet-genesis/testnet_wallets.json`](../testnet-genesis/testnet_wallets.json) | Testnet wallets with BIP39 seeds |
+| [`validator.toml`](../validator.toml) | Validator node configuration template |
+| [`docker-compose.yml`](../docker-compose.yml) | 4-node Docker deployment |
+| [`testnet-tor-info.json`](../testnet-tor-info.json) | Tor .onion addresses for bootstrap nodes |
 
-- **[Security Model](KNOWN_RISKS_AND_MITIGATIONS.md)** - Security analysis
-- **[Economic Review](ECONOMIC_SECURITY_REVIEW.md)** - Economics & tokenomics
-- **[Project Status](PROJECT_STATUS.md)** - Development status
-- **[Attack Surface Analysis](ATTACK_SURFACE_ANALYSIS.md)** - Security vectors
-- **[Auditor Walkthrough](AUDITOR_CODE_WALKTHROUGH.md)** - Code review guide
+## Developer Documentation
 
----
-
-## 🔗 Quick Links
-
-- [GitHub Repository](https://github.com/unauthority/core)
-- [Official Website](https://unauthority.network)
-- [Community Discord](https://discord.gg/unauthority)
+Internal audit logs, fix summaries, and implementation notes are in [`dev_docs/`](../dev_docs/).

@@ -1,14 +1,14 @@
 # Join the UAT Testnet
 
-> **Version:** v1.0.3-testnet | **Last updated:** February 10, 2026
+Quick start guide — from zero to sending tokens in 5 minutes.
 
-This guide will get you connected to the Unauthority testnet in under 5 minutes.
+**Version:** v1.0.3-testnet
 
 ---
 
 ## 1. Download the Wallet
 
-Pre-built desktop apps with **built-in Tor** and **Dilithium5 post-quantum crypto**. No extra software needed.
+Pre-built desktop apps with built-in Tor and Dilithium5 cryptography. No external dependencies.
 
 | Platform | Download |
 |----------|----------|
@@ -16,170 +16,118 @@ Pre-built desktop apps with **built-in Tor** and **Dilithium5 post-quantum crypt
 | Windows | [UAT-Wallet-windows-x64.zip](https://github.com/unauthoritymky-6236/unauthority-core/releases/tag/wallet-v1.0.3-testnet) |
 | Linux | [UAT-Wallet-linux-x64.tar.gz](https://github.com/unauthoritymky-6236/unauthority-core/releases/tag/wallet-v1.0.3-testnet) |
 
-> **macOS first launch:** Apple may block the app. Fix with:
-> ```bash
-> xattr -cr /Applications/UAT\ Wallet.app
-> ```
-> Or go to **System Settings → Privacy & Security → Open Anyway**.
+### macOS: Remove Gatekeeper Block
+
+Apple blocks unsigned apps. After installing, run:
+
+```bash
+xattr -cr /Applications/UAT\ Wallet.app
+```
+
+Or: **System Settings → Privacy & Security → Open Anyway**.
 
 ---
 
 ## 2. Create a Wallet
 
-1. Open the UAT Wallet app
-2. Click **"Create New Wallet"**
-3. Write down your **24-word seed phrase** on paper — this is your only backup!
+1. Open the app
+2. Click **Create New Wallet**
+3. **Write down your 24-word seed phrase on paper** — this is your only backup
 4. Confirm the seed phrase when prompted
-5. Your UAT address will appear (starts with `UAT...`)
 
-> **Seed phrase security:** Anyone with your 24 words can access your funds. Store offline. Never share.
-
-> **12 or 24 words?** Both are supported. 24 words (256-bit entropy) is recommended for post-quantum safety.
+Your address starts with `UAT` (e.g., `UATBwXk9...`). This is derived from a CRYSTALS-Dilithium5 post-quantum keypair.
 
 ---
 
-## 3. Connect to the Testnet
+## 3. Get Testnet Tokens
 
-The wallet connects automatically via Tor to the bootstrap validators:
+Go to the **Faucet** tab and click **Request UAT**.
 
-| Validator | Onion Address |
-|-----------|---------------|
-| Node 1 | `u3kilz7tv3ffhl2rafrzarbmiiojfcjz3eg527td5ocmibq44gj4htqd.onion` |
-| Node 2 | `5yvqf4sdbif4pegxgrgfq5ksv3gqqpt27x2xzx5nvrmdqmsrk4mnkgad.onion` |
-| Node 3 | `3e3vi6ealajwangzmiz2ec7b5gqahnysk3tjs7yol7rptmsrthrpjvad.onion` |
-| Node 4 | `7pka6rdrnvd7qjrn4qdbfmcqgl5qb7v2yqopgxaiqyqbrlawcl6yruad.onion` |
-
-If the app does not auto-connect, go to **Settings** and set the node endpoint to one of the addresses above.
+- **Amount:** 5,000 UAT per claim
+- **Cooldown:** 1 hour per address
+- **Network:** Testnet only (CHAIN_ID = 2)
 
 ---
 
-## 4. Get Testnet Tokens (Faucet)
+## 4. Send Tokens
 
-1. Copy your wallet address
-2. Go to the **Faucet** tab in the app (or use the API below)
-3. Request tokens — you'll receive **5,000 UAT** per request (limit: once per hour)
+1. Go to the **Send** tab
+2. Enter a recipient `UAT...` address
+3. Enter amount (e.g., `100`)
+4. Click **Send**
 
-**API method** (using curl + Tor):
+The wallet constructs a block-lattice Send block, signs it with Dilithium5, performs 16-bit PoW, and broadcasts to the network via Tor.
+
+---
+
+## 5. Verify via API
+
+Check any balance through Tor:
+
 ```bash
-curl --socks5-hostname 127.0.0.1:9050 \
-  -X POST http://u3kilz7tv3ffhl2rafrzarbmiiojfcjz3eg527td5ocmibq44gj4htqd.onion/faucet \
-  -H "Content-Type: application/json" \
-  -d '{"address": "YOUR_UAT_ADDRESS_HERE"}'
+# Via Tor SOCKS5 proxy (port 9052 or 9150 for Tor Browser)
+curl --socks5-hostname 127.0.0.1:9052 \
+  http://u3kilz7tv3ffhl2rafrzarbmiiojfcjz3eg527td5ocmibq44gj4htqd.onion/bal/YOUR_ADDRESS
+
+# Local node (if running one)
+curl http://127.0.0.1:3030/bal/YOUR_ADDRESS
 ```
 
 ---
 
-## 5. Send a Transaction
+## 6. Bootstrap Nodes
 
-1. Go to the **Send** tab
-2. Enter the recipient's UAT address
-3. Enter the amount (e.g., `10`)
-4. Click **Send**
-5. Transaction confirms in **< 3 seconds**
+The testnet runs 4 validators accessible via Tor hidden services:
+
+| Node | .onion Address |
+|------|---------------|
+| Validator 1 | `u3kilz7tv3ffhl2rafrzarbmiiojfcjz3eg527td5ocmibq44gj4htqd.onion` |
+| Validator 2 | `5yvqf4sdbif4pegxgrgfq5ksv3gqqpt27x2xzx5nvrmdqmsrk4mnkgad.onion` |
+| Validator 3 | `3e3vi6ealajwangzmiz2ec7b5gqahnysk3tjs7yol7rptmsrthrpjvad.onion` |
+| Validator 4 | `yapub6hgjr3eyxnxzvgd4yejt7rkhwlmaivdpy6757o3tr5iicckgjyd.onion` |
+
+The wallet auto-connects to these nodes. No configuration needed.
 
 ---
 
-## Run a Validator Node (Optional)
+## 7. Run Your Own Validator (Optional)
 
-Want to help secure the network? Run a validator.
+See [VALIDATOR_GUIDE.md](VALIDATOR_GUIDE.md) for full instructions.
 
-### Requirements
-
-- macOS, Linux, or Windows
-- 4 GB RAM, 10 GB disk space
-- Stable internet connection
-- Minimum stake: **1,000 UAT**
-
-### Quick Start
-
-**Option A: Download the Validator Dashboard (GUI)**
-
-| Platform | Download |
-|----------|----------|
-| macOS | [UAT-Validator-macos.dmg](https://github.com/unauthoritymky-6236/unauthority-core/releases/tag/validator-v1.0.3-testnet) |
-| Windows | [UAT-Validator-windows-x64.zip](https://github.com/unauthoritymky-6236/unauthority-core/releases/tag/validator-v1.0.3-testnet) |
-| Linux | [UAT-Validator-linux-x64.tar.gz](https://github.com/unauthoritymky-6236/unauthority-core/releases/tag/validator-v1.0.3-testnet) |
-
-1. Open the Validator Dashboard
-2. Click **"Generate Keys"** or **"Import Seed Phrase"**
-3. Fund the validator address with at least 1,000 UAT
-4. The node will sync and begin validating automatically
-
-**Option B: Build from Source**
+Quick start:
 
 ```bash
-# Prerequisites: Rust 1.75+, Git
 git clone https://github.com/unauthoritymky-6236/unauthority-core.git
 cd unauthority-core
-
-# Build
-cargo build --release -p uat-node
-
-# Run (single node, testnet mode)
+cargo build --release --bin uat-node
 ./target/release/uat-node --dev
 ```
 
-Configuration: edit `validator.toml` — see [docs/VALIDATOR_GUIDE.md](docs/VALIDATOR_GUIDE.md) for details.
-
-### Run a Local Testnet (4 Validators)
-
-```bash
-# Start 4-node local testnet
-./start.sh
-
-# Check node health
-curl http://127.0.0.1:3030/health
-
-# Stop
-./stop.sh
-```
-
----
-
-## Import a Genesis Wallet (Testnet Only)
-
-The testnet ships with 12 pre-funded wallets (8 treasury + 4 validators).
-Since v1.0.3, seed phrases are **deterministic** — importing a genesis seed phrase in the wallet app will produce the exact same address and keypair.
-
-To import:
-1. Open UAT Wallet → **"Import Existing Wallet"**
-2. Paste one of the testnet seed phrases from [testnet-genesis/testnet_wallets.json](testnet-genesis/testnet_wallets.json)
-3. The wallet will derive the same Dilithium5 keypair and show the correct balance
-
-> **WARNING:** These are PUBLIC testnet seeds. Never use them on mainnet.
+Minimum stake: 1,000 UAT.
 
 ---
 
 ## Troubleshooting
 
-| Problem | Solution |
-|---------|----------|
-| App won't open (macOS) | `xattr -cr /Applications/UAT\ Wallet.app` |
-| "Connection failed" | Tor may be starting up — wait 30 seconds and retry |
-| Balance shows 0 | Check that you're connected to the testnet (look for green status dot) |
-| Transaction stuck | Ensure the node endpoint is reachable, try a different bootstrap node |
-| Faucet rate limited | Faucet allows 1 request per hour per address |
+| Issue | Solution |
+|-------|----------|
+| "Cannot verify app" on macOS | `xattr -cr /Applications/UAT\ Wallet.app` |
+| Wallet won't connect | Ensure Tor is running — the app auto-installs it on first launch |
+| Faucet says "rate limited" | Wait 1 hour between claims |
+| Balance shows 0 after faucet | Wait ~3 seconds for finality, then refresh |
+| Address doesn't start with UAT | Update to v1.0.3 — older versions had incompatible address format |
 
 ---
 
-## Key Technical Details
+## Technical Details
 
 | Property | Value |
 |----------|-------|
-| Cryptography | CRYSTALS-Dilithium5 (post-quantum, NIST standard) |
-| Address format | `UAT` + Base58Check(BLAKE2b-160 hash of public key) |
-| Seed phrase | BIP39 standard, 24 words (256-bit entropy) |
-| Consensus | aBFT with < 3s finality |
-| Total supply | 21,936,236 UAT (fixed forever) |
-| Smallest unit | 1 VOID = 10⁻¹¹ UAT |
-| Network | All traffic via Tor Hidden Services |
-
----
-
-## Links
-
-- [GitHub Repository](https://github.com/unauthoritymky-6236/unauthority-core)
-- [Whitepaper](docs/WHITEPAPER.md)
-- [Validator Guide](docs/VALIDATOR_GUIDE.md)
-- [API Reference](api_docs/API_REFERENCE.md)
-- [Installation (Build from Source)](docs/INSTALLATION.md)
+| Network | Testnet (CHAIN_ID = 2) |
+| Finality | < 3 seconds |
+| Consensus | aBFT (Asynchronous Byzantine Fault Tolerance) |
+| Cryptography | CRYSTALS-Dilithium5 (NIST Level 5, post-quantum) |
+| Address format | Version `0x4A` + BLAKE2b-160 + Base58Check + `UAT` prefix |
+| Unit | 1 UAT = 10^11 VOID |
+| Minimum fee | 0.001 UAT (100,000 VOID) |
+| PoW | 16 leading zero bits (anti-spam, not consensus) |

@@ -1,396 +1,172 @@
-# Docker Deployment Guide
+# Docker Deployment
 
-This guide explains how to deploy the Unauthority blockchain network using Docker and Docker Compose.
+Run a 4-node UAT testnet with Prometheus and Grafana monitoring via Docker Compose.
+
+**Version:** v1.0.3-testnet
+
+---
 
 ## Prerequisites
 
-- Docker Engine 24.0+
-- Docker Compose V2
-- At least 4GB RAM
-- 20GB free disk space
-
-Install Docker:
-```bash
-# macOS (via Homebrew)
-brew install docker docker-compose
-
-# Ubuntu/Debian
-curl -fsSL https://get.docker.com | sh
-sudo usermod -aG docker $USER
-
-# Verify installation
-docker --version
-docker compose version
-```
+- Docker 24+
+- Docker Compose v2+
 
 ---
 
 ## Quick Start
 
-### 1. Build Images
 ```bash
-# Build all containers
-docker compose build
-
-# Build specific service
-docker compose build validator-1
-```
-
-### 2. Initialize Genesis
-```bash
-# Generate genesis configuration (if not exists)
-docker run --rm -v $(pwd)/genesis:/genesis \
-  unauthority-core_validator-1 \
-  /usr/local/bin/genesis_generator --output /genesis/genesis_config.json
-```
-
-### 3. Start Network
-```bash
-# Start all services
+# Build and start all services
 docker compose up -d
 
-# Start specific validators
-docker compose up -d validator-1 validator-2
-
-# View logs
-docker compose logs -f validator-1
-```
-
-### 4. Verify Health
-```bash
-# Check all containers
-docker compose ps
-
-# Test API endpoints
-curl http://localhost:8080/node-info
-curl http://localhost:8081/node-info
-curl http://localhost:8082/node-info
-
-# Check consensus
-curl http://localhost:8080/validators
+# Check health
+curl http://localhost:8080/health
+curl http://localhost:8081/health
+curl http://localhost:8082/health
+curl http://localhost:8083/health
 ```
 
 ---
 
-## Architecture
+## Services
+
+### Validators
+
+| Service | REST | gRPC | P2P | Prometheus | IP |
+|---------|------|------|-----|------------|----|
+| validator-1 | 8080 | 50051 | 9000 | 9090 | 172.20.0.11 |
+| validator-2 | 8081 | 50052 | 9001 | 9091 | 172.20.0.12 |
+| validator-3 | 8082 | 50053 | 9002 | 9092 | 172.20.0.13 |
+| validator-4 | 8083 | 50054 | 9003 | 9093 | 172.20.0.14 |
+
+### Monitoring
+
+| Service | Port | IP | Credentials |
+|---------|------|----|-------------|
+| Prometheus | 9094 | 172.20.0.20 | — |
+| Grafana | 3000 | 172.20.0.21 | admin / `$GF_ADMIN_PASSWORD` |
+
+---
+
+## Docker Network
+
+All services run on a bridge network `172.20.0.0/24`.
 
 ```
-┌────────────────────────────────────────────────────────────────┐
-│                    Docker Network (172.20.0.0/16)              │
-│                                                                │
-│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐         │
-│  │ Validator 1  │  │ Validator 2  │  │ Validator 3  │         │
-│  │ 172.20.0.11  │  │ 172.20.0.12  │  │ 172.20.0.13  │         │
-│  │              │  │              │  │              │         │
-│  │ REST: 8080   │  │ REST: 8081   │  │ REST: 8082   │         │
-│  │ gRPC: 50051  │  │ gRPC: 50052  │  │ gRPC: 50053  │         │
-│  │ P2P:  9000   │  │ P2P:  9001   │  │ P2P:  9002   │         │
-│  │ Prom: 9090   │  │ Prom: 9091   │  │ Prom: 9092   │         │
-│  └──────┬───────┘  └──────┬───────┘  └──────┬───────┘         │
-│         │                 │                 │                 │
-│         └─────────────────┼─────────────────┘                 │
-│                           │                                   │
-│              ┌────────────┴──────────┐                        │
-│              │                       │                        │
-│    ┌─────────▼────────┐    ┌────────▼────────┐               │
-│    │   Prometheus     │    │    Grafana      │               │
-│    │   172.20.0.20    │    │   172.20.0.21   │               │
-│    │   Port: 9093     │───►│   Port: 3000    │               │
-│    └──────────────────┘    └─────────────────┘               │
-│                                                                │
-└────────────────────────────────────────────────────────────────┘
+172.20.0.11  validator-1
+172.20.0.12  validator-2
+172.20.0.13  validator-3
+172.20.0.14  validator-4
+172.20.0.20  prometheus
+172.20.0.21  grafana
 ```
 
 ---
 
-## Configuration
+## Dockerfile
 
-### Environment Variables
+Multi-stage build:
 
-Edit `docker-compose.yml` to customize:
+1. **Build stage**: `rust:1.75-slim` — compiles `uat-node` and `uat-cli`
+2. **Runtime stage**: `debian:bookworm-slim` — minimal runtime
 
-```yaml
-environment:
-  - RUST_LOG=info              # Logging level (debug/info/warn/error)
-  - UAT_NODE_NAME=validator-1  # Node identifier
-  - UAT_VALIDATOR_MODE=true    # Enable validator mode
-  - UAT_MIN_STAKE=1000         # Minimum stake requirement
-```
-
-### Volume Mounts
-
-Data persistence:
-- `./node_data/validator-X:/data` - Blockchain state
-- `./validator.toml:/config/validator.toml` - Configuration file
-
-### Port Mapping
-
-| Service      | Internal Port | External Port | Purpose           |
-|--------------|---------------|---------------|-------------------|
-| Validator 1  | 8080          | 8080          | REST API          |
-| Validator 1  | 50051         | 50051         | gRPC              |
-| Validator 1  | 9000          | 9000          | P2P Network       |
-| Validator 1  | 9090          | 9090          | Prometheus        |
-| Validator 2  | 8080          | 8081          | REST API          |
-| Validator 3  | 8080          | 8082          | REST API          |
-| Prometheus   | 9090          | 9093          | Metrics UI        |
-| Grafana      | 3000          | 3000          | Dashboard         |
+Security:
+- Runs as non-root user (UID 1000)
+- Private keys stripped from genesis config via `jq`
+- Exposes ports: 8080 (REST), 50051 (gRPC), 9000 (P2P), 9090 (Prometheus)
 
 ---
 
-## Management Commands
+## Environment Variables
 
-### Start/Stop Services
+Each validator container uses these environment variables:
+
+| Variable | Description |
+|----------|-------------|
+| `UAT_NODE_ID` | Unique node identifier (1–4) |
+| `UAT_VALIDATOR_ADDRESS` | Validator's UAT address |
+| `UAT_PRIVKEY_PATH` | Path to encrypted private key |
+| `UAT_STAKE_VOID` | Stake amount in VOID |
+| `UAT_WALLET_PASSWORD` | Key encryption password |
+| `UAT_BIND_ALL` | `1` to bind `0.0.0.0` (required in containers) |
+
+---
+
+## Health Checks
+
+Docker Compose uses `uat-cli node-info` as the health check command. Validators start sequentially — each waits for the previous to be healthy via `depends_on` + `service_healthy`.
+
+---
+
+## Monitoring Setup
+
+### Prometheus
+
+Configuration at `docs/prometheus.yml`. Scrapes all 4 validators on their Prometheus ports (9090–9093).
+
+Alert rules at `docs/prometheus-alerts.yml`.
+
+### Grafana
+
+Pre-built dashboard at `docs/grafana-dashboard.json`.
+
+Import after starting:
+1. Open `http://localhost:3000`
+2. Login: admin / `$GF_ADMIN_PASSWORD`
+3. Import dashboard from JSON
+
+---
+
+## Operations
+
 ```bash
 # Start all
 docker compose up -d
 
+# View logs
+docker compose logs -f validator-1
+docker compose logs -f --tail 100
+
 # Stop all
 docker compose down
 
-# Restart specific service
-docker compose restart validator-1
-
-# Stop without removing volumes
-docker compose stop
-```
-
-### Logs & Debugging
-```bash
-# View logs
-docker compose logs -f
-
-# Logs for specific service
-docker compose logs -f validator-1
-
-# Last 100 lines
-docker compose logs --tail=100 validator-1
-
-# Export logs
-docker compose logs > uat-network.log
-```
-
-### Resource Monitoring
-```bash
-# Resource usage
-docker stats
-
-# Container details
-docker compose ps
-
-# Inspect container
-docker inspect uat-validator-1
-```
-
-### Execute Commands Inside Container
-```bash
-# Open shell
-docker compose exec validator-1 bash
-
-# Run CLI command
-docker compose exec validator-1 uat-cli balance UAT123...
-
-# Check sync status
-docker compose exec validator-1 uat-cli node-info
-```
-
----
-
-## Scaling
-
-### Add More Validators
-
-1. Copy validator configuration:
-```bash
-cp -r node_data/validator-1 node_data/validator-4
-```
-
-2. Add service to `docker-compose.yml`:
-```yaml
-validator-4:
-  build:
-    context: .
-    dockerfile: Dockerfile
-  container_name: uat-validator-4
-  networks:
-    uat-network:
-      ipv4_address: 172.20.0.14
-  ports:
-    - "8083:8080"
-    - "50054:50051"
-  volumes:
-    - ./node_data/validator-4:/data
-  environment:
-    - UAT_NODE_NAME=validator-4
-    - UAT_BOOTSTRAP_PEER=172.20.0.11:9000
-  depends_on:
-    - validator-1
-```
-
-3. Start new validator:
-```bash
-docker compose up -d validator-4
-```
-
----
-
-## Monitoring
-
-### Prometheus
-Access metrics at: http://localhost:9093
-
-Available metrics:
-- `uat_block_height` - Current block number
-- `uat_transactions_total` - Total transactions processed
-- `uat_validator_stake` - Stake amount per validator
-- `uat_consensus_round` - Current consensus round
-
-### Grafana
-Access dashboard at: http://localhost:3000
-- Username: `admin`
-- Password: `unauthority`
-
-Pre-configured dashboards:
-- Network Overview
-- Validator Performance
-- Transaction Throughput
-- Resource Usage
-
----
-
-## Backup & Restore
-
-### Backup Blockchain State
-```bash
-# Stop validators
-docker compose stop validator-1 validator-2 validator-3
-
-# Create backup
-tar -czf uat-backup-$(date +%Y%m%d).tar.gz node_data/
-
-# Restart validators
-docker compose start validator-1 validator-2 validator-3
-```
-
-### Restore from Backup
-```bash
-# Stop network
-docker compose down
-
-# Restore data
-tar -xzf uat-backup-20260205.tar.gz
-
-# Start network
+# Rebuild after code changes
+docker compose build --no-cache
 docker compose up -d
+
+# Scale (not recommended — genesis is configured for 4 validators)
+# Add new validators manually with appropriate genesis funding
 ```
 
 ---
 
-## Troubleshooting
+## Volumes
 
-### Validators Not Syncing
+| Volume | Mount | Purpose |
+|--------|-------|---------|
+| `validator-{n}-data` | `/app/node_data` | Ledger state + wallet |
+| `prometheus-data` | `/prometheus` | Metrics history |
+| `grafana-data` | `/var/lib/grafana` | Dashboard config |
+
+To reset state:
+
 ```bash
-# Check P2P connectivity
-docker compose exec validator-1 netstat -an | grep 9000
-
-# Verify bootstrap peers
-docker compose logs validator-2 | grep "bootstrap"
-
-# Check network
-docker network inspect unauthority-core_uat-network
-```
-
-### High CPU/Memory Usage
-```bash
-# Check resources
-docker stats
-
-# Limit resources in docker-compose.yml:
-deploy:
-  resources:
-    limits:
-      cpus: '2.0'
-      memory: 2G
-```
-
-### Cannot Access REST API
-```bash
-# Check if port is open
-curl -v http://localhost:8080/node-info
-
-# Check firewall
-sudo ufw allow 8080/tcp
-
-# Check container logs
-docker compose logs validator-1
-```
-
-### Genesis Configuration Issues
-```bash
-# Regenerate genesis
-docker compose down -v
-rm -rf node_data/*
-docker run --rm -v $(pwd)/genesis:/genesis \
-  unauthority-core_validator-1 genesis_generator
-docker compose up -d
+docker compose down -v   # Removes all volumes
 ```
 
 ---
 
-## Production Considerations
+## Local Development Without Docker
 
-### Security
-- Change default Grafana password
-- Use TLS/SSL for external APIs
-- Restrict port access with firewall
-- Enable Docker security features:
-  ```yaml
-  security_opt:
-    - no-new-privileges:true
-  read_only: true
-  ```
+For faster iteration during development, use the shell scripts:
 
-### Performance
-- Use SSD storage for data volumes
-- Enable swap for memory management
-- Set appropriate ulimits:
-  ```yaml
-  ulimits:
-    nofile:
-      soft: 65536
-      hard: 65536
-  ```
-
-### High Availability
-- Use Docker Swarm or Kubernetes for orchestration
-- Implement load balancer for REST APIs
-- Set up automatic failover
-- Configure health checks properly
-
----
-
-## Clean Up
-
-### Remove All Data
 ```bash
-# Stop and remove containers
-docker compose down
-
-# Remove volumes
-docker compose down -v
-
-# Remove images
-docker rmi $(docker images -q unauthority*)
-
-# Clean up data directories
-rm -rf node_data/*
+./start.sh    # Launches 4 validators on ports 3030–3033
+./stop.sh     # Graceful shutdown
 ```
 
----
+Or run a single dev-mode node:
 
-## Resources
-
-- [Docker Documentation](https://docs.docker.com/)
-- [Docker Compose Reference](https://docs.docker.com/compose/compose-file/)
-- [UAT Node Configuration](../validator.toml)
-- [Monitoring Setup](./PROMETHEUS_MONITORING_REPORT.md)
+```bash
+cargo run --release --bin uat-node -- --dev
+```

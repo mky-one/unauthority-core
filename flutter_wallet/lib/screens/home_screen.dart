@@ -4,10 +4,16 @@ import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
 import '../services/wallet_service.dart';
 import '../services/api_service.dart';
+import '../services/network_status_service.dart';
 import '../models/account.dart';
 import '../constants/blockchain.dart';
+import '../widgets/network_badge.dart';
+import '../widgets/network_status_bar.dart';
 import 'send_screen.dart';
 import 'burn_screen.dart';
+import 'settings_screen.dart';
+import 'receive_screen.dart';
+import 'history_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -110,171 +116,262 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('UAT Wallet'),
+        title: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: const [
+            Text('UAT Wallet'),
+            SizedBox(width: 8),
+            NetworkBadge(),
+          ],
+        ),
         centerTitle: true,
         actions: [
+          // Online/Offline dot indicator
+          Consumer<NetworkStatusService>(
+            builder: (context, status, _) => Tooltip(
+              message: status.statusText,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 4),
+                child: Icon(
+                  Icons.circle,
+                  size: 12,
+                  color: status.isConnected
+                      ? Colors.green
+                      : status.isConnecting
+                          ? Colors.orange
+                          : Colors.red,
+                ),
+              ),
+            ),
+          ),
           IconButton(
             icon: const Icon(Icons.refresh),
             onPressed: _refreshBalance,
           ),
+          IconButton(
+            icon: const Icon(Icons.settings),
+            onPressed: () async {
+              await Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const SettingsScreen()),
+              );
+              // Refresh after returning from settings (network may have changed)
+              _refreshBalance();
+            },
+          ),
         ],
       ),
-      body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : _error != null
-              ? Center(
-                  child: Text('Error: $_error',
-                      style: const TextStyle(color: Colors.red)))
-              : RefreshIndicator(
-                  onRefresh: _refreshBalance,
-                  child: ListView(
-                    padding: const EdgeInsets.all(16),
-                    children: [
-                      // Balance Card
-                      Card(
-                        child: Padding(
-                          padding: const EdgeInsets.all(24.0),
-                          child: Column(
-                            children: [
-                              const Text('Total Balance',
-                                  style: TextStyle(
-                                      fontSize: 14, color: Colors.grey)),
-                              const SizedBox(height: 8),
-                              Text(
-                                '${BlockchainConstants.formatUat(_account?.balanceUAT ?? 0)} UAT',
-                                style: const TextStyle(
-                                    fontSize: 36, fontWeight: FontWeight.bold),
+      body: Column(
+        children: [
+          const NetworkStatusBar(),
+          Expanded(
+            child: _isLoading
+                ? const Center(child: CircularProgressIndicator())
+                : _error != null
+                    ? Center(
+                        child: Text('Error: $_error',
+                            style: const TextStyle(color: Colors.red)))
+                    : RefreshIndicator(
+                        onRefresh: _refreshBalance,
+                        child: ListView(
+                          padding: const EdgeInsets.all(16),
+                          children: [
+                            // Testnet Warning Banner
+                            const NetworkWarningBanner(),
+                            // Balance Card
+                            Card(
+                              child: Padding(
+                                padding: const EdgeInsets.all(24.0),
+                                child: Column(
+                                  children: [
+                                    const Text('Total Balance',
+                                        style: TextStyle(
+                                            fontSize: 14, color: Colors.grey)),
+                                    const SizedBox(height: 8),
+                                    Text(
+                                      '${BlockchainConstants.formatUat(_account?.balanceUAT ?? 0)} UAT',
+                                      style: const TextStyle(
+                                          fontSize: 36,
+                                          fontWeight: FontWeight.bold),
+                                    ),
+                                    if (_account != null &&
+                                        _account!.voidBalance > 0) ...[
+                                      const SizedBox(height: 8),
+                                      Text(
+                                        'Void: ${BlockchainConstants.formatUat(_account!.voidBalanceUAT)} UAT',
+                                        style: const TextStyle(
+                                            fontSize: 14, color: Colors.orange),
+                                      ),
+                                    ],
+                                  ],
+                                ),
                               ),
-                              if (_account != null &&
-                                  _account!.voidBalance > 0) ...[
-                                const SizedBox(height: 8),
-                                Text(
-                                  'Void: ${BlockchainConstants.formatUat(_account!.voidBalanceUAT)} UAT',
+                            ),
+
+                            const SizedBox(height: 16),
+
+                            // Address Card
+                            Card(
+                              child: ListTile(
+                                title: const Text('Your Address',
+                                    style: TextStyle(
+                                        fontSize: 12, color: Colors.grey)),
+                                subtitle: Text(
+                                  _address ?? 'N/A',
                                   style: const TextStyle(
-                                      fontSize: 14, color: Colors.orange),
+                                      fontSize: 14, fontFamily: 'monospace'),
+                                ),
+                                trailing: IconButton(
+                                  icon: const Icon(Icons.copy, size: 20),
+                                  onPressed: _copyAddress,
+                                ),
+                              ),
+                            ),
+
+                            const SizedBox(height: 24),
+
+                            // Action Buttons Row 1: SEND / RECEIVE
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: ElevatedButton.icon(
+                                    onPressed: () async {
+                                      await Navigator.push(
+                                        context,
+                                        MaterialPageRoute(
+                                            builder: (_) => const SendScreen()),
+                                      );
+                                      _refreshBalance();
+                                    },
+                                    icon: const Icon(Icons.send),
+                                    label: const Text('SEND'),
+                                    style: ElevatedButton.styleFrom(
+                                      padding: const EdgeInsets.all(16),
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 16),
+                                Expanded(
+                                  child: OutlinedButton.icon(
+                                    onPressed: () {
+                                      Navigator.push(
+                                        context,
+                                        MaterialPageRoute(
+                                            builder: (_) =>
+                                                const ReceiveScreen()),
+                                      );
+                                    },
+                                    icon: const Icon(Icons.qr_code),
+                                    label: const Text('RECEIVE'),
+                                    style: OutlinedButton.styleFrom(
+                                      padding: const EdgeInsets.all(16),
+                                    ),
+                                  ),
                                 ),
                               ],
-                            ],
-                          ),
-                        ),
-                      ),
+                            ),
 
-                      const SizedBox(height: 16),
+                            const SizedBox(height: 12),
 
-                      // Address Card
-                      Card(
-                        child: ListTile(
-                          title: const Text('Your Address',
-                              style:
-                                  TextStyle(fontSize: 12, color: Colors.grey)),
-                          subtitle: Text(
-                            _address ?? 'N/A',
-                            style: const TextStyle(
-                                fontSize: 14, fontFamily: 'monospace'),
-                          ),
-                          trailing: IconButton(
-                            icon: const Icon(Icons.copy, size: 20),
-                            onPressed: _copyAddress,
-                          ),
-                        ),
-                      ),
+                            // Action Buttons Row 2: BURN / HISTORY
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: OutlinedButton.icon(
+                                    onPressed: () async {
+                                      await Navigator.push(
+                                        context,
+                                        MaterialPageRoute(
+                                            builder: (_) => const BurnScreen()),
+                                      );
+                                      _refreshBalance();
+                                    },
+                                    icon:
+                                        const Icon(Icons.local_fire_department),
+                                    label: const Text('BURN'),
+                                    style: OutlinedButton.styleFrom(
+                                      padding: const EdgeInsets.all(16),
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 16),
+                                Expanded(
+                                  child: OutlinedButton.icon(
+                                    onPressed: () {
+                                      Navigator.push(
+                                        context,
+                                        MaterialPageRoute(
+                                            builder: (_) =>
+                                                const HistoryScreen()),
+                                      );
+                                    },
+                                    icon: const Icon(Icons.history),
+                                    label: const Text('HISTORY'),
+                                    style: OutlinedButton.styleFrom(
+                                      padding: const EdgeInsets.all(16),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
 
-                      const SizedBox(height: 24),
+                            const SizedBox(height: 16),
 
-                      // Action Buttons
-                      Row(
-                        children: [
-                          Expanded(
-                            child: ElevatedButton.icon(
-                              onPressed: () async {
-                                await Navigator.push(
-                                  context,
-                                  MaterialPageRoute(
-                                      builder: (_) => const SendScreen()),
-                                );
-                                _refreshBalance();
-                              },
-                              icon: const Icon(Icons.send),
-                              label: const Text('SEND'),
+                            ElevatedButton.icon(
+                              onPressed: _requestFaucet,
+                              icon: const Icon(Icons.water_drop),
+                              label: const Text('REQUEST FAUCET (100 UAT)'),
                               style: ElevatedButton.styleFrom(
+                                backgroundColor: Colors.purple,
                                 padding: const EdgeInsets.all(16),
                               ),
                             ),
-                          ),
-                          const SizedBox(width: 16),
-                          Expanded(
-                            child: OutlinedButton.icon(
-                              onPressed: () async {
-                                await Navigator.push(
-                                  context,
-                                  MaterialPageRoute(
-                                      builder: (_) => const BurnScreen()),
-                                );
-                                _refreshBalance();
-                              },
-                              icon: const Icon(Icons.local_fire_department),
-                              label: const Text('BURN'),
-                              style: OutlinedButton.styleFrom(
-                                padding: const EdgeInsets.all(16),
+
+                            const SizedBox(height: 32),
+
+                            // Transaction History
+                            if (_account != null &&
+                                _account!.history.isNotEmpty) ...[
+                              const Text(
+                                'Recent Transactions',
+                                style: TextStyle(
+                                    fontSize: 18, fontWeight: FontWeight.bold),
                               ),
-                            ),
-                          ),
-                        ],
-                      ),
-
-                      const SizedBox(height: 16),
-
-                      ElevatedButton.icon(
-                        onPressed: _requestFaucet,
-                        icon: const Icon(Icons.water_drop),
-                        label: const Text('REQUEST FAUCET (100 UAT)'),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.purple,
-                          padding: const EdgeInsets.all(16),
+                              const SizedBox(height: 12),
+                              ..._account!.history.map((tx) => Card(
+                                    child: ListTile(
+                                      leading: Icon(
+                                        tx.from == _address
+                                            ? Icons.arrow_upward
+                                            : Icons.arrow_downward,
+                                        color: tx.from == _address
+                                            ? Colors.red
+                                            : Colors.green,
+                                      ),
+                                      title: Text(
+                                        '${BlockchainConstants.formatUat(tx.amountUAT)} UAT',
+                                        style: const TextStyle(
+                                            fontWeight: FontWeight.bold),
+                                      ),
+                                      subtitle: Text(
+                                        '${tx.from == _address ? 'To' : 'From'}: ${tx.from == _address ? tx.to : tx.from}\n'
+                                        '${DateFormat('MMM dd, yyyy HH:mm').format(DateTime.fromMillisecondsSinceEpoch(tx.timestamp * 1000))}',
+                                        style: const TextStyle(fontSize: 11),
+                                      ),
+                                      trailing: Text(
+                                        tx.type.toUpperCase(),
+                                        style: const TextStyle(
+                                            fontSize: 10, color: Colors.grey),
+                                      ),
+                                    ),
+                                  )),
+                            ],
+                          ],
                         ),
                       ),
-
-                      const SizedBox(height: 32),
-
-                      // Transaction History
-                      if (_account != null && _account!.history.isNotEmpty) ...[
-                        const Text(
-                          'Recent Transactions',
-                          style: TextStyle(
-                              fontSize: 18, fontWeight: FontWeight.bold),
-                        ),
-                        const SizedBox(height: 12),
-                        ..._account!.history.map((tx) => Card(
-                              child: ListTile(
-                                leading: Icon(
-                                  tx.from == _address
-                                      ? Icons.arrow_upward
-                                      : Icons.arrow_downward,
-                                  color: tx.from == _address
-                                      ? Colors.red
-                                      : Colors.green,
-                                ),
-                                title: Text(
-                                  '${BlockchainConstants.formatUat(tx.amountUAT)} UAT',
-                                  style: const TextStyle(
-                                      fontWeight: FontWeight.bold),
-                                ),
-                                subtitle: Text(
-                                  '${tx.from == _address ? 'To' : 'From'}: ${tx.from == _address ? tx.to : tx.from}\n'
-                                  '${DateFormat('MMM dd, yyyy HH:mm').format(DateTime.fromMillisecondsSinceEpoch(tx.timestamp * 1000))}',
-                                  style: const TextStyle(fontSize: 11),
-                                ),
-                                trailing: Text(
-                                  tx.type.toUpperCase(),
-                                  style: const TextStyle(
-                                      fontSize: 10, color: Colors.grey),
-                                ),
-                              ),
-                            )),
-                      ],
-                    ],
-                  ),
-                ),
+          ),
+        ],
+      ),
     );
   }
 }

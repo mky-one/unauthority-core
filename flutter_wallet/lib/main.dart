@@ -5,11 +5,14 @@ import 'screens/wallet_setup_screen.dart';
 import 'services/account_management_service.dart';
 import 'services/wallet_service.dart';
 import 'services/api_service.dart';
+import 'services/network_config.dart';
 import 'services/dilithium_service.dart';
 import 'services/network_status_service.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  // Load bootstrap node addresses from assets/network_config.json
+  await NetworkConfig.load();
   // Initialize Dilithium5 native library (non-blocking, graceful fallback)
   await DilithiumService.initialize();
   runApp(const MyApp());
@@ -24,16 +27,7 @@ class MyApp extends StatelessWidget {
       providers: [
         Provider<WalletService>(create: (_) => WalletService()),
         Provider<ApiService>(
-          create: (_) {
-            // Use --dart-define=UAT_LOCAL=true for localhost testing
-            const isLocal =
-                String.fromEnvironment('UAT_LOCAL', defaultValue: 'false');
-            if (isLocal == 'true') {
-              debugPrint('🔧 [Main] Using LOCAL mode (localhost:3030)');
-              return ApiService(environment: NetworkEnvironment.local);
-            }
-            return ApiService();
-          },
+          create: (_) => ApiService(),
           dispose: (_, api) => api.dispose(),
         ),
         ChangeNotifierProvider<NetworkStatusService>(

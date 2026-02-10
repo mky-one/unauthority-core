@@ -145,11 +145,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   SegmentedButton<NetworkEnvironment>(
                     segments: const [
                       ButtonSegment(
-                        value: NetworkEnvironment.local,
-                        label: Text('LOCAL'),
-                        icon: Icon(Icons.computer),
-                      ),
-                      ButtonSegment(
                         value: NetworkEnvironment.testnet,
                         label: Text('TESTNET'),
                         icon: Icon(Icons.science),
@@ -169,9 +164,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   Text(
                     _currentNetwork == NetworkEnvironment.testnet
                         ? 'Connected to Testnet (.onion via Tor)'
-                        : _currentNetwork == NetworkEnvironment.local
-                            ? 'Connected to localhost:3030'
-                            : 'Mainnet coming Q2 2026',
+                        : 'Mainnet coming Q2 2026',
                     style: const TextStyle(fontSize: 12, color: Colors.grey),
                   ),
                   const SizedBox(height: 12),

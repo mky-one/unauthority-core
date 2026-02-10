@@ -415,15 +415,15 @@ All testnet endpoints are accessible via Tor hidden services:
 ```bash
 # Health check via Tor
 curl --socks5-hostname 127.0.0.1:9052 \
-  http://u3kilz7tv3ffhl2rafrzarbmiiojfcjz3eg527td5ocmibq44gj4htqd.onion/health
+  http://ll22j45prmu3oymratallztx74peen4gsxudzbgf5qvybezobitvywyd.onion/health
 
 # Node info
 curl --socks5-hostname 127.0.0.1:9052 \
-  http://u3kilz7tv3ffhl2rafrzarbmiiojfcjz3eg527td5ocmibq44gj4htqd.onion/node-info
+  http://ll22j45prmu3oymratallztx74peen4gsxudzbgf5qvybezobitvywyd.onion/node-info
 
 # Balance check
 curl --socks5-hostname 127.0.0.1:9052 \
-  http://u3kilz7tv3ffhl2rafrzarbmiiojfcjz3eg527td5ocmibq44gj4htqd.onion/bal/UATYourAddress
+  http://ll22j45prmu3oymratallztx74peen4gsxudzbgf5qvybezobitvywyd.onion/bal/UATYourAddress
 ```
 
 Tor SOCKS5 ports: `9052` (setup_tor_testnet.sh), `9150` (Tor Browser), `9050` (system Tor).

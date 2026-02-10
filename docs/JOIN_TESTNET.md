@@ -67,7 +67,7 @@ Check any balance through Tor:
 ```bash
 # Via Tor SOCKS5 proxy (port 9052 or 9150 for Tor Browser)
 curl --socks5-hostname 127.0.0.1:9052 \
-  http://u3kilz7tv3ffhl2rafrzarbmiiojfcjz3eg527td5ocmibq44gj4htqd.onion/bal/YOUR_ADDRESS
+  http://ll22j45prmu3oymratallztx74peen4gsxudzbgf5qvybezobitvywyd.onion/bal/YOUR_ADDRESS
 
 # Local node (if running one)
 curl http://127.0.0.1:3030/bal/YOUR_ADDRESS
@@ -81,7 +81,7 @@ The testnet runs 4 validators accessible via Tor hidden services:
 
 | Node | .onion Address |
 |------|---------------|
-| Validator 1 | `u3kilz7tv3ffhl2rafrzarbmiiojfcjz3eg527td5ocmibq44gj4htqd.onion` |
+| Validator 1 | `ll22j45prmu3oymratallztx74peen4gsxudzbgf5qvybezobitvywyd.onion` |
 | Validator 2 | `5yvqf4sdbif4pegxgrgfq5ksv3gqqpt27x2xzx5nvrmdqmsrk4mnkgad.onion` |
 | Validator 3 | `3e3vi6ealajwangzmiz2ec7b5gqahnysk3tjs7yol7rptmsrthrpjvad.onion` |
 | Validator 4 | `yapub6hgjr3eyxnxzvgd4yejt7rkhwlmaivdpy6757o3tr5iicckgjyd.onion` |

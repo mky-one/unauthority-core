@@ -7,7 +7,6 @@ import 'services/api_service.dart';
 import 'services/dilithium_service.dart';
 import 'services/wallet_service.dart';
 import 'services/network_status_service.dart';
-import 'services/node_process_service.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -24,19 +23,13 @@ void main() async {
   final walletService = WalletService();
   await walletService.migrateFromSharedPreferences();
 
-  // Load node process configuration
-  final nodeService = NodeProcessService();
-  await nodeService.loadConfig();
-
-  runApp(MyApp(walletService: walletService, nodeService: nodeService));
+  runApp(MyApp(walletService: walletService));
 }
 
 class MyApp extends StatelessWidget {
   final WalletService walletService;
-  final NodeProcessService nodeService;
 
-  const MyApp(
-      {super.key, required this.walletService, required this.nodeService});
+  const MyApp({super.key, required this.walletService});
 
   @override
   Widget build(BuildContext context) {
@@ -55,7 +48,6 @@ class MyApp extends StatelessWidget {
           dispose: (_, api) => api.dispose(),
         ),
         Provider<WalletService>.value(value: walletService),
-        ChangeNotifierProvider<NodeProcessService>.value(value: nodeService),
         ChangeNotifierProvider<NetworkStatusService>(
           create: (context) => NetworkStatusService(context.read<ApiService>()),
         ),
@@ -86,24 +78,49 @@ class MyApp extends StatelessWidget {
   }
 }
 
-/// Routes to the appropriate screen based on setup state.
-class _AppRouter extends StatelessWidget {
+/// Routes based on wallet registration state:
+/// - No wallet → SetupWizard (import wallet + validate balance >= 1000 UAT)
+/// - Wallet registered → NodeControlScreen (dashboard + settings)
+class _AppRouter extends StatefulWidget {
   const _AppRouter();
 
   @override
+  State<_AppRouter> createState() => _AppRouterState();
+}
+
+class _AppRouterState extends State<_AppRouter> {
+  bool _loading = true;
+  bool _hasWallet = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _checkWallet();
+  }
+
+  Future<void> _checkWallet() async {
+    final walletService = context.read<WalletService>();
+    final wallet = await walletService.getCurrentWallet();
+    if (!mounted) return;
+    setState(() {
+      _hasWallet = wallet != null;
+      _loading = false;
+    });
+  }
+
+  @override
   Widget build(BuildContext context) {
-    return Consumer<NodeProcessService>(
-      builder: (context, node, _) {
-        if (node.setupComplete) {
-          return const NodeControlScreen();
-        } else {
-          return SetupWizardScreen(
-            onSetupComplete: () {
-              // Force rebuild when setup completes
-              Navigator.pushNamedAndRemoveUntil(context, '/', (_) => false);
-            },
-          );
-        }
+    if (_loading) {
+      return const Scaffold(
+        body: Center(child: CircularProgressIndicator()),
+      );
+    }
+    if (_hasWallet) {
+      return const NodeControlScreen();
+    }
+    return SetupWizardScreen(
+      onSetupComplete: () {
+        setState(() => _hasWallet = true);
       },
     );
   }

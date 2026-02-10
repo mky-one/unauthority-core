@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -227,6 +228,84 @@ class WalletService {
     await _secureStorage.delete(key: _secretKeyKey);
 
     return {'address': address};
+  }
+
+  /// Import wallet by hex-encoded private key.
+  ///
+  /// Derives the public key and address from the secret key.
+  /// Supports both Dilithium5 and Ed25519 fallback.
+  Future<Map<String, String>> importByPrivateKey(String hexKey) async {
+    final cleanHex = hexKey.trim();
+    if (cleanHex.isEmpty || cleanHex.length < 64) {
+      throw Exception('Invalid private key (too short)');
+    }
+
+    String address;
+    String cryptoMode;
+
+    if (DilithiumService.isAvailable) {
+      // Dilithium5 secret key is 4864 bytes = 9728 hex chars
+      // For shorter keys, treat as a seed and derive a keypair
+      if (cleanHex.length >= 9728) {
+        // Full Dilithium5 secret key
+        final skBytes = _hexToBytes(cleanHex.substring(0, 9728));
+        // Extract public key (last 2592 bytes of SK for Dilithium5)
+        final pkBytes =
+            Uint8List.fromList(skBytes.sublist(skBytes.length - 2592));
+        address = DilithiumService.publicKeyToAddress(pkBytes);
+        cryptoMode = 'dilithium5';
+
+        await _secureStorage.write(
+            key: _secretKeyKey, value: cleanHex.substring(0, 9728));
+        await _secureStorage.write(
+            key: _publicKeyKey,
+            value: cleanHex.substring(cleanHex.length - 5184));
+      } else {
+        // Treat as seed bytes → derive keypair
+        final seedBytes = _hexToBytes(cleanHex);
+        final padded = List<int>.filled(64, 0);
+        for (var i = 0; i < seedBytes.length && i < 64; i++) {
+          padded[i] = seedBytes[i];
+        }
+        final keypair = DilithiumService.generateKeypairFromSeed(
+            Uint8List.fromList(padded));
+        address = DilithiumService.publicKeyToAddress(keypair.publicKey);
+        cryptoMode = 'dilithium5';
+
+        await _secureStorage.write(
+            key: _publicKeyKey, value: keypair.publicKeyHex);
+        await _secureStorage.write(
+            key: _secretKeyKey, value: keypair.secretKeyHex);
+        keypair.secretKey.fillRange(0, keypair.secretKey.length, 0);
+      }
+    } else {
+      // Ed25519 fallback — treat hex as seed
+      final seedBytes = _hexToBytes(cleanHex);
+      address = await _deriveAddressEd25519(seedBytes);
+      cryptoMode = 'ed25519';
+    }
+
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_addressKey, address);
+    await prefs.setString(_importModeKey, 'private_key');
+    await prefs.setString(_cryptoModeKey, cryptoMode);
+    // No mnemonic for PK import
+    await _secureStorage.delete(key: _seedKey);
+
+    return {
+      'address': address,
+      'crypto_mode': cryptoMode,
+    };
+  }
+
+  /// Convert hex string to bytes
+  Uint8List _hexToBytes(String hex) {
+    final clean = hex.replaceAll(RegExp(r'[^0-9a-fA-F]'), '');
+    final bytes = <int>[];
+    for (var i = 0; i < clean.length - 1; i += 2) {
+      bytes.add(int.parse(clean.substring(i, i + 2), radix: 16));
+    }
+    return Uint8List.fromList(bytes);
   }
 
   /// Get current wallet info.

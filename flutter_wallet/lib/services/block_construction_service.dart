@@ -249,8 +249,7 @@ class BlockConstructionService {
         maxIterations: maxPowIterations,
       );
       if (result != null) {
-        debugPrint(
-            '⚡ [PoW] Native: nonce=${result['work']}');
+        debugPrint('⚡ [PoW] Native: nonce=${result['work']}');
         return result;
       }
       debugPrint('⚠️ [PoW] Native mining failed, falling back to Dart');

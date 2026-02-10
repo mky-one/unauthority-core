@@ -42,8 +42,8 @@ class DilithiumService {
       _uatBytesToHex;
   static late int Function(Pointer<Uint8>, int, Pointer<Uint8>, int)
       _uatHexToBytes;
-  static late int Function(Pointer<Uint8>, int, int, int, int,
-      Pointer<Uint64>, Pointer<Uint8>, int) _uatMinePow;
+  static late int Function(Pointer<Uint8>, int, int, int, int, Pointer<Uint64>,
+      Pointer<Uint8>, int) _uatMinePow;
 
   // Cached sizes
   static int _pkBytes = 0;

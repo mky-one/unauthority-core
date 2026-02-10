@@ -383,7 +383,8 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
                                 "to": to_addr,
                                 "amount": format!("{}.{:011}", blk.amount / VOID_PER_UAT, blk.amount % VOID_PER_UAT),
                                 "timestamp": blk.timestamp,
-                                "type": format!("{:?}", blk.block_type).to_lowercase()
+                                "type": format!("{:?}", blk.block_type).to_lowercase(),
+                                "fee": blk.fee
                             }));
                             curr = blk.previous.clone();
                         } else { break; }
@@ -1442,7 +1443,8 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
                         "amount": format!("{}.{:011}", block.amount / VOID_PER_UAT, block.amount % VOID_PER_UAT),
                         "timestamp": block.timestamp,
                         "link": block.link,
-                        "previous": block.previous
+                        "previous": block.previous,
+                        "fee": block.fee
                     }));
                 }
             }

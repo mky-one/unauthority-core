@@ -153,7 +153,10 @@ fn generate_keys(label: &str) -> (String, String, String) {
     let private_key = hex::encode(&keypair.secret_key);
     let public_key = hex::encode(&keypair.public_key);
 
-    println!("✓ Generated deterministic Dilithium5 keypair for: {}", label);
+    println!(
+        "✓ Generated deterministic Dilithium5 keypair for: {}",
+        label
+    );
 
     (seed_phrase, private_key, public_key)
 }

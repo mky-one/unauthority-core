@@ -927,7 +927,11 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
                 // (Does NOT include treasury wallets with high balances)
                 let validator_count = bv_info.len();
                 let peer_count = safe_lock(&ab).len();
-                let network = if uat_core::CHAIN_ID == 1 { "uat-mainnet" } else { "uat-testnet" };
+                let network = if uat_core::CHAIN_ID == 1 {
+                    "uat-mainnet"
+                } else {
+                    "uat-testnet"
+                };
 
                 warp::reply::json(&serde_json::json!({
                     "chain_id": network,
@@ -966,7 +970,8 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
                             // Validator is "active" if it is self or appears in address_book
                             let is_self = addr == &my_addr_validators;
                             let in_peers = ab_guard.values().any(|v| v.contains(addr.as_str()));
-                            let active = is_self || in_peers || acc.balance >= MIN_VALIDATOR_STAKE_VOID;
+                            let active =
+                                is_self || in_peers || acc.balance >= MIN_VALIDATOR_STAKE_VOID;
                             serde_json::json!({
                                 "address": addr,
                                 "stake": acc.balance / VOID_PER_UAT,
@@ -2445,7 +2450,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             for node in nodes {
                                 bootstrap_validators.push(node.address.clone());
                             }
-                            println!("🔍 Loaded {} bootstrap validators from genesis", bootstrap_validators.len());
+                            println!(
+                                "🔍 Loaded {} bootstrap validators from genesis",
+                                bootstrap_validators.len()
+                            );
                         }
                         println!("✅ Genesis config validated (supply, network, addresses)");
                     }
@@ -2554,7 +2562,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     loaded_count, genesis_supply_deducted
                                 );
                                 if !bootstrap_validators.is_empty() {
-                                    println!("🔍 Loaded {} bootstrap validators from testnet genesis", bootstrap_validators.len());
+                                    println!(
+                                        "🔍 Loaded {} bootstrap validators from testnet genesis",
+                                        bootstrap_validators.len()
+                                    );
                                 }
                             }
                         }

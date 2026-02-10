@@ -1,225 +1,148 @@
 # Installation Guide
 
-Complete guide for installing and running Unauthority on all platforms.
+Build Unauthority from source or download pre-built binaries.
+
+**Version:** v1.0.3-testnet
 
 ---
 
-## Quick Start (End Users)
+## Pre-built Binaries
 
-Download pre-built desktop apps — no command line needed.
+### Wallet App
 
-### UAT Wallet
+| Platform | Download |
+|----------|----------|
+| macOS | [UAT-Wallet-macos.dmg](https://github.com/unauthoritymky-6236/unauthority-core/releases/tag/wallet-v1.0.3-testnet) |
+| Windows | [UAT-Wallet-windows-x64.zip](https://github.com/unauthoritymky-6236/unauthority-core/releases/tag/wallet-v1.0.3-testnet) |
+| Linux | [UAT-Wallet-linux-x64.tar.gz](https://github.com/unauthoritymky-6236/unauthority-core/releases/tag/wallet-v1.0.3-testnet) |
 
-| Platform | Download | How to Install |
-|----------|----------|----------------|
-| **macOS** | [UAT-Wallet-macos.dmg](https://github.com/unauthoritymky-6236/unauthority-core/releases/tag/wallet-v1.0.3-testnet) | Open DMG, drag to Applications |
-| **Windows** | [UAT-Wallet-windows-x64.zip](https://github.com/unauthoritymky-6236/unauthority-core/releases/tag/wallet-v1.0.3-testnet) | Extract zip, run `flutter_wallet.exe` |
-| **Linux** | [UAT-Wallet-linux-x64.tar.gz](https://github.com/unauthoritymky-6236/unauthority-core/releases/tag/wallet-v1.0.3-testnet) | Extract, run `./run.sh` |
+### Validator Dashboard
 
-### UAT Validator Dashboard
-
-| Platform | Download | How to Install |
-|----------|----------|----------------|
-| **macOS** | [UAT-Validator-macos.dmg](https://github.com/unauthoritymky-6236/unauthority-core/releases/tag/validator-v1.0.3-testnet) | Open DMG, drag to Applications |
-| **Windows** | [UAT-Validator-windows-x64.zip](https://github.com/unauthoritymky-6236/unauthority-core/releases/tag/validator-v1.0.3-testnet) | Extract zip, run `flutter_validator.exe` |
-| **Linux** | [UAT-Validator-linux-x64.tar.gz](https://github.com/unauthoritymky-6236/unauthority-core/releases/tag/validator-v1.0.3-testnet) | Extract, run `./run.sh` |
-
-### macOS "Cannot Verify" / Gatekeeper Warning
-
-Apple blocks unsigned apps on first launch. This is normal — our apps are not Apple-notarized (requires paid Apple Developer account). 
-
-**Option 1 — Terminal (recommended):**
-```bash
-# For Wallet:
-xattr -cr /Applications/UAT\ Wallet.app
-
-# For Validator:
-xattr -cr /Applications/flutter_validator.app
-```
-
-**Option 2 — GUI:**
-1. Open **System Settings → Privacy & Security**
-2. Scroll down — you'll see the blocked app
-3. Click **"Open Anyway"**
-
-**Option 3 — Right-click:**
-1. Right-click the app in Finder
-2. Click **Open** → click **Open** again in the dialog
-
-### First Launch
-
-1. Open the Wallet app
-2. Create a new wallet (or import with seed phrase)
-3. Go to Settings and set the node URL to your local testnet or the public .onion address
-4. Use the in-app faucet to request test UAT
+| Platform | Download |
+|----------|----------|
+| macOS | [UAT-Validator-macos.dmg](https://github.com/unauthoritymky-6236/unauthority-core/releases/tag/validator-v1.0.3-testnet) |
+| Windows | [UAT-Validator-windows-x64.zip](https://github.com/unauthoritymky-6236/unauthority-core/releases/tag/validator-v1.0.3-testnet) |
+| Linux | [UAT-Validator-linux-x64.tar.gz](https://github.com/unauthoritymky-6236/unauthority-core/releases/tag/validator-v1.0.3-testnet) |
 
 ---
 
-## Build from Source (Developers & Validators)
+## Build from Source
 
 ### Prerequisites
 
-| Tool | Minimum Version | Install |
-|------|-----------------|---------|
+| Tool | Version | Install |
+|------|---------|---------|
 | Rust | 1.75+ | `curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \| sh` |
-| Git | any | `brew install git` / `apt install git` |
-| Flutter | 3.10+ | [flutter.dev/docs/get-started/install](https://flutter.dev/docs/get-started/install) (for wallet/validator apps) |
+| Protobuf | 3.x+ | macOS: `brew install protobuf` · Linux: `apt install protobuf-compiler` |
+| Flutter | 3.5+ | [flutter.dev/docs/get-started/install](https://flutter.dev/docs/get-started/install) |
 
-### Build the Validator Node
+### Rust Node
 
 ```bash
 git clone https://github.com/unauthoritymky-6236/unauthority-core.git
 cd unauthority-core
 
-# Build release binary
-cargo build --release -p uat-node
+# Build all binaries (uat-node, uat-cli, genesis_generator)
+cargo build --release
 
-# Verify
-./target/release/uat-node --help 2>&1 || echo "Binary built at target/release/uat-node"
+# Binaries in target/release/
+ls target/release/uat-node target/release/uat-cli target/release/genesis_generator
 ```
 
-### Build the Flutter Wallet
+### Flutter Wallet
 
 ```bash
 cd flutter_wallet
 
-# Install dependencies
-flutter pub get
+# Build native Rust crypto library (required for Dilithium5)
+cd native/uat_crypto_ffi
+cargo build --release
+cd ../..
 
-# Build for your platform
-flutter build macos    # macOS
-flutter build linux    # Linux
-flutter build windows  # Windows
+# Build Flutter app
+flutter pub get
+flutter build macos --release    # or: linux, windows
 ```
 
-### Build the Flutter Validator Dashboard
+The built app is in `build/macos/Build/Products/Release/`.
+
+### Flutter Validator Dashboard
 
 ```bash
 cd flutter_validator
 
-# Install dependencies
+# Build native Rust crypto library
+cd native/uat_crypto_ffi
+cargo build --release
+cd ../..
+
 flutter pub get
-
-# Build for your platform
-flutter build macos    # macOS
-flutter build linux    # Linux
-flutter build windows  # Windows
+flutter build macos --release    # or: linux, windows
 ```
 
 ---
 
-## Run a Local Testnet
-
-### Quick Start (4 validators)
+## Run Tests
 
 ```bash
-chmod +x start.sh stop.sh
-./start.sh
-```
+# Full test suite (226 tests)
+cargo test --workspace --all-features --exclude uat-vm
 
-This starts 4 validators on ports 3030-3033. See [dev_docs/TESTNET_RUN_GUIDE.md](../dev_docs/TESTNET_RUN_GUIDE.md) for detailed instructions.
+# Individual crates
+cargo test -p uat-core          # Core: ledger, accounts, supply (55 tests)
+cargo test -p uat-consensus     # aBFT, voting, slashing (43 tests)
+cargo test -p uat-crypto        # Dilithium5, address derivation (30 tests)
+cargo test -p uat-network       # P2P, fee scaling, rewards (57 tests)
+cargo test -p uat-node          # Node integration (13 tests)
+cargo test -p uat-vm            # WASM virtual machine (20 tests)
 
-### Single Node (dev mode)
-
-```bash
-export UAT_TESTNET_LEVEL=functional
-export UAT_NODE_ID=validator-1
-./target/release/uat-node 3030
-```
-
-### Verify
-
-```bash
-curl -s http://localhost:3030/node-info | jq .
-curl -s http://localhost:3030/supply | jq .
+# Doc tests
+cargo test --doc --workspace
 ```
 
 ---
 
-## Tor Integration (Privacy)
-
-The wallet apps have **bundled Tor** — no extra setup needed for end users.
-
-For validators running a node behind Tor:
+## Verify Installation
 
 ```bash
-# Install Tor
-brew install tor        # macOS
-sudo apt install tor    # Ubuntu/Debian
+# Check node version
+./target/release/uat-node --version
+# uat-node 1.0.3
 
-# Create hidden service config
-mkdir -p ~/.tor-uat
-cat > ~/.tor-uat/torrc << 'EOF'
-HiddenServiceDir ~/.tor-uat/hidden_service
-HiddenServicePort 80 127.0.0.1:3030
-SocksPort 0
-DataDirectory ~/.tor-uat/data
-EOF
+# Run a dev-mode testnet node
+./target/release/uat-node --dev
 
-# Start Tor
-tor -f ~/.tor-uat/torrc &
+# Check health
+curl http://127.0.0.1:3030/health
+# {"status":"healthy"}
 
-# Get your .onion address (after ~30 seconds)
-cat ~/.tor-uat/hidden_service/hostname
+# Check node info
+curl http://127.0.0.1:3030/node-info
 ```
 
 ---
 
-## System Requirements
+## macOS Gatekeeper
 
-### Wallet App (End User)
+Apple blocks unsigned apps. After installing a pre-built `.dmg`:
 
-| | Minimum |
-|--|---------|
-| OS | Windows 10, macOS 11+, Ubuntu 20.04+ |
-| RAM | 2 GB |
-| Disk | 200 MB |
+```bash
+xattr -cr /Applications/UAT\ Wallet.app
+xattr -cr /Applications/flutter_validator.app
+```
 
-### Validator Node
-
-| | Recommended |
-|--|-------------|
-| OS | Linux (Ubuntu 22.04 LTS) |
-| CPU | 4 cores |
-| RAM | 8 GB |
-| Disk | 50 GB SSD |
-| Network | 10 Mbps upload |
-| Uptime | 99.9% |
+Or: **System Settings → Privacy & Security → Open Anyway**.
 
 ---
 
-## Troubleshooting
+## Directory Structure After Build
 
-### Node won't start - port in use
-```bash
-lsof -i :3030
-pkill -f uat-node
 ```
+target/release/
+├── uat-node               # Full validator node binary
+├── uat-cli                # Command-line interface
+└── genesis_generator      # Genesis block generator
 
-### Database lock error
-```bash
-./stop.sh
-rm -f node_data/validator-1/uat_database/LOCK
-./start.sh
+flutter_wallet/build/      # Wallet app (platform-specific)
+flutter_validator/build/   # Validator dashboard (platform-specific)
 ```
-
-### Build fails
-```bash
-rustup update
-cargo clean
-cargo build --release -p uat-node
-```
-
-### Wallet shows "Node Offline"
-Check the node URL in Settings. For local testnet: `http://localhost:3030`
-
----
-
-## Links
-
-| | |
-|--|--|
-| Releases | https://github.com/unauthoritymky-6236/unauthority-core/releases |
-| API Reference | [api_docs/API_REFERENCE.md](../api_docs/API_REFERENCE.md) |
-| Testnet Guide | [dev_docs/TESTNET_RUN_GUIDE.md](../dev_docs/TESTNET_RUN_GUIDE.md) |
-| Whitepaper | [docs/WHITEPAPER.md](WHITEPAPER.md) |

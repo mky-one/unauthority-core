@@ -82,7 +82,7 @@ The wallet connects to the testnet automatically via Tor.
 ### For Validators
 
 1. Download the **UAT Validator Dashboard** from the table above
-2. To run your own node, see [Running a Testnet Node](dev_docs/TESTNET_RUN_GUIDE.md)
+2. To run your own node, see [Validator Guide](docs/VALIDATOR_GUIDE.md)
 3. Minimum stake: 1,000 UAT
 
 ### Build from Source
@@ -137,7 +137,7 @@ Every UAT node exposes these endpoints. Default port: `3030`.
 | `/deploy-contract` | POST | Deploy WASM smart contract |
 | `/call-contract` | POST | Call a deployed contract |
 
-Full API documentation: [api_docs/API_REFERENCE.md](api_docs/API_REFERENCE.md)
+Full API documentation: [docs/API_REFERENCE.md](docs/API_REFERENCE.md)
 
 ---
 
@@ -158,9 +158,8 @@ unauthority-core/
 ├── genesis/               # Genesis block generator
 ├── testnet-genesis/       # Pre-funded testnet wallets
 ├── examples/contracts/    # Smart contract examples
-├── docs/                  # User documentation
-├── dev_docs/              # Developer documentation
-└── api_docs/              # API reference
+├── docs/                  # Documentation
+└── dev_docs/              # Internal developer notes
 ```
 
 Both Flutter apps use native Rust FFI to call Dilithium5 functions compiled per platform (`.dylib` on macOS, `.so` on Linux, `.dll` on Windows).
@@ -212,11 +211,15 @@ CI runs automatically on every push: format check, clippy, full test suite, secu
 | Document | For |
 |----------|-----|
 | [JOIN_TESTNET.md](docs/JOIN_TESTNET.md) | **Quick start for public users** |
-| [INSTALLATION.md](docs/INSTALLATION.md) | Installation on all platforms |
-| [WHITEPAPER.md](docs/WHITEPAPER.md) | Technical whitepaper |
-| [API_REFERENCE.md](api_docs/API_REFERENCE.md) | REST & gRPC API docs |
-| [VALIDATOR_GUIDE.md](docs/VALIDATOR_GUIDE.md) | Running a validator node |
-| [TESTNET_OPERATION.md](docs/TESTNET_OPERATION.md) | Testnet operations |
+| [WALLET_GUIDE.md](docs/WALLET_GUIDE.md) | Complete wallet features guide |
+| [INSTALLATION.md](docs/INSTALLATION.md) | Build from source on all platforms |
+| [VALIDATOR_GUIDE.md](docs/VALIDATOR_GUIDE.md) | Run a validator node |
+| [API_REFERENCE.md](docs/API_REFERENCE.md) | REST & gRPC API docs (27 endpoints) |
+| [CLI_REFERENCE.md](docs/CLI_REFERENCE.md) | `uat-cli` command reference |
+| [ARCHITECTURE.md](docs/ARCHITECTURE.md) | Technical architecture & diagrams |
+| [DOCKER_DEPLOYMENT.md](docs/DOCKER_DEPLOYMENT.md) | Docker Compose deployment |
+| [TOR_SETUP.md](docs/TOR_SETUP.md) | Tor hidden service setup |
+| [WHITEPAPER.md](docs/WHITEPAPER.md) | Full technical whitepaper |
 
 ---
 

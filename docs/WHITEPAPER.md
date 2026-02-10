@@ -1,426 +1,321 @@
-# Unauthority (UAT) - Technical Whitepaper
+# Unauthority (UAT) — Technical Whitepaper
 
-**Version 1.0 - February 2026**
+**Version:** 1.0.3-testnet  
+**Date:** February 2026
 
 ---
 
 ## Abstract
 
-Unauthority (UAT) is a sovereign, permissionless blockchain designed to eliminate centralized control through cryptographic immutability, quantum-resistant security, and economic game theory. Unlike existing blockchains with admin keys, upgrade mechanisms, or pause functions, UAT achieves **true decentralization** through:
+Unauthority (UAT) is a Layer-1 blockchain designed for absolute immutability. There are no admin keys, no pause functions, no upgrade mechanisms. Once deployed, the chain is autonomous and cannot be altered by any party.
 
-1. **Zero Admin Keys** - No entity can pause, modify, or control the chain
-2. **Fixed Supply** - 21,936,236 UAT with no inflation mechanism
-3. **Proof-of-Burn Distribution** - 93% allocated via BTC/ETH burning (fair launch)
-4. **Post-Quantum Security** - CRYSTALS-Dilithium signatures for future-proof security
-5. **< 3 Second Finality** - Asynchronous Byzantine Fault Tolerance (aBFT)
-6. **Privacy-First Architecture** - Native Tor integration, no KYC/AML enforcement layer
+The system combines a **block-lattice (DAG) structure** with **aBFT consensus**, **post-quantum cryptography** (CRYSTALS-Dilithium5), and **Tor-only networking** to create a permissionless, censorship-resistant financial network.
+
+Total supply is fixed at **21,936,236 UAT**, distributed 93% via Proof-of-Burn and 7% to the development treasury.
 
 ---
 
-## 1. Introduction
+## 1. Ledger Structure: Block-Lattice
 
-### 1.1 Problem Statement
+UAT uses a **block-lattice** architecture where each account maintains its own blockchain. This eliminates global block ordering for simple transfers and enables high throughput.
 
-Modern blockchains claim decentralization but retain centralized control mechanisms:
+### Block Types
 
-- **Ethereum:** Foundation controls upgrades, rollback capability (DAO fork)
-- **BNB Chain:** Centralized validators, pausable contracts
-- **Solana:** Restart/halt capability, foundation-controlled validators
-- **Polygon:** Admin keys in core contracts, upgrade authority
+| Type | Purpose | Link Field |
+|------|---------|------------|
+| `Send` | Transfer value to another account | Recipient address |
+| `Receive` | Accept incoming Send | Hash of the Send block |
+| `Change` | Update representative (delegated voting) | New representative address |
+| `Mint` | Create new UAT via Proof-of-Burn consensus | Burn proof data |
+| `Slash` | Penalize misbehaving validators | Evidence hash |
 
-**Result:** Smart contracts are only as immutable as the chain they run on.
-
-### 1.2 Unauthority's Solution
-
-**Cryptographic Sovereignty:**
-- No admin keys in consensus layer
-- No upgrade mechanism (code is final)
-- No pause function (unstoppable by design)
-- No foundation control (community-governed validators)
-
-**Economic Sovereignty:**
-- Fixed supply (no inflation dilution)
-- Fair distribution via proof-of-burn
-- Anti-whale mechanics (quadratic voting, dynamic fees)
-
----
-
-## 2. System Architecture
-
-### 2.1 Core Components
+### Block Fields
 
 ```
-┌─────────────────────────────────────────────────────────┐
-│              UNAUTHORITY (UAT) STACK                    │
-├─────────────────────────────────────────────────────────┤
-│  Application Layer                                      │
-│  ┌─────────────┐  ┌──────────────┐  ┌───────────────┐ │
-│  │   Wallet    │  │  dApp Portal │  │   Explorer    │ │
-│  └─────────────┘  └──────────────┘  └───────────────┘ │
-├─────────────────────────────────────────────────────────┤
-│  Smart Contract Layer (UVM)                             │
-│  ┌─────────────────────────────────────────────────┐  │
-│  │  WASM Execution Engine + Sandboxed Runtime      │  │
-│  └─────────────────────────────────────────────────┘  │
-├─────────────────────────────────────────────────────────┤
-│  Consensus Layer (aBFT)                                 │
-│  ┌────────────┐  ┌───────────────┐  ┌──────────────┐ │
-│  │  Validator │  │  Oracle Pool  │  │  Slashing    │ │
-│  │   Network  │  │   Consensus   │  │  Mechanism   │ │
-│  └────────────┘  └───────────────┘  └──────────────┘ │
-├─────────────────────────────────────────────────────────┤
-│  Network Layer                                          │
-│  ┌──────────────────┐  ┌────────────────────────────┐ │
-│  │  libp2p (P2P)    │  │  Tor Integration (Privacy) │ │
-│  └──────────────────┘  └────────────────────────────┘ │
-├─────────────────────────────────────────────────────────┤
-│  Storage Layer                                          │
-│  ┌─────────────┐  ┌──────────────┐  ┌───────────────┐ │
-│  │  Ledger DB  │  │  Block Store │  │  State Trie   │ │
-│  └─────────────┘  └──────────────┘  └───────────────┘ │
-└─────────────────────────────────────────────────────────┘
+account:         Account address (UAT...)
+previous:        Hash of previous block in this account's chain
+representative:  Delegated voting representative
+balance:         Account balance after this block (in VOID)
+link:            Context-dependent (see above)
+fee:             Transaction fee (minimum 100,000 VOID = 0.001 UAT)
+timestamp:       Unix timestamp (±300s drift tolerance)
+work:            Proof-of-work nonce (16-bit difficulty, anti-spam only)
+signature:       CRYSTALS-Dilithium5 signature
+hash:            Keccak-256(signing_hash || signature)
 ```
 
-### 2.2 Consensus Algorithm: Oracle-Driven aBFT
-
-**Why Not Traditional aBFT?**
-- Tendermint: Single leader bottleneck
-- HotStuff: Complex view-change overhead
-- Algorand: Requires committee election
-
-**Oracle Consensus Innovation:**
-```rust
-// Simplified Oracle Consensus Flow
-1. Block Proposal → Multiple validators propose blocks
-2. Oracle Validation → External oracle network validates proposals
-3. Threshold Aggregation → 2/3+ oracle signatures = finalized
-4. Immediate Finality → No confirmation waiting period
-```
-
-**Advantages:**
-- **Parallel Proposals:** No single leader bottleneck
-- **< 3 Second Finality:** Immediate once 2/3+ threshold reached
-- **Byzantine Fault Tolerant:** Tolerates up to 1/3 malicious validators
-- **No Forks:** Probabilistic finality = 1 (deterministic)
-
-### 2.3 Cryptographic Primitives
-
-| Component | Algorithm | Purpose |
-|-----------|-----------|---------|
-| **Signatures** | CRYSTALS-Dilithium3 | Post-quantum security |
-| **Hashing** | Blake3 | High-speed hashing |
-| **Addresses** | Blake3 → Bech32 | Human-readable + checksum |
-| **Merkle Trees** | Blake3 Merkle | State commitments |
-| **Nonces** | ChaCha20-PRNG | Deterministic randomness |
-
-**Post-Quantum Rationale:**
-- Quantum computers (Shor's algorithm) can break ECDSA
-- CRYSTALS-Dilithium: NIST-approved, quantum-resistant
-- Forward security: UAT survives quantum computing era
-
----
-
-## 3. Economic Model
-
-### 3.1 Token Supply
-
-| Parameter | Value | Rationale |
-|-----------|-------|-----------|
-| **Total Supply** | 21,936,236 UAT | Fixed forever, no inflation |
-| **Dev Allocation** | 7% (1,535,536 UAT) | Team, advisors, grants |
-| **Public Allocation** | 93% (20,400,700 UAT) | Proof-of-burn distribution |
-| **Decimals** | 6 (1 UAT = 1,000,000 VOID) | Micro-payment precision |
-
-**Why 21,936,236?**
-- Tribute to Bitcoin's 21M cap
-- Prime number factorization: 2² × 3 × 1,828,019.67
-- Psychologically scarce (< 22M), higher per-unit value perception
-
-### 3.2 Proof-of-Burn Distribution
-
-**Mechanism:**
-```
-User burns ETH/BTC → Tx verified on oracle chain → UAT minted 1:1 USD equivalent
-```
-
-**Burn Addresses:**
-- **ETH:** `0x000000000000000000000000000000000000dEaD`
-- **BTC:** `1111111111111111111114oLvT2` (provably unspendable)
-
-**Oracle Price Feed:**
-- Chainlink aggregator (ETH/USD, BTC/USD)
-- Multiple oracle validation (3/5 consensus)
-- 1-hour TWAP (time-weighted average price)
-
-**Example:**
-```
-Burn 1 ETH @ $3,000 → Receive 3,000 UAT
-Burn 0.01 BTC @ $60,000 → Receive 600 UAT
-```
-
-**Advantages:**
-- **Fair Launch:** No ICO, no VCs, no preferential access
-- **Value Backing:** UAT value locked in BTC/ETH burns
-- **Anti-Pump:** Gradual distribution prevents instant dumps
-
-### 3.3 Fee Structure
-
-| Transaction Type | Fee | Burned % | Validator % |
-|------------------|-----|----------|-------------|
-| **Send** | 0.01 UAT | 50% | 50% |
-| **Contract Deploy** | 10 UAT | 80% | 20% |
-| **Contract Call** | 0.1-1 UAT (gas-based) | 60% | 40% |
-| **Burn** | 0 UAT (mint-only) | N/A | N/A |
-
-**Dynamic Fee Scaling (Anti-Whale):**
-```rust
-fee = base_fee * (1 + transaction_size / median_size)^2
-```
-- Small txs: Near base fee
-- Large txs: Quadratic increase (discourages whales)
-
----
-
-## 4. Smart Contracts (UVM)
-
-### 4.1 Unauthority Virtual Machine (UVM)
-
-**Why WASM, Not EVM?**
-- **EVM Limitations:** Gas inefficiency, 256-bit stack overhead
-- **WASM Advantages:** Near-native speed, multiple language support
-- **Security:** Sandboxed execution, no unbounded loops
-
-**Supported Languages:**
-- Rust (primary)
-- AssemblyScript (TypeScript-like)
-- C/C++ (via Emscripten)
-
-### 4.2 UVM Architecture
+### Hash Construction
 
 ```
-┌──────────────────────────────────────────┐
-│         Contract (WASM Bytecode)         │
-├──────────────────────────────────────────┤
-│  ┌────────────┐  ┌──────────────────┐   │
-│  │  Imports   │  │  Memory Manager  │   │
-│  │  (Host API)│  │  (Linear Memory) │   │
-│  └────────────┘  └──────────────────┘   │
-├──────────────────────────────────────────┤
-│        WASM Runtime (Wasmer)             │
-│  ┌────────┐  ┌────────┐  ┌──────────┐  │
-│  │ Gas    │  │ Stack  │  │ Metering │  │
-│  │ Meter  │  │ Limit  │  │ Injector │  │
-│  └────────┘  └────────┘  └──────────┘  │
-├──────────────────────────────────────────┤
-│          Host Functions (Rust)           │
-│  • Storage Read/Write                    │
-│  • Event Emission                        │
-│  • Balance Queries                       │
-│  • Transfer Execution                    │
-└──────────────────────────────────────────┘
-```
-
-### 4.3 Gas Model
-
-```rust
-// Gas cost examples
-storage_write(1KB) = 1000 gas
-storage_read(1KB)  = 100 gas
-transfer()         = 2100 gas
-sha256(1KB)        = 500 gas
-contract_call()    = 700 gas (base) + execution_gas
-```
-
-**Gas Limit:**
-- Per-tx: 10M gas
-- Per-block: 100M gas
-- Price: 1 gas = 0.000001 UAT
-
----
-
-## 5. Network Architecture
-
-### 5.1 Validator Requirements
-
-| Requirement | Minimum | Recommended |
-|-------------|---------|-------------|
-| **Stake** | 10,000 UAT | 50,000+ UAT |
-| **CPU** | 4 cores | 16+ cores |
-| **RAM** | 8 GB | 32+ GB |
-| **Storage** | 100 GB SSD | 1 TB NVMe |
-| **Bandwidth** | 100 Mbps | 1 Gbps |
-| **Uptime** | 95% | 99.9% |
-
-**Slashing Conditions:**
-- **Double Signing:** -10% stake
-- **Downtime (> 5%):** -1% per hour
-- **Invalid Proposals:** -5% stake
-- **Oracle Manipulation:** -100% stake (ejection)
-
-### 5.2 Tor Integration
-
-**Privacy Architecture:**
-```
-User Wallet → Tor Browser → .onion Node → Validator Network
-```
-
-**Benefits:**
-- **IP Anonymity:** No deanonymization via network analysis
-- **Censorship Resistance:** Tor hidden services can't be blocked
-- **No VPS/Domain:** Run validators at home (no AWS, no DNS)
-
-**Onion Address Format:**
-```
-http://[56-char-base32].onion
-Example: fhljoiopyz2eflttc7o5qwfj6l6skhtlkjpn4r6yw4atqpy2azydnnqd.onion
-```
-
-### 5.3 Peer Discovery
-
-```rust
-// Bootstrap nodes (hardcoded in genesis)
-bootstrap_nodes = [
-    "/ip4/1.2.3.4/tcp/30303/p2p/12D3KooW...",
-    "/onion3/abc123...xyz.onion:30303/p2p/12D3KooW...",
-]
-
-// DHT (Distributed Hash Table) for peer discovery
-libp2p_kad::Kademlia::new(peer_id, store)
+signing_hash = Keccak-256(chain_id || account || previous || representative || balance || link || fee || timestamp)
+block_hash   = Keccak-256(signing_hash || signature)
 ```
 
 ---
 
-## 6. Security Model
+## 2. Consensus: Asynchronous Byzantine Fault Tolerance
 
-### 6.1 Threat Model
+### 2.1 Protocol
 
-| Threat | Mitigation |
-|--------|-----------|
-| **51% Attack** | aBFT consensus (2/3+ threshold) + slashing |
-| **Sybil Attack** | Stake requirements + IP rate limiting |
-| **DDoS** | Tor onion routing + connection limits |
-| **Quantum Computing** | Post-quantum signatures (Dilithium) |
-| **Smart Contract Exploits** | WASM sandboxing + gas limits |
-| **Oracle Manipulation** | Multi-oracle consensus (3/5+) + slashing |
+UAT implements aBFT with three-phase voting:
 
-### 6.2 Audit History
+1. **Pre-prepare** — Leader proposes a block
+2. **Prepare** — Validators verify and broadcast prepare messages
+3. **Commit** — Upon 2/3+ prepare votes, validators broadcast commit
 
-| Date | Auditor | Scope | Findings |
-|------|---------|-------|----------|
-| Jan 2026 | Internal | Core consensus | 0 critical, 3 medium |
-| Feb 2026 | TBD | Smart contracts (UVM) | Pending |
-| Q2 2026 | Trail of Bits (planned) | Full stack | TBD |
+A block is finalized when it receives commit votes from ≥ 2/3 of validators. Target finality: **< 3 seconds**.
 
----
+Byzantine tolerance: `f = ⌊(n-1)/3⌋` — the network tolerates up to f faulty validators out of n total.
 
-## 7. Roadmap
+### 2.2 Quadratic Voting
 
-### Phase 1: Testnet (✅ LIVE - Feb 2026)
-- [x] Core blockchain (aBFT consensus)
-- [x] Tor hidden service deployment
-- [x] REST API (13 endpoints)
-- [x] Desktop wallet (macOS, Windows, Linux)
-- [x] Proof-of-burn mechanism
-- [x] Block explorer
+Voting power is proportional to the **square root of stake**, not the raw stake:
 
-### Phase 2: Mainnet Launch (Q2 2026)
-- [ ] External security audit
-- [ ] Mainnet genesis (21,936,236 UAT supply)
-- [ ] Validator onboarding (50+ nodes)
-- [ ] CEX listings (Uniswap, Pancakeswap)
-- [ ] Bridge to Ethereum (wrapped UAT)
+$$\text{voting\_power} = \sqrt{\text{stake\_in\_void}}$$
 
-### Phase 3: Smart Contracts (Q3 2026)
-- [ ] UVM production release
-- [ ] Contract development toolkit
-- [ ] dApp marketplace
-- [ ] DeFi primitives (DEX, lending, staking)
+This prevents whale concentration. A validator with 100,000 UAT has only 10× the voting power of one with 1,000 UAT (not 100×).
 
-### Phase 4: Ecosystem Growth (Q4 2026+)
-- [ ] Mobile wallets (iOS, Android)
-- [ ] Hardware wallet integration (Ledger, Trezor)
-- [ ] Cross-chain bridges (BTC, SOL, AVAX)
-- [ ] Privacy features (zk-SNARKs, ring signatures)
+Implementation uses deterministic integer square root via Newton's method on `u128` with 6-decimal precision.
+
+### 2.3 Slashing
+
+| Violation | Penalty | Consequence |
+|-----------|---------|-------------|
+| Double-signing | 100% stake burn | Permanent ban |
+| Downtime | 1% stake burn per epoch | Warning / eventual unstaking |
+
+Downtime is measured as: < 95% uptime within a rolling window of 50,000 blocks. A minimum of 10,000 missed blocks triggers the first slash.
+
+Slash proposals require multi-validator confirmation to prevent abuse.
+
+### 2.4 Checkpoints
+
+Every 1,000 blocks, a checkpoint is created with 67% quorum. Checkpoints are persisted to disk (sled) and prevent long-range attacks.
 
 ---
 
-## 8. Comparison with Competitors
+## 3. Cryptography
 
-| Feature | Unauthority | Ethereum | Solana | BNB Chain |
-|---------|-------------|----------|--------|-----------|
-| **Admin Keys** | ❌ None | ✅ Foundation | ✅ Centralized | ✅ Binance |
-| **Finality** | < 3 sec | 12 min | 0.4 sec | 3 sec |
-| **TPS** | 1,000+ | 15 | 50,000+ | 300 |
-| **Quantum-Resistant** | ✅ Yes | ❌ No | ❌ No | ❌ No |
-| **Fair Launch** | ✅ Proof-of-Burn | ❌ ICO | ❌ VCs | ❌ Binance |
-| **Privacy** | ✅ Tor Native | ⚠️ Optional | ❌ No | ❌ No |
-| **Supply Cap** | ✅ Fixed 21.9M | ❌ Infinite | ❌ Infinite | ❌ Infinite |
+### 3.1 CRYSTALS-Dilithium5
 
----
+All signatures use **CRYSTALS-Dilithium5** — a NIST PQC Level 5 lattice-based signature scheme. This provides security against both classical and quantum computing attacks.
 
-## 9. Governance
+| Parameter | Value |
+|-----------|-------|
+| Public key size | 2,592 bytes |
+| Secret key size | 4,864 bytes |
+| Signature size | 4,627 bytes |
+| Security level | NIST Level 5 (AES-256 equivalent) |
 
-### 9.1 No Foundation Model
+### 3.2 Address Derivation
 
-**Traditional Blockchains:**
-- Ethereum Foundation controls upgrades
-- Decisions made by small group
-- Soft/hard forks at foundation discretion
-
-**Unauthority Model:**
-- **No foundation** = No central authority
-- **Community validators** vote on proposals
-- **Quadratic voting** prevents whale dominance
-- **Code is law** - No emergency pause buttons
-
-### 9.2 Proposal System
-
-```rust
-// Governance flow
-1. Validator submits proposal (minimum 10,000 UAT stake)
-2. 7-day discussion period
-3. Voting period: 14 days
-   - Quadratic voting: votes = sqrt(stake)
-   - Quorum: 30% of staked UAT
-   - Threshold: 60% approval
-4. Execution (if passed): 
-   - Parameter changes (fees, gas limits)
-   - Treasury spending (dev grants)
-   - NO CODE CHANGES (immutable by design)
+```
+public_key  →  BLAKE2b-512  →  first 20 bytes  →  prepend version byte 0x4A
+            →  SHA-256(SHA-256(versioned))  →  first 4 bytes (checksum)
+            →  Base58(versioned + checksum)  →  prepend "UAT"
 ```
 
+Example address: `UATBwXk9m2P3dU7N5R1Qj8K4vL6Y...`
+
+### 3.3 Deterministic Key Generation (v1.0.3+)
+
+BIP39 mnemonic (24 words) → 64-byte seed → domain-separated derivation:
+
+```
+salt    = SHA-256("uat-dilithium5-keygen-v1")
+derived = SHA-256(salt || bip39_seed)  →  32-byte ChaCha20 seed
+keypair = Dilithium5::keypair_from_seed(derived)
+```
+
+This produces identical keypairs across Rust (node) and Dart (Flutter wallet) implementations.
+
+### 3.4 Key Encryption
+
+Private keys are encrypted at rest using the `age` crate with scrypt KDF. On mainnet, a minimum 12-character password is required (`UAT_WALLET_PASSWORD`). Node auto-migrates plaintext keys to encrypted format.
+
+### 3.5 Memory Safety
+
+All key material implements `Zeroize` on `Drop` — private keys are overwritten with zeros when they go out of scope. Flutter wallet also zeros seed bytes in Dart after FFI calls.
+
 ---
 
-## 10. Conclusion
+## 4. Networking
 
-Unauthority represents the next evolution of blockchain technology: **true decentralization through cryptographic sovereignty**. By eliminating admin keys, fixing supply, and prioritizing privacy, UAT creates a censorship-resistant, quantum-secure foundation for the decentralized future.
+### 4.1 Transport
 
-**Key Differentiators:**
-1. **Zero Admin Keys** - Truly unstoppable
-2. **Post-Quantum Security** - Future-proof cryptography
-3. **Fair Distribution** - Proof-of-burn, no ICO/VCs
-4. **Privacy-First** - Native Tor integration
-5. **Economic Sovereignty** - Fixed 21.9M supply
+UAT uses **libp2p** with the following configuration:
 
-**Join the Sovereign Revolution:**
-- Testnet: http://fhljoiopyz2eflttc7o5qwfj6l6skhtlkjpn4r6yw4atqpy2azydnnqd.onion
-- GitHub: https://github.com/unauthoritymky-6236/unauthority-core
-- Docs: [TESTNET_OPERATION.md](TESTNET_OPERATION.md)
+- **Protocol**: GossipSub on topic `"uat-blocks"`
+- **Encryption**: Noise Protocol Framework
+- **Multiplexing**: Yamux
+- **Discovery**: mDNS (disabled under Tor to prevent DNS leaks)
+- **Max message size**: 10 MB
+
+### 4.2 Tor Integration
+
+All public-facing nodes run as **Tor hidden services (.onion)**. The network:
+
+- Binds to `127.0.0.1` by default (prevents IP exposure)
+- Routes all P2P traffic through SOCKS5 proxy
+- Disables mDNS when Tor is active (prevents DNS leaks)
+- Supports both direct Multiaddr and `.onion` bootstrap formats
+
+The Flutter wallet and validator apps include **bundled Tor** — zero-configuration connectivity.
+
+### 4.3 P2P Message Types
+
+| Message | Purpose |
+|---------|---------|
+| `ID` | Node identity announcement |
+| `SYNC_GZIP` | Compressed full-state sync (max 8MB, 50MB decompressed) |
+| `SYNC_REQUEST` | Request state from peers |
+| `VOTE_REQ` / `VOTE_RES` | Burn consensus voting |
+| `CONFIRM_REQ` / `CONFIRM_RES` | Send transaction confirmation |
+| `ORACLE_SUBMIT` | Price oracle broadcast |
+| `SLASH_REQ` | Slashing proposal |
+| Raw Block JSON | Block propagation |
+
+---
+
+## 5. Token Economics
+
+### 5.1 Supply
+
+| Parameter | Value |
+|-----------|-------|
+| Total supply | 21,936,236 UAT |
+| Smallest unit | 1 VOID |
+| Conversion | 1 UAT = 10^11 VOID (100,000,000,000) |
+| Inflation | **Zero** — supply is fixed forever |
+
+### 5.2 Distribution
+
+| Allocation | UAT | Percentage |
+|------------|-----|-----------|
+| Public (Proof-of-Burn) | 20,400,700 | 93% |
+| Dev Treasury (8 wallets) | 1,535,536 | 7% |
+| **Total** | **21,936,236** | **100%** |
+
+Dev Treasury: Wallets #1–#7 hold 191,942 UAT each. Wallet #8 holds 187,942 UAT (funded 4 bootstrap validators at 1,000 UAT each).
+
+### 5.3 Proof-of-Burn Minting
+
+New UAT is minted by verifiably burning ETH or BTC:
+
+1. User burns ETH/BTC to a dead address (`0x...dead` / `1BitcoinEater...`)
+2. User submits burn proof (txid) to UAT network
+3. Oracle consensus verifies the burn via external price feeds
+4. If ≥ 2/3 validators confirm, UAT is minted proportionally
+
+Mint calculation uses **pure integer math** (no floating-point):
+
+```
+1 UAT = $0.01 = 10,000 micro-USD
+mint_void = (burn_micro_usd * VOID_PER_UAT) / 10,000
+```
+
+Oracle sources: CoinGecko, CryptoCompare, Kraken (via Tor SOCKS5 proxy).  
+Sanity bounds: ETH $10–$100,000 · BTC $100–$10,000,000. Oracle fails closed on mainnet.
+
+### 5.4 Anti-Whale Mechanisms
+
+- **Quadratic Voting**: voting_power = √(stake) — dampens whale influence
+- **Dynamic Fee Scaling**: fees multiply 2× per additional tx beyond 10 tx/minute per account
+- **Activity Windows**: 60-second rolling windows track per-account tx frequency
+- **Max burn per block**: 1,000 UAT (anti-abuse)
+
+### 5.5 Transaction Fees
+
+| Parameter | Value |
+|-----------|-------|
+| Minimum fee | 0.001 UAT (100,000 VOID) |
+| Base gas price | 1,000 VOID |
+| Max gas per tx | 10,000,000 |
+| Gas per byte | 10 |
+| Spam threshold | 10 tx/s per account |
+| Spam scaling | 2^n (exponential) |
+
+---
+
+## 6. Smart Contracts (UVM)
+
+The **Unauthority Virtual Machine (UVM)** executes WASM smart contracts:
+
+| Parameter | Value |
+|-----------|-------|
+| Engine | Wasmer + Cranelift |
+| Max bytecode | 1 MB |
+| Max execution time | 5 seconds |
+| Gas: per KB bytecode | 100 |
+| Gas: per ms execution | 10 |
+
+Contract deployment validates WASM magic bytes (`\0asm`), computes a blake3 address hash, and stores bytecode on-chain. Execution runs in a sandboxed thread with an abort flag.
+
+**Security invariant**: `mint` via contract is **permanently disabled** — only PoB consensus can create new tokens.
+
+---
+
+## 7. Genesis
+
+### 7.1 Mainnet Genesis
+
+Defined in `genesis_config.json`:
+
+- Network ID: 1 (`uat-mainnet`)
+- Total supply: 2,193,623,600,000,000,000 VOID (= 21,936,236 UAT)
+- Dev supply: 153,553,600,000,000,000 VOID (= 1,535,536 UAT, 7%)
+- 8 dev treasury wallets + 4 bootstrap validators (1,000 UAT each)
+
+### 7.2 Testnet Genesis
+
+Defined in `testnet-genesis/testnet_wallets.json`:
+
+- Network ID: 2 (`uat-testnet`)
+- Identical allocation structure to mainnet
+- All wallets have BIP39 seed phrases and deterministic Dilithium5 keypairs
+- Faucet available: 5,000 UAT per claim, 1-hour cooldown
+
+---
+
+## 8. Security Properties
+
+| Property | Implementation |
+|----------|---------------|
+| Zero admin keys | No pause, upgrade, or kill switch in code |
+| Integer-only math | No `f64` in consensus, supply, or mint calculations |
+| Post-quantum signatures | Dilithium5 (NIST Level 5) for all block signatures |
+| Key encryption at rest | `age` crate with scrypt KDF |
+| Memory zeroing | `Zeroize` on `Drop` for all key material |
+| P2P encryption | Noise Protocol Framework via libp2p |
+| Tor-only networking | Default bind `127.0.0.1`, mDNS disabled under Tor |
+| Decompression limit | 50 MB max for sync payloads |
+| Rate limiting | 100 req/s global, per-endpoint cooldowns |
+| Slash consensus | Multi-validator confirmation required |
+| Supply verification | 1% tolerance check on state sync |
+
+---
+
+## 9. Crate Structure
+
+```
+crates/
+├── uat-core        # Ledger, accounts, block types, supply math, anti-whale
+├── uat-crypto      # Dilithium5, address derivation, key encryption
+├── uat-consensus   # aBFT protocol, quadratic voting, slashing, checkpoints
+├── uat-network     # libp2p, GossipSub, Tor transport, fee scaling
+├── uat-vm          # WASM smart contract engine (Wasmer + Cranelift)
+├── uat-node        # Full node binary — REST API + gRPC + P2P
+└── uat-cli         # Command-line interface
+```
+
+Both Flutter apps (`flutter_wallet/`, `flutter_validator/`) use `flutter_rust_bridge` (FFI) to call native Dilithium5 functions compiled per platform.
 
 ---
 
 ## References
 
-1. Castro, M., & Liskov, B. (1999). Practical Byzantine Fault Tolerance. OSDI.
-2. Ducas, L., et al. (2018). CRYSTALS-Dilithium: Post-Quantum Digital Signatures. NIST PQC Round 3.
-3. Dingledine, R., et al. (2004). Tor: The Second-Generation Onion Router. USENIX Security.
-4. Nakamoto, S. (2008). Bitcoin: A Peer-to-Peer Electronic Cash System.
-5. Buterin, V. (2014). Ethereum Whitepaper. ethereum.org.
-6. Yakovenko, A. (2018). Solana: A new architecture for a high performance blockchain. solana.com.
-
----
-
-**Document Version:** 1.0  
-**Last Updated:** February 5, 2026  
-**License:** CC BY-SA 4.0  
-**Contact:** GitHub Issues @ unauthoritymky-6236/unauthority-core
+- CRYSTALS-Dilithium: [pq-crystals.org/dilithium](https://pq-crystals.org/dilithium/)
+- libp2p: [libp2p.io](https://libp2p.io/)
+- Wasmer: [wasmer.io](https://wasmer.io/)
+- Tor Project: [torproject.org](https://www.torproject.org/)
+- BIP39: [github.com/bitcoin/bips/blob/master/bip-0039.mediawiki](https://github.com/bitcoin/bips/blob/master/bip-0039.mediawiki)

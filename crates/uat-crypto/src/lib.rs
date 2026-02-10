@@ -1,4 +1,5 @@
 use age::{Decryptor, Encryptor};
+use digest::Digest;
 use pqcrypto_dilithium::dilithium5::{
     detached_sign, keypair, verify_detached_signature, PublicKey as DilithiumPublicKey,
     SecretKey as DilithiumSecretKey,
@@ -7,7 +8,6 @@ use pqcrypto_traits::sign::{DetachedSignature, PublicKey, SecretKey};
 use secrecy::Secret;
 use serde::{Deserialize, Serialize};
 use sha2::Sha256;
-use digest::Digest;
 use std::io::{Read, Write};
 use zeroize::Zeroize;
 
@@ -81,12 +81,15 @@ pub fn generate_keypair() -> KeyPair {
 ///
 /// # Arguments
 /// * `bip39_seed` - BIP39 seed bytes (64 bytes from `mnemonic.to_seed("")`)
-///                  Must be at least 32 bytes.
+///   Must be at least 32 bytes.
 ///
 /// # Panics
 /// If seed is shorter than 32 bytes.
 pub fn generate_keypair_from_seed(bip39_seed: &[u8]) -> KeyPair {
-    assert!(bip39_seed.len() >= 32, "BIP39 seed must be at least 32 bytes");
+    assert!(
+        bip39_seed.len() >= 32,
+        "BIP39 seed must be at least 32 bytes"
+    );
 
     // Domain-separated deterministic seed derivation
     // Identical to flutter_wallet/native/uat_crypto_ffi/src/lib.rs
@@ -123,8 +126,8 @@ pub fn generate_keypair_from_seed(bip39_seed: &[u8]) -> KeyPair {
 pub fn keypair_from_secret(secret_bytes: &[u8]) -> KeyPair {
     if secret_bytes.len() == 4864 {
         // Full Dilithium5 secret key — extract public key
-        let _sk = DilithiumSecretKey::from_bytes(secret_bytes)
-            .expect("Invalid Dilithium5 secret key");
+        let _sk =
+            DilithiumSecretKey::from_bytes(secret_bytes).expect("Invalid Dilithium5 secret key");
         // Re-derive public key by signing+verifying a test message
         // Since Dilithium5 SK contains PK, we extract via the struct
         // Note: pqcrypto doesn't expose pk_from_sk, so we sign & extract

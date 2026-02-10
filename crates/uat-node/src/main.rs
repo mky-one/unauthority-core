@@ -2525,8 +2525,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                         continue;
                                     }
                                     // Track validator wallets for /validators endpoint
-                                    // (NOT hardcoded — reads role from genesis config)
-                                    if wallet["role"].as_str() == Some("validator") {
+                                    // Detect by wallet_type field (testnet uses "BootstrapNode(N)")
+                                    // or role field (mainnet uses "validator")
+                                    let is_validator = wallet["wallet_type"]
+                                        .as_str()
+                                        .map(|wt| wt.starts_with("BootstrapNode"))
+                                        .unwrap_or(false)
+                                        || wallet["role"].as_str() == Some("validator");
+                                    if is_validator {
                                         bootstrap_validators.push(address.to_string());
                                     }
                                     if !ledger_state.accounts.contains_key(address) {

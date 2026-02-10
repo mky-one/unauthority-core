@@ -101,6 +101,9 @@ class BlockConstructionService {
     // 4. Current timestamp
     final timestamp = DateTime.now().millisecondsSinceEpoch ~/ 1000;
 
+    debugPrint('⛏️ [Send] Mining PoW (16-bit difficulty)...');
+    final powStart = DateTime.now();
+
     // 5. Mine PoW in a background isolate (FIX U1: prevents UI freeze)
     final powResult = await _minePoWInIsolate(
       chainId: chainId,
@@ -114,6 +117,9 @@ class BlockConstructionService {
       fee: baseFeeVoid,
     );
 
+    final powMs = DateTime.now().difference(powStart).inMilliseconds;
+    debugPrint('⛏️ [Send] PoW completed in ${powMs}ms');
+
     if (powResult == null) {
       throw Exception(
           'PoW failed after $maxPowIterations iterations. Try again.');
@@ -121,9 +127,16 @@ class BlockConstructionService {
 
     final work = powResult['work'] as int;
     final signingHash = powResult['hash'] as String;
+    debugPrint('🔏 [Send] Signing with Dilithium5...');
 
     // 6. Sign the signing_hash with Dilithium5
+    final signStart = DateTime.now();
     final signature = await _wallet.signTransaction(signingHash);
+    final signMs = DateTime.now().difference(signStart).inMilliseconds;
+    debugPrint('🔏 [Send] Signature done in ${signMs}ms');
+
+    // 7. Submit pre-signed block to node
+    debugPrint('📡 [Send] Submitting to node...');
 
     // 7. Submit pre-signed block to node
     // Pass amount_void so backend uses exact VOID amount (supports sub-UAT precision)
@@ -207,6 +220,10 @@ class BlockConstructionService {
 
   /// Static synchronous PoW mining — runs inside an isolate.
   /// Must be static/top-level for Isolate.run() compatibility.
+  ///
+  /// OPTIMIZED: Precomputes all static fields once, only mutates the 8-byte
+  /// work nonce in a fixed buffer position each iteration. This avoids
+  /// rebuilding the entire input buffer and re-encoding strings 50M times.
   static Map<String, dynamic>? _minePoWSync(Map<String, dynamic> params) {
     final chainId = params['chainId'] as int;
     final account = params['account'] as String;
@@ -220,24 +237,78 @@ class BlockConstructionService {
     final maxIter = params['maxIter'] as int;
     final diffBits = params['diffBits'] as int;
 
-    for (int nonce = 0; nonce < maxIter; nonce++) {
-      final hash = _computeSigningHashStatic(
-        chainId: chainId,
-        account: account,
-        previous: previous,
-        blockType: blockType,
-        amount: amount,
-        link: link,
-        publicKey: publicKey,
-        work: nonce,
-        timestamp: timestamp,
-        fee: fee,
-      );
+    // Precompute all static parts of the signing hash input.
+    // Layout: [chainId(8)] [account] [previous] [blockType(1)] [amount(16)]
+    //         [link] [publicKey] [WORK(8)] [timestamp(8)] [fee(16)]
+    //
+    // Only WORK changes each iteration — we record its byte offset.
 
-      if (_hasLeadingZeroBitsStatic(hash, diffBits)) {
-        return {'work': nonce, 'hash': hash};
+    final preData = <int>[];
+    // chain_id (u64 LE)
+    final cidData = ByteData(8);
+    cidData.setUint64(0, chainId, Endian.little);
+    preData.addAll(cidData.buffer.asUint8List());
+    // account
+    preData.addAll(utf8.encode(account));
+    // previous
+    preData.addAll(utf8.encode(previous));
+    // block_type
+    preData.add(blockType);
+    // amount (u128 LE)
+    preData.addAll(_u128ToLeBytesStatic(amount));
+    // link
+    preData.addAll(utf8.encode(link));
+    // public_key
+    preData.addAll(utf8.encode(publicKey));
+
+    // Record the offset where WORK starts
+    final workOffset = preData.length;
+
+    // Placeholder WORK (8 bytes, will be overwritten)
+    preData.addAll(List.filled(8, 0));
+
+    // timestamp (u64 LE)
+    final tData = ByteData(8);
+    tData.setUint64(0, timestamp, Endian.little);
+    preData.addAll(tData.buffer.asUint8List());
+    // fee (u128 LE)
+    preData.addAll(_u128ToLeBytesStatic(BigInt.from(fee)));
+
+    // Convert to mutable Uint8List for in-place nonce updates
+    final buffer = Uint8List.fromList(preData);
+    final workBytes = ByteData.sublistView(buffer, workOffset, workOffset + 8);
+
+    final sw = Stopwatch()..start();
+    final keccak = KeccakDigest(256);
+    final requiredZeroBytes = diffBits ~/ 8;
+    final remainingBits = diffBits % 8;
+    final mask = remainingBits > 0 ? (0xFF << (8 - remainingBits)) & 0xFF : 0;
+
+    for (int nonce = 0; nonce < maxIter; nonce++) {
+      // Update only the 8-byte work field in-place
+      workBytes.setUint64(0, nonce, Endian.little);
+
+      // Hash with reusable KeccakDigest instance
+      keccak.reset();
+      final output = keccak.process(buffer);
+
+      // Fast leading-zero-bits check (byte-level, no hex conversion)
+      bool valid = true;
+      for (int i = 0; i < requiredZeroBytes; i++) {
+        if (output[i] != 0) { valid = false; break; }
+      }
+      if (valid && remainingBits > 0) {
+        if ((output[requiredZeroBytes] & mask) != 0) valid = false;
+      }
+
+      if (valid) {
+        final elapsed = sw.elapsedMilliseconds;
+        final hashHex = output.map((b) => b.toRadixString(16).padLeft(2, '0')).join('');
+        print('⛏️ PoW found! nonce=$nonce, ${elapsed}ms, ${(nonce / (elapsed / 1000)).round()} H/s');
+        return {'work': nonce, 'hash': hashHex};
       }
     }
+    print('❌ PoW FAILED after $maxIter iterations (${sw.elapsedMilliseconds}ms)');
     return null; // Failed to find valid nonce
   }
 

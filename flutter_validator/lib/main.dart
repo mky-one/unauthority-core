@@ -8,6 +8,8 @@ import 'services/network_config.dart';
 import 'services/dilithium_service.dart';
 import 'services/wallet_service.dart';
 import 'services/network_status_service.dart';
+import 'services/node_process_service.dart';
+import 'services/tor_service.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -46,6 +48,13 @@ class MyApp extends StatelessWidget {
         Provider<WalletService>.value(value: walletService),
         ChangeNotifierProvider<NetworkStatusService>(
           create: (context) => NetworkStatusService(context.read<ApiService>()),
+        ),
+        ChangeNotifierProvider<NodeProcessService>(
+          create: (_) => NodeProcessService(),
+        ),
+        Provider<TorService>(
+          create: (_) => TorService(),
+          dispose: (_, tor) => tor.stop(),
         ),
       ],
       child: MaterialApp(

@@ -29,7 +29,7 @@ class NodeProcessService extends ChangeNotifier {
   NodeStatus _status = NodeStatus.stopped;
   String? _nodeAddress; // Node's UATX... address
   String? _onionAddress; // .onion hidden service address
-  int _apiPort = 3030;
+  int _apiPort = 3035;
   String? _dataDir;
   String? _errorMessage;
   final List<String> _logs = [];
@@ -55,14 +55,33 @@ class NodeProcessService extends ChangeNotifier {
 
   String get localApiUrl => 'http://127.0.0.1:$_apiPort';
 
+  /// Find an available port starting from [preferred].
+  /// Returns the first port that's not already in use.
+  static Future<int> findAvailablePort({int preferred = 3035}) async {
+    for (int port = preferred; port < preferred + 20; port++) {
+      try {
+        final socket = await ServerSocket.bind(
+          InternetAddress.loopbackIPv4,
+          port,
+          shared: false,
+        );
+        await socket.close();
+        return port;
+      } catch (_) {
+        // Port in use, try next
+      }
+    }
+    return preferred; // Fallback
+  }
+
   /// Start the uat-node process.
   ///
-  /// [port] — REST API port (default 3030)
+  /// [port] — REST API port (default 3035, auto-detects if occupied)
   /// [onionAddress] — Pre-configured .onion address (from Tor hidden service)
   /// [bootstrapNodes] — Comma-separated list of bootstrap node addresses
   /// [walletPassword] — Encryption password for the node wallet
   Future<bool> start({
-    int port = 3030,
+    int port = 3035,
     String? onionAddress,
     String? bootstrapNodes,
     String? walletPassword,

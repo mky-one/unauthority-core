@@ -32,6 +32,7 @@ zeroize = "1.7"  # FIX C12-03: Zeroize secret key clones in async tasks
 [features]
 default = ["vm"]
 vm = ["uat-vm"]
+mainnet = ["uat-core/mainnet"]  # Build for mainnet: cargo build --release -p uat-node --features mainnet
 
 [build-dependencies]
 tonic-build = "0.12"

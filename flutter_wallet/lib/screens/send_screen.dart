@@ -33,18 +33,20 @@ class _SendScreenState extends State<SendScreen> {
       if (wallet == null) throw Exception('No wallet found');
       debugPrint('💸 [Send] From: ${wallet['address']}');
 
-      // FIX C11-01: Backend expects UAT integer in `amount` field and does
-      // × VOID_PER_UAT server-side. Sending VOID here would cause 10^11×
-      // inflation. Parse user input as UAT double, round to integer UAT.
-      // FIX C12-01: Parse as integer only — sub-UAT amounts not supported.
-      final amountUat = int.tryParse(_amountController.text.trim());
-      if (amountUat == null || amountUat <= 0) {
-        throw Exception('Minimum send amount is 1 UAT (whole numbers only)');
+      // FIX C11-01: Backend expects UAT in `amount` field.
+      // Support decimal amounts (e.g., 0.5 UAT) — BlockConstructionService
+      // converts to VOID with full 10^11 precision.
+      final amountUatDouble = double.tryParse(_amountController.text.trim());
+      if (amountUatDouble == null || amountUatDouble <= 0) {
+        throw Exception('Please enter a valid amount greater than 0');
+      }
+      if (amountUatDouble < 0.00000000001) {
+        throw Exception('Minimum send amount is 0.00000000001 UAT (1 VOID)');
       }
 
       // FIX H-06: Prevent sending to own address
       final toAddress = _toController.text.trim();
-      debugPrint('💸 [Send] To: $toAddress, Amount: $amountUat UAT');
+      debugPrint('💸 [Send] To: $toAddress, Amount: $amountUatDouble UAT');
       if (toAddress == wallet['address']) {
         throw Exception('Cannot send to your own address');
       }
@@ -53,7 +55,7 @@ class _SendScreenState extends State<SendScreen> {
       // Compare in UAT to avoid unit mismatch
       try {
         final account = await apiService.getBalance(wallet['address']!);
-        if (amountUat > account.balanceUAT) {
+        if (amountUatDouble > account.balanceUAT) {
           throw Exception(
               'Insufficient balance: have ${BlockchainConstants.formatUat(account.balanceUAT)} UAT');
         }
@@ -78,7 +80,7 @@ class _SendScreenState extends State<SendScreen> {
         debugPrint('💸 [Send] Client-side signing with Dilithium5...');
         result = await blockService.sendTransaction(
           to: toAddress,
-          amountUat: amountUat,
+          amountUatDouble: amountUatDouble,
         );
       } else {
         // Address-only import — no keys, let node sign (functional testnet only)
@@ -87,7 +89,7 @@ class _SendScreenState extends State<SendScreen> {
         result = await apiService.sendTransaction(
           from: wallet['address']!,
           to: toAddress,
-          amount: amountUat,
+          amount: amountUatDouble.floor(),
         );
       }
 
@@ -155,20 +157,20 @@ class _SendScreenState extends State<SendScreen> {
                   controller: _amountController,
                   decoration: const InputDecoration(
                     labelText: 'Amount (UAT)',
-                    hintText: '1',
-                    helperText: 'Whole UAT only (no decimals)',
+                    hintText: '0.5',
+                    helperText: 'Supports decimals (e.g., 0.5 UAT)',
                     border: OutlineInputBorder(),
                     prefixIcon: Icon(Icons.attach_money),
                   ),
                   keyboardType:
-                      const TextInputType.numberWithOptions(decimal: false),
+                      const TextInputType.numberWithOptions(decimal: true),
                   validator: (value) {
                     if (value == null || value.trim().isEmpty) {
                       return 'Please enter amount';
                     }
-                    final amount = int.tryParse(value.trim());
+                    final amount = double.tryParse(value.trim());
                     if (amount == null || amount <= 0) {
-                      return 'Please enter a whole number greater than 0';
+                      return 'Please enter a number greater than 0';
                     }
                     return null;
                   },

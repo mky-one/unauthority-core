@@ -241,6 +241,8 @@ class ApiService {
     int? work,
     int? timestamp,
     int? fee,
+    String?
+        amountVoid, // Amount already in VOID (for sub-UAT precision), as string to avoid overflow
   }) async {
     await ensureReady();
     debugPrint(
@@ -251,6 +253,10 @@ class ApiService {
         'target': to,
         'amount': amount,
       };
+      // If amount_void is provided, backend uses it directly (skips ×VOID_PER_UAT)
+      if (amountVoid != null) {
+        body['amount_void'] = int.parse(amountVoid);
+      }
       // Attach Dilithium5 signature + public key if available (L2+/mainnet)
       if (signature != null && publicKey != null) {
         body['signature'] = signature;

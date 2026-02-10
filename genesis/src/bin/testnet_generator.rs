@@ -7,6 +7,10 @@
 ///
 /// This generator runs ONCE to produce testnet genesis. The output JSON
 /// is committed and shared with all testnet participants.
+///
+/// SECURITY: This binary is for TESTNET ONLY. Mainnet genesis must be
+/// generated offline with fresh random keys, NEVER from committed seeds.
+/// The seed phrases below are PUBLIC testnet keys — they have zero value.
 use bip39::{Language, Mnemonic};
 use std::fs;
 

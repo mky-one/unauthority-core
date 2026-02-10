@@ -75,7 +75,7 @@ class BlockConstructionService {
   /// Returns the transaction result from the node.
   Future<Map<String, dynamic>> sendTransaction({
     required String to,
-    required int amountUat,
+    required double amountUatDouble,
   }) async {
     // 1. Get wallet info
     final walletInfo = await _wallet.getCurrentWallet();
@@ -92,8 +92,11 @@ class BlockConstructionService {
     final account = await _api.getAccount(address);
     final previous = account.headBlock ?? '0';
 
-    // 3. Convert amount to VOID
-    final amountVoid = BigInt.from(amountUat) * BigInt.from(voidPerUat);
+    // 3. Convert amount to VOID (supports sub-UAT decimals)
+    // e.g. 0.5 UAT = 0.5 × 10^11 = 50,000,000,000 VOID
+    final amountVoid = BigInt.from((amountUatDouble * voidPerUat).round());
+    final amountUat =
+        amountUatDouble.floor(); // Integer UAT for API backward compat
 
     // 4. Current timestamp
     final timestamp = DateTime.now().millisecondsSinceEpoch ~/ 1000;
@@ -119,26 +122,11 @@ class BlockConstructionService {
     final work = powResult['work'] as int;
     final signingHash = powResult['hash'] as String;
 
-    // DEBUG: Print all fields for signing_hash diagnosis
-    debugPrint('🔍 [DEBUG] === CLIENT SIGNING HASH DIAGNOSIS ===');
-    debugPrint('🔍 [DEBUG] chain_id: $chainId');
-    debugPrint('🔍 [DEBUG] account: $address');
-    debugPrint('🔍 [DEBUG] previous: $previous');
-    debugPrint('🔍 [DEBUG] block_type: $blockTypeSend');
-    debugPrint('🔍 [DEBUG] amount(VOID): $amountVoid');
-    debugPrint('🔍 [DEBUG] link: $to');
-    debugPrint(
-        '🔍 [DEBUG] public_key len: ${publicKeyHex.length} first16=${publicKeyHex.substring(0, 16)}');
-    debugPrint('🔍 [DEBUG] work: $work');
-    debugPrint('🔍 [DEBUG] timestamp: $timestamp');
-    debugPrint('🔍 [DEBUG] fee: $baseFeeVoid');
-    debugPrint('🔍 [DEBUG] signing_hash: $signingHash');
-    debugPrint('🔍 [DEBUG] === END DIAGNOSIS ===');
-
     // 6. Sign the signing_hash with Dilithium5
     final signature = await _wallet.signTransaction(signingHash);
 
     // 7. Submit pre-signed block to node
+    // Pass amount_void so backend uses exact VOID amount (supports sub-UAT precision)
     return await _api.sendTransaction(
       from: address,
       to: to,
@@ -149,6 +137,7 @@ class BlockConstructionService {
       work: work,
       timestamp: timestamp,
       fee: baseFeeVoid,
+      amountVoid: amountVoid.toString(),
     );
   }
 

@@ -17,6 +17,7 @@ pqcrypto-traits = "0.3"
 pqcrypto-internals = { version = "0.2", features = ["seeded"] }
 blake2 = "0.10"
 sha2 = "0.10"
+sha3 = "0.10"
 bs58 = "0.5"
 hex = "0.4"
 digest = "0.10"

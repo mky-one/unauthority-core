@@ -1,5 +1,6 @@
 import 'dart:ffi';
 import 'dart:io';
+import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 import 'package:ffi/ffi.dart';
 
@@ -41,6 +42,8 @@ class DilithiumService {
       _uatBytesToHex;
   static late int Function(Pointer<Uint8>, int, Pointer<Uint8>, int)
       _uatHexToBytes;
+  static late int Function(Pointer<Uint8>, int, int, int, int,
+      Pointer<Uint64>, Pointer<Uint8>, int) _uatMinePow;
 
   // Cached sizes
   static int _pkBytes = 0;
@@ -137,6 +140,12 @@ class DilithiumService {
           Int32 Function(Pointer<Uint8>, Int32, Pointer<Uint8>, Int32),
           int Function(
               Pointer<Uint8>, int, Pointer<Uint8>, int)>('uat_hex_to_bytes');
+
+      _uatMinePow = _lib!.lookupFunction<
+          Int32 Function(Pointer<Uint8>, Int32, Int32, Uint32, Uint64,
+              Pointer<Uint64>, Pointer<Uint8>, Int32),
+          int Function(Pointer<Uint8>, int, int, int, int, Pointer<Uint64>,
+              Pointer<Uint8>, int)>('uat_mine_pow');
 
       // Query sizes
       _pkBytes = _uatPublicKeyBytes();
@@ -439,6 +448,57 @@ class DilithiumService {
     } finally {
       calloc.free(inPtr);
       calloc.free(outPtr);
+    }
+  }
+
+  /// Mine Proof-of-Work using native Keccak-256 (100-1000x faster than Dart).
+  ///
+  /// [buffer] is the pre-built signing_hash input with a placeholder 8-byte
+  /// work field at [workOffset]. This function iterates nonces in that field
+  /// until it finds one where Keccak-256(buffer) has [difficultyBits] leading
+  /// zero bits.
+  ///
+  /// Returns `{'work': nonce, 'hash': hexHash}` on success, null on failure.
+  static Map<String, dynamic>? minePow({
+    required Uint8List buffer,
+    required int workOffset,
+    required int difficultyBits,
+    int maxIterations = 50000000,
+  }) {
+    if (!_available) return null;
+
+    final bufPtr = calloc<Uint8>(buffer.length);
+    final noncePtr = calloc<Uint64>(1);
+    final hashPtr = calloc<Uint8>(64);
+
+    try {
+      // Copy buffer to native memory (Rust will mutate the work field)
+      bufPtr.asTypedList(buffer.length).setAll(0, buffer);
+
+      final result = _uatMinePow(
+        bufPtr,
+        buffer.length,
+        workOffset,
+        difficultyBits,
+        maxIterations,
+        noncePtr,
+        hashPtr,
+        64,
+      );
+
+      if (result < 0) {
+        debugPrint('⚠️ Native PoW failed with error: $result');
+        return null;
+      }
+
+      final nonce = noncePtr.value;
+      final hashHex = String.fromCharCodes(hashPtr.asTypedList(result));
+
+      return {'work': nonce, 'hash': hashHex};
+    } finally {
+      calloc.free(bufPtr);
+      calloc.free(noncePtr);
+      calloc.free(hashPtr);
     }
   }
 }

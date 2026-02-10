@@ -4,6 +4,8 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:crypto/crypto.dart';
 import 'package:bip39/bip39.dart' as bip39;
+import 'package:pointycastle/digests/blake2b.dart';
+import 'package:cryptography/cryptography.dart' as ed_crypto;
 import 'dilithium_service.dart';
 
 /// Wallet Service for UAT Blockchain
@@ -106,11 +108,11 @@ class WalletService {
         seed.fillRange(0, seed.length, 0);
       }
     } else {
-      // SHA256 fallback for testnet L1
+      // Ed25519 + BLAKE2b fallback (matches uat-crypto address format)
       final seed = bip39.mnemonicToSeed(mnemonic);
       try {
-        address = _deriveAddressSha256(seed);
-        cryptoMode = 'sha256';
+        address = await _deriveAddressEd25519(seed);
+        cryptoMode = 'ed25519';
 
         await _secureStorage.write(key: _seedKey, value: mnemonic);
 
@@ -120,7 +122,7 @@ class WalletService {
         await prefs.setString(_cryptoModeKey, cryptoMode);
 
         debugPrint(
-            '⚠️ SHA256 fallback wallet (Dilithium5 native lib not loaded)');
+            '⚠️ Ed25519 fallback wallet (Dilithium5 native lib not loaded)');
       } finally {
         // FIX C12-05: Zero BIP39 seed bytes in SHA256 fallback path too
         seed.fillRange(0, seed.length, 0);
@@ -177,8 +179,8 @@ class WalletService {
     } else {
       final seed = bip39.mnemonicToSeed(mnemonic);
       try {
-        address = _deriveAddressSha256(seed);
-        cryptoMode = 'sha256';
+        address = await _deriveAddressEd25519(seed);
+        cryptoMode = 'ed25519';
 
         await _secureStorage.write(key: _seedKey, value: mnemonic);
 
@@ -315,25 +317,109 @@ class WalletService {
   }
 
   // ══════════════════════════════════════════════════════════════════════
-  // ADDRESS DERIVATION — SHA256 fallback
+  // ADDRESS DERIVATION — Ed25519 + BLAKE2b-160 + Base58Check
+  // Matches uat-crypto::public_key_to_address() EXACTLY
   // ══════════════════════════════════════════════════════════════════════
 
-  String _deriveAddressSha256(List<int> seed) {
-    final privateKey = seed.sublist(0, 32);
-    final publicKeyHash = sha256.convert(privateKey);
-    final addressBytes = publicKeyHash.bytes.sublist(0, 20);
-    final hexAddress =
-        addressBytes.map((b) => b.toRadixString(16).padLeft(2, '0')).join('');
-    return 'UAT$hexAddress';
+  /// Base58 alphabet (Bitcoin-style)
+  static const _base58Chars =
+      '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
+
+  /// Base58 encode bytes (matches bs58 crate in Rust)
+  static String _base58Encode(Uint8List input) {
+    if (input.isEmpty) return '';
+
+    // Count leading zeros
+    int zeros = 0;
+    for (final b in input) {
+      if (b != 0) break;
+      zeros++;
+    }
+
+    // Convert to base58
+    final encoded = <int>[];
+    var num = BigInt.zero;
+    for (final b in input) {
+      num = (num << 8) | BigInt.from(b);
+    }
+    while (num > BigInt.zero) {
+      final rem = (num % BigInt.from(58)).toInt();
+      num = num ~/ BigInt.from(58);
+      encoded.insert(0, rem);
+    }
+
+    // Add leading '1' for each leading zero byte
+    final result = StringBuffer();
+    for (int i = 0; i < zeros; i++) {
+      result.write('1');
+    }
+    for (final idx in encoded) {
+      result.write(_base58Chars[idx]);
+    }
+    return result.toString();
+  }
+
+  /// Derive UAT address from Ed25519 public key (uat-crypto compatible).
+  ///
+  /// Algorithm (IDENTICAL to Rust uat-crypto::public_key_to_address):
+  /// 1. BLAKE2b-512(pubkey) → first 20 bytes
+  /// 2. Prepend VERSION_BYTE 0x4A
+  /// 3. Checksum = SHA256(SHA256(payload))[0:4]
+  /// 4. Base58(payload + checksum)
+  /// 5. Prepend "UAT"
+  static String _deriveAddressFromPublicKey(Uint8List publicKey) {
+    const versionByte = 0x4A; // 74 = "UAT" identifier
+
+    // 1. BLAKE2b-512 hash → first 20 bytes
+    final blake2b = Blake2bDigest(digestSize: 64);
+    final hash = Uint8List(64);
+    blake2b.update(publicKey, 0, publicKey.length);
+    blake2b.doFinal(hash, 0);
+    final pubkeyHash = hash.sublist(0, 20);
+
+    // 2. Payload: version + hash (21 bytes)
+    final payload = Uint8List(21);
+    payload[0] = versionByte;
+    payload.setRange(1, 21, pubkeyHash);
+
+    // 3. Checksum: SHA256(SHA256(payload)) → first 4 bytes
+    final hash1 = sha256.convert(payload);
+    final hash2 = sha256.convert(hash1.bytes);
+    final checksum = hash2.bytes.sublist(0, 4);
+
+    // 4. Combine: payload + checksum (25 bytes)
+    final addressBytes = Uint8List(25);
+    addressBytes.setRange(0, 21, payload);
+    addressBytes.setRange(21, 25, checksum);
+
+    // 5. Base58 encode + "UAT" prefix
+    return 'UAT${_base58Encode(addressBytes)}';
+  }
+
+  /// Derive Ed25519 keypair from BIP39 seed and return UAT address.
+  /// Uses seed[0:32] as Ed25519 private seed → public key → BLAKE2b address.
+  /// This matches uat-crypto's address format for Ed25519 keys.
+  Future<String> _deriveAddressEd25519(List<int> seed) async {
+    final privateSeed = Uint8List.fromList(seed.sublist(0, 32));
+    try {
+      // Ed25519 keypair from 32-byte seed using cryptography package
+      final algorithm = ed_crypto.Ed25519();
+      final keyPair = await algorithm.newKeyPairFromSeed(privateSeed.toList());
+      final pubKey = await keyPair.extractPublicKey();
+
+      return _deriveAddressFromPublicKey(Uint8List.fromList(pubKey.bytes));
+    } finally {
+      privateSeed.fillRange(0, privateSeed.length, 0);
+    }
   }
 
   /// Derive address from mnemonic without persisting any keys.
   /// Used by AccountManagementScreen to create new sub-accounts
   /// without overwriting the primary wallet's SecureStorage keys.
-  String deriveAddressFromMnemonic(String mnemonic) {
+  Future<String> deriveAddressFromMnemonic(String mnemonic) async {
     final seed = bip39.mnemonicToSeed(mnemonic);
     try {
-      return _deriveAddressSha256(seed);
+      return await _deriveAddressEd25519(seed);
     } finally {
       seed.fillRange(0, seed.length, 0);
     }

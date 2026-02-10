@@ -280,9 +280,9 @@ class _AccountManagementScreenState extends State<AccountManagementScreen> {
             seed.fillRange(0, seed.length, 0);
           }
         } else {
-          // SHA256 fallback — same derivation as WalletService
+          // Ed25519 + BLAKE2b fallback — same derivation as WalletService
           final walletService = WalletService();
-          address = walletService.deriveAddressFromMnemonic(mnemonic);
+          address = await walletService.deriveAddressFromMnemonic(mnemonic);
         }
 
         // Create account — seed stored in SecureStorage, not SharedPrefs

@@ -244,8 +244,8 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
 
     // Per-address endpoint rate limiters
     let send_limiter = Arc::new(EndpointRateLimiter::new(10, 60)); // /send: 10 tx per 60 seconds
-    let burn_limiter = Arc::new(EndpointRateLimiter::new(1, 300)); // /burn: 1 per 5 minutes
-    let faucet_limiter = Arc::new(EndpointRateLimiter::new(1, 3600)); // /faucet: 1 per hour
+    let burn_limiter = Arc::new(EndpointRateLimiter::new(1, 60)); // /burn: 1 per 60 seconds (testnet)
+    let faucet_limiter = Arc::new(EndpointRateLimiter::new(1, 120)); // /faucet: 1 per 2 minutes (testnet)
 
     // aBFT Consensus Engine — tracks consensus parameters and safety invariants
     let validator_count = {
@@ -518,11 +518,15 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
                     println!("✅ Client signature verified successfully");
                 } else {
                     // Node signs with its own key (menggunakan signing_hash sebagai pesan)
-                    if sender_addr != my_addr {
+                    // On functional testnet, allow node to sign on behalf of any address (no client-side crypto needed)
+                    if sender_addr != my_addr && testnet_config::get_testnet_config().should_validate_signatures() {
                         return warp::reply::json(&serde_json::json!({
                             "status": "error",
                             "msg": "External address requires client-side signature. Please provide signature field."
                         }));
+                    }
+                    if sender_addr != my_addr {
+                        println!("🧪 TESTNET functional: node signing on behalf of external address {}", sender_addr);
                     }
                     blk.signature = hex::encode(uat_crypto::sign_message(blk.signing_hash().as_bytes(), &key).expect("BUG: signing failed — key corrupted"));
                 }
@@ -568,12 +572,12 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
             // Determine recipient address for rate limiting
             let recipient = req.recipient_address.as_ref().unwrap_or(&my_addr);
 
-            // RATE LIMIT: 1 burn per 5 minutes per recipient address
+            // RATE LIMIT: 1 burn per 60 seconds per recipient address
             if let Err(wait_secs) = rate_lim.check_and_record(recipient) {
                 return warp::reply::json(&serde_json::json!({
                     "status": "error",
                     "code": 429,
-                    "msg": format!("Rate limit exceeded: max 1 burn per 5 minutes. Try again in {} seconds.", wait_secs)
+                    "msg": format!("Rate limit exceeded: max 1 burn per 60 seconds. Try again in {} seconds.", wait_secs)
                 }));
             }
 
@@ -644,7 +648,11 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
 
                     // DEADLOCK FIX #4b: Never hold AW and L simultaneously.
                     // Step 1: Anti-whale check (separate lock scope)
-                    let mint_result = {
+                    // On functional testnet, skip anti-whale to allow testing with mock burn amounts
+                    let mint_result = if testnet_config::get_testnet_config().level == testnet_config::TestnetLevel::Functional {
+                        println!("🧪 TESTNET functional: bypassing anti-whale for {} UAT burn", uat_to_mint_display);
+                        Ok(())
+                    } else {
                         let mut aw_guard = safe_lock(&aw);
                         if let Err(e) = aw_guard.register_burn(recipient.clone(), uat_to_mint_display as u64) {
                             Err(format!("Anti-whale burn limit: {}", e))
@@ -675,7 +683,12 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
                                 previous: state.head.clone(),
                                 block_type: BlockType::Mint,
                                 amount: uat_to_mint,
-                                link: format!("{}:{}:{}", sym, clean_txid, prc as u128),
+                                // Prefix with TESTNET: on functional level to bypass anti-whale in ledger
+                                link: if testnet_config::get_testnet_config().level == testnet_config::TestnetLevel::Functional {
+                                    format!("TESTNET:{}:{}:{}", sym, clean_txid, prc as u128)
+                                } else {
+                                    format!("{}:{}:{}", sym, clean_txid, prc as u128)
+                                },
                                 signature: "".to_string(),
                                 public_key: hex::encode(&node_pk), // Node's public key
                                 work: 0,
@@ -1062,8 +1075,8 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
                 }));
             }
 
-            // PERSISTENT cooldown: 1 faucet claim per hour per address (survives restart)
-            const FAUCET_COOLDOWN_SECS: u64 = 3600; // 1 hour
+            // PERSISTENT cooldown: 1 faucet claim per 2 minutes per address (survives restart)
+            const FAUCET_COOLDOWN_SECS: u64 = 120; // 2 minutes (testnet-friendly)
             if let Err(remaining) = db.check_faucet_cooldown(address, FAUCET_COOLDOWN_SECS) {
                 return warp::reply::json(&serde_json::json!({
                     "status": "error",
@@ -1077,7 +1090,7 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
                 return warp::reply::json(&serde_json::json!({
                     "status": "error",
                     "code": 429,
-                    "msg": format!("Rate limit exceeded: max 1 faucet claim per hour. Try again in {} seconds.", wait_secs)
+                    "msg": format!("Rate limit exceeded: max 1 faucet claim per 2 minutes. Try again in {} seconds.", wait_secs)
                 }));
             }
 
@@ -1895,10 +1908,10 @@ async fn verify_eth_burn_tx(txid: &str) -> Option<f64> {
         let clean_txid = txid.trim().trim_start_matches("0x").to_lowercase();
         if clean_txid.len() == 64 && clean_txid.chars().all(|c| c.is_ascii_hexdigit()) {
             println!(
-                "🧪 TESTNET (Functional): Accepting ETH TXID {} with mock amount 0.1 ETH",
+                "🧪 TESTNET (Functional): Accepting ETH TXID {} with mock amount 0.01 ETH",
                 &clean_txid[..16]
             );
-            return Some(0.1); // Mock 0.1 ETH burn
+            return Some(0.01); // Mock 0.01 ETH burn (~30 UAT, within anti-whale limit)
         }
         return None;
     }
@@ -1940,10 +1953,10 @@ async fn verify_btc_burn_tx(txid: &str) -> Option<f64> {
         let clean_txid = txid.trim().to_lowercase();
         if clean_txid.len() == 64 && clean_txid.chars().all(|c| c.is_ascii_hexdigit()) {
             println!(
-                "🧪 TESTNET (Functional): Accepting BTC TXID {} with mock amount 0.01 BTC",
+                "🧪 TESTNET (Functional): Accepting BTC TXID {} with mock amount 0.001 BTC",
                 &clean_txid[..16]
             );
-            return Some(0.01); // Mock 0.01 BTC burn
+            return Some(0.001); // Mock 0.001 BTC burn (~69 UAT, within anti-whale limit)
         }
         return None;
     }

@@ -24,7 +24,16 @@ class MyApp extends StatelessWidget {
       providers: [
         Provider<WalletService>(create: (_) => WalletService()),
         Provider<ApiService>(
-          create: (_) => ApiService(),
+          create: (_) {
+            // Use --dart-define=UAT_LOCAL=true for localhost testing
+            const isLocal =
+                String.fromEnvironment('UAT_LOCAL', defaultValue: 'false');
+            if (isLocal == 'true') {
+              debugPrint('🔧 [Main] Using LOCAL mode (localhost:3030)');
+              return ApiService(environment: NetworkEnvironment.local);
+            }
+            return ApiService();
+          },
           dispose: (_, api) => api.dispose(),
         ),
         ChangeNotifierProvider<NetworkStatusService>(

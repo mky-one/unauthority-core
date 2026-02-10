@@ -3,13 +3,17 @@ import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
 import '../services/api_service.dart';
 import '../services/network_status_service.dart';
+import '../services/node_process_service.dart';
 import '../models/account.dart';
 import '../widgets/network_status_bar.dart';
 import '../widgets/voting_power_card.dart';
 import '../widgets/uptime_card.dart';
 
 class DashboardScreen extends StatefulWidget {
-  const DashboardScreen({super.key});
+  /// When embedded in NodeControlScreen's IndexedStack, hide appbar.
+  final bool embedded;
+
+  const DashboardScreen({super.key, this.embedded = false});
 
   @override
   State<DashboardScreen> createState() => _DashboardScreenState();
@@ -67,56 +71,59 @@ class _DashboardScreenState extends State<DashboardScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Text('UAT Validator'),
-            const SizedBox(width: 8),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-              decoration: BoxDecoration(
-                color: Colors.orange.withValues(alpha: 0.15),
-                border: Border.all(color: Colors.orange, width: 1),
-                borderRadius: BorderRadius.circular(12),
+      appBar: widget.embedded
+          ? null
+          : AppBar(
+              title: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Text('UAT Validator'),
+                  const SizedBox(width: 8),
+                  Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                    decoration: BoxDecoration(
+                      color: Colors.orange.withValues(alpha: 0.15),
+                      border: Border.all(color: Colors.orange, width: 1),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: const Text(
+                      'TESTNET',
+                      style: TextStyle(
+                        color: Colors.orange,
+                        fontSize: 10,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                ],
               ),
-              child: const Text(
-                'TESTNET',
-                style: TextStyle(
-                  color: Colors.orange,
-                  fontSize: 10,
-                  fontWeight: FontWeight.bold,
+              centerTitle: true,
+              actions: [
+                // Online/Offline dot indicator
+                Consumer<NetworkStatusService>(
+                  builder: (context, status, _) => Tooltip(
+                    message: status.statusText,
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 4),
+                      child: Icon(
+                        Icons.circle,
+                        size: 12,
+                        color: status.isConnected
+                            ? Colors.green
+                            : status.isConnecting
+                                ? Colors.orange
+                                : Colors.red,
+                      ),
+                    ),
+                  ),
                 ),
-              ),
-            ),
-          ],
-        ),
-        centerTitle: true,
-        actions: [
-          // Online/Offline dot indicator
-          Consumer<NetworkStatusService>(
-            builder: (context, status, _) => Tooltip(
-              message: status.statusText,
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 4),
-                child: Icon(
-                  Icons.circle,
-                  size: 12,
-                  color: status.isConnected
-                      ? Colors.green
-                      : status.isConnecting
-                          ? Colors.orange
-                          : Colors.red,
+                IconButton(
+                  icon: const Icon(Icons.refresh),
+                  onPressed: _loadDashboard,
                 ),
-              ),
+              ],
             ),
-          ),
-          IconButton(
-            icon: const Icon(Icons.refresh),
-            onPressed: _loadDashboard,
-          ),
-        ],
-      ),
       body: Column(
         children: [
           const NetworkStatusBar(),
@@ -297,33 +304,84 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                     ),
                                     const Divider(),
                                     ..._validators.map(
-                                      (v) => ListTile(
-                                        leading: Icon(
-                                          Icons.check_circle,
-                                          color: v.isActive
-                                              ? Colors.green
-                                              : Colors.grey,
-                                        ),
-                                        title: Text(
-                                          v.address,
-                                          style: const TextStyle(
-                                            fontSize: 12,
-                                            fontFamily: 'monospace',
+                                      (v) {
+                                        final myAddr = context
+                                            .read<NodeProcessService>()
+                                            .nodeAddress;
+                                        final isYou = myAddr != null &&
+                                            v.address == myAddr;
+                                        return ListTile(
+                                          leading: Icon(
+                                            isYou
+                                                ? Icons.star
+                                                : Icons.check_circle,
+                                            color: isYou
+                                                ? Colors.amberAccent
+                                                : v.isActive
+                                                    ? Colors.green
+                                                    : Colors.grey,
                                           ),
-                                        ),
-                                        subtitle: Text(
-                                          'Stake: ${v.stakeUAT.toStringAsFixed(6)} UAT',
-                                        ),
-                                        trailing: Text(
-                                          v.isActive ? 'ACTIVE' : 'INACTIVE',
-                                          style: TextStyle(
-                                            color: v.isActive
-                                                ? Colors.green
-                                                : Colors.grey,
-                                            fontWeight: FontWeight.bold,
+                                          title: Row(
+                                            children: [
+                                              Expanded(
+                                                child: Text(
+                                                  v.address,
+                                                  style: TextStyle(
+                                                    fontSize: 12,
+                                                    fontFamily: 'monospace',
+                                                    color: isYou
+                                                        ? Colors.amberAccent
+                                                        : null,
+                                                  ),
+                                                  overflow:
+                                                      TextOverflow.ellipsis,
+                                                ),
+                                              ),
+                                              if (isYou)
+                                                Container(
+                                                  margin: const EdgeInsets.only(
+                                                      left: 6),
+                                                  padding: const EdgeInsets
+                                                      .symmetric(
+                                                      horizontal: 6,
+                                                      vertical: 2),
+                                                  decoration: BoxDecoration(
+                                                    color: Colors.amberAccent
+                                                        .withOpacity(0.2),
+                                                    borderRadius:
+                                                        BorderRadius.circular(
+                                                            8),
+                                                    border: Border.all(
+                                                        color:
+                                                            Colors.amberAccent,
+                                                        width: 1),
+                                                  ),
+                                                  child: const Text(
+                                                    'YOU',
+                                                    style: TextStyle(
+                                                        color:
+                                                            Colors.amberAccent,
+                                                        fontSize: 9,
+                                                        fontWeight:
+                                                            FontWeight.bold),
+                                                  ),
+                                                ),
+                                            ],
                                           ),
-                                        ),
-                                      ),
+                                          subtitle: Text(
+                                            'Stake: ${v.stakeUAT.toStringAsFixed(0)} UAT',
+                                          ),
+                                          trailing: Text(
+                                            v.isActive ? 'ACTIVE' : 'INACTIVE',
+                                            style: TextStyle(
+                                              color: v.isActive
+                                                  ? Colors.green
+                                                  : Colors.grey,
+                                              fontWeight: FontWeight.bold,
+                                            ),
+                                          ),
+                                        );
+                                      },
                                     ),
                                   ],
                                 ),
@@ -430,16 +488,43 @@ class _DashboardScreenState extends State<DashboardScreen> {
                             // Voting Power Card (if validators available)
                             if (_validators.isNotEmpty) ...[
                               const SizedBox(height: 16),
-                              VotingPowerCard(
-                                validatorInfo: _validators.first,
-                                allValidators: _validators,
-                              ),
+                              Builder(builder: (ctx) {
+                                final myAddr =
+                                    ctx.read<NodeProcessService>().nodeAddress;
+                                final myValidator = myAddr != null
+                                    ? _validators
+                                        .cast<ValidatorInfo?>()
+                                        .firstWhere(
+                                          (v) => v!.address == myAddr,
+                                          orElse: () => null,
+                                        )
+                                    : null;
+                                return VotingPowerCard(
+                                  validatorInfo:
+                                      myValidator ?? _validators.first,
+                                  allValidators: _validators,
+                                );
+                              }),
                             ],
 
                             // Uptime Card (if validators available)
                             if (_validators.isNotEmpty) ...[
                               const SizedBox(height: 16),
-                              UptimeCard(validatorInfo: _validators.first),
+                              Builder(builder: (ctx) {
+                                final myAddr =
+                                    ctx.read<NodeProcessService>().nodeAddress;
+                                final myValidator = myAddr != null
+                                    ? _validators
+                                        .cast<ValidatorInfo?>()
+                                        .firstWhere(
+                                          (v) => v!.address == myAddr,
+                                          orElse: () => null,
+                                        )
+                                    : null;
+                                return UptimeCard(
+                                    validatorInfo:
+                                        myValidator ?? _validators.first);
+                              }),
                             ],
                           ],
                         ),

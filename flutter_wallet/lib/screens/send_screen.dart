@@ -22,6 +22,7 @@ class _SendScreenState extends State<SendScreen> {
     if (!_formKey.currentState!.validate()) return;
 
     setState(() => _isLoading = true);
+    debugPrint('💸 [Send] Starting send transaction...');
 
     try {
       final walletService = context.read<WalletService>();
@@ -29,6 +30,7 @@ class _SendScreenState extends State<SendScreen> {
       final wallet = await walletService.getCurrentWallet();
 
       if (wallet == null) throw Exception('No wallet found');
+      debugPrint('💸 [Send] From: ${wallet['address']}');
 
       // FIX C11-01: Backend expects UAT integer in `amount` field and does
       // × VOID_PER_UAT server-side. Sending VOID here would cause 10^11×
@@ -41,6 +43,7 @@ class _SendScreenState extends State<SendScreen> {
 
       // FIX H-06: Prevent sending to own address
       final toAddress = _toController.text.trim();
+      debugPrint('💸 [Send] To: $toAddress, Amount: $amountUat UAT');
       if (toAddress == wallet['address']) {
         throw Exception('Cannot send to your own address');
       }
@@ -67,6 +70,8 @@ class _SendScreenState extends State<SendScreen> {
       //       client timestamp/fee in SendRequest for L2+ signing.
       String? signature;
       String? publicKey;
+      debugPrint(
+          '💸 [Send] Sending without client signature (functional testnet)...');
 
       final result = await apiService.sendTransaction(
         from: wallet['address']!,
@@ -77,18 +82,22 @@ class _SendScreenState extends State<SendScreen> {
       );
 
       if (!mounted) return;
+      debugPrint(
+          '💸 [Send] SUCCESS: ${result['tx_hash'] ?? result['txid'] ?? 'N/A'}');
 
       Navigator.pop(context);
 
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Transaction sent! TXID: ${result['txid'] ?? 'N/A'}'),
+          content: Text(
+              'Transaction sent! TXID: ${result['tx_hash'] ?? result['txid'] ?? 'N/A'}'),
           backgroundColor: Colors.green,
           duration: const Duration(seconds: 5),
         ),
       );
     } catch (e) {
       if (!mounted) return;
+      debugPrint('💸 [Send] ERROR: $e');
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(e.toString()), backgroundColor: Colors.red),
       );

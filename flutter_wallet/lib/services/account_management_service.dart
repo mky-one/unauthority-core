@@ -17,9 +17,7 @@ class AccountManagementService {
   final _uuid = const Uuid();
 
   /// Encrypted storage backed by platform Keychain (iOS/macOS) or Keystore (Android)
-  /// FIX: mOptions was missing entirely (caused -34018 on macOS).
-  /// useDataProtectionKeyChain: false avoids the Data Protection Keychain
-  /// which requires a valid Team-ID-prefixed keychain-access-groups entitlement.
+  /// useDataProtectionKeyChain: false = legacy keychain (works with ad-hoc signing)
   static const _secureStorage = FlutterSecureStorage(
     aOptions: AndroidOptions(encryptedSharedPreferences: true),
     iOptions: IOSOptions(accessibility: KeychainAccessibility.first_unlock),
@@ -73,8 +71,7 @@ class AccountManagementService {
 
     try {
       final Map<String, dynamic> data = json.decode(accountsJson);
-      final rawAccounts =
-          (data['accounts'] as List?)
+      final rawAccounts = (data['accounts'] as List?)
               ?.map((a) => AccountProfile.fromJson(a))
               .toList() ??
           [];

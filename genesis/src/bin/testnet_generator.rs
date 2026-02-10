@@ -1,9 +1,9 @@
-/// UNAUTHORITY Testnet Genesis Generator v7.0
+/// UNAUTHORITY Testnet Genesis Generator v8.0
 /// Uses CRYSTALS-Dilithium5 (Post-Quantum) via uat_crypto
 ///
-/// IMPORTANT: In Dilithium5, keypairs are NOT derived from BIP39 seeds
-/// (unlike Ed25519/secp256k1). Seed phrases serve as encryption passphrases
-/// to protect the private key at rest. Recovery requires the encrypted key file.
+/// DETERMINISTIC: Keypairs ARE derived from BIP39 seeds via
+/// domain-separated SHA-256 → ChaCha20 DRBG → pqcrypto_dilithium::keypair()
+/// Same seed phrase → same keypair → same address → importable in wallet!
 ///
 /// This generator runs ONCE to produce testnet genesis. The output JSON
 /// is committed and shared with all testnet participants.
@@ -24,11 +24,11 @@ const TESTNET_SEEDS: [&str; 12] = [
     "riot draft insect furnace soldier faith recipe fabric auction public select diamond arrow topple naive wheel opinion kit thumb noble guitar addict monkey pipe",
     "piano auction estate truth identify time fine zero tackle make smoke voice candy hundred law pipe salute post rural dove icon donor pioneer satisfy",
     "brief just wise upset lounge ocean record project smile east artefact supreme anger blind turkey trigger yard peanut tiger lift casino baby disagree danger",
-    "ladder verify sample oxygen manual bronze urban mutual enlist clarify rapid cinnamon debris moment peace isolate journey vacant proof drift taxi blanket taxi oxygen",
-    "journey vacant proof drift taxi blanket taxi oxygen ladder verify sample bronze urban mutual enlist clarify rapid cinnamon debris moment peace isolate oxygen manual",
-    "blanket taxi oxygen ladder verify sample bronze urban mutual enlist clarify rapid cinnamon debris moment peace isolate journey vacant proof drift taxi oxygen manual",
-    "oxygen manual bronze urban mutual enlist clarify rapid cinnamon debris moment peace isolate journey vacant proof drift taxi blanket taxi oxygen ladder verify sample",
-    "proof drift taxi blanket taxi oxygen manual bronze urban mutual enlist clarify rapid cinnamon debris moment peace isolate journey vacant ladder verify sample oxygen",
+    "unlock rack arena aspect coast repair feed margin village slogan brief improve exile expose swift since inquiry high target clerk tongue weird three prevent",
+    "wreck empty among right address raven warfare purpose divide shrug weird castle hockey walnut girl punch volcano transfer convince elite organ fiber you job",
+    "boil envelope car carry rude penalty rapid modify smoke layer jealous awake fix purpose laptop advice convince fold comfort fall cute limit length lava",
+    "ostrich orphan net leaf hint all pear nature agent road sniff tell thank slam plastic mercy gate expand muffin alarm front grape audit top",
+    "panic solar raven ice thought define shuffle coffee nasty expect track artefact replace grid green goose arrive try cloud return elder bronze enrich feel",
     "setup sock trouble pencil perfect mushroom horn beef list sick weasel symptom undo picnic horn vehicle scrub begin electric shoulder equal chalk broken render",
     "nasty addict moral runway cage unique they bachelor middle park indicate chest era rigid once range awkward jar tomato elite engine filter service badge",
     "scare detail bag pass mixture differ step oven possible flight endorse tortoise glass gate edit emotion general drift frost coconut glimpse ask attitude poverty",
@@ -37,7 +37,7 @@ const TESTNET_SEEDS: [&str; 12] = [
 
 fn main() {
     println!("\n╔════════════════════════════════════════════════════════════╗");
-    println!("║   UNAUTHORITY TESTNET GENESIS GENERATOR v7.0              ║");
+    println!("║   UNAUTHORITY TESTNET GENESIS GENERATOR v8.0              ║");
     println!("║   Dilithium5 Post-Quantum Crypto                          ║");
     println!("║   PUBLIC - Safe to Share and Commit                       ║");
     println!("╚════════════════════════════════════════════════════════════╝");
@@ -61,11 +61,12 @@ fn main() {
         let wallet_num = i + 1;
 
         // Validate seed phrase is valid BIP39
-        let _mnemonic = Mnemonic::parse_in_normalized(Language::English, seed_phrase)
+        let mnemonic = Mnemonic::parse_in_normalized(Language::English, seed_phrase)
             .expect("Invalid BIP39 seed phrase");
 
-        // Generate Dilithium5 keypair (random, not derived from seed)
-        let kp = uat_crypto::generate_keypair();
+        // DETERMINISTIC: Derive Dilithium5 keypair from BIP39 seed
+        let bip39_seed = mnemonic.to_seed("");
+        let kp = uat_crypto::generate_keypair_from_seed(&bip39_seed);
         let pk_hex = hex::encode(&kp.public_key);
         let sk_hex = hex::encode(&kp.secret_key);
         let address = uat_crypto::public_key_to_address(&kp.public_key);
@@ -104,10 +105,12 @@ fn main() {
         let seed_index = DEV_TREASURY_COUNT + i;
         let seed_phrase = TESTNET_SEEDS[seed_index];
 
-        let _mnemonic = Mnemonic::parse_in_normalized(Language::English, seed_phrase)
+        let mnemonic_parsed = Mnemonic::parse_in_normalized(Language::English, seed_phrase)
             .expect("Invalid BIP39 seed phrase");
 
-        let kp = uat_crypto::generate_keypair();
+        // DETERMINISTIC: Derive Dilithium5 keypair from BIP39 seed
+        let bip39_seed = mnemonic_parsed.to_seed("");
+        let kp = uat_crypto::generate_keypair_from_seed(&bip39_seed);
         let pk_hex = hex::encode(&kp.public_key);
         let sk_hex = hex::encode(&kp.secret_key);
         let address = uat_crypto::public_key_to_address(&kp.public_key);
@@ -152,14 +155,14 @@ fn main() {
     // Build JSON manually
     let wallets_json = wallet_entries.join(",\n");
     let json = format!(
-        "{{\n  \"network\": \"testnet\",\n  \"description\": \"Public testnet genesis - 12 wallets (8 dev + 4 validators)\",\n  \"warning\": \"FOR TESTNET ONLY - NEVER use these seeds on mainnet!\",\n  \"crypto\": \"CRYSTALS-Dilithium5 (Post-Quantum)\",\n  \"note\": \"BIP39 seeds encrypt private keys at rest. Keys are NOT derived from seeds.\",\n  \"allocation\": {{\n    \"total_supply_uat\": \"{}\",\n    \"dev_allocation_uat\": \"{}\",\n    \"dev_allocation_percent\": \"7%\"\n  }},\n  \"wallets\": [\n{}\n  ]\n}}",
+        "{{\n  \"network\": \"testnet\",\n  \"description\": \"Public testnet genesis - 12 wallets (8 dev + 4 validators)\",\n  \"warning\": \"FOR TESTNET ONLY - NEVER use these seeds on mainnet!\",\n  \"crypto\": \"CRYSTALS-Dilithium5 (Post-Quantum)\",\n  \"note\": \"BIP39 seeds deterministically derive Dilithium5 keypairs. Same seed = same address.\",\n  \"allocation\": {{\n    \"total_supply_uat\": \"{}\",\n    \"dev_allocation_uat\": \"{}\",\n    \"dev_allocation_percent\": \"7%\"\n  }},\n  \"wallets\": [\n{}\n  ]\n}}",
         TOTAL_SUPPLY_UAT,
         dev_allocation_void / VOID_PER_UAT,
         wallets_json
     );
 
-    let output_path = "../testnet-genesis/testnet_wallets.json";
-    if let Err(e) = fs::create_dir_all("../testnet-genesis") {
+    let output_path = "testnet-genesis/testnet_wallets.json";
+    if let Err(e) = fs::create_dir_all("testnet-genesis") {
         eprintln!("Warning: Could not create directory: {}", e);
     }
     fs::write(output_path, &json).expect("Failed to write testnet_wallets.json");

@@ -243,7 +243,7 @@ class _WalletSetupScreenState extends State<WalletSetupScreen> {
             controller: _mnemonicController,
             maxLines: 3,
             decoration: const InputDecoration(
-              labelText: 'Seed Phrase (24 words)',
+              labelText: 'Seed Phrase (12 or 24 words)',
               hintText: 'word1 word2 word3 ...',
               border: OutlineInputBorder(),
             ),
@@ -252,8 +252,8 @@ class _WalletSetupScreenState extends State<WalletSetupScreen> {
                 return 'Please enter your seed phrase';
               }
               final words = value.trim().split(RegExp(r'\s+'));
-              if (words.length != 24) {
-                return 'Seed phrase must be exactly 24 words';
+              if (words.length != 12 && words.length != 24) {
+                return 'Seed phrase must be 12 or 24 words';
               }
               return null;
             },

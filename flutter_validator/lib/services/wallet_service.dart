@@ -4,6 +4,8 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:crypto/crypto.dart';
 import 'package:bip39/bip39.dart' as bip39;
+import 'package:pointycastle/digests/blake2b.dart';
+import 'package:cryptography/cryptography.dart' as ed_crypto;
 import 'dilithium_service.dart';
 
 /// Wallet Service for UAT Validator Dashboard
@@ -110,11 +112,11 @@ class WalletService {
         seed.fillRange(0, seed.length, 0);
       }
     } else {
-      // SHA256 fallback for testnet L1
+      // Ed25519 + BLAKE2b fallback (matches uat-crypto address format)
       final seed = bip39.mnemonicToSeed(mnemonic);
       try {
-        address = _deriveAddressSha256(seed);
-        cryptoMode = 'sha256';
+        address = await _deriveAddressEd25519(seed);
+        cryptoMode = 'ed25519';
 
         await _secureStorage.write(key: _seedKey, value: mnemonic);
 
@@ -124,7 +126,7 @@ class WalletService {
         await prefs.setString(_cryptoModeKey, cryptoMode);
 
         debugPrint(
-          '⚠️ SHA256 fallback wallet (Dilithium5 native lib not loaded)',
+          '⚠️ Ed25519 fallback wallet (Dilithium5 native lib not loaded)',
         );
       } finally {
         seed.fillRange(0, seed.length, 0);
@@ -188,8 +190,8 @@ class WalletService {
     } else {
       final seed = bip39.mnemonicToSeed(mnemonic);
       try {
-        address = _deriveAddressSha256(seed);
-        cryptoMode = 'sha256';
+        address = await _deriveAddressEd25519(seed);
+        cryptoMode = 'ed25519';
 
         await _secureStorage.write(key: _seedKey, value: mnemonic);
 
@@ -327,20 +329,76 @@ class WalletService {
   }
 
   // ══════════════════════════════════════════════════════════════════════
-  // ADDRESS DERIVATION — SHA256 fallback
+  // ADDRESS DERIVATION — Ed25519 + BLAKE2b-160 + Base58Check
+  // Matches uat-crypto::public_key_to_address() EXACTLY
   // ══════════════════════════════════════════════════════════════════════
 
-  String _deriveAddressSha256(List<int> seed) {
-    final privateKey = seed.sublist(0, 32);
+  /// Base58 alphabet (Bitcoin-style)
+  static const _base58Chars =
+      '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
+
+  /// Base58 encode bytes (matches bs58 crate in Rust)
+  static String _base58Encode(Uint8List input) {
+    if (input.isEmpty) return '';
+    int zeros = 0;
+    for (final b in input) {
+      if (b != 0) break;
+      zeros++;
+    }
+    final encoded = <int>[];
+    var num = BigInt.zero;
+    for (final b in input) {
+      num = (num << 8) | BigInt.from(b);
+    }
+    while (num > BigInt.zero) {
+      final rem = (num % BigInt.from(58)).toInt();
+      num = num ~/ BigInt.from(58);
+      encoded.insert(0, rem);
+    }
+    final result = StringBuffer();
+    for (int i = 0; i < zeros; i++) {
+      result.write('1');
+    }
+    for (final idx in encoded) {
+      result.write(_base58Chars[idx]);
+    }
+    return result.toString();
+  }
+
+  /// Derive UAT address from Ed25519 public key (uat-crypto compatible).
+  static String _deriveAddressFromPublicKey(Uint8List publicKey) {
+    const versionByte = 0x4A;
+    final blake2b = Blake2bDigest(digestSize: 64);
+    final hash = Uint8List(64);
+    blake2b.update(publicKey, 0, publicKey.length);
+    blake2b.doFinal(hash, 0);
+    final pubkeyHash = hash.sublist(0, 20);
+
+    final payload = Uint8List(21);
+    payload[0] = versionByte;
+    payload.setRange(1, 21, pubkeyHash);
+
+    final hash1 = sha256.convert(payload);
+    final hash2 = sha256.convert(hash1.bytes);
+    final checksum = hash2.bytes.sublist(0, 4);
+
+    final addressBytes = Uint8List(25);
+    addressBytes.setRange(0, 21, payload);
+    addressBytes.setRange(21, 25, checksum);
+
+    return 'UAT${_base58Encode(addressBytes)}';
+  }
+
+  /// Derive Ed25519 keypair from BIP39 seed and return UAT address.
+  Future<String> _deriveAddressEd25519(List<int> seed) async {
+    final privateSeed = Uint8List.fromList(seed.sublist(0, 32));
     try {
-      final publicKeyHash = sha256.convert(privateKey);
-      final addressBytes = publicKeyHash.bytes.sublist(0, 20);
-      final hexAddress = addressBytes
-          .map((b) => b.toRadixString(16).padLeft(2, '0'))
-          .join('');
-      return 'UAT$hexAddress';
+      final algorithm = ed_crypto.Ed25519();
+      final keyPair = await algorithm.newKeyPairFromSeed(privateSeed.toList());
+      final pubKey = await keyPair.extractPublicKey();
+      return _deriveAddressFromPublicKey(Uint8List.fromList(pubKey.bytes));
     } finally {
-      privateKey.fillRange(0, privateKey.length, 0);
+      privateSeed.fillRange(0, privateSeed.length, 0);
     }
   }
 }

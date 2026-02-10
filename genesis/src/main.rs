@@ -144,17 +144,16 @@ fn generate_keys(label: &str) -> (String, String, String) {
 
     let seed_phrase = mnemonic.to_string();
 
-    // NOTE: Dilithium5 keypairs are NOT derived from BIP39 seeds (unlike Ed25519/secp256k1).
-    // The BIP39 seed phrase is used to ENCRYPT the private key at rest.
-    // Key recovery requires: seed phrase + encrypted key file.
-    // This is the correct architecture for post-quantum crypto where
-    // deterministic key derivation from seeds is not standardized.
-    let keypair = uat_crypto::generate_keypair();
+    // DETERMINISTIC: Derive Dilithium5 keypair from BIP39 seed
+    // Uses domain-separated SHA-256 → ChaCha20 DRBG → pqcrypto_dilithium::keypair()
+    // This ensures: same seed phrase → same keypair → same address (importable!)
+    let bip39_seed = mnemonic.to_seed("");
+    let keypair = uat_crypto::generate_keypair_from_seed(&bip39_seed);
 
     let private_key = hex::encode(&keypair.secret_key);
     let public_key = hex::encode(&keypair.public_key);
 
-    println!("✓ Generated Dilithium5 keypair for: {}", label);
+    println!("✓ Generated deterministic Dilithium5 keypair for: {}", label);
 
     (seed_phrase, private_key, public_key)
 }

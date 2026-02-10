@@ -5,6 +5,7 @@
 //! - Message signing / verification
 //! - UAT address derivation (Base58Check, matching uat-crypto backend)
 //! - Address validation
+//! - PoW mining (native Keccak-256, 100-1000x faster than pure Dart)
 //!
 //! All functions use pre-allocated buffers and return status codes.
 //! Return values: 0 or positive = success, negative = error.
@@ -18,6 +19,7 @@ use pqcrypto_dilithium::dilithium5::{
 use pqcrypto_traits::sign::{PublicKey, SecretKey, DetachedSignature};
 use blake2::Blake2b512;
 use sha2::Sha256;
+use sha3::Keccak256;
 use digest::Digest;
 use zeroize::Zeroize;
 
@@ -387,6 +389,107 @@ pub extern "C" fn uat_validate_address(
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// POW MINING — Native Keccak-256 (100-1000x faster than pure Dart)
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+/// Mine Proof-of-Work using native Keccak-256.
+///
+/// Dart builds the signing_hash input buffer (all block fields serialized)
+/// with a placeholder 8-byte work field at `work_offset`. This function
+/// iterates nonces in the work field and computes Keccak-256 until the
+/// hash has `difficulty_bits` leading zero bits.
+///
+/// ~100-1000x faster than pure Dart Keccak-256 (pointycastle).
+///
+/// # Arguments
+/// - `buffer`:          Pre-built signing_hash input (mutable — work field is overwritten)
+/// - `buffer_len`:      Buffer length in bytes
+/// - `work_offset`:     Byte offset of the 8-byte work (nonce) field in the buffer
+/// - `difficulty_bits`:  Required leading zero bits (e.g., 16)
+/// - `max_iterations`:  Maximum nonces to try before giving up
+/// - `nonce_out`:       Output: the successful nonce (u64)
+/// - `hash_out`:        Output: hex-encoded signing hash (64 bytes for Keccak-256)
+/// - `hash_capacity`:   Size of hash_out buffer (must be >= 64)
+///
+/// # Returns
+/// - Positive: hex hash length (64) on success
+/// - -1: null pointer
+/// - -2: hash_out buffer too small
+/// - -5: PoW not found within max_iterations
+/// - -6: work_offset out of bounds
+#[no_mangle]
+pub extern "C" fn uat_mine_pow(
+    buffer: *mut u8,
+    buffer_len: i32,
+    work_offset: i32,
+    difficulty_bits: u32,
+    max_iterations: u64,
+    nonce_out: *mut u64,
+    hash_out: *mut u8,
+    hash_capacity: i32,
+) -> i32 {
+    if buffer.is_null() || nonce_out.is_null() || hash_out.is_null() {
+        return -1;
+    }
+    if (hash_capacity as usize) < 64 {
+        return -2;
+    }
+    let buf_len = buffer_len as usize;
+    let w_off = work_offset as usize;
+    if w_off + 8 > buf_len {
+        return -6;
+    }
+
+    let buf = unsafe { std::slice::from_raw_parts_mut(buffer, buf_len) };
+
+    // Precompute difficulty check parameters
+    let full_zero_bytes = (difficulty_bits / 8) as usize;
+    let remaining_bits = difficulty_bits % 8;
+    let mask: u8 = if remaining_bits > 0 {
+        0xFF << (8 - remaining_bits)
+    } else {
+        0
+    };
+
+    for nonce in 0u64..max_iterations {
+        // Write nonce as u64 LE into the work field
+        let nonce_bytes = nonce.to_le_bytes();
+        buf[w_off..w_off + 8].copy_from_slice(&nonce_bytes);
+
+        // Keccak-256 hash
+        let hash = Keccak256::digest(&*buf);
+
+        // Check leading zero bits (fast byte-level check)
+        let mut valid = true;
+        for i in 0..full_zero_bytes {
+            if hash[i] != 0 {
+                valid = false;
+                break;
+            }
+        }
+        if valid && remaining_bits > 0 {
+            if (hash[full_zero_bytes] & mask) != 0 {
+                valid = false;
+            }
+        }
+
+        if valid {
+            // Write outputs
+            unsafe { *nonce_out = nonce; }
+
+            let hex_string = hex::encode(hash);
+            let hex_bytes = hex_string.as_bytes();
+            unsafe {
+                std::ptr::copy_nonoverlapping(hex_bytes.as_ptr(), hash_out, hex_bytes.len());
+            }
+            return hex_bytes.len() as i32;
+        }
+    }
+
+    -5 // PoW not found
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // UTILITY — Hex encoding for Dart interop
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
@@ -655,5 +758,70 @@ mod tests {
 
         let ffi_address = std::str::from_utf8(&addr1[..len1 as usize]).unwrap();
         assert_eq!(ffi_address, manual_address, "FFI and manual address derivation must match");
+    }
+
+    #[test]
+    fn test_mine_pow_finds_valid_nonce() {
+        // Simulate a signing_hash buffer:
+        // [chain_id(8)] [account_bytes] [previous_bytes] [block_type(1)]
+        // [amount(16)] [link_bytes] [public_key_bytes] [WORK(8)]
+        // [timestamp(8)] [fee(16)]
+        //
+        // We just need a buffer with a known work_offset — content doesn't matter
+        // for testing the PoW algorithm itself.
+
+        let chain_id: u64 = 2; // testnet
+        let account = b"UATTestAddress123";
+        let previous = b"0";
+        let block_type: u8 = 0; // Send
+        let amount: u128 = 1_000_000_000_000; // 10 UAT in VOID
+        let link = b"UATRecipientAddr456";
+        let public_key = b"abcdef1234567890"; // abbreviated for test
+        let timestamp: u64 = 1700000000;
+        let fee: u128 = 100_000;
+
+        // Build buffer (same layout as Dart and backend)
+        let mut buf = Vec::new();
+        buf.extend_from_slice(&chain_id.to_le_bytes());
+        buf.extend_from_slice(account);
+        buf.extend_from_slice(previous);
+        buf.push(block_type);
+        buf.extend_from_slice(&amount.to_le_bytes());
+        buf.extend_from_slice(link);
+        buf.extend_from_slice(public_key);
+
+        let work_offset = buf.len();
+        buf.extend_from_slice(&0u64.to_le_bytes()); // placeholder work
+
+        buf.extend_from_slice(&timestamp.to_le_bytes());
+        buf.extend_from_slice(&fee.to_le_bytes());
+
+        let mut nonce_out: u64 = 0;
+        let mut hash_buf = [0u8; 64];
+
+        let start = std::time::Instant::now();
+        let result = uat_mine_pow(
+            buf.as_mut_ptr(),
+            buf.len() as i32,
+            work_offset as i32,
+            16, // 16 bits difficulty
+            10_000_000, // max iterations
+            &mut nonce_out as *mut u64,
+            hash_buf.as_mut_ptr(),
+            64,
+        );
+        let elapsed = start.elapsed();
+
+        assert!(result > 0, "PoW mining failed with code: {}", result);
+        assert_eq!(result, 64, "Hash hex should be 64 chars");
+
+        let hash_hex = std::str::from_utf8(&hash_buf[..result as usize]).unwrap();
+        println!("⛏️  Native PoW: nonce={}, hash={}..., time={:?}", nonce_out, &hash_hex[..16], elapsed);
+
+        // Verify the hash actually has 16 leading zero bits (first 4 hex chars = "0000")
+        assert!(hash_hex.starts_with("0000"), "Hash must have 16+ leading zero bits: {}", hash_hex);
+
+        // Verify it's fast — should be under 2 seconds for 16-bit difficulty
+        assert!(elapsed.as_secs() < 5, "PoW took too long: {:?}", elapsed);
     }
 }

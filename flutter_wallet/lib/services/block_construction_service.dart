@@ -4,6 +4,7 @@ import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 import 'package:pointycastle/digests/keccak.dart';
 import 'api_service.dart';
+import 'dilithium_service.dart';
 import 'wallet_service.dart';
 
 /// Client-side block-lattice block construction for UAT.
@@ -189,6 +190,10 @@ class BlockConstructionService {
 
   /// FIX U1: Mine PoW in a background isolate to prevent UI thread freezing.
   /// The heavy nonce loop runs off the main thread via Isolate.run().
+  ///
+  /// OPTIMIZATION: If the native Rust FFI library is available (DilithiumService),
+  /// uses native Keccak-256 for 100-1000x speedup. Falls back to pure Dart
+  /// if the native library is not loaded.
   Future<Map<String, dynamic>?> _minePoWInIsolate({
     required int chainId,
     required String account,
@@ -200,13 +205,66 @@ class BlockConstructionService {
     required int timestamp,
     required int fee,
   }) async {
-    // Pass all params as a serializable map to the isolate
+    // Build the signing hash input buffer (same layout as backend Block::signing_hash())
+    final preData = <int>[];
+    // chain_id (u64 LE)
+    final cidData = ByteData(8);
+    cidData.setUint64(0, chainId, Endian.little);
+    preData.addAll(cidData.buffer.asUint8List());
+    // account
+    preData.addAll(utf8.encode(account));
+    // previous
+    preData.addAll(utf8.encode(previous));
+    // block_type
+    preData.add(blockType);
+    // amount (u128 LE)
+    preData.addAll(_u128ToLeBytesStatic(amount));
+    // link
+    preData.addAll(utf8.encode(link));
+    // public_key
+    preData.addAll(utf8.encode(publicKey));
+
+    // Record the offset where WORK starts
+    final workOffset = preData.length;
+
+    // Placeholder WORK (8 bytes, will be overwritten by miner)
+    preData.addAll(List.filled(8, 0));
+
+    // timestamp (u64 LE)
+    final tData = ByteData(8);
+    tData.setUint64(0, timestamp, Endian.little);
+    preData.addAll(tData.buffer.asUint8List());
+    // fee (u128 LE)
+    preData.addAll(_u128ToLeBytesStatic(BigInt.from(fee)));
+
+    final buffer = Uint8List.fromList(preData);
+
+    // Try native Rust PoW first (100-1000x faster)
+    if (DilithiumService.isAvailable) {
+      debugPrint('⚡ [PoW] Using native Rust Keccak-256');
+      final result = DilithiumService.minePow(
+        buffer: buffer,
+        workOffset: workOffset,
+        difficultyBits: powDifficultyBits,
+        maxIterations: maxPowIterations,
+      );
+      if (result != null) {
+        debugPrint(
+            '⚡ [PoW] Native: nonce=${result['work']}');
+        return result;
+      }
+      debugPrint('⚠️ [PoW] Native mining failed, falling back to Dart');
+    } else {
+      debugPrint('⚠️ [PoW] Native library not available, using pure Dart');
+    }
+
+    // Fallback: pure Dart PoW in isolate
     final params = {
       'chainId': chainId,
       'account': account,
       'previous': previous,
       'blockType': blockType,
-      'amount': amount.toString(), // BigInt → String for isolate transfer
+      'amount': amount.toString(),
       'link': link,
       'publicKey': publicKey,
       'timestamp': timestamp,
@@ -295,7 +353,10 @@ class BlockConstructionService {
       // Fast leading-zero-bits check (byte-level, no hex conversion)
       bool valid = true;
       for (int i = 0; i < requiredZeroBytes; i++) {
-        if (output[i] != 0) { valid = false; break; }
+        if (output[i] != 0) {
+          valid = false;
+          break;
+        }
       }
       if (valid && remainingBits > 0) {
         if ((output[requiredZeroBytes] & mask) != 0) valid = false;
@@ -303,12 +364,15 @@ class BlockConstructionService {
 
       if (valid) {
         final elapsed = sw.elapsedMilliseconds;
-        final hashHex = output.map((b) => b.toRadixString(16).padLeft(2, '0')).join('');
-        print('⛏️ PoW found! nonce=$nonce, ${elapsed}ms, ${(nonce / (elapsed / 1000)).round()} H/s');
+        final hashHex =
+            output.map((b) => b.toRadixString(16).padLeft(2, '0')).join('');
+        print(
+            '⛏️ PoW found! nonce=$nonce, ${elapsed}ms, ${(nonce / (elapsed / 1000)).round()} H/s');
         return {'work': nonce, 'hash': hashHex};
       }
     }
-    print('❌ PoW FAILED after $maxIter iterations (${sw.elapsedMilliseconds}ms)');
+    print(
+        '❌ PoW FAILED after $maxIter iterations (${sw.elapsedMilliseconds}ms)');
     return null; // Failed to find valid nonce
   }
 

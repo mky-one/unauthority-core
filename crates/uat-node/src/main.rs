@@ -1852,6 +1852,11 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
         },
         api_port
     );
+    // Flush stdout — when spawned from Flutter, stdout is a pipe (fully buffered)
+    {
+        use std::io::Write;
+        let _ = std::io::stdout().flush();
+    }
     warp::serve(routes_with_limit)
         .run((bind_addr, api_port))
         .await;
@@ -2472,13 +2477,26 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
+    // When launched from Flutter (--json-log), stdout is a pipe (fully buffered).
+    // Force line-buffering so JSON events and println! output reach Flutter immediately.
+    if json_log {
+        use std::io::Write;
+        // Flush any pending output, then we rely on explicit flushes in json_event!
+        let _ = std::io::stdout().flush();
+    }
+
     // Structured JSON log helper for Flutter process monitoring
+    // NOTE: Must flush stdout — when spawned from Flutter, stdout is a pipe
+    // (fully buffered), not a TTY (line-buffered). Without flush, JSON events
+    // never reach the Flutter process monitor.
     macro_rules! json_event {
         ($event:expr, $($key:expr => $val:expr),*) => {
             if json_log {
                 let mut _j = serde_json::json!({"event": $event});
                 $(_j[$key] = serde_json::json!($val);)*
                 println!("{}", _j);
+                use std::io::Write;
+                let _ = std::io::stdout().flush();
             }
         };
     }
@@ -3169,6 +3187,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     tokio::spawn(async move {
         println!("🔧 Starting gRPC server on port {}...", grpc_port);
+        // Flush stdout for pipe-buffered environments (Flutter process monitor)
+        {
+            use std::io::Write;
+            let _ = std::io::stdout().flush();
+        }
         if let Err(e) =
             grpc_server::start_grpc_server(grpc_ledger, grpc_addr, grpc_tx, grpc_port).await
         {
@@ -3313,6 +3336,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("   exit                  - Exit application");
     println!("------------------------------------------------------------------");
 
+    // Flush banner output before emitting the critical node_ready event
+    {
+        use std::io::Write;
+        let _ = std::io::stdout().flush();
+    }
+
     // Emit structured event for Flutter process monitor
     json_event!("node_ready",
         "address" => &my_address,
@@ -3321,6 +3350,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     );
 
     let mut stdin = BufReader::new(io::stdin()).lines();
+    let mut stdin_closed = false; // Track EOF — prevents tokio::select! panic in headless mode
 
     // Clone database, metrics, and slashing_manager for event loop
     let db_clone = Arc::clone(&database);
@@ -3331,7 +3361,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     loop {
         tokio::select! {
-            Ok(Some(line)) = stdin.next_line() => {
+            result = stdin.next_line(), if !stdin_closed => {
+                match result {
+                    Ok(Some(line)) => {
                 let p: Vec<&str> = line.split_whitespace().collect();
                 if p.is_empty() { continue; }
                 match p[0] {
@@ -3562,6 +3594,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     },
                     "exit" => break,
                     _ => {}
+                }
+                    },
+                    Ok(None) => {
+                        // stdin EOF — running in headless/Flutter mode
+                        stdin_closed = true;
+                        if json_log {
+                            // In Flutter mode, node keeps running without stdin
+                            eprintln!("📡 Running in headless mode (stdin closed)");
+                        }
+                    },
+                    Err(e) => {
+                        eprintln!("⚠️ stdin error: {}", e);
+                        stdin_closed = true;
+                    },
                 }
             },
             Some(event) = rx_in.recv() => {

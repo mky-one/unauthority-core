@@ -32,10 +32,26 @@ void main() async {
   runApp(MyApp(walletService: walletService));
 }
 
-class MyApp extends StatelessWidget {
+class MyApp extends StatefulWidget {
   final WalletService walletService;
 
   const MyApp({super.key, required this.walletService});
+
+  /// Call this to force the app to re-check wallet state (e.g., after unregister)
+  static void resetToSetup(BuildContext context) {
+    context.findAncestorStateOfType<_MyAppState>()?.resetRouter();
+  }
+
+  @override
+  State<MyApp> createState() => _MyAppState();
+}
+
+class _MyAppState extends State<MyApp> {
+  Key _routerKey = UniqueKey();
+
+  void resetRouter() {
+    setState(() => _routerKey = UniqueKey());
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -45,7 +61,7 @@ class MyApp extends StatelessWidget {
           create: (_) => ApiService(),
           dispose: (_, api) => api.dispose(),
         ),
-        Provider<WalletService>.value(value: walletService),
+        Provider<WalletService>.value(value: widget.walletService),
         ChangeNotifierProvider<NetworkStatusService>(
           create: (context) => NetworkStatusService(context.read<ApiService>()),
         ),
@@ -72,10 +88,8 @@ class MyApp extends StatelessWidget {
             elevation: 4,
           ),
         ),
-        home: const _AppRouter(),
+        home: _AppRouter(key: _routerKey),
         routes: {
-          '/setup': (_) => SetupWizardScreen(onSetupComplete: () {}),
-          '/control': (_) => const NodeControlScreen(),
           '/dashboard': (_) => const DashboardScreen(),
         },
       ),
@@ -87,7 +101,7 @@ class MyApp extends StatelessWidget {
 /// - No wallet → SetupWizard (import wallet + validate balance >= 1000 UAT)
 /// - Wallet registered → NodeControlScreen (dashboard + settings)
 class _AppRouter extends StatefulWidget {
-  const _AppRouter();
+  const _AppRouter({super.key});
 
   @override
   State<_AppRouter> createState() => _AppRouterState();

@@ -1235,7 +1235,7 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
             let network_label = if uat_core::is_mainnet_build() { "mainnet" } else { "testnet" };
             warp::reply::json(&serde_json::json!({
                 "name": "Unauthority (UAT) Blockchain API",
-                "version": "1.0.0",
+                "version": env!("CARGO_PKG_VERSION"),
                 "network": network_label,
                 "description": "Decentralized blockchain with Proof-of-Burn consensus",
                 "endpoints": {

@@ -3035,6 +3035,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 block_count
             );
         }
+
+        // Periodic ID re-announce (every 60s) so late-joining peers discover us
+        let mut interval = tokio::time::interval(Duration::from_secs(60));
+        loop {
+            interval.tick().await;
+            let (s, b) = {
+                let l = safe_lock(&ledger_boot);
+                (
+                    l.distribution.remaining_supply,
+                    l.distribution.total_burned_usd,
+                )
+            };
+            let _ = tx_boot
+                .send(format!("ID:{}:{}:{}", my_addr_boot, s, b))
+                .await;
+        }
     });
 
     println!("\n==================================================================");

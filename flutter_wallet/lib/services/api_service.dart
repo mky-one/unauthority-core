@@ -210,6 +210,7 @@ class ApiService {
   // Request Faucet
   Future<Map<String, dynamic>> requestFaucet(String address) async {
     await ensureReady();
+    debugPrint('🚠 [API] requestFaucet -> $baseUrl/faucet  address=$address');
     try {
       final response = await _client
           .post(
@@ -223,9 +224,11 @@ class ApiService {
 
       // Critical: Check BOTH status code AND response body status
       if (response.statusCode != 200 || data['status'] == 'error') {
+        debugPrint('🚠 [API] faucet FAILED: ${data['msg']}');
         throw Exception(data['msg'] ?? 'Faucet request failed');
       }
 
+      debugPrint('🚠 [API] faucet SUCCESS: $data');
       return data;
     } catch (e) {
       debugPrint('❌ requestFaucet error: $e');
@@ -246,6 +249,8 @@ class ApiService {
     int? work,
   }) async {
     await ensureReady();
+    debugPrint(
+        '💸 [API] sendTransaction -> $baseUrl/send  from=$from to=$to amount=$amount sig=${signature != null}');
     try {
       final body = <String, dynamic>{
         'from': from,
@@ -277,9 +282,11 @@ class ApiService {
 
       // Critical: Check BOTH status code AND response body status
       if (response.statusCode != 200 || data['status'] == 'error') {
+        debugPrint('💸 [API] send FAILED: ${data['msg']}');
         throw Exception(data['msg'] ?? 'Transaction failed');
       }
 
+      debugPrint('💸 [API] send SUCCESS: ${data['tx_hash'] ?? data['txid']}');
       return data;
     } catch (e) {
       debugPrint('❌ sendTransaction error: $e');
@@ -294,6 +301,8 @@ class ApiService {
     String? recipientAddress,
   }) async {
     await ensureReady();
+    debugPrint(
+        '🔥 [API] submitBurn -> $baseUrl/burn  coin=$coinType txid=$txid');
     try {
       final body = <String, dynamic>{
         'coin_type': coinType,
@@ -315,9 +324,11 @@ class ApiService {
 
       // Critical: Check BOTH status code AND response body status
       if (response.statusCode != 200 || data['status'] == 'error') {
+        debugPrint('🔥 [API] burn FAILED: ${data['msg']}');
         throw Exception(data['msg'] ?? 'Burn submission failed');
       }
 
+      debugPrint('🔥 [API] burn SUCCESS: $data');
       return data;
     } catch (e) {
       debugPrint('❌ submitBurn error: $e');

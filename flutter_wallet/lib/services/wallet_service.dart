@@ -37,13 +37,8 @@ class WalletService {
   static const String _secretKeyKey = 'wallet_secret_key';
 
   /// Encrypted storage backed by platform Keychain (iOS/macOS) or Keystore (Android)
-  /// FIX: useDataProtectionKeyChain must be FALSE for ad-hoc signed builds
-  /// (no Apple Developer Team). The Data Protection Keychain requires either
-  /// App Sandbox or a valid keychain-access-groups entitlement prefixed with a
-  /// Team ID. With ad-hoc signing (CODE_SIGN_IDENTITY = "-") and no team,
-  /// $(AppIdentifierPrefix) expands to "" → malformed entitlement → -34018.
-  /// Setting useDataProtectionKeyChain: false uses the legacy file-based
-  /// Keychain which works without team-prefixed entitlements.
+  /// useDataProtectionKeyChain: false = legacy file-based keychain (works with ad-hoc signing)
+  /// macOS will ask for login password ONCE → click "Always Allow" → never asks again.
   static const _secureStorage = FlutterSecureStorage(
     aOptions: AndroidOptions(encryptedSharedPreferences: true),
     iOptions: IOSOptions(accessibility: KeychainAccessibility.first_unlock),

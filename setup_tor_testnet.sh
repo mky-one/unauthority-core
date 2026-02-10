@@ -289,7 +289,7 @@ for i in 0 1 2 3; do
     UAT_ONION_ADDRESS="$MY_ONION" \
     UAT_P2P_PORT="$P2P_PORT" \
     UAT_BOOTSTRAP_NODES="$BOOTSTRAP" \
-    UAT_TESTNET_LEVEL="consensus" \
+    UAT_TESTNET_LEVEL="functional" \
     nohup "$NODE_BIN" "$REST_PORT" \
         > "node_data/validator-$N/logs/node.log" 2>&1 &
 

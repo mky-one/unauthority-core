@@ -23,6 +23,7 @@ class _BurnScreenState extends State<BurnScreen> {
     if (!_formKey.currentState!.validate()) return;
 
     setState(() => _isLoading = true);
+    debugPrint('🔥 [Burn] Starting burn submission...');
 
     try {
       final walletService = context.read<WalletService>();
@@ -30,6 +31,9 @@ class _BurnScreenState extends State<BurnScreen> {
       final wallet = await walletService.getCurrentWallet();
 
       if (wallet == null) throw Exception('No wallet found');
+      debugPrint(
+          '🔥 [Burn] Coin: $_selectedCoin, TXID: ${_txidController.text.trim()}');
+      debugPrint('🔥 [Burn] Recipient: ${wallet['address']}');
 
       final result = await apiService.submitBurn(
         coinType: _selectedCoin,
@@ -38,9 +42,9 @@ class _BurnScreenState extends State<BurnScreen> {
       );
 
       if (!mounted) return;
+      debugPrint('🔥 [Burn] SUCCESS: ${result['msg']}');
 
       Navigator.pop(context);
-
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
@@ -51,6 +55,7 @@ class _BurnScreenState extends State<BurnScreen> {
       );
     } catch (e) {
       if (!mounted) return;
+      debugPrint('🔥 [Burn] ERROR: $e');
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(e.toString()), backgroundColor: Colors.red),
       );

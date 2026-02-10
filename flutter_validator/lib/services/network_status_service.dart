@@ -13,17 +13,19 @@ enum ConnectionStatus {
 class NetworkStatusService extends ChangeNotifier {
   final ApiService _apiService;
 
-  ConnectionStatus _status = ConnectionStatus.disconnected;
+  ConnectionStatus _status = ConnectionStatus.connecting;
   String _networkType = 'Unknown';
   int _blockHeight = 0;
   int _peerCount = 0;
   String _nodeVersion = '0.0.0';
   DateTime? _lastSyncTime;
   String? _errorMessage;
+  bool _hasConnectedOnce = false;
 
   Timer? _statusCheckTimer;
 
   NetworkStatusService(this._apiService) {
+    debugPrint('🔌 [NetworkStatus] Service created, starting status checks...');
     _startStatusChecking();
   }
 
@@ -58,23 +60,31 @@ class NetworkStatusService extends ChangeNotifier {
     // Check immediately
     _checkNetworkStatus();
 
-    // Then check every 10 seconds
+    // Then check every 15 seconds
     _statusCheckTimer = Timer.periodic(
-      const Duration(seconds: 10),
+      const Duration(seconds: 15),
       (_) => _checkNetworkStatus(),
     );
   }
 
   Future<void> _checkNetworkStatus() async {
+    final previousStatus = _status;
     try {
-      _status = ConnectionStatus.connecting;
-      notifyListeners();
+      // Only show 'connecting' on initial connection, not periodic re-checks
+      if (!_hasConnectedOnce) {
+        _status = ConnectionStatus.connecting;
+        notifyListeners();
+      }
+
+      debugPrint('🔌 [NetworkStatus] Checking health...');
 
       // Check health endpoint
       final health = await _apiService.getHealth();
+      debugPrint('🔌 [NetworkStatus] Health response: ${health['status']}');
 
       if (health['status'] == 'healthy' || health['status'] == 'degraded') {
         _status = ConnectionStatus.connected;
+        _hasConnectedOnce = true;
         _errorMessage = null;
         _lastSyncTime = DateTime.now();
 
@@ -90,20 +100,27 @@ class NetworkStatusService extends ChangeNotifier {
           _nodeVersion = nodeInfo['version'] ?? '0.0.0';
           _peerCount = nodeInfo['peer_count'] ?? 0;
           _blockHeight = nodeInfo['block_height'] ?? _blockHeight;
+          debugPrint('🔌 [NetworkStatus] Connected: v$_nodeVersion, '
+              'height=$_blockHeight, peers=$_peerCount, net=$_networkType');
         } catch (e) {
-          // Node info failed but health passed, still connected
-          debugPrint('⚠️ Node info failed: $e');
+          debugPrint('⚠️ [NetworkStatus] Node info failed: $e');
         }
       } else {
         _status = ConnectionStatus.error;
         _errorMessage = 'Node unhealthy';
+        debugPrint('🔌 [NetworkStatus] Node unhealthy: ${health['status']}');
       }
 
-      notifyListeners();
+      if (_status != previousStatus || !_hasConnectedOnce) {
+        notifyListeners();
+      }
     } catch (e) {
       _status = ConnectionStatus.disconnected;
-      _errorMessage = 'Connection failed: ${e.toString()}';
-      notifyListeners();
+      _errorMessage = 'Connection failed';
+      debugPrint('🔌 [NetworkStatus] Connection failed: $e');
+      if (_status != previousStatus) {
+        notifyListeners();
+      }
     }
   }
 
@@ -119,6 +136,7 @@ class NetworkStatusService extends ChangeNotifier {
 
   /// Manually trigger a status check
   Future<void> refresh() async {
+    _hasConnectedOnce = false;
     await _checkNetworkStatus();
   }
 

@@ -35,6 +35,7 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _loadWallet() async {
+    debugPrint('🏠 [Home] Loading wallet...');
     try {
       final walletService = context.read<WalletService>();
       final wallet = await walletService.getCurrentWallet();
@@ -48,6 +49,7 @@ class _HomeScreenState extends State<HomeScreen> {
         _address = wallet['address'];
         _isLoading = false;
       });
+      debugPrint('🏠 [Home] Wallet loaded: $_address');
 
       await _refreshBalance();
     } catch (e) {
@@ -60,6 +62,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Future<void> _refreshBalance() async {
     if (_address == null) return;
+    debugPrint('🏠 [Home] Refreshing balance for $_address...');
 
     try {
       final apiService = context.read<ApiService>();
@@ -69,6 +72,7 @@ class _HomeScreenState extends State<HomeScreen> {
         _account = account;
         _error = null;
       });
+      debugPrint('🏠 [Home] Balance: ${account.balanceUAT} UAT');
     } catch (e) {
       setState(() => _error = e.toString());
     }
@@ -76,6 +80,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Future<void> _requestFaucet() async {
     if (_address == null) return;
+    debugPrint('🚠 [Home] Requesting faucet for $_address...');
 
     setState(() => _isLoading = true);
 
@@ -91,10 +96,12 @@ class _HomeScreenState extends State<HomeScreen> {
           backgroundColor: Colors.green,
         ),
       );
+      debugPrint('🚠 [Home] Faucet SUCCESS: ${result['msg']}');
 
       await _refreshBalance();
     } catch (e) {
       if (!mounted) return;
+      debugPrint('🚠 [Home] Faucet ERROR: $e');
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(e.toString()), backgroundColor: Colors.red),
       );
@@ -320,7 +327,7 @@ class _HomeScreenState extends State<HomeScreen> {
                             ElevatedButton.icon(
                               onPressed: _requestFaucet,
                               icon: const Icon(Icons.water_drop),
-                              label: const Text('REQUEST FAUCET (100 UAT)'),
+                              label: const Text('REQUEST FAUCET (5,000 UAT)'),
                               style: ElevatedButton.styleFrom(
                                 backgroundColor: Colors.purple,
                                 padding: const EdgeInsets.all(16),

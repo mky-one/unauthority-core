@@ -4,6 +4,7 @@ import 'screens/dashboard_screen.dart';
 import 'services/api_service.dart';
 import 'services/dilithium_service.dart';
 import 'services/wallet_service.dart';
+import 'services/network_status_service.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -37,6 +38,9 @@ class MyApp extends StatelessWidget {
           dispose: (_, api) => api.dispose(),
         ),
         Provider<WalletService>.value(value: walletService),
+        ChangeNotifierProvider<NetworkStatusService>(
+          create: (context) => NetworkStatusService(context.read<ApiService>()),
+        ),
       ],
       child: MaterialApp(
         title: 'UAT Validator Node',

@@ -6,6 +6,7 @@ import 'services/account_management_service.dart';
 import 'services/wallet_service.dart';
 import 'services/api_service.dart';
 import 'services/dilithium_service.dart';
+import 'services/network_status_service.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -25,6 +26,9 @@ class MyApp extends StatelessWidget {
         Provider<ApiService>(
           create: (_) => ApiService(),
           dispose: (_, api) => api.dispose(),
+        ),
+        ChangeNotifierProvider<NetworkStatusService>(
+          create: (context) => NetworkStatusService(context.read<ApiService>()),
         ),
       ],
       child: MaterialApp(

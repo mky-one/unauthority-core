@@ -311,7 +311,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           const SizedBox(height: 16),
           const Center(
             child: Text(
-              'UAT Wallet v1.0.0\nBuilt with Flutter',
+              'UAT Wallet v1.0.5-testnet\nBuilt with Flutter',
               textAlign: TextAlign.center,
               style: TextStyle(fontSize: 12, color: Colors.grey),
             ),

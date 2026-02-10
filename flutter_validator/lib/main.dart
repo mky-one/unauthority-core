@@ -4,12 +4,16 @@ import 'screens/dashboard_screen.dart';
 import 'screens/setup_wizard_screen.dart';
 import 'screens/node_control_screen.dart';
 import 'services/api_service.dart';
+import 'services/network_config.dart';
 import 'services/dilithium_service.dart';
 import 'services/wallet_service.dart';
 import 'services/network_status_service.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // Load bootstrap node addresses from assets/network_config.json
+  await NetworkConfig.load();
 
   // Initialize Dilithium5 post-quantum crypto (loads native lib if available)
   await DilithiumService.initialize();
@@ -36,15 +40,7 @@ class MyApp extends StatelessWidget {
     return MultiProvider(
       providers: [
         Provider<ApiService>(
-          create: (_) {
-            const isLocal =
-                String.fromEnvironment('UAT_LOCAL', defaultValue: 'false');
-            if (isLocal == 'true') {
-              debugPrint('🔧 [Main] Using LOCAL mode (localhost:3030)');
-              return ApiService(environment: NetworkEnvironment.local);
-            }
-            return ApiService();
-          },
+          create: (_) => ApiService(),
           dispose: (_, api) => api.dispose(),
         ),
         Provider<WalletService>.value(value: walletService),

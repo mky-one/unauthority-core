@@ -45,7 +45,7 @@ export function getApiUrl(): string {
   // Use network-based configuration
   const savedNetwork = localStorage.getItem('uat_network') || 'testnet';
   const networks = {
-    testnet: 'http://u3kilz7tv3ffhl2rafrzarbmiiojfcjz3eg527td5ocmibq44gj4htqd.onion',
+    testnet: 'http://ll22j45prmu3oymratallztx74peen4gsxudzbgf5qvybezobitvywyd.onion',
     mainnet: 'http://uat-mainnet-pending.onion'
   };
   return networks[savedNetwork as keyof typeof networks] || networks.testnet;

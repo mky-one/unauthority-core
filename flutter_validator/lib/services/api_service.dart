@@ -7,20 +7,14 @@ import 'package:socks5_proxy/socks_client.dart';
 import '../models/account.dart';
 import '../constants/blockchain.dart';
 import 'tor_service.dart';
+import 'network_config.dart';
 
-enum NetworkEnvironment { testnet, mainnet, local }
+enum NetworkEnvironment { testnet, mainnet }
 
 class ApiService {
-  // Testnet bootstrap .onion — same nodes as flutter_wallet.
-  // Updated by setup_tor_testnet.sh when you run your own testnet.
-  static const String testnetOnionUrl =
-      'http://u3kilz7tv3ffhl2rafrzarbmiiojfcjz3eg527td5ocmibq44gj4htqd.onion';
-
-  // Mainnet .onion — populated before mainnet launch
-  static const String mainnetOnionUrl = 'http://uat-mainnet-pending.onion';
-
-  // Local development (ONLY for localhost debugging, NOT for real testnet)
-  static const String defaultLocalUrl = 'http://localhost:3030';
+  // Bootstrap node addresses are loaded from assets/network_config.json
+  // via NetworkConfig. NEVER hardcode .onion addresses here.
+  // Use: scripts/update_network_config.sh to update addresses.
 
   /// Default timeout for API calls
   static const Duration _defaultTimeout = Duration(seconds: 30);
@@ -56,11 +50,9 @@ class ApiService {
   String _getBaseUrl(NetworkEnvironment env) {
     switch (env) {
       case NetworkEnvironment.testnet:
-        return testnetOnionUrl;
+        return NetworkConfig.testnetUrl;
       case NetworkEnvironment.mainnet:
-        return mainnetOnionUrl;
-      case NetworkEnvironment.local:
-        return defaultLocalUrl;
+        return NetworkConfig.mainnetUrl;
     }
   }
 

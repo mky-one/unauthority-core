@@ -323,7 +323,6 @@ class _SetupWizardScreenState extends State<SetupWizardScreen> {
       case _ImportMethod.privateKey:
         return TextField(
           controller: _privateKeyController,
-          maxLines: 2,
           decoration: InputDecoration(
             labelText: 'Private Key',
             hintText: 'Enter hex-encoded private key...',

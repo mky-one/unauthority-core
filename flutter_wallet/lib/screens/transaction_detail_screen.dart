@@ -107,6 +107,16 @@ class TransactionDetailScreen extends StatelessWidget {
                       '${BlockchainConstants.formatUat(transaction.amountUAT)} UAT',
                   icon: Icons.attach_money,
                 ),
+                if (transaction.fee > 0) ...[
+                  const Divider(height: 1),
+                  _DetailRow(
+                    label: 'Fee',
+                    value: '${transaction.fee} VOID',
+                    subtitle:
+                        '${BlockchainConstants.formatUat(transaction.feeUAT)} UAT',
+                    icon: Icons.local_gas_station,
+                  ),
+                ],
               ],
             ),
           ),

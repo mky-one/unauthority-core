@@ -70,6 +70,7 @@ class Transaction {
   final String type;
   final String? memo;
   final String? signature;
+  final int fee; // Fee in VOID
 
   Transaction({
     required this.txid,
@@ -80,6 +81,7 @@ class Transaction {
     required this.type,
     this.memo,
     this.signature,
+    this.fee = 0,
   });
 
   /// Parse amount from backend which may be:
@@ -116,11 +118,15 @@ class Transaction {
       type: (json['type'] ?? 'transfer').toString().toLowerCase(),
       memo: json['memo'],
       signature: json['signature'],
+      fee: (json['fee'] is int) ? json['fee'] : (json['fee'] is String ? int.tryParse(json['fee']) ?? 0 : 0),
     );
   }
 
   /// Amount in UAT (1 UAT = 10^11 VOID)
   double get amountUAT => BlockchainConstants.voidToUat(amount);
+
+  /// Fee in UAT (1 UAT = 10^11 VOID)
+  double get feeUAT => BlockchainConstants.voidToUat(fee);
 }
 
 class BlockInfo {

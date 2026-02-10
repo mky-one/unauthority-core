@@ -19,17 +19,17 @@ Pre-built desktop apps for all platforms. No Tor Browser or command-line needed.
 
 | Platform | Download | Install |
 |----------|----------|---------|
-| macOS | [UAT-Wallet-macos.dmg](https://github.com/unauthoritymky-6236/unauthority-core/releases/tag/wallet-v1.0.1-testnet) | Open DMG → drag to Applications |
-| Windows | [UAT-Wallet-windows-x64.zip](https://github.com/unauthoritymky-6236/unauthority-core/releases/tag/wallet-v1.0.1-testnet) | Extract → run `flutter_wallet.exe` |
-| Linux | [UAT-Wallet-linux-x64.tar.gz](https://github.com/unauthoritymky-6236/unauthority-core/releases/tag/wallet-v1.0.1-testnet) | Extract → run `./run.sh` |
+| macOS | [UAT-Wallet-macos.dmg](https://github.com/unauthoritymky-6236/unauthority-core/releases/tag/wallet-v1.0.3-testnet) | Open DMG → drag to Applications |
+| Windows | [UAT-Wallet-windows-x64.zip](https://github.com/unauthoritymky-6236/unauthority-core/releases/tag/wallet-v1.0.3-testnet) | Extract → run `flutter_wallet.exe` |
+| Linux | [UAT-Wallet-linux-x64.tar.gz](https://github.com/unauthoritymky-6236/unauthority-core/releases/tag/wallet-v1.0.3-testnet) | Extract → run `./run.sh` |
 
 ### UAT Validator Dashboard (monitor node, manage keys)
 
 | Platform | Download | Install |
 |----------|----------|---------|
-| macOS | [UAT-Validator-macos.dmg](https://github.com/unauthoritymky-6236/unauthority-core/releases/tag/validator-v1.0.1-testnet) | Open DMG → drag to Applications |
-| Windows | [UAT-Validator-windows-x64.zip](https://github.com/unauthoritymky-6236/unauthority-core/releases/tag/validator-v1.0.1-testnet) | Extract → run `flutter_validator.exe` |
-| Linux | [UAT-Validator-linux-x64.tar.gz](https://github.com/unauthoritymky-6236/unauthority-core/releases/tag/validator-v1.0.1-testnet) | Extract → run `./run.sh` |
+| macOS | [UAT-Validator-macos.dmg](https://github.com/unauthoritymky-6236/unauthority-core/releases/tag/validator-v1.0.3-testnet) | Open DMG → drag to Applications |
+| Windows | [UAT-Validator-windows-x64.zip](https://github.com/unauthoritymky-6236/unauthority-core/releases/tag/validator-v1.0.3-testnet) | Extract → run `flutter_validator.exe` |
+| Linux | [UAT-Validator-linux-x64.tar.gz](https://github.com/unauthoritymky-6236/unauthority-core/releases/tag/validator-v1.0.3-testnet) | Extract → run `./run.sh` |
 
 Both apps include **built-in Tor** connectivity and **CRYSTALS-Dilithium5** post-quantum cryptography. No external dependencies required.
 
@@ -211,7 +211,7 @@ CI runs automatically on every push: format check, clippy, full test suite, secu
 
 | Document | For |
 |----------|-----|
-| [TESTNET_RUN_GUIDE.md](dev_docs/TESTNET_RUN_GUIDE.md) | Running the testnet step-by-step |
+| [JOIN_TESTNET.md](docs/JOIN_TESTNET.md) | **Quick start for public users** |
 | [INSTALLATION.md](docs/INSTALLATION.md) | Installation on all platforms |
 | [WHITEPAPER.md](docs/WHITEPAPER.md) | Technical whitepaper |
 | [API_REFERENCE.md](api_docs/API_REFERENCE.md) | REST & gRPC API docs |

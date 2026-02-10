@@ -12,17 +12,17 @@ Download pre-built desktop apps — no command line needed.
 
 | Platform | Download | How to Install |
 |----------|----------|----------------|
-| **macOS** | [UAT-Wallet-macos.dmg](https://github.com/unauthoritymky-6236/unauthority-core/releases/tag/wallet-v1.0.0-testnet) | Open DMG, drag to Applications |
-| **Windows** | [UAT-Wallet-windows-x64.zip](https://github.com/unauthoritymky-6236/unauthority-core/releases/tag/wallet-v1.0.0-testnet) | Extract zip, run `flutter_wallet.exe` |
-| **Linux** | [UAT-Wallet-linux-x64.tar.gz](https://github.com/unauthoritymky-6236/unauthority-core/releases/tag/wallet-v1.0.0-testnet) | Extract, run `./run.sh` |
+| **macOS** | [UAT-Wallet-macos.dmg](https://github.com/unauthoritymky-6236/unauthority-core/releases/tag/wallet-v1.0.3-testnet) | Open DMG, drag to Applications |
+| **Windows** | [UAT-Wallet-windows-x64.zip](https://github.com/unauthoritymky-6236/unauthority-core/releases/tag/wallet-v1.0.3-testnet) | Extract zip, run `flutter_wallet.exe` |
+| **Linux** | [UAT-Wallet-linux-x64.tar.gz](https://github.com/unauthoritymky-6236/unauthority-core/releases/tag/wallet-v1.0.3-testnet) | Extract, run `./run.sh` |
 
 ### UAT Validator Dashboard
 
 | Platform | Download | How to Install |
 |----------|----------|----------------|
-| **macOS** | [UAT-Validator-macos.dmg](https://github.com/unauthoritymky-6236/unauthority-core/releases/tag/validator-v1.0.0-testnet) | Open DMG, drag to Applications |
-| **Windows** | [UAT-Validator-windows-x64.zip](https://github.com/unauthoritymky-6236/unauthority-core/releases/tag/validator-v1.0.0-testnet) | Extract zip, run `flutter_validator.exe` |
-| **Linux** | [UAT-Validator-linux-x64.tar.gz](https://github.com/unauthoritymky-6236/unauthority-core/releases/tag/validator-v1.0.0-testnet) | Extract, run `./run.sh` |
+| **macOS** | [UAT-Validator-macos.dmg](https://github.com/unauthoritymky-6236/unauthority-core/releases/tag/validator-v1.0.3-testnet) | Open DMG, drag to Applications |
+| **Windows** | [UAT-Validator-windows-x64.zip](https://github.com/unauthoritymky-6236/unauthority-core/releases/tag/validator-v1.0.3-testnet) | Extract zip, run `flutter_validator.exe` |
+| **Linux** | [UAT-Validator-linux-x64.tar.gz](https://github.com/unauthoritymky-6236/unauthority-core/releases/tag/validator-v1.0.3-testnet) | Extract, run `./run.sh` |
 
 ### macOS "Cannot Verify" / Gatekeeper Warning
 

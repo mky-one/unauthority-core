@@ -17,9 +17,13 @@ class AccountManagementService {
   final _uuid = const Uuid();
 
   /// Encrypted storage backed by platform Keychain (iOS/macOS) or Keystore (Android)
+  /// FIX: mOptions was missing entirely (caused -34018 on macOS).
+  /// useDataProtectionKeyChain: false avoids the Data Protection Keychain
+  /// which requires a valid Team-ID-prefixed keychain-access-groups entitlement.
   static const _secureStorage = FlutterSecureStorage(
     aOptions: AndroidOptions(encryptedSharedPreferences: true),
     iOptions: IOSOptions(accessibility: KeychainAccessibility.first_unlock),
+    mOptions: MacOsOptions(useDataProtectionKeyChain: false),
   );
 
   /// One-time migration: move any seed phrases from the old SharedPreferences
@@ -39,10 +43,7 @@ class AccountManagementService {
         final seed = accountMap['seed_phrase'];
         final id = accountMap['id'];
         if (seed != null && id != null) {
-          await _secureStorage.write(
-            key: '$_seedKeyPrefix$id',
-            value: seed,
-          );
+          await _secureStorage.write(key: '$_seedKeyPrefix$id', value: seed);
           accountMap.remove('seed_phrase');
           migrated = true;
         }
@@ -72,7 +73,8 @@ class AccountManagementService {
 
     try {
       final Map<String, dynamic> data = json.decode(accountsJson);
-      final rawAccounts = (data['accounts'] as List?)
+      final rawAccounts =
+          (data['accounts'] as List?)
               ?.map((a) => AccountProfile.fromJson(a))
               .toList() ??
           [];
@@ -83,14 +85,12 @@ class AccountManagementService {
         final seed = await _secureStorage.read(
           key: '$_seedKeyPrefix${account.id}',
         );
-        accounts
-            .add(seed != null ? account.copyWith(seedPhrase: seed) : account);
+        accounts.add(
+          seed != null ? account.copyWith(seedPhrase: seed) : account,
+        );
       }
 
-      return AccountsList(
-        accounts: accounts,
-        activeAccountId: activeAccountId,
-      );
+      return AccountsList(accounts: accounts, activeAccountId: activeAccountId);
     } catch (e) {
       debugPrint('Error loading accounts: $e');
       return AccountsList(accounts: [], activeAccountId: null);
@@ -262,7 +262,8 @@ class AccountManagementService {
     if (updatedList.activeAccountId == null &&
         updatedList.accounts.isNotEmpty) {
       await saveAccounts(
-          updatedList.setActiveAccount(updatedList.accounts.first.id));
+        updatedList.setActiveAccount(updatedList.accounts.first.id),
+      );
     } else {
       await saveAccounts(updatedList);
     }

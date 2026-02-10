@@ -37,12 +37,17 @@ class WalletService {
   static const String _secretKeyKey = 'wallet_secret_key';
 
   /// Encrypted storage backed by platform Keychain (iOS/macOS) or Keystore (Android)
-  /// FIX: Added MacOsOptions for ad-hoc signed builds (no Apple Developer Team).
-  /// Without this, flutter_secure_storage throws -34018 on macOS.
+  /// FIX: useDataProtectionKeyChain must be FALSE for ad-hoc signed builds
+  /// (no Apple Developer Team). The Data Protection Keychain requires either
+  /// App Sandbox or a valid keychain-access-groups entitlement prefixed with a
+  /// Team ID. With ad-hoc signing (CODE_SIGN_IDENTITY = "-") and no team,
+  /// $(AppIdentifierPrefix) expands to "" → malformed entitlement → -34018.
+  /// Setting useDataProtectionKeyChain: false uses the legacy file-based
+  /// Keychain which works without team-prefixed entitlements.
   static const _secureStorage = FlutterSecureStorage(
     aOptions: AndroidOptions(encryptedSharedPreferences: true),
     iOptions: IOSOptions(accessibility: KeychainAccessibility.first_unlock),
-    mOptions: MacOsOptions(),
+    mOptions: MacOsOptions(useDataProtectionKeyChain: false),
   );
 
   /// One-time migration from SharedPreferences → SecureStorage
@@ -90,9 +95,13 @@ class WalletService {
         // Secrets → Keychain/Keystore
         await _secureStorage.write(key: _seedKey, value: mnemonic);
         await _secureStorage.write(
-            key: _publicKeyKey, value: keypair.publicKeyHex);
+          key: _publicKeyKey,
+          value: keypair.publicKeyHex,
+        );
         await _secureStorage.write(
-            key: _secretKeyKey, value: keypair.secretKeyHex);
+          key: _secretKeyKey,
+          value: keypair.secretKeyHex,
+        );
 
         // Non-sensitive → SharedPreferences
         final prefs = await SharedPreferences.getInstance();
@@ -122,7 +131,8 @@ class WalletService {
         await prefs.setString(_cryptoModeKey, cryptoMode);
 
         debugPrint(
-            '⚠️ Ed25519 fallback wallet (Dilithium5 native lib not loaded)');
+          '⚠️ Ed25519 fallback wallet (Dilithium5 native lib not loaded)',
+        );
       } finally {
         // FIX C12-05: Zero BIP39 seed bytes in SHA256 fallback path too
         seed.fillRange(0, seed.length, 0);
@@ -159,9 +169,13 @@ class WalletService {
         // Secrets → Keychain/Keystore
         await _secureStorage.write(key: _seedKey, value: mnemonic);
         await _secureStorage.write(
-            key: _publicKeyKey, value: keypair.publicKeyHex);
+          key: _publicKeyKey,
+          value: keypair.publicKeyHex,
+        );
         await _secureStorage.write(
-            key: _secretKeyKey, value: keypair.secretKeyHex);
+          key: _secretKeyKey,
+          value: keypair.secretKeyHex,
+        );
 
         // Non-sensitive → SharedPreferences
         final prefs = await SharedPreferences.getInstance();
@@ -170,7 +184,8 @@ class WalletService {
         await prefs.setString(_cryptoModeKey, cryptoMode);
 
         debugPrint(
-            '🔐 Dilithium5 wallet restored from mnemonic (deterministic)');
+          '🔐 Dilithium5 wallet restored from mnemonic (deterministic)',
+        );
         debugPrint('   Address: $address');
       } finally {
         // FIX M-04: Zero BIP39 seed bytes in Dart memory
@@ -221,8 +236,9 @@ class WalletService {
   /// Get current wallet info.
   /// FIX H-03: Does NOT return mnemonic by default. Use [includeMnemonic]
   /// only when user explicitly requests seed phrase (e.g. settings backup).
-  Future<Map<String, String>?> getCurrentWallet(
-      {bool includeMnemonic = false}) async {
+  Future<Map<String, String>?> getCurrentWallet({
+    bool includeMnemonic = false,
+  }) async {
     final prefs = await SharedPreferences.getInstance();
     final address = prefs.getString(_addressKey);
     if (address == null) return null;

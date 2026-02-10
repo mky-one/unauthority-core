@@ -266,14 +266,16 @@ for i in 0 1 2 3; do
     P2P_PORT=${VALIDATOR_P2P_PORTS[$i]}
     MY_ONION=${ONION_ADDRS[$i]}
 
-    # Build bootstrap list: all OTHER validators' .onion addresses
+    # Build bootstrap list: LOCAL P2P ports (fast, same machine) + .onion addresses (external)
+    # Local multiaddrs ensure instant peering; .onion addresses are for remote nodes.
     BOOTSTRAP=""
     for j in 0 1 2 3; do
         if [ $j -ne $i ]; then
             if [ -n "$BOOTSTRAP" ]; then
                 BOOTSTRAP="$BOOTSTRAP,"
             fi
-            BOOTSTRAP="${BOOTSTRAP}${ONION_ADDRS[$j]}:4001"
+            # Local direct connection first (fast), then .onion (for external peers)
+            BOOTSTRAP="${BOOTSTRAP}/ip4/127.0.0.1/tcp/${VALIDATOR_P2P_PORTS[$j]}"
         fi
     done
 

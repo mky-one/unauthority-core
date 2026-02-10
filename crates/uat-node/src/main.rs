@@ -183,6 +183,42 @@ impl EndpointRateLimiter {
         timestamps.push(now);
         Ok(())
     }
+
+    /// Check rate limit WITHOUT recording. Use with record_success() for
+    /// endpoints where the cooldown should only apply on successful operations.
+    pub fn check_only(&self, address: &str) -> Result<(), u64> {
+        let now = Instant::now();
+        let mut requests = match self.requests.lock() {
+            Ok(guard) => guard,
+            Err(poisoned) => poisoned.into_inner(),
+        };
+
+        let timestamps = requests.entry(address.to_string()).or_default();
+        timestamps.retain(|t| now.duration_since(*t) < self.window);
+
+        if timestamps.len() >= self.max_requests as usize {
+            let oldest = timestamps[0];
+            let elapsed = now.duration_since(oldest);
+            let wait = if self.window > elapsed {
+                (self.window - elapsed).as_secs() + 1
+            } else {
+                1
+            };
+            return Err(wait);
+        }
+        Ok(())
+    }
+
+    /// Record a successful operation. Call AFTER the operation succeeds.
+    pub fn record_success(&self, address: &str) {
+        let now = Instant::now();
+        let mut requests = match self.requests.lock() {
+            Ok(guard) => guard,
+            Err(poisoned) => poisoned.into_inner(),
+        };
+        let timestamps = requests.entry(address.to_string()).or_default();
+        timestamps.push(now);
+    }
 }
 
 // Helper to inject state into route handlers
@@ -583,17 +619,19 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
                     println!("✅ Send finalized immediately (functional testnet): {} → {} ({} UAT, fee {} VOID)",
                         get_short_addr(&sender_addr), get_short_addr(&target), amt / VOID_PER_UAT, final_fee);
 
-                    // Auto-receive for recipient if it's our own address
-                    if target == my_addr {
+                    // Auto-receive for recipient on functional testnet
+                    // In block-lattice, the recipient needs their own Receive block.
+                    // On functional testnet (single-node), the node creates it for ALL recipients.
+                    {
                         let mut l_guard = safe_lock(&l);
-                        if !l_guard.accounts.contains_key(&my_addr) {
-                            l_guard.accounts.insert(my_addr.clone(), AccountState {
+                        if !l_guard.accounts.contains_key(&target) {
+                            l_guard.accounts.insert(target.clone(), AccountState {
                                 head: "0".to_string(), balance: 0, block_count: 0,
                             });
                         }
-                        if let Some(recv_state) = l_guard.accounts.get(&my_addr).cloned() {
+                        if let Some(recv_state) = l_guard.accounts.get(&target).cloned() {
                             let mut recv_blk = Block {
-                                account: my_addr.clone(),
+                                account: target.clone(),
                                 previous: recv_state.head,
                                 block_type: BlockType::Receive,
                                 amount: amt,
@@ -609,11 +647,18 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
                             recv_blk.signature = hex::encode(
                                 uat_crypto::sign_message(recv_blk.signing_hash().as_bytes(), &key).expect("BUG: signing failed")
                             );
-                            if let Err(e) = l_guard.process_block(&recv_blk) {
-                                println!("⚠️ Auto-Receive failed: {}", e);
-                            } else {
-                                SAVE_DIRTY.store(true, Ordering::Relaxed);
+                            // Direct ledger manipulation for Receive block — bypass process_block()
+                            // because the node's public_key doesn't match the target's account address.
+                            // This is the same approach used for the Send block above.
+                            let recv_hash = recv_blk.calculate_hash();
+                            if let Some(recv_acct) = l_guard.accounts.get_mut(&target) {
+                                recv_acct.balance += amt;
+                                recv_acct.head = recv_hash.clone();
+                                recv_acct.block_count += 1;
                             }
+                            l_guard.blocks.insert(recv_hash.clone(), recv_blk);
+                            SAVE_DIRTY.store(true, Ordering::Relaxed);
+                            println!("✅ Auto-Receive created for {} ({} VOID)", get_short_addr(&target), amt);
                         }
                     }
                     return warp::reply::json(&serde_json::json!({
@@ -664,7 +709,8 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
             let recipient = req.recipient_address.as_ref().unwrap_or(&my_addr);
 
             // RATE LIMIT: 1 burn per 60 seconds per recipient address
-            if let Err(wait_secs) = rate_lim.check_and_record(recipient) {
+            // Only CHECK here — record only after successful burn (not on failures like duplicate TXID)
+            if let Err(wait_secs) = rate_lim.check_only(recipient) {
                 return warp::reply::json(&serde_json::json!({
                     "status": "error",
                     "code": 429,
@@ -811,6 +857,8 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
                             }));
                         }
                         Ok(hash) => {
+                            // Record rate limit ONLY on successful burn
+                            rate_lim.record_success(&recipient);
                             return warp::reply::json(&serde_json::json!({
                                 "status":"success",
                                 "msg":"Burn finalized instantly (Functional Testnet)",
@@ -839,6 +887,9 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
                 let created_at = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_secs();
                 let burn_recipient = req.recipient_address.as_ref().unwrap_or(&my_addr).clone();
                 safe_lock(&p).insert(clean_txid.clone(), (amt, prc, sym.to_string(), my_power, created_at, burn_recipient));
+
+                // Record rate limit ONLY after successful pending insertion
+                rate_lim.record_success(recipient);
 
                 let ts = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_millis();
                 let vote_msg = format!("VOTE_REQ:{}:{}:{}:{}", req.coin_type.to_lowercase(), clean_txid, my_addr, ts);

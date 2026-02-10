@@ -89,7 +89,9 @@ class _HistoryScreenState extends State<HistoryScreen> {
         final parts = tx.to.split(':');
         if (parts.length >= 2) {
           final txid = parts[1];
-          return 'Burn TXID: ${txid.substring(0, 16)}...';
+          final display =
+              txid.length > 16 ? '${txid.substring(0, 16)}...' : txid;
+          return 'Burn TXID: $display';
         }
       }
       return 'System Mint';

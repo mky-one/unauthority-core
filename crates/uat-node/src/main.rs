@@ -579,11 +579,28 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
                 if client_signed {
                     blk.signature = req.signature.unwrap();
 
+                    // DEBUG: Print all block fields used in signing_hash for diagnosis
+                    println!("🔍 [DEBUG] === SIGNING HASH DIAGNOSIS ===");
+                    println!("🔍 [DEBUG] chain_id: {}", uat_core::CHAIN_ID);
+                    println!("🔍 [DEBUG] account: {}", blk.account);
+                    println!("🔍 [DEBUG] previous: {}", blk.previous);
+                    println!("🔍 [DEBUG] block_type: {:?} (byte=0)", blk.block_type);
+                    println!("🔍 [DEBUG] amount: {} (u128 le={:?})", blk.amount, blk.amount.to_le_bytes());
+                    println!("🔍 [DEBUG] link: {}", blk.link);
+                    println!("🔍 [DEBUG] public_key len: {} first16={}", blk.public_key.len(), &blk.public_key[..std::cmp::min(16, blk.public_key.len())]);
+                    println!("🔍 [DEBUG] work: {} (u64 le={:?})", blk.work, blk.work.to_le_bytes());
+                    println!("🔍 [DEBUG] timestamp: {} (u64 le={:?})", blk.timestamp, blk.timestamp.to_le_bytes());
+                    println!("🔍 [DEBUG] fee: {} (u128 le={:?})", blk.fee, blk.fee.to_le_bytes());
+                    let server_signing_hash = blk.signing_hash();
+                    println!("🔍 [DEBUG] signing_hash: {}", server_signing_hash);
+                    println!("🔍 [DEBUG] signature len: {}", blk.signature.len());
+                    println!("🔍 [DEBUG] === END DIAGNOSIS ===");
+
                     // CRITICAL: Verify signature with public key (not address!)
                     if !blk.verify_signature() {
                         return warp::reply::json(&serde_json::json!({
                             "status": "error",
-                            "msg": "Invalid signature: Dilithium5 verification failed"
+                            "msg": format!("Invalid signature: Dilithium5 verification failed. Server signing_hash={}", server_signing_hash)
                         }));
                     }
                     println!("✅ Client signature verified successfully");

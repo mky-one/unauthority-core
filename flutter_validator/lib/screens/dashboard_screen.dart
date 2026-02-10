@@ -3,7 +3,7 @@ import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
 import '../services/api_service.dart';
 import '../services/network_status_service.dart';
-import '../services/node_process_service.dart';
+import '../services/wallet_service.dart';
 import '../models/account.dart';
 import '../widgets/network_status_bar.dart';
 import '../widgets/voting_power_card.dart';
@@ -27,11 +27,21 @@ class _DashboardScreenState extends State<DashboardScreen> {
   List<String> _peers = [];
   bool _isLoading = true;
   String? _error;
+  String? _myAddress;
 
   @override
   void initState() {
     super.initState();
+    _loadMyAddress();
     _loadDashboard();
+  }
+
+  Future<void> _loadMyAddress() async {
+    final walletService = context.read<WalletService>();
+    final wallet = await walletService.getCurrentWallet();
+    if (wallet != null && mounted) {
+      setState(() => _myAddress = wallet['address']);
+    }
   }
 
   Future<void> _loadDashboard() async {
@@ -305,11 +315,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                     const Divider(),
                                     ..._validators.map(
                                       (v) {
-                                        final myAddr = context
-                                            .read<NodeProcessService>()
-                                            .nodeAddress;
-                                        final isYou = myAddr != null &&
-                                            v.address == myAddr;
+                                        final isYou = _myAddress != null &&
+                                            v.address == _myAddress;
                                         return ListTile(
                                           leading: Icon(
                                             isYou
@@ -489,13 +496,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
                             if (_validators.isNotEmpty) ...[
                               const SizedBox(height: 16),
                               Builder(builder: (ctx) {
-                                final myAddr =
-                                    ctx.read<NodeProcessService>().nodeAddress;
-                                final myValidator = myAddr != null
+                                final myValidator = _myAddress != null
                                     ? _validators
                                         .cast<ValidatorInfo?>()
                                         .firstWhere(
-                                          (v) => v!.address == myAddr,
+                                          (v) => v!.address == _myAddress,
                                           orElse: () => null,
                                         )
                                     : null;
@@ -511,13 +516,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
                             if (_validators.isNotEmpty) ...[
                               const SizedBox(height: 16),
                               Builder(builder: (ctx) {
-                                final myAddr =
-                                    ctx.read<NodeProcessService>().nodeAddress;
-                                final myValidator = myAddr != null
+                                final myValidator = _myAddress != null
                                     ? _validators
                                         .cast<ValidatorInfo?>()
                                         .firstWhere(
-                                          (v) => v!.address == myAddr,
+                                          (v) => v!.address == _myAddress,
                                           orElse: () => null,
                                         )
                                     : null;

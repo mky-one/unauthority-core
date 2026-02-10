@@ -319,10 +319,24 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
                     let mut curr = acct.head.clone();
                     while curr != "0" {
                         if let Some(blk) = l_guard.blocks.get(&curr) {
+                            // FIX v1.0.7: Resolve actual sender for Receive blocks
+                            let from_addr = match blk.block_type {
+                                BlockType::Send => blk.account.clone(),
+                                BlockType::Receive => {
+                                    l_guard.blocks.get(&blk.link)
+                                        .map(|send_blk| send_blk.account.clone())
+                                        .unwrap_or_else(|| "SYSTEM".to_string())
+                                },
+                                _ => "SYSTEM".to_string(),
+                            };
+                            let to_addr = match blk.block_type {
+                                BlockType::Receive => blk.account.clone(),
+                                _ => blk.link.clone(),
+                            };
                             history.push(serde_json::json!({
                                 "hash": curr,
-                                "from": if blk.block_type == BlockType::Send { blk.account.clone() } else { "SYSTEM".to_string() },
-                                "to": if blk.block_type == BlockType::Receive { blk.account.clone() } else { blk.link.clone() },
+                                "from": from_addr,
+                                "to": to_addr,
                                 "amount": format!("{}.{:011}", blk.amount / VOID_PER_UAT, blk.amount % VOID_PER_UAT),
                                 "timestamp": blk.timestamp,
                                 "type": format!("{:?}", blk.block_type).to_lowercase()
@@ -534,7 +548,84 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
                 // Block ID sekarang mencakup signature
                 let hash = blk.calculate_hash();
 
-                // Insert with INITIAL POWER to queue
+                // FIX v1.0.7: On functional testnet, finalize immediately (no consensus needed)
+                // This matches how faucet/burn work on functional level and prevents
+                // single-node deadlock where CONFIRM_REQ can't find block in ledger.
+                // NOTE: We can't use process_block() here because it validates
+                // public_key↔account binding, which fails when the node signs on behalf
+                // of external addresses. Direct ledger manipulation is safe on functional.
+                if !testnet_config::get_testnet_config().should_enable_consensus() {
+                    {
+                        let mut l_guard = safe_lock(&l);
+                        // Debit sender: amount + fee
+                        if let Some(sender_state) = l_guard.accounts.get_mut(&sender_addr) {
+                            let total_debit = amt + final_fee;
+                            if sender_state.balance < total_debit {
+                                return warp::reply::json(&serde_json::json!({
+                                    "status": "error",
+                                    "msg": "Insufficient balance for amount + fee"
+                                }));
+                            }
+                            sender_state.balance -= total_debit;
+                            sender_state.head = hash.clone();
+                            sender_state.block_count += 1;
+                        } else {
+                            return warp::reply::json(&serde_json::json!({
+                                "status":"error","msg":"Sender account not found"
+                            }));
+                        }
+                        // Insert block
+                        l_guard.blocks.insert(hash.clone(), blk.clone());
+                        // Accumulate fees
+                        l_guard.accumulated_fees_void += final_fee;
+                    }
+                    SAVE_DIRTY.store(true, Ordering::Relaxed);
+                    println!("✅ Send finalized immediately (functional testnet): {} → {} ({} UAT, fee {} VOID)",
+                        get_short_addr(&sender_addr), get_short_addr(&target), amt / VOID_PER_UAT, final_fee);
+
+                    // Auto-receive for recipient if it's our own address
+                    if target == my_addr {
+                        let mut l_guard = safe_lock(&l);
+                        if !l_guard.accounts.contains_key(&my_addr) {
+                            l_guard.accounts.insert(my_addr.clone(), AccountState {
+                                head: "0".to_string(), balance: 0, block_count: 0,
+                            });
+                        }
+                        if let Some(recv_state) = l_guard.accounts.get(&my_addr).cloned() {
+                            let mut recv_blk = Block {
+                                account: my_addr.clone(),
+                                previous: recv_state.head,
+                                block_type: BlockType::Receive,
+                                amount: amt,
+                                link: hash.clone(),
+                                signature: "".to_string(),
+                                public_key: hex::encode(&node_pk),
+                                work: 0,
+                                timestamp: std::time::SystemTime::now()
+                                    .duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_secs(),
+                                fee: 0,
+                            };
+                            solve_pow(&mut recv_blk);
+                            recv_blk.signature = hex::encode(
+                                uat_crypto::sign_message(recv_blk.signing_hash().as_bytes(), &key).expect("BUG: signing failed")
+                            );
+                            if let Err(e) = l_guard.process_block(&recv_blk) {
+                                println!("⚠️ Auto-Receive failed: {}", e);
+                            } else {
+                                SAVE_DIRTY.store(true, Ordering::Relaxed);
+                            }
+                        }
+                    }
+                    return warp::reply::json(&serde_json::json!({
+                        "status":"success",
+                        "tx_hash":hash,
+                        "initial_power": initial_power,
+                        "fee_paid_void": final_fee,
+                        "fee_multiplier": final_fee as f64 / base_fee as f64
+                    }));
+                }
+
+                // Insert with INITIAL POWER to queue (consensus mode)
                 safe_lock(&p).insert(hash.clone(), (blk, initial_power));
 
                 let ts = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_millis();
@@ -1217,13 +1308,35 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
                 });
 
             // Get transaction history for this account
+            // FIX v1.0.7: Include from, to, timestamp fields + resolve actual
+            // sender for Receive blocks (look up originating Send block)
             let mut transactions: Vec<serde_json::Value> = Vec::new();
             for (hash, block) in l_guard.blocks.iter() {
                 if block.account == addr {
+                    // Resolve `from` address: for Receive blocks, look up the Send block
+                    // to get the actual sender instead of showing "SYSTEM"
+                    let from_addr = match block.block_type {
+                        BlockType::Send => block.account.clone(),
+                        BlockType::Receive => {
+                            // block.link = hash of the Send block that funded this Receive
+                            l_guard.blocks.get(&block.link)
+                                .map(|send_blk| send_blk.account.clone())
+                                .unwrap_or_else(|| "SYSTEM".to_string())
+                        },
+                        _ => "SYSTEM".to_string(), // Mint, Slash, Change
+                    };
+                    // Resolve `to` address
+                    let to_addr = match block.block_type {
+                        BlockType::Receive => block.account.clone(),
+                        _ => block.link.clone(), // Send→recipient, Mint→link
+                    };
                     transactions.push(serde_json::json!({
                         "hash": hash,
-                        "type": format!("{:?}", block.block_type),
-                        "amount": block.amount / VOID_PER_UAT,
+                        "from": from_addr,
+                        "to": to_addr,
+                        "type": format!("{:?}", block.block_type).to_lowercase(),
+                        "amount": format!("{}.{:011}", block.amount / VOID_PER_UAT, block.amount % VOID_PER_UAT),
+                        "timestamp": block.timestamp,
                         "link": block.link,
                         "previous": block.previous
                     }));

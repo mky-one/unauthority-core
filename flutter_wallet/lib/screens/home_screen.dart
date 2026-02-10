@@ -345,33 +345,60 @@ class _HomeScreenState extends State<HomeScreen> {
                                     fontSize: 18, fontWeight: FontWeight.bold),
                               ),
                               const SizedBox(height: 12),
-                              ..._account!.history.map((tx) => Card(
-                                    child: ListTile(
-                                      leading: Icon(
-                                        tx.from == _address
-                                            ? Icons.arrow_upward
-                                            : Icons.arrow_downward,
-                                        color: tx.from == _address
-                                            ? Colors.red
-                                            : Colors.green,
-                                      ),
-                                      title: Text(
-                                        '${BlockchainConstants.formatUat(tx.amountUAT)} UAT',
-                                        style: const TextStyle(
-                                            fontWeight: FontWeight.bold),
-                                      ),
-                                      subtitle: Text(
-                                        '${tx.from == _address ? 'To' : 'From'}: ${tx.from == _address ? tx.to : tx.from}\n'
-                                        '${DateFormat('MMM dd, yyyy HH:mm').format(DateTime.fromMillisecondsSinceEpoch(tx.timestamp * 1000))}',
-                                        style: const TextStyle(fontSize: 11),
-                                      ),
-                                      trailing: Text(
-                                        tx.type.toUpperCase(),
-                                        style: const TextStyle(
-                                            fontSize: 10, color: Colors.grey),
-                                      ),
+                              ..._account!.history.map((tx) {
+                                // Determine direction: check both from and type
+                                final isSent = tx.from == _address ||
+                                    (tx.type == 'send' && tx.from.isNotEmpty);
+                                final isMint = tx.type == 'mint';
+                                final otherParty = isSent ? tx.to : tx.from;
+                                // Safe timestamp display
+                                final timeStr = tx.timestamp > 0
+                                    ? DateFormat('MMM dd, yyyy HH:mm').format(
+                                        DateTime.fromMillisecondsSinceEpoch(
+                                            tx.timestamp * 1000))
+                                    : 'Pending';
+                                // Direction label
+                                String dirLabel;
+                                if (isMint) {
+                                  dirLabel = 'Faucet / Burn Reward';
+                                } else if (isSent) {
+                                  dirLabel =
+                                      'To: ${otherParty.length > 20 ? '${otherParty.substring(0, 8)}...${otherParty.substring(otherParty.length - 8)}' : otherParty}';
+                                } else {
+                                  dirLabel =
+                                      'From: ${otherParty.length > 20 ? '${otherParty.substring(0, 8)}...${otherParty.substring(otherParty.length - 8)}' : otherParty}';
+                                }
+                                return Card(
+                                  child: ListTile(
+                                    leading: Icon(
+                                      isMint
+                                          ? Icons.add_circle
+                                          : (isSent
+                                              ? Icons.arrow_upward
+                                              : Icons.arrow_downward),
+                                      color: isMint
+                                          ? Colors.blue
+                                          : (isSent
+                                              ? Colors.red
+                                              : Colors.green),
                                     ),
-                                  )),
+                                    title: Text(
+                                      '${BlockchainConstants.formatUat(tx.amountUAT)} UAT',
+                                      style: const TextStyle(
+                                          fontWeight: FontWeight.bold),
+                                    ),
+                                    subtitle: Text(
+                                      '$dirLabel\n$timeStr',
+                                      style: const TextStyle(fontSize: 11),
+                                    ),
+                                    trailing: Text(
+                                      tx.type.toUpperCase(),
+                                      style: const TextStyle(
+                                          fontSize: 10, color: Colors.grey),
+                                    ),
+                                  ),
+                                );
+                              }),
                             ],
                           ],
                         ),

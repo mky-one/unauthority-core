@@ -5252,7 +5252,7 @@ dependencies = [
 
 [[package]]
 name = "uat-node"
-version = "1.0.3"
+version = "1.0.7"
 dependencies = [
  "base64 0.13.1",
  "chrono",

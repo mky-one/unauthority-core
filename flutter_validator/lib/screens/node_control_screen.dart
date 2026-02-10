@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
@@ -545,22 +546,30 @@ class _NodeControlScreenState extends State<NodeControlScreen>
           TextButton(
               onPressed: () async {
                 Navigator.pop(ctx);
-                // Stop node & Tor
+
+                // 1. Delete wallet FIRST (most important)
                 try {
-                  final node = context.read<NodeProcessService>();
-                  if (node.isRunning) await node.stop();
-                } catch (_) {}
-                try {
-                  final tor = context.read<TorService>();
-                  await tor.stop();
-                } catch (_) {}
-                // Delete wallet
-                final walletService = context.read<WalletService>();
-                await walletService.deleteWallet();
-                // Reset app back to setup wizard
+                  final walletService = context.read<WalletService>();
+                  await walletService.deleteWallet();
+                } catch (e) {
+                  debugPrint('⚠️ deleteWallet error: $e');
+                }
+
+                // 2. Navigate back to setup wizard IMMEDIATELY
+                //    (don't wait for node/tor stop — user sees result instantly)
                 if (mounted) {
                   MyApp.resetToSetup(context);
                 }
+
+                // 3. Stop node & Tor in background (fire-and-forget)
+                try {
+                  final node = context.read<NodeProcessService>();
+                  if (node.isRunning) unawaited(node.stop());
+                } catch (_) {}
+                try {
+                  final tor = context.read<TorService>();
+                  unawaited(tor.stop());
+                } catch (_) {}
               },
               child: const Text('UNREGISTER',
                   style: TextStyle(color: Colors.red))),

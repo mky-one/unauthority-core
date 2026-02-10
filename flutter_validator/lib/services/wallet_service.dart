@@ -345,10 +345,23 @@ class WalletService {
     await prefs.remove(_addressKey);
     await prefs.remove(_importModeKey);
     await prefs.remove(_cryptoModeKey);
-    // Wipe secrets from secure storage
-    await _secureStorage.delete(key: _seedKey);
-    await _secureStorage.delete(key: _publicKeyKey);
-    await _secureStorage.delete(key: _secretKeyKey);
+    // Wipe secrets from secure storage (each wrapped individually —
+    // macOS Keychain can throw PlatformException, must not block navigation)
+    try {
+      await _secureStorage.delete(key: _seedKey);
+    } catch (e) {
+      debugPrint('⚠️ Failed to delete seed from keychain: $e');
+    }
+    try {
+      await _secureStorage.delete(key: _publicKeyKey);
+    } catch (e) {
+      debugPrint('⚠️ Failed to delete public key from keychain: $e');
+    }
+    try {
+      await _secureStorage.delete(key: _secretKeyKey);
+    } catch (e) {
+      debugPrint('⚠️ Failed to delete secret key from keychain: $e');
+    }
   }
 
   /// Clear wallet — alias for deleteWallet

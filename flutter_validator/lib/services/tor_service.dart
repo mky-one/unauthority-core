@@ -20,8 +20,11 @@ class TorService {
   final int _socksPort = 9250;
   bool _isRunning = false;
   String? _activeProxy; // "host:port" of the active SOCKS proxy
+  String? _onionAddress; // Generated .onion address (hidden service mode)
+  String? _hiddenServiceDir;
 
   bool get isRunning => _isRunning;
+  String? get onionAddress => _onionAddress;
   String get proxyAddress => _activeProxy ?? 'localhost:$_socksPort';
   int get activeSocksPort {
     if (_activeProxy != null) {
@@ -80,6 +83,148 @@ class TorService {
       _isRunning = false;
       _activeProxy = null;
       debugPrint('✅ Tor stopped');
+    }
+  }
+
+  // ════════════════════════════════════════════════════════════════════════
+  // HIDDEN SERVICE — Create a .onion address for the validator node
+  // ════════════════════════════════════════════════════════════════════════
+
+  /// Start Tor with a hidden service that routes traffic to a local port.
+  /// Returns the generated .onion address, or null on failure.
+  ///
+  /// [localPort] — The local port the hidden service forwards to (e.g., 3030)
+  /// [onionPort] — The port exposed on the .onion address (default: 80)
+  Future<String?> startWithHiddenService({
+    required int localPort,
+    int onionPort = 80,
+  }) async {
+    if (_isRunning) {
+      debugPrint('🔵 Tor already running');
+      if (_onionAddress != null) return _onionAddress;
+      return null;
+    }
+
+    // Find Tor binary
+    String? torBinary = await _findTorBinary();
+    if (torBinary == null) {
+      debugPrint('🔍 No Tor binary found, attempting auto-install...');
+      torBinary = await _autoInstallTor();
+    }
+    if (torBinary == null) {
+      debugPrint('📥 Auto-install failed, attempting download...');
+      torBinary = await _downloadAndCacheTor();
+    }
+    if (torBinary == null) {
+      debugPrint('❌ Could not find, install, or download Tor');
+      return null;
+    }
+
+    // Setup directories
+    final appDir = await getApplicationSupportDirectory();
+    _torDataDir = path.join(appDir.path, 'tor_validator_data');
+    _hiddenServiceDir = path.join(appDir.path, 'tor_hidden_service');
+    await Directory(_torDataDir!).create(recursive: true);
+    await Directory(_hiddenServiceDir!).create(recursive: true);
+
+    // Set proper permissions on hidden service dir (Tor requires 700)
+    if (!Platform.isWindows) {
+      await Process.run('chmod', ['700', _hiddenServiceDir!]);
+    }
+
+    // Check if we already have a .onion address from a previous run
+    final hostnameFile = File(path.join(_hiddenServiceDir!, 'hostname'));
+    if (await hostnameFile.exists()) {
+      _onionAddress = (await hostnameFile.readAsString()).trim();
+      debugPrint('📋 Existing .onion: $_onionAddress');
+    }
+
+    // Create torrc with hidden service config
+    final torrcPath = path.join(_torDataDir!, 'torrc');
+    final config = '''
+# UAT Validator — Hidden Service Tor Configuration
+# Generated automatically — do not edit manually
+
+DataDirectory $_torDataDir
+SocksPort $_socksPort
+Log notice stdout
+
+# Hidden Service: Route .onion traffic to local uat-node API
+HiddenServiceDir $_hiddenServiceDir
+HiddenServicePort $onionPort 127.0.0.1:$localPort
+
+# Allow SOCKS for outgoing connections (connect to bootstrap nodes)
+DisableNetwork 0
+
+# Security: No exit relaying
+ExitRelay 0
+ExitPolicy reject *:*
+''';
+    await File(torrcPath).writeAsString(config);
+
+    debugPrint('🚀 Starting Tor with hidden service...');
+    debugPrint('   Binary: $torBinary');
+    debugPrint('   Hidden service → 127.0.0.1:$localPort');
+
+    try {
+      _torProcess = await Process.start(torBinary, ['-f', torrcPath]);
+
+      // Monitor for bootstrap completion
+      _torProcess!.stdout.listen((data) {
+        final output = String.fromCharCodes(data);
+        if (output.contains('Bootstrapped 100%') ||
+            output.contains('Tor has successfully opened a circuit')) {
+          _isRunning = true;
+          _activeProxy = 'localhost:$_socksPort';
+        }
+      });
+
+      _torProcess!.stderr.listen((data) {
+        final error = String.fromCharCodes(data);
+        if (error.contains('[err]') || error.contains('Error')) {
+          debugPrint('⚠️  Tor: $error');
+        }
+      });
+
+      _torProcess!.exitCode.then((code) {
+        if (code != 0 && _isRunning) {
+          debugPrint('⚠️  Tor process exited with code $code');
+        }
+        _isRunning = false;
+      });
+
+      // Wait for bootstrap (max 120 seconds)
+      final deadline = DateTime.now().add(const Duration(seconds: 120));
+      while (!_isRunning && DateTime.now().isBefore(deadline)) {
+        await Future.delayed(const Duration(milliseconds: 500));
+        if (_torProcess == null) return null;
+      }
+
+      if (!_isRunning) {
+        debugPrint('❌ Tor failed to bootstrap within 120 seconds');
+        await stop();
+        return null;
+      }
+
+      // Read the generated .onion address
+      // Tor creates the hostname file after bootstrapping
+      for (var attempt = 0; attempt < 10; attempt++) {
+        if (await hostnameFile.exists()) {
+          _onionAddress = (await hostnameFile.readAsString()).trim();
+          if (_onionAddress!.endsWith('.onion')) {
+            debugPrint('🧅 Hidden service: $_onionAddress');
+            debugPrint('   Routes to: 127.0.0.1:$localPort');
+            return _onionAddress;
+          }
+        }
+        await Future.delayed(const Duration(seconds: 1));
+      }
+
+      debugPrint('❌ Could not read .onion hostname after Tor started');
+      return null;
+    } catch (e) {
+      debugPrint('❌ Failed to start Tor hidden service: $e');
+      return null;
     }
   }
 

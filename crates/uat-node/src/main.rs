@@ -2409,48 +2409,102 @@ fn print_history_table(blocks: Vec<&Block>) {
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // --- 1. LOGIKA PORT DINAMIS ---
-    // Parse command line: --config validator.toml
+    // Parse command line arguments
     let args: Vec<String> = std::env::args().collect();
 
-    // Try to load port from validator.toml if --config is provided
-    let mut api_port: u16 = 3030; // Default
-    if let Some(config_idx) = args.iter().position(|a| a == "--config") {
-        if let Some(config_path) = args.get(config_idx + 1) {
-            if let Ok(config_content) = fs::read_to_string(config_path) {
-                // Parse TOML to get [api] rest_port
-                if let Some(line) = config_content
-                    .lines()
-                    .find(|l| l.trim().starts_with("rest_port"))
-                {
-                    if let Some(port_str) = line.split('=').nth(1) {
-                        api_port = port_str.trim().parse().unwrap_or(3030);
+    // Extended CLI arguments for Flutter Validator launcher
+    let mut api_port: u16 = 3030;
+    let mut data_dir_override: Option<String> = None;
+    let mut node_id_override: Option<String> = None;
+    let mut json_log = false; // Machine-readable logs for Flutter
+
+    {
+        let mut i = 1;
+        while i < args.len() {
+            match args[i].as_str() {
+                "--port" => {
+                    if let Some(v) = args.get(i + 1) {
+                        api_port = v.parse().unwrap_or(3030);
+                        i += 1;
+                    }
+                }
+                "--data-dir" => {
+                    if let Some(v) = args.get(i + 1) {
+                        data_dir_override = Some(v.clone());
+                        i += 1;
+                    }
+                }
+                "--node-id" => {
+                    if let Some(v) = args.get(i + 1) {
+                        node_id_override = Some(v.clone());
+                        i += 1;
+                    }
+                }
+                "--json-log" => {
+                    json_log = true;
+                }
+                "--config" => {
+                    // Legacy: load from validator.toml
+                    if let Some(config_path) = args.get(i + 1) {
+                        if let Ok(config_content) = fs::read_to_string(config_path) {
+                            if let Some(line) = config_content
+                                .lines()
+                                .find(|l| l.trim().starts_with("rest_port"))
+                            {
+                                if let Some(port_str) = line.split('=').nth(1) {
+                                    api_port = port_str.trim().parse().unwrap_or(3030);
+                                }
+                            }
+                        }
+                        i += 1;
+                    }
+                }
+                _ => {
+                    // Legacy: bare port number as first arg
+                    if i == 1 {
+                        if let Ok(p) = args[i].parse::<u16>() {
+                            api_port = p;
+                        }
                     }
                 }
             }
+            i += 1;
         }
     }
 
-    // Fallback: accept direct port argument
-    if let Some(port_arg) = args.get(1).and_then(|s| s.parse().ok()) {
-        api_port = port_arg;
+    // Structured JSON log helper for Flutter process monitoring
+    macro_rules! json_event {
+        ($event:expr, $($key:expr => $val:expr),*) => {
+            if json_log {
+                let mut _j = serde_json::json!({"event": $event});
+                $(_j[$key] = serde_json::json!($val);)*
+                println!("{}", _j);
+            }
+        };
     }
 
     // --- NEW: INITIALIZE DATABASE ---
     println!("🗄️  Initializing database...");
-    // AUTO-DETECT NODE ID from port or environment variable
-    let node_id = std::env::var("UAT_NODE_ID").unwrap_or_else(|_| match api_port {
-        3030 => "validator-1".to_string(),
-        3031 => "validator-2".to_string(),
-        3032 => "validator-3".to_string(),
-        _ => format!("node-{}", api_port),
+    // AUTO-DETECT NODE ID from override, env var, or port
+    let node_id = node_id_override.unwrap_or_else(|| {
+        std::env::var("UAT_NODE_ID").unwrap_or_else(|_| match api_port {
+            3030 => "validator-1".to_string(),
+            3031 => "validator-2".to_string(),
+            3032 => "validator-3".to_string(),
+            _ => format!("node-{}", api_port),
+        })
     });
 
+    // Data directory: --data-dir override, or default node_data/<id>/
+    let base_data_dir = data_dir_override.unwrap_or_else(|| format!("node_data/{}", node_id));
+
     println!("🆔 Node ID: {}", node_id);
-    println!("📂 Data directory: node_data/{}/", node_id);
+    println!("📂 Data directory: {}/", base_data_dir);
+    json_event!("init", "node_id" => &node_id, "data_dir" => &base_data_dir, "port" => api_port);
 
     // Create node-specific database path (CRITICAL: Multi-node isolation)
-    let db_path = format!("node_data/{}/uat_database", node_id);
-    std::fs::create_dir_all(format!("node_data/{}", node_id))?;
+    let db_path = format!("{}/uat_database", base_data_dir);
+    std::fs::create_dir_all(&base_data_dir)?;
 
     let database = match UatDatabase::open(&db_path) {
         Ok(db) => {
@@ -2488,7 +2542,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // SECURITY: Wallet keys are encrypted at rest using age encryption.
     // The encryption password is derived from the node ID (for automated startup).
     // MAINNET: operators MUST set UAT_WALLET_PASSWORD — weak auto-key is rejected.
-    let wallet_path = format!("node_data/{}/wallet.json", &node_id);
+    let wallet_path = format!("{}/wallet.json", &base_data_dir);
     let wallet_password = match std::env::var("UAT_WALLET_PASSWORD") {
         Ok(pw) if pw.len() >= 12 => pw,
         Ok(pw) if !pw.is_empty() => {
@@ -2549,7 +2603,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     } else {
         let new_k = uat_crypto::generate_keypair();
-        fs::create_dir_all(format!("node_data/{}", &node_id))?;
+        fs::create_dir_all(&base_data_dir)?;
         // Store encrypted from the start
         let encrypted = uat_crypto::migrate_to_encrypted(&new_k, &wallet_password)
             .map_err(|e| Box::<dyn std::error::Error>::from(format!("Encryption failed: {}", e)))?;
@@ -2561,6 +2615,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let my_address = uat_crypto::public_key_to_address(&keys.public_key);
     let my_short = get_short_addr(&my_address);
     let secret_key = keys.secret_key.clone();
+    json_event!("wallet_ready", "address" => &my_address, "short" => &my_short);
 
     // FIX: Load ledger and genesis BEFORE wrapping in Arc to prevent race condition
     let mut ledger_state = load_from_disk(&database);
@@ -3257,6 +3312,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("   dial <addr>           - Manual connection");
     println!("   exit                  - Exit application");
     println!("------------------------------------------------------------------");
+
+    // Emit structured event for Flutter process monitor
+    json_event!("node_ready",
+        "address" => &my_address,
+        "port" => api_port,
+        "onion" => onion_addr.as_deref().unwrap_or("none")
+    );
 
     let mut stdin = BufReader::new(io::stdin()).lines();
 

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../services/wallet_service.dart';
 import '../services/api_service.dart';
+import '../services/block_construction_service.dart';
 import '../constants/blockchain.dart';
 import '../utils/address_validator.dart';
 
@@ -61,25 +62,34 @@ class _SendScreenState extends State<SendScreen> {
         // If balance check fails (network), let the backend reject
       }
 
-      // FIX C11-02/C11-03: For L1 testnet, let the node sign the block.
-      // Client-side signing (via BlockConstructionService) requires fee
-      // negotiation protocol not yet available — sending a mismatched
-      // signature causes guaranteed rejection. Omit signature so the
-      // backend signs for node-owned addresses.
-      // TODO: Route through BlockConstructionService once backend supports
-      //       client timestamp/fee in SendRequest for L2+ signing.
-      String? signature;
-      String? publicKey;
-      debugPrint(
-          '💸 [Send] Sending without client signature (functional testnet)...');
-
-      final result = await apiService.sendTransaction(
-        from: wallet['address']!,
-        to: _toController.text.trim(),
-        amount: amountUat,
-        signature: signature,
-        publicKey: publicKey,
+      // Use BlockConstructionService for full client-side block construction
+      // (PoW + Dilithium5 signing) — required for external addresses on L2+
+      final blockService = BlockConstructionService(
+        api: apiService,
+        wallet: walletService,
       );
+
+      // Check if wallet has signing keys (Dilithium5 keypair)
+      final hasKeys = wallet['public_key'] != null;
+
+      Map<String, dynamic> result;
+      if (hasKeys) {
+        // Full client-side signing via BlockConstructionService
+        debugPrint('💸 [Send] Client-side signing with Dilithium5...');
+        result = await blockService.sendTransaction(
+          to: toAddress,
+          amountUat: amountUat,
+        );
+      } else {
+        // Address-only import — no keys, let node sign (functional testnet only)
+        debugPrint(
+            '💸 [Send] No signing keys — node-signed (functional testnet)...');
+        result = await apiService.sendTransaction(
+          from: wallet['address']!,
+          to: toAddress,
+          amount: amountUat,
+        );
+      }
 
       if (!mounted) return;
       debugPrint(

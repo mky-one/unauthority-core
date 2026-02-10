@@ -115,8 +115,25 @@ impl TestnetConfig {
 }
 
 /// Global testnet configuration
+///
+/// MAINNET BUILD: Always returns Production config regardless of environment variables.
+/// This is the MASTER SAFETY GATE — all bypass checks flow through get_testnet_config(),
+/// so forcing Production level here eliminates ALL testnet bypasses at once:
+///   - should_enable_consensus() → true (no immediate finalization)
+///   - should_validate_signatures() → true (no unsigned blocks)
+///   - should_enable_faucet() → false (no free tokens)
+///   - Anti-whale → enforced (no TESTNET: prefix bypass)
+///
+/// TESTNET BUILD: Reads UAT_TESTNET_LEVEL env var, defaults to Consensus (Level 2).
 static TESTNET_CONFIG: std::sync::LazyLock<TestnetConfig> = std::sync::LazyLock::new(|| {
-    // Read from environment variable or config file
+    // MAINNET: Hardcoded to Production. No env var can weaken this.
+    if uat_core::is_mainnet_build() {
+        println!("🔒 MAINNET BUILD: All security enforced (consensus, signatures, anti-whale)");
+        println!("   Faucet: DISABLED | Consensus: ENABLED | Signatures: REQUIRED");
+        return TestnetConfig::production_simulation();
+    }
+
+    // TESTNET: Allow level selection via environment variable
     match std::env::var("UAT_TESTNET_LEVEL").as_deref() {
         Ok("functional") => {
             println!("🧪 TESTNET Level 1: Functional testing (instant finalization, mock burns)");

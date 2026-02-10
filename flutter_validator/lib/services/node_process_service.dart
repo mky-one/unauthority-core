@@ -55,6 +55,34 @@ class NodeProcessService extends ChangeNotifier {
 
   String get localApiUrl => 'http://127.0.0.1:$_apiPort';
 
+  /// Kill any orphaned uat-node that survived a Flutter hot-reload.
+  /// Uses lsof to find the process occupying [port] and kills it.
+  Future<void> _killOrphanedNode(int port) async {
+    try {
+      // Find PID listening on target port
+      final result = await Process.run(
+        'lsof',
+        ['-ti', 'tcp:$port'],
+      );
+      final pids = (result.stdout as String)
+          .trim()
+          .split('\n')
+          .where((s) => s.isNotEmpty);
+      for (final pidStr in pids) {
+        final pid = int.tryParse(pidStr.trim());
+        if (pid != null) {
+          debugPrint('🧹 Killing orphaned process on port $port (PID $pid)');
+          Process.killPid(pid, ProcessSignal.sigterm);
+        }
+      }
+      if (pids.isNotEmpty) {
+        await Future.delayed(const Duration(seconds: 2));
+      }
+    } catch (e) {
+      debugPrint('⚠️ _killOrphanedNode: $e');
+    }
+  }
+
   /// Find an available port starting from [preferred].
   /// Returns the first port that's not already in use.
   static Future<int> findAvailablePort({int preferred = 3035}) async {
@@ -80,11 +108,15 @@ class NodeProcessService extends ChangeNotifier {
   /// [onionAddress] — Pre-configured .onion address (from Tor hidden service)
   /// [bootstrapNodes] — Comma-separated list of bootstrap node addresses
   /// [walletPassword] — Encryption password for the node wallet
+  /// [testnetLevel] — Testnet level: 'functional', 'consensus', or 'production'
+  ///                  Defaults to 'consensus' (Level 2) for real multi-node testing.
+  ///                  Use 'functional' ONLY for local single-node dev.
   Future<bool> start({
     int port = 3035,
     String? onionAddress,
     String? bootstrapNodes,
     String? walletPassword,
+    String testnetLevel = 'consensus',
   }) async {
     if (_status == NodeStatus.starting || _status == NodeStatus.running) {
       debugPrint('⚠️ Node already running or starting');
@@ -97,6 +129,9 @@ class NodeProcessService extends ChangeNotifier {
     notifyListeners();
 
     try {
+      // 0. Kill any orphaned uat-node on the target port (survives hot-reload)
+      await _killOrphanedNode(port);
+
       // 1. Find uat-node binary
       final binaryPath = await _findNodeBinary();
       if (binaryPath == null) {
@@ -110,8 +145,12 @@ class NodeProcessService extends ChangeNotifier {
       await Directory(_dataDir!).create(recursive: true);
 
       // 3. Build environment variables
+      // testnetLevel controls security posture:
+      //   'functional' = Level 1 (no consensus, no sig check — dev only)
+      //   'consensus'  = Level 2 (real aBFT, real signatures — default)
+      //   'production' = Level 3 (identical to mainnet — full security)
       final env = <String, String>{
-        'UAT_TESTNET_LEVEL': 'functional',
+        'UAT_TESTNET_LEVEL': testnetLevel,
       };
       if (onionAddress != null) {
         env['UAT_ONION_ADDRESS'] = onionAddress;

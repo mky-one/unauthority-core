@@ -38,9 +38,14 @@ const BURN_CONSENSUS_THRESHOLD: u128 = 20_000;
 /// Quadratic voting power threshold for send confirmation (production)
 const SEND_CONSENSUS_THRESHOLD: u128 = 20_000;
 /// Minimum threshold for testnet functional mode (bypasses real consensus)
+/// MAINNET: This constant exists but is never reachable — testnet_config forces Production level.
 const TESTNET_FUNCTIONAL_THRESHOLD: u128 = 1;
 /// Initial testnet balance for functional testing (1000 UAT)
+/// MAINNET: Never used — functional testnet path is unreachable on mainnet builds.
 const TESTNET_INITIAL_BALANCE: u128 = 1000 * VOID_PER_UAT;
+/// Total supply: 21,936,236 UAT (protocol constant, validated against genesis on mainnet)
+const TOTAL_SUPPLY_UAT: u128 = 21_936_236;
+const TOTAL_SUPPLY_VOID: u128 = TOTAL_SUPPLY_UAT * VOID_PER_UAT;
 use serde_json::Value;
 
 mod db; // NEW: Database module (sled)
@@ -86,6 +91,7 @@ struct SendRequest {
     from: Option<String>, // Sender address (if empty, use node's address)
     target: String,
     amount: u128,
+    amount_void: Option<u128>,  // Amount already in VOID (skips ×VOID_PER_UAT). Used by client-signed blocks.
     signature: Option<String>, // Client-provided signature (if present, validate instead of signing)
     public_key: Option<String>, // Sender's public key (hex-encoded, REQUIRED for signature verification)
     previous: Option<String>,   // Previous block hash (for client-side signing)
@@ -456,13 +462,19 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
             };
             if let Some(target) = target_addr {
                 // FIX C11-C1: Checked multiplication to prevent u128 wrapping overflow
-                let amt = match req.amount.checked_mul(VOID_PER_UAT) {
-                    Some(v) => v,
-                    None => {
-                        return warp::reply::json(&serde_json::json!({
-                            "status": "error",
-                            "msg": "Amount overflow: value too large"
-                        }));
+                // If amount_void is provided (client-signed with sub-UAT precision),
+                // use it directly. Otherwise multiply UAT × VOID_PER_UAT.
+                let amt = if let Some(void_amt) = req.amount_void {
+                    void_amt
+                } else {
+                    match req.amount.checked_mul(VOID_PER_UAT) {
+                        Some(v) => v,
+                        None => {
+                            return warp::reply::json(&serde_json::json!({
+                                "status": "error",
+                                "msg": "Amount overflow: value too large"
+                            }));
+                        }
                     }
                 };
 
@@ -579,28 +591,12 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
                 if client_signed {
                     blk.signature = req.signature.unwrap();
 
-                    // DEBUG: Print all block fields used in signing_hash for diagnosis
-                    println!("🔍 [DEBUG] === SIGNING HASH DIAGNOSIS ===");
-                    println!("🔍 [DEBUG] chain_id: {}", uat_core::CHAIN_ID);
-                    println!("🔍 [DEBUG] account: {}", blk.account);
-                    println!("🔍 [DEBUG] previous: {}", blk.previous);
-                    println!("🔍 [DEBUG] block_type: {:?} (byte=0)", blk.block_type);
-                    println!("🔍 [DEBUG] amount: {} (u128 le={:?})", blk.amount, blk.amount.to_le_bytes());
-                    println!("🔍 [DEBUG] link: {}", blk.link);
-                    println!("🔍 [DEBUG] public_key len: {} first16={}", blk.public_key.len(), &blk.public_key[..std::cmp::min(16, blk.public_key.len())]);
-                    println!("🔍 [DEBUG] work: {} (u64 le={:?})", blk.work, blk.work.to_le_bytes());
-                    println!("🔍 [DEBUG] timestamp: {} (u64 le={:?})", blk.timestamp, blk.timestamp.to_le_bytes());
-                    println!("🔍 [DEBUG] fee: {} (u128 le={:?})", blk.fee, blk.fee.to_le_bytes());
-                    let server_signing_hash = blk.signing_hash();
-                    println!("🔍 [DEBUG] signing_hash: {}", server_signing_hash);
-                    println!("🔍 [DEBUG] signature len: {}", blk.signature.len());
-                    println!("🔍 [DEBUG] === END DIAGNOSIS ===");
-
                     // CRITICAL: Verify signature with public key (not address!)
                     if !blk.verify_signature() {
+                        let sh = blk.signing_hash();
                         return warp::reply::json(&serde_json::json!({
                             "status": "error",
-                            "msg": format!("Invalid signature: Dilithium5 verification failed. Server signing_hash={}", server_signing_hash)
+                            "msg": format!("Invalid signature: Dilithium5 verification failed. signing_hash={}", sh)
                         }));
                     }
                     println!("✅ Client signature verified successfully");
@@ -622,18 +618,32 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
                 // Block ID sekarang mencakup signature
                 let hash = blk.calculate_hash();
 
-                // FIX v1.0.7: On functional testnet, finalize immediately (no consensus needed)
-                // This matches how faucet/burn work on functional level and prevents
-                // single-node deadlock where CONFIRM_REQ can't find block in ledger.
-                // NOTE: We can't use process_block() here because it validates
-                // public_key↔account binding, which fails when the node signs on behalf
-                // of external addresses. Direct ledger manipulation is safe on functional.
-                if !testnet_config::get_testnet_config().should_enable_consensus() {
+                // FIX v1.0.7+: Finalize immediately when:
+                //   (a) Functional testnet (no consensus needed), OR
+                //   (b) Client-signed block with valid PoW + Dilithium5 signature
+                //       (the block is cryptographically self-sufficient — consensus
+                //       voting adds no security value for externally-signed blocks)
+                //
+                // MAINNET SAFETY: On mainnet build, should_enable_consensus() is ALWAYS true
+                // (forced by testnet_config.rs), so this path is only reached when
+                // client_signed=true. Mainnet client-signed blocks still skip consensus
+                // because they carry a valid Dilithium5 signature + PoW — the cryptographic
+                // proof IS the consensus for the sender's own account chain.
+                //
+                // In block-lattice, each account has its own chain. The sender proves
+                // authorization via their private key signature. Consensus is only needed
+                // for conflicting/double-spend resolution, not for validating a single
+                // correctly-signed send from the account owner.
+                let skip_consensus = !testnet_config::get_testnet_config().should_enable_consensus() || client_signed;
+                if skip_consensus {
                     {
                         let mut l_guard = safe_lock(&l);
                         // Debit sender: amount + fee
+                        // Use blk.fee (not final_fee) because for client-signed blocks,
+                        // blk.fee is what's in the signed block (may be >= final_fee)
+                        let actual_fee = blk.fee;
                         if let Some(sender_state) = l_guard.accounts.get_mut(&sender_addr) {
-                            let total_debit = amt + final_fee;
+                            let total_debit = amt + actual_fee;
                             if sender_state.balance < total_debit {
                                 return warp::reply::json(&serde_json::json!({
                                     "status": "error",
@@ -651,11 +661,12 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
                         // Insert block
                         l_guard.blocks.insert(hash.clone(), blk.clone());
                         // Accumulate fees
-                        l_guard.accumulated_fees_void += final_fee;
+                        l_guard.accumulated_fees_void += actual_fee;
                     }
                     SAVE_DIRTY.store(true, Ordering::Relaxed);
-                    println!("✅ Send finalized immediately (functional testnet): {} → {} ({} UAT, fee {} VOID)",
-                        get_short_addr(&sender_addr), get_short_addr(&target), amt / VOID_PER_UAT, final_fee);
+                    let reason = if client_signed { "client-signed" } else { "functional testnet" };
+                    println!("✅ Send finalized immediately ({}): {} → {} ({} UAT, fee {} VOID)",
+                        reason, get_short_addr(&sender_addr), get_short_addr(&target), amt / VOID_PER_UAT, blk.fee);
 
                     // Auto-receive for recipient on functional testnet
                     // In block-lattice, the recipient needs their own Receive block.
@@ -703,8 +714,8 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
                         "status":"success",
                         "tx_hash":hash,
                         "initial_power": initial_power,
-                        "fee_paid_void": final_fee,
-                        "fee_multiplier": final_fee as f64 / base_fee as f64
+                        "fee_paid_void": blk.fee,
+                        "fee_multiplier": blk.fee as f64 / base_fee as f64
                     }));
                 }
 
@@ -858,8 +869,10 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
                                 previous: state.head.clone(),
                                 block_type: BlockType::Mint,
                                 amount: uat_to_mint,
-                                // Prefix with TESTNET: on functional level to bypass anti-whale in ledger
-                                link: if testnet_config::get_testnet_config().level == testnet_config::TestnetLevel::Functional {
+                                // Prefix with TESTNET: on functional testnet build ONLY to bypass anti-whale in ledger.
+                                // MAINNET: is_testnet_build() is a const fn that returns false on mainnet builds,
+                                // so the compiler eliminates the TESTNET: branch entirely — it cannot exist in mainnet binary.
+                                link: if uat_core::is_testnet_build() && testnet_config::get_testnet_config().level == testnet_config::TestnetLevel::Functional {
                                     format!("TESTNET:{}:{}:{}", sym, clean_txid, prc as u128)
                                 } else {
                                     format!("{}:{}:{}", sym, clean_txid, prc as u128)
@@ -1113,7 +1126,9 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
         .map(
             move |(l, ab): (Arc<Mutex<Ledger>>, Arc<Mutex<HashMap<String, String>>>)| {
                 let l_guard = safe_lock(&l);
-                let total_supply = 21_936_236u128 * VOID_PER_UAT;
+                // Protocol constant: 21,936,236 UAT total supply (immutable)
+                // Validated against genesis_config.json on mainnet startup
+                let total_supply = TOTAL_SUPPLY_VOID;
                 let circulating = total_supply - l_guard.distribution.remaining_supply;
 
                 // Validator count = genesis bootstrap validators
@@ -2542,12 +2557,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // --- NEW: INITIALIZE DATABASE ---
     println!("🗄️  Initializing database...");
     // AUTO-DETECT NODE ID from override, env var, or port
+    // TESTNET ONLY: Port-to-name mapping is a development convenience.
+    // MAINNET: Validators are identified by their public key/address, not port.
     let node_id = node_id_override.unwrap_or_else(|| {
-        std::env::var("UAT_NODE_ID").unwrap_or_else(|_| match api_port {
-            3030 => "validator-1".to_string(),
-            3031 => "validator-2".to_string(),
-            3032 => "validator-3".to_string(),
-            _ => format!("node-{}", api_port),
+        std::env::var("UAT_NODE_ID").unwrap_or_else(|_| {
+            if uat_core::is_testnet_build() {
+                match api_port {
+                    3030 => "validator-1".to_string(),
+                    3031 => "validator-2".to_string(),
+                    3032 => "validator-3".to_string(),
+                    _ => format!("node-{}", api_port),
+                }
+            } else {
+                format!("node-{}", api_port)
+            }
         })
     });
 

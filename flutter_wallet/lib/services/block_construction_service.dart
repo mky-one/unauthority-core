@@ -1,29 +1,24 @@
 import 'dart:convert';
 import 'dart:isolate';
 import 'dart:typed_data';
+import 'package:flutter/foundation.dart';
+import 'package:pointycastle/digests/keccak.dart';
 import 'api_service.dart';
 import 'wallet_service.dart';
 
 /// Client-side block-lattice block construction for UAT.
 ///
 /// Matches the backend's Block struct and signing_hash() exactly:
-/// - Keccak-256 with CHAIN_ID domain separation
+/// - Keccak-256 with CHAIN_ID domain separation (via pointycastle)
 /// - PoW anti-spam: 16 leading zero bits
 /// - Dilithium5 signature over signing_hash
 ///
 /// This enables fully sovereign transactions — the node only verifies,
 /// it never touches the user's secret key.
 ///
-/// ⚠️  KNOWN PROTOCOL ISSUE (C11-07):
-/// The backend's POST /send handler overwrites two signing_hash fields
-/// after block construction:
-///   1. `fee` — set by anti-whale engine (client signs with fee=0)
-///   2. `timestamp` — always uses server's SystemTime::now()
-/// As a result, the client's signing_hash will never match the backend's
-/// until the backend's SendRequest accepts `timestamp` and either a
-/// `fee` field or a fee-estimation endpoint is available.
-/// Client-signed blocks currently fail verification on the backend.
-/// Use L1 testnet mode (node signs) until this protocol gap is resolved.
+/// The backend's POST /send handler accepts client-provided `timestamp`
+/// and `fee` fields when a signature is present, preserving the
+/// signing_hash integrity for client-signed blocks.
 class BlockConstructionService {
   final ApiService _api;
   final WalletService _wallet;
@@ -123,6 +118,22 @@ class BlockConstructionService {
 
     final work = powResult['work'] as int;
     final signingHash = powResult['hash'] as String;
+
+    // DEBUG: Print all fields for signing_hash diagnosis
+    debugPrint('🔍 [DEBUG] === CLIENT SIGNING HASH DIAGNOSIS ===');
+    debugPrint('🔍 [DEBUG] chain_id: $chainId');
+    debugPrint('🔍 [DEBUG] account: $address');
+    debugPrint('🔍 [DEBUG] previous: $previous');
+    debugPrint('🔍 [DEBUG] block_type: $blockTypeSend');
+    debugPrint('🔍 [DEBUG] amount(VOID): $amountVoid');
+    debugPrint('🔍 [DEBUG] link: $to');
+    debugPrint(
+        '🔍 [DEBUG] public_key len: ${publicKeyHex.length} first16=${publicKeyHex.substring(0, 16)}');
+    debugPrint('🔍 [DEBUG] work: $work');
+    debugPrint('🔍 [DEBUG] timestamp: $timestamp');
+    debugPrint('🔍 [DEBUG] fee: $baseFeeVoid');
+    debugPrint('🔍 [DEBUG] signing_hash: $signingHash');
+    debugPrint('🔍 [DEBUG] === END DIAGNOSIS ===');
 
     // 6. Sign the signing_hash with Dilithium5
     final signature = await _wallet.signTransaction(signingHash);
@@ -328,184 +339,14 @@ class BlockConstructionService {
   }
 
   // ════════════════════════════════════════════════════════════════════
-  // Keccak-256 — Pure Dart implementation (pre-NIST, matches sha3::Keccak256)
+  // Keccak-256 — via pointycastle (pre-NIST Keccak, matches sha3::Keccak256)
   // ════════════════════════════════════════════════════════════════════
-  //
-  // Keccak-256 uses the Keccak sponge with:
-  //   - Rate = 1088 bits (136 bytes)
-  //   - Capacity = 512 bits
-  //   - Padding = 0x01 (Keccak), NOT 0x06 (SHA-3)
-  //   - Output = 256 bits (32 bytes)
 
-  static const int _keccakRate = 136; // bytes
-  static const int _keccakRounds = 24;
-
-  /// Static Keccak-256 for isolate use (same algorithm as instance method).
+  /// Keccak-256 using pointycastle's verified implementation.
+  /// Works in isolates (pure Dart, no FFI).
   static String _keccak256Static(Uint8List input) {
-    final padLen = _keccakRate - (input.length % _keccakRate);
-    final padded = Uint8List(input.length + padLen);
-    padded.setAll(0, input);
-    if (padLen == 1) {
-      padded[input.length] = 0x81;
-    } else {
-      padded[input.length] = 0x01;
-      padded[padded.length - 1] |= 0x80;
-    }
-    final state = List<int>.filled(25, 0);
-    for (int offset = 0; offset < padded.length; offset += _keccakRate) {
-      for (int i = 0; i < _keccakRate ~/ 8; i++) {
-        final idx = offset + i * 8;
-        int word = 0;
-        for (int b = 0; b < 8; b++) {
-          word |= padded[idx + b] << (b * 8);
-        }
-        state[i] ^= word;
-      }
-      _keccakF1600Static(state);
-    }
-    final output = Uint8List(32);
-    for (int i = 0; i < 4; i++) {
-      final word = state[i];
-      for (int b = 0; b < 8; b++) {
-        output[i * 8 + b] = (word >> (b * 8)) & 0xFF;
-      }
-    }
+    final digest = KeccakDigest(256);
+    final output = digest.process(input);
     return output.map((b) => b.toRadixString(16).padLeft(2, '0')).join('');
-  }
-
-  /// Keccak-f[1600] permutation — 24 rounds (static for isolate use)
-  static void _keccakF1600Static(List<int> state) {
-    _keccakF1600Impl(state);
-  }
-
-  /// Shared implementation for static and instance methods
-  static void _keccakF1600Impl(List<int> state) {
-    // Round constants
-    const rc = [
-      0x0000000000000001,
-      0x0000000000008082,
-      0x800000000000808A,
-      0x8000000080008000,
-      0x000000000000808B,
-      0x0000000080000001,
-      0x8000000080008081,
-      0x8000000000008009,
-      0x000000000000008A,
-      0x0000000000000088,
-      0x0000000080008009,
-      0x000000008000000A,
-      0x000000008000808B,
-      0x800000000000008B,
-      0x8000000000008089,
-      0x8000000000008003,
-      0x8000000000008002,
-      0x8000000000000080,
-      0x000000000000800A,
-      0x800000008000000A,
-      0x8000000080008081,
-      0x8000000000008080,
-      0x0000000080000001,
-      0x8000000080008008,
-    ];
-
-    // Rotation offsets
-    const rotations = [
-      0,
-      1,
-      62,
-      28,
-      27,
-      36,
-      44,
-      6,
-      55,
-      20,
-      3,
-      10,
-      43,
-      25,
-      39,
-      41,
-      45,
-      15,
-      21,
-      8,
-      18,
-      2,
-      61,
-      56,
-      14,
-    ];
-
-    // Pi permutation indices
-    const piIndices = [
-      0,
-      10,
-      7,
-      11,
-      17,
-      18,
-      3,
-      5,
-      16,
-      8,
-      21,
-      24,
-      4,
-      15,
-      23,
-      9,
-      13,
-      2,
-      12,
-      20,
-      14,
-      22,
-      1,
-      6,
-      19,
-    ];
-
-    for (int round = 0; round < _keccakRounds; round++) {
-      // θ (theta) step
-      final c = List<int>.filled(5, 0);
-      for (int x = 0; x < 5; x++) {
-        c[x] = state[x] ^
-            state[x + 5] ^
-            state[x + 10] ^
-            state[x + 15] ^
-            state[x + 20];
-      }
-      final d = List<int>.filled(5, 0);
-      for (int x = 0; x < 5; x++) {
-        d[x] = c[(x + 4) % 5] ^ _rotl64(c[(x + 1) % 5], 1);
-      }
-      for (int i = 0; i < 25; i++) {
-        state[i] ^= d[i % 5];
-      }
-
-      // ρ (rho) and π (pi) steps — combined
-      final temp = List<int>.filled(25, 0);
-      for (int i = 0; i < 25; i++) {
-        temp[piIndices[i]] = _rotl64(state[i], rotations[i]);
-      }
-
-      // χ (chi) step
-      for (int y = 0; y < 25; y += 5) {
-        for (int x = 0; x < 5; x++) {
-          state[y + x] =
-              temp[y + x] ^ (~temp[y + (x + 1) % 5] & temp[y + (x + 2) % 5]);
-        }
-      }
-
-      // ι (iota) step
-      state[0] ^= rc[round];
-    }
-  }
-
-  /// 64-bit left rotation
-  static int _rotl64(int value, int shift) {
-    if (shift == 0) return value;
-    return ((value << shift) | (value >>> (64 - shift)));
   }
 }

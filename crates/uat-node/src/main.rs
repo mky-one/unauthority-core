@@ -3610,7 +3610,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     },
                 }
             },
-            Some(event) = rx_in.recv() => {
+            event = rx_in.recv() => {
+                let Some(event) = event else {
+                    // Network channel closed — P2P task exited/crashed
+                    eprintln!("⚠️ Network channel closed, node running in offline mode");
+                    // Keep node alive (API server still works) but just sleep
+                    loop { tokio::time::sleep(Duration::from_secs(60)).await; }
+                };
                 if let NetworkEvent::NewBlock(data) = event {
                         if data.starts_with("ID:") {
                             let parts: Vec<&str> = data.split(':').collect();
@@ -4758,6 +4764,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             }
                         }
                     }
+            }
+            else => {
+                // Both stdin (closed/EOF) and network channel (dropped) are inactive.
+                // This happens in headless mode (nohup) when the P2P network task
+                // hasn't sent any events yet. Sleep briefly and retry — the network
+                // task may still produce events.
+                tokio::time::sleep(Duration::from_millis(100)).await;
             }
         }
     }

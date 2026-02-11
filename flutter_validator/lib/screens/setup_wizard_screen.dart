@@ -31,6 +31,7 @@ class _SetupWizardScreenState extends State<SetupWizardScreen> {
 
   bool _isValidating = false;
   bool _isLaunching = false;
+  bool _isGenesisMonitor = false; // Genesis bootstrap validator → monitor-only mode
   String? _error;
   String? _validatedAddress;
   double? _validatedBalance;
@@ -105,9 +106,15 @@ class _SetupWizardScreenState extends State<SetupWizardScreen> {
         );
       }
 
+      // Check if this address is an active genesis bootstrap validator.
+      // If yes → monitor-only mode (no new node spawn, no new onion).
+      final isGenesisActive =
+          await apiService.isActiveGenesisValidator(walletAddress);
+
       setState(() {
         _validatedAddress = walletAddress;
         _validatedBalance = account.balanceUAT;
+        _isGenesisMonitor = isGenesisActive;
         _currentStep = 1;
       });
     } catch (e) {
@@ -121,12 +128,50 @@ class _SetupWizardScreenState extends State<SetupWizardScreen> {
     setState(() {
       _isLaunching = true;
       _currentStep = 2;
-      _launchStatus = 'Initializing Tor hidden service...';
       _launchProgress = 0.1;
       _error = null;
     });
 
     try {
+      final walletService = context.read<WalletService>();
+
+      // ── MONITOR-ONLY MODE ──
+      // Genesis bootstrap validator is already running as a CLI node.
+      // Don't spawn a new uat-node, don't create a new .onion address.
+      // Just save the wallet and go straight to the dashboard.
+      if (_isGenesisMonitor) {
+        setState(() {
+          _launchStatus = 'Genesis bootstrap validator detected.\n'
+              'Entering monitor-only mode...';
+          _launchProgress = 0.3;
+        });
+
+        await walletService.setMonitorMode(true);
+
+        setState(() {
+          _launchStatus = 'Connecting to bootstrap node dashboard...';
+          _launchProgress = 0.7;
+        });
+
+        await Future.delayed(const Duration(seconds: 1));
+
+        setState(() {
+          _launchStatus = 'Monitor mode active!';
+          _launchProgress = 1.0;
+        });
+
+        await Future.delayed(const Duration(seconds: 1));
+        widget.onSetupComplete();
+        return;
+      }
+
+      // ── NORMAL MODE ── Spawn new validator node with Tor hidden service
+      await walletService.setMonitorMode(false);
+
+      setState(() {
+        _launchStatus = 'Initializing Tor hidden service...';
+      });
+
       final nodeService = context.read<NodeProcessService>();
       final torService = context.read<TorService>();
 
@@ -309,31 +354,70 @@ class _SetupWizardScreenState extends State<SetupWizardScreen> {
             _buildErrorBox(_error!),
             const SizedBox(height: 16),
           ],
-          Card(
-              color: const Color(0xFF1A1F2E).withValues(alpha: 0.6),
-              child: Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Text('What happens next:',
+          if (_isGenesisMonitor) ...[
+            // Genesis bootstrap validator — monitor-only flow
+            Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                    color: Colors.amber.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(
+                        color: Colors.amber.withValues(alpha: 0.5))),
+                child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Row(children: [
+                        Icon(Icons.shield, color: Colors.amber, size: 20),
+                        SizedBox(width: 8),
+                        Text('Genesis Bootstrap Validator',
                             style: TextStyle(
-                                fontWeight: FontWeight.bold, fontSize: 14)),
-                        const SizedBox(height: 8),
-                        _stepItem(
-                            '1', 'Setup Tor hidden service (.onion address)'),
-                        _stepItem('2', 'Start uat-node validator binary'),
-                        _stepItem('3', 'Sync blockchain from network'),
-                        _stepItem('4', 'Register as active validator'),
-                      ]))),
+                                fontWeight: FontWeight.bold,
+                                color: Colors.amber,
+                                fontSize: 14)),
+                      ]),
+                      const SizedBox(height: 8),
+                      Text(
+                          'This address is an active genesis bootstrap validator.\n'
+                          'The node is already running via CLI — no new node will be spawned.\n\n'
+                          'You will enter monitor-only mode to view the dashboard.',
+                          style: TextStyle(
+                              fontSize: 13, color: Colors.grey[300])),
+                    ])),
+          ] else ...[
+            // Normal validator — full node spawn flow
+            Card(
+                color: const Color(0xFF1A1F2E).withValues(alpha: 0.6),
+                child: Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text('What happens next:',
+                              style: TextStyle(
+                                  fontWeight: FontWeight.bold, fontSize: 14)),
+                          const SizedBox(height: 8),
+                          _stepItem(
+                              '1', 'Setup Tor hidden service (.onion address)'),
+                          _stepItem('2', 'Start uat-node validator binary'),
+                          _stepItem('3', 'Sync blockchain from network'),
+                          _stepItem('4', 'Register as active validator'),
+                        ]))),
+          ],
           const SizedBox(height: 24),
           ElevatedButton.icon(
               onPressed: _isLaunching ? null : _launchNode,
-              icon: const Icon(Icons.rocket_launch),
-              label: const Text('START VALIDATOR NODE',
-                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+              icon: Icon(_isGenesisMonitor
+                  ? Icons.monitor_heart
+                  : Icons.rocket_launch),
+              label: Text(
+                  _isGenesisMonitor
+                      ? 'OPEN DASHBOARD (MONITOR MODE)'
+                      : 'START VALIDATOR NODE',
+                  style: const TextStyle(
+                      fontSize: 16, fontWeight: FontWeight.bold)),
               style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.green,
+                  backgroundColor:
+                      _isGenesisMonitor ? const Color(0xFF6B4CE6) : Colors.green,
                   foregroundColor: Colors.white,
                   padding:
                       const EdgeInsets.symmetric(horizontal: 32, vertical: 16),
@@ -385,12 +469,17 @@ class _SetupWizardScreenState extends State<SetupWizardScreen> {
                 child: CircularProgressIndicator(
                     strokeWidth: 4, color: Color(0xFF6B4CE6)))
           else
-            const Icon(Icons.check_circle, size: 80, color: Colors.green),
+            Icon(_isGenesisMonitor ? Icons.monitor_heart : Icons.check_circle,
+                size: 80, color: Colors.green),
           const SizedBox(height: 32),
           Text(
               _launchProgress < 1.0
-                  ? 'Starting Validator Node...'
-                  : 'Validator Running!',
+                  ? (_isGenesisMonitor
+                      ? 'Entering Monitor Mode...'
+                      : 'Starting Validator Node...')
+                  : (_isGenesisMonitor
+                      ? 'Monitor Mode Active!'
+                      : 'Validator Running!'),
               style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
               textAlign: TextAlign.center),
           const SizedBox(height: 16),

@@ -13,7 +13,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 use crate::{
-    MIN_VALIDATOR_STAKE_VOID, REWARD_EPOCH_SECS, REWARD_HALVING_INTERVAL_EPOCHS,
+    MIN_VALIDATOR_STAKE_VOID, REWARD_HALVING_INTERVAL_EPOCHS,
     REWARD_MIN_UPTIME_PCT, REWARD_PROBATION_EPOCHS, REWARD_RATE_INITIAL_VOID,
     VALIDATOR_REWARD_POOL_VOID, VOID_PER_UAT, effective_reward_epoch_secs,
 };
@@ -59,12 +59,14 @@ impl ValidatorRewardState {
 
     /// Returns true if this validator is eligible for rewards this epoch.
     /// Requirements:
-    /// 1. NOT a genesis bootstrap validator
+    /// 1. NOT a genesis bootstrap validator (mainnet only — testnet allows genesis)
     /// 2. Past probation period (at least 1 epoch since join)
     /// 3. Meets minimum uptime (95%)
     /// 4. Meets minimum stake (1000 UAT)
     pub fn is_eligible(&self, current_epoch: u64) -> bool {
-        if self.is_genesis {
+        // Mainnet: genesis bootstrap validators never earn rewards
+        // Testnet: genesis validators ARE eligible (otherwise no one can test rewards)
+        if self.is_genesis && !crate::is_testnet_build() {
             return false;
         }
         if current_epoch < self.join_epoch + REWARD_PROBATION_EPOCHS {
@@ -181,6 +183,31 @@ impl ValidatorRewardPool {
     pub fn epoch_remaining_secs(&self, now_secs: u64) -> u64 {
         let end = self.epoch_start_timestamp + self.epoch_duration_secs;
         end.saturating_sub(now_secs)
+    }
+
+    /// Fast-forward through missed epochs (e.g., after node restart).
+    /// Skips all fully-elapsed epochs without distributing rewards for them,
+    /// since nobody was online to earn them. Returns number of epochs skipped.
+    pub fn catch_up_epochs(&mut self, now_secs: u64) -> u64 {
+        if self.epoch_duration_secs == 0 {
+            return 0;
+        }
+        let elapsed = now_secs.saturating_sub(self.epoch_start_timestamp);
+        let epochs_behind = elapsed / self.epoch_duration_secs;
+        if epochs_behind <= 1 {
+            return 0; // Current epoch or just one behind — normal processing
+        }
+        // Skip all but the current epoch (no rewards for missed epochs)
+        let skip = epochs_behind - 1;
+        self.current_epoch += skip;
+        self.epoch_start_timestamp += skip * self.epoch_duration_secs;
+        self.halvings_occurred = self.current_epoch / REWARD_HALVING_INTERVAL_EPOCHS;
+        // Reset heartbeats since nobody was online
+        for state in self.validators.values_mut() {
+            state.heartbeats_current_epoch = 0;
+            state.expected_heartbeats = 0;
+        }
+        skip
     }
 
     /// Set expected heartbeats for all validators at the start of an epoch.
@@ -409,7 +436,13 @@ mod tests {
         }
 
         let genesis_state = pool.validators.get(genesis_addr).unwrap();
-        assert!(!genesis_state.is_eligible(pool.current_epoch));
+        // Testnet: genesis validators ARE eligible (for testing rewards)
+        // Mainnet: genesis validators are excluded from rewards
+        if crate::is_testnet_build() {
+            assert!(genesis_state.is_eligible(pool.current_epoch));
+        } else {
+            assert!(!genesis_state.is_eligible(pool.current_epoch));
+        }
 
         let normal_state = pool.validators.get(normal_addr).unwrap();
         assert!(normal_state.is_eligible(pool.current_epoch));
@@ -497,9 +530,14 @@ mod tests {
         let initial_remaining = pool.remaining_void;
         let rewards = pool.distribute_epoch_rewards();
 
-        // Only 2 non-genesis validators should receive rewards
-        assert_eq!(rewards.len(), 2);
-        assert!(!rewards.iter().any(|(addr, _)| addr == "UATgenesis_v1"));
+        // Testnet: all 3 validators eligible (genesis included)
+        // Mainnet: only 2 non-genesis validators
+        if crate::is_testnet_build() {
+            assert_eq!(rewards.len(), 3);
+        } else {
+            assert_eq!(rewards.len(), 2);
+            assert!(!rewards.iter().any(|(addr, _)| addr == "UATgenesis_v1"));
+        }
 
         // √1000 ≈ 31, √4000 ≈ 63 → total = 94
         // v1 gets ~31/94 of 5000 UAT ≈ 1648 UAT
@@ -531,8 +569,14 @@ mod tests {
         let initial_remaining = pool.remaining_void;
         let rewards = pool.distribute_epoch_rewards();
 
-        assert!(rewards.is_empty());
-        assert_eq!(pool.remaining_void, initial_remaining); // Nothing deducted
+        if crate::is_testnet_build() {
+            // Testnet: genesis validators CAN earn rewards
+            assert_eq!(rewards.len(), 1);
+        } else {
+            // Mainnet: genesis validators excluded → no eligible → no rewards
+            assert!(rewards.is_empty());
+            assert_eq!(pool.remaining_void, initial_remaining); // Nothing deducted
+        }
         assert_eq!(pool.current_epoch, 6); // Epoch still advances
     }
 
@@ -609,7 +653,13 @@ mod tests {
 
         let summary = pool.pool_summary();
         assert_eq!(summary.total_validators, 2);
-        assert_eq!(summary.eligible_validators, 1); // Only non-genesis
+        if crate::is_testnet_build() {
+            // On testnet, genesis validators ARE eligible
+            assert_eq!(summary.eligible_validators, 2);
+        } else {
+            // On mainnet, genesis validators are excluded
+            assert_eq!(summary.eligible_validators, 1);
+        }
         assert_eq!(summary.current_epoch, 2);
         assert_eq!(summary.epoch_reward_rate_void, 5_000 * VOID_PER_UAT);
     }

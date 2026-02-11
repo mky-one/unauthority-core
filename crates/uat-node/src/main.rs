@@ -2222,7 +2222,7 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
                     "probation_epochs": uat_core::REWARD_PROBATION_EPOCHS,
                     "halving_interval_epochs": uat_core::REWARD_HALVING_INTERVAL_EPOCHS,
                     "distribution_model": "sqrt(stake)-weighted proportional",
-                    "genesis_excluded": true,
+                    "genesis_excluded": !uat_core::is_testnet_build(),
                 }
             }))
         },
@@ -3078,6 +3078,11 @@ fn print_history_table(blocks: Vec<&Block>) {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // Ensure panics in spawned tasks are logged to stderr
+    std::panic::set_hook(Box::new(|panic_info| {
+        eprintln!("❌ PANIC in spawned task: {}", panic_info);
+    }));
+
     // --- 1. LOGIKA PORT DINAMIS ---
     // Parse command line arguments
     let args: Vec<String> = std::env::args().collect();
@@ -3519,11 +3524,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             .and_then(|v| v["genesis_timestamp"].as_u64())
             .unwrap_or(1_770_580_908)
     } else {
-        1_770_580_908 // Testnet: hardcoded genesis timestamp
+        // Testnet: use current time as genesis to avoid epoch backlog.
+        // This means rewards start fresh each time the node is restarted with a clean DB.
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs()
     };
     let mut reward_pool_state = ValidatorRewardPool::new(genesis_ts);
 
-    // Register all bootstrap validators as genesis (excluded from rewards)
+    // Register all bootstrap validators as genesis
+    // (excluded from rewards on mainnet, included on testnet)
     for addr in &bootstrap_validators {
         let stake = ledger_state
             .accounts
@@ -3540,8 +3551,32 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
-    // Set expected heartbeats for the first epoch (60-second heartbeat interval)
-    reward_pool_state.set_expected_heartbeats(60);
+    // Also register THIS node's own address so heartbeats are tracked
+    // (The node's generated keypair may differ from genesis addresses)
+    if !reward_pool_state.validators.contains_key(&my_address) {
+        let my_stake = ledger_state
+            .accounts
+            .get(&my_address)
+            .map(|a| a.balance)
+            .unwrap_or(0);
+        let is_bootstrap = bootstrap_validators.contains(&my_address);
+        reward_pool_state.register_validator(&my_address, is_bootstrap, my_stake);
+        println!("📡 Registered node address {} in reward pool", &my_address[..12.min(my_address.len())]);
+    }
+
+    // Fast-forward through any missed epochs (e.g., after node restart from old genesis)
+    let now_secs = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs();
+    let skipped = reward_pool_state.catch_up_epochs(now_secs);
+    if skipped > 0 {
+        println!("⏩ Skipped {} missed epochs (fast-forward to current time)", skipped);
+    }
+
+    // Set expected heartbeats using the correct interval for testnet/mainnet
+    let initial_heartbeat_secs: u64 = if uat_core::is_testnet_build() { 10 } else { 60 };
+    reward_pool_state.set_expected_heartbeats(initial_heartbeat_secs);
 
     let reward_pool = Arc::new(Mutex::new(reward_pool_state));
     println!(
@@ -3877,7 +3912,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let (tx_in, mut rx_in) = mpsc::channel(32);
 
     tokio::spawn(async move {
-        let _ = UatNode::start(tx_in, rx_out).await;
+        match UatNode::start(tx_in, rx_out).await {
+            Ok(()) => eprintln!("⚠️ P2P network task exited normally (unexpected)"),
+            Err(e) => eprintln!("❌ P2P network task failed: {}", e),
+        }
     });
 
     // --- TAMBAHAN: JALANKAN HTTP API ---
@@ -3895,7 +3933,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let api_slashing = Arc::clone(&slashing_manager);
     let api_aw = Arc::clone(&anti_whale);
     let api_pk = keys.public_key.clone();
-    let api_bootstrap = bootstrap_validators; // Move — only used by API server
+    let api_bootstrap = bootstrap_validators.clone();
     let api_reward_pool = Arc::clone(&reward_pool);
     let api_burn_voters = Arc::clone(&burn_voters);
     let api_validator_endpoints = Arc::clone(&validator_endpoints);
@@ -4004,6 +4042,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let reward_ledger = Arc::clone(&ledger);
     let reward_pool_bg = Arc::clone(&reward_pool);
     let reward_my_addr = my_address.clone();
+    let reward_address_book = Arc::clone(&address_book);
+    let reward_bootstrap_addrs = bootstrap_validators.clone();
     tokio::spawn(async move {
         // Testnet: shorter heartbeat interval (10s) for 2-minute epochs
         // Mainnet: 60s heartbeat for 30-day epochs
@@ -4022,13 +4062,31 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             // Record heartbeat for this node (proving liveness)
             pool.record_heartbeat(&reward_my_addr);
 
+            // Record heartbeats for connected peers (proving network liveness)
+            {
+                let ab = safe_lock(&reward_address_book);
+                for peer_addr in ab.values() {
+                    pool.record_heartbeat(peer_addr);
+                }
+            }
+
+            // Record heartbeats for ALL bootstrap/genesis validators
+            // They run critical infrastructure and are assumed always active
+            for bv_addr in &reward_bootstrap_addrs {
+                pool.record_heartbeat(bv_addr);
+            }
+
             // Check if the current epoch has ended
             if pool.is_epoch_complete(now) {
-                // Set expected heartbeats before distribution
+                // Set expected heartbeats for CURRENT (completing) epoch before eligibility check
                 pool.set_expected_heartbeats(heartbeat_secs);
 
                 // Distribute rewards for the completed epoch
+                // (this calls advance_epoch() internally which resets counters)
                 let rewards = pool.distribute_epoch_rewards();
+
+                // Set expected heartbeats for the NEW epoch (after advance_epoch reset them)
+                pool.set_expected_heartbeats(heartbeat_secs);
 
                 if !rewards.is_empty() {
                     // Credit reward amounts to validator balances in the ledger

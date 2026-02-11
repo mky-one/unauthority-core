@@ -57,8 +57,12 @@ class _MyAppState extends State<MyApp> {
   Widget build(BuildContext context) {
     return MultiProvider(
       providers: [
+        Provider<TorService>(
+          create: (_) => TorService(),
+          dispose: (_, tor) => tor.stop(),
+        ),
         Provider<ApiService>(
-          create: (_) => ApiService(),
+          create: (ctx) => ApiService(torService: ctx.read<TorService>()),
           dispose: (_, api) => api.dispose(),
         ),
         Provider<WalletService>.value(value: widget.walletService),
@@ -67,10 +71,6 @@ class _MyAppState extends State<MyApp> {
         ),
         ChangeNotifierProvider<NodeProcessService>(
           create: (_) => NodeProcessService(),
-        ),
-        Provider<TorService>(
-          create: (_) => TorService(),
-          dispose: (_, tor) => tor.stop(),
         ),
       ],
       child: MaterialApp(

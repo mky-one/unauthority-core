@@ -99,35 +99,22 @@ class TorService {
     required int localPort,
     int onionPort = 80,
   }) async {
-    if (_isRunning) {
-      debugPrint('🔵 Tor already running');
-      if (_onionAddress != null) return _onionAddress;
-      return null;
+    if (_isRunning && _onionAddress != null) {
+      debugPrint('🔵 Tor hidden service already active: $_onionAddress');
+      return _onionAddress;
     }
 
-    // Kill any existing Tor on our SocksPort BEFORE starting.
-    // The ApiService may have detected an old Tor on 9250 for outgoing requests,
-    // but we need to start a FRESH Tor with hidden service config.
-    // Without this, the new Tor process fails because SocksPort 9250 is already taken.
-    if (await _isPortOpen('localhost', _socksPort)) {
+    // If Tor is running SOCKS-only (started by ApiService), we need to
+    // gracefully restart it with hidden service configuration.
+    // Since we use a shared TorService instance (DI), this is safe.
+    if (_isRunning && _onionAddress == null) {
       debugPrint(
-          '⚠️ Port $_socksPort already in use — killing old Tor process...');
-      // Kill any tor process using our socksPort
-      try {
-        if (Platform.isMacOS || Platform.isLinux) {
-          await Process.run('bash', [
-            '-c',
-            'lsof -ti :$_socksPort | xargs kill -9 2>/dev/null || true'
-          ]);
-        }
-        // Wait for port to be released
-        for (var i = 0; i < 10; i++) {
-          await Future.delayed(const Duration(milliseconds: 300));
-          if (!await _isPortOpen('localhost', _socksPort)) break;
-        }
-        debugPrint('✅ Port $_socksPort freed');
-      } catch (e) {
-        debugPrint('⚠️ Could not kill old Tor: $e');
+          '🔄 Tor running as SOCKS-only — restarting with hidden service...');
+      await stop();
+      // Wait briefly for the port to be released
+      for (var i = 0; i < 10; i++) {
+        await Future.delayed(const Duration(milliseconds: 300));
+        if (!await _isPortOpen('localhost', _socksPort)) break;
       }
     }
 

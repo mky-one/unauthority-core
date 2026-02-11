@@ -30,7 +30,7 @@ class ApiService {
   // _initializeClient() replaces with Tor client asynchronously when needed
   http.Client _client = http.Client();
   NetworkEnvironment environment;
-  final TorService _torService = TorService();
+  final TorService _torService;
 
   /// All available bootstrap URLs for round-robin failover
   List<String> _bootstrapUrls = [];
@@ -57,7 +57,8 @@ class ApiService {
   ApiService({
     String? customUrl,
     this.environment = NetworkEnvironment.testnet,
-  }) {
+    TorService? torService,
+  }) : _torService = torService ?? TorService() {
     _loadBootstrapUrls(environment);
     if (customUrl != null) {
       baseUrl = customUrl;

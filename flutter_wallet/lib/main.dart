@@ -5,6 +5,7 @@ import 'screens/wallet_setup_screen.dart';
 import 'services/account_management_service.dart';
 import 'services/wallet_service.dart';
 import 'services/api_service.dart';
+import 'services/tor_service.dart';
 import 'services/network_config.dart';
 import 'services/dilithium_service.dart';
 import 'services/network_status_service.dart';
@@ -25,9 +26,13 @@ class MyApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MultiProvider(
       providers: [
+        Provider<TorService>(
+          create: (_) => TorService(),
+          dispose: (_, tor) => tor.stop(),
+        ),
         Provider<WalletService>(create: (_) => WalletService()),
         Provider<ApiService>(
-          create: (_) => ApiService(),
+          create: (ctx) => ApiService(torService: ctx.read<TorService>()),
           dispose: (_, api) => api.dispose(),
         ),
         ChangeNotifierProvider<NetworkStatusService>(

@@ -381,9 +381,11 @@ class NodeProcessService extends ChangeNotifier {
     // 1. Check bundled in app (for distribution)
     final execDir = path.dirname(Platform.resolvedExecutable);
     final bundledPaths = [
-      path.join(execDir, binaryName),
-      path.join(execDir, '..', 'Resources', binaryName),
-      path.join(execDir, '..', 'Resources', 'bin', binaryName),
+      path.join(execDir, binaryName), // Linux/Windows: same dir as executable
+      path.join(execDir, '..', 'Resources', binaryName), // macOS: Resources/
+      path.join(execDir, '..', 'Resources', 'bin',
+          binaryName), // macOS: Resources/bin/
+      path.join(execDir, '..', 'MacOS', binaryName), // macOS: MacOS/ (alt)
     ];
     for (final p in bundledPaths) {
       if (await File(p).exists()) {

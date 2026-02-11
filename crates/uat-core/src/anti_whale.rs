@@ -33,7 +33,7 @@ pub struct AntiWhaleEngine {
 impl AntiWhaleConfig {
     pub fn new() -> Self {
         AntiWhaleConfig {
-            max_tx_per_block: 100,
+            max_tx_per_block: 5,
             fee_scale_multiplier: 2,
             max_burn_per_block: 1_000,
         }
@@ -92,6 +92,29 @@ impl AntiWhaleEngine {
                 activity.window_start = Self::now_secs();
             }
         }
+    }
+
+    /// Estimate the fee for the NEXT transaction from this address.
+    /// Read-only — does NOT register the transaction or modify state.
+    /// Used by /fee-estimate endpoint so wallets can pre-fetch dynamic fee.
+    pub fn estimate_fee(&self, address: &str, base_fee: u64) -> u64 {
+        let multiplier = match self.address_activity.get(address) {
+            Some(activity) => {
+                let now = Self::now_secs();
+                // Check if window has expired (would reset)
+                if now.saturating_sub(activity.window_start) >= Self::ACTIVITY_WINDOW_SECS {
+                    1 // Window expired, fee resets to 1×
+                } else if activity.tx_count >= self.config.max_tx_per_block {
+                    // Would trigger scaling on next tx
+                    let excess = activity.tx_count - self.config.max_tx_per_block;
+                    self.config.fee_scale_multiplier.saturating_pow(excess + 1)
+                } else {
+                    1 // Still under threshold
+                }
+            }
+            None => 1, // New address, no activity
+        };
+        base_fee.saturating_mul(multiplier)
     }
 
     /// Register a transaction and calculate fee multiplier
@@ -279,7 +302,7 @@ mod tests {
     #[test]
     fn test_anti_whale_config_creation() {
         let config = AntiWhaleConfig::new();
-        assert_eq!(config.max_tx_per_block, 100);
+        assert_eq!(config.max_tx_per_block, 5);
         assert_eq!(config.fee_scale_multiplier, 2);
         assert_eq!(config.max_burn_per_block, 1_000);
     }
@@ -309,10 +332,23 @@ mod tests {
         let mut engine = AntiWhaleEngine::new(config);
         engine.new_block(1);
 
-        // Register many transactions from same address
-        for _ in 0..101 {
-            let _ = engine.register_transaction("spammer".to_string(), 100);
+        // First 5 transactions should be at base fee
+        for i in 0..5 {
+            let fee = engine.register_transaction("spammer".to_string(), 100).unwrap();
+            assert_eq!(fee, 100, "tx {} should be base fee", i + 1);
         }
+
+        // 6th transaction: 2× base fee
+        let fee6 = engine.register_transaction("spammer".to_string(), 100).unwrap();
+        assert_eq!(fee6, 200, "tx 6 should be 2× base fee");
+
+        // 7th transaction: 4× base fee
+        let fee7 = engine.register_transaction("spammer".to_string(), 100).unwrap();
+        assert_eq!(fee7, 400, "tx 7 should be 4× base fee");
+
+        // 8th transaction: 8× base fee
+        let fee8 = engine.register_transaction("spammer".to_string(), 100).unwrap();
+        assert_eq!(fee8, 800, "tx 8 should be 8× base fee");
 
         let activity = engine.get_activity("spammer").unwrap();
         assert!(activity.fee_multiplier > 1);
@@ -424,18 +460,29 @@ mod tests {
         engine.new_block(1);
 
         let max_tx = config.max_tx_per_block;
-        let mut last_fee = 100u64;
-        for i in 0..5 {
-            let fee = engine
-                .register_transaction("spammer".to_string(), 100)
-                .unwrap();
+        let base = 100u64;
+        let mut fees = Vec::new();
 
-            // After limit, fees should scale up
-            if i >= max_tx as usize {
-                assert!(fee >= last_fee);
-            }
-            last_fee = fee;
+        // Register 10 transactions and track fees
+        for _ in 0..10 {
+            let fee = engine
+                .register_transaction("spammer".to_string(), base)
+                .unwrap();
+            fees.push(fee);
         }
+
+        // First max_tx should be base fee
+        for i in 0..max_tx as usize {
+            assert_eq!(fees[i], base, "tx {} should be base fee", i + 1);
+        }
+
+        // After threshold: exponential scaling
+        // tx 6: 2×, tx 7: 4×, tx 8: 8×, tx 9: 16×, tx 10: 32×
+        assert_eq!(fees[5], 200);  // 2^1 × 100
+        assert_eq!(fees[6], 400);  // 2^2 × 100
+        assert_eq!(fees[7], 800);  // 2^3 × 100
+        assert_eq!(fees[8], 1600); // 2^4 × 100
+        assert_eq!(fees[9], 3200); // 2^5 × 100
     }
 
     #[test]
@@ -471,5 +518,44 @@ mod tests {
 
         assert_eq!(deserialized.max_tx_per_block, config.max_tx_per_block);
         assert_eq!(deserialized.max_burn_per_block, config.max_burn_per_block);
+    }
+
+    #[test]
+    fn test_estimate_fee_read_only() {
+        let config = AntiWhaleConfig::new();
+        let mut engine = AntiWhaleEngine::new(config);
+        engine.new_block(1);
+
+        let base = 100u64;
+
+        // New address: estimate should be base fee
+        assert_eq!(engine.estimate_fee("alice", base), 100);
+
+        // Register 5 tx (at threshold)
+        for _ in 0..5 {
+            let _ = engine.register_transaction("alice".to_string(), base);
+        }
+
+        // Estimate for the 6th tx should be 2× (without registering)
+        assert_eq!(engine.estimate_fee("alice", base), 200);
+
+        // Calling estimate_fee again should give same result (read-only)
+        assert_eq!(engine.estimate_fee("alice", base), 200);
+
+        // Actually register the 6th tx
+        let fee6 = engine.register_transaction("alice".to_string(), base).unwrap();
+        assert_eq!(fee6, 200);
+
+        // Now estimate for 7th should be 4×
+        assert_eq!(engine.estimate_fee("alice", base), 400);
+    }
+
+    #[test]
+    fn test_estimate_fee_unknown_address() {
+        let config = AntiWhaleConfig::new();
+        let engine = AntiWhaleEngine::new(config);
+
+        // Unknown address should always return base fee
+        assert_eq!(engine.estimate_fee("unknown", 100000), 100000);
     }
 }

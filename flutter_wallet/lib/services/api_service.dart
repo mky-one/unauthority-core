@@ -138,6 +138,31 @@ class ApiService {
     }
   }
 
+  /// Fetch dynamic fee estimate for the NEXT transaction from [address].
+  /// Returns the estimated fee in VOID, accounting for anti-whale scaling.
+  /// Wallet MUST call this before constructing a signed block.
+  Future<Map<String, dynamic>> getFeeEstimate(String address) async {
+    await ensureReady();
+    try {
+      final response = await _client
+          .get(Uri.parse('$baseUrl/fee-estimate/$address'))
+          .timeout(_timeout);
+      if (response.statusCode == 200) {
+        return json.decode(response.body);
+      }
+      throw Exception('Failed to get fee estimate: ${response.statusCode}');
+    } catch (e) {
+      debugPrint('⚠️ getFeeEstimate error (falling back to base fee): $e');
+      // Fallback: return base fee so wallet still works if endpoint is unreachable
+      return {
+        'base_fee_void': 100000,
+        'estimated_fee_void': 100000,
+        'fee_multiplier': 1,
+        'tx_count_in_window': 0,
+      };
+    }
+  }
+
   // Health Check
   Future<Map<String, dynamic>> getHealth() async {
     await ensureReady();

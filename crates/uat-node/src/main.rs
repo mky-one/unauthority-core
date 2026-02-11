@@ -1157,7 +1157,12 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
                         "base_fee_void": uat_core::BASE_FEE_VOID,
                         "pow_difficulty_bits": uat_core::MIN_POW_DIFFICULTY_BITS,
                         "void_per_uat": uat_core::VOID_PER_UAT,
-                        "chain_id_numeric": uat_core::CHAIN_ID
+                        "chain_id_numeric": uat_core::CHAIN_ID,
+                        "anti_whale": {
+                            "max_tx_per_window": 5,
+                            "fee_scale_multiplier": 2,
+                            "window_secs": 60
+                        }
                     }
                 }))
             },
@@ -1246,6 +1251,42 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
                 "balance": format_balance_precise(bal),
                 "balance_uat": format_balance_precise(bal),
                 "balance_voi": bal
+            }))
+        });
+
+    // 13b. GET /fee-estimate/:address (Dynamic fee estimate for anti-whale)
+    // Returns estimated fee for the NEXT transaction from this address.
+    // Wallet MUST call this before constructing a signed block.
+    let aw_fee_estimate = anti_whale.clone();
+    let fee_estimate_route = warp::path!("fee-estimate" / String)
+        .and(with_state(aw_fee_estimate))
+        .map(|addr: String, aw: Arc<Mutex<AntiWhaleEngine>>| {
+            let aw_guard = safe_lock(&aw);
+            let base_fee = uat_core::BASE_FEE_VOID;
+            let estimated_fee = aw_guard.estimate_fee(&addr, base_fee as u64);
+            let multiplier = estimated_fee / (base_fee as u64);
+            let activity = aw_guard.get_activity(&addr);
+            let (tx_count, window_remaining) = match activity {
+                Some(a) => {
+                    let now = std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap_or_default()
+                        .as_secs();
+                    let elapsed = now.saturating_sub(a.window_start);
+                    let remaining = if elapsed >= 60 { 0 } else { 60 - elapsed };
+                    (a.tx_count, remaining)
+                }
+                None => (0, 0),
+            };
+            warp::reply::json(&serde_json::json!({
+                "address": addr,
+                "base_fee_void": base_fee,
+                "estimated_fee_void": estimated_fee,
+                "fee_multiplier": multiplier,
+                "tx_count_in_window": tx_count,
+                "max_tx_per_window": 5,
+                "window_remaining_secs": window_remaining,
+                "window_duration_secs": 60
             }))
         });
 
@@ -1500,6 +1541,7 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
                     "health": "GET /health - Health check",
                     "node_info": "GET /node-info - Node information",
                     "balance": "GET /balance/{address} - Account balance",
+                    "fee_estimate": "GET /fee-estimate/{address} - Dynamic fee estimate (anti-whale)",
                     "account": "GET /account/{address} - Account details + history",
                     "history": "GET /history/{address} - Transaction history",
                     "validators": "GET /validators - Active validators",
@@ -1887,6 +1929,7 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
     let group3 = validators_route
         .boxed()
         .or(balance_alias_route.boxed())
+        .or(fee_estimate_route.boxed())
         .or(block_route.boxed())
         .or(faucet_route.boxed())
         .or(blocks_recent_route.boxed())

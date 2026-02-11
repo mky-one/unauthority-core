@@ -31,6 +31,7 @@ class WalletService {
   static const String _addressKey = 'wallet_address';
   static const String _importModeKey = 'wallet_import_mode';
   static const String _cryptoModeKey = 'wallet_crypto_mode';
+  static const String _monitorModeKey = 'validator_monitor_mode';
 
   // Sensitive keys (flutter_secure_storage — Keychain/Keystore)
   static const String _seedKey = 'wallet_seed';
@@ -345,6 +346,7 @@ class WalletService {
     await prefs.remove(_addressKey);
     await prefs.remove(_importModeKey);
     await prefs.remove(_cryptoModeKey);
+    await prefs.remove(_monitorModeKey);
     // Wipe secrets from secure storage (each wrapped individually —
     // macOS Keychain can throw PlatformException, must not block navigation)
     try {
@@ -373,6 +375,19 @@ class WalletService {
   Future<bool> isAddressOnlyImport() async {
     final prefs = await SharedPreferences.getInstance();
     return prefs.getString(_importModeKey) == 'address';
+  }
+
+  /// Set monitor-only mode (genesis bootstrap validator — no local node spawn)
+  Future<void> setMonitorMode(bool enabled) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_monitorModeKey, enabled);
+  }
+
+  /// Check if this wallet is in monitor-only mode
+  /// (genesis bootstrap validator already running as CLI node)
+  Future<bool> isMonitorMode() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getBool(_monitorModeKey) ?? false;
   }
 
   // ══════════════════════════════════════════════════════════════════════

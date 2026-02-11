@@ -27,6 +27,7 @@ class _NodeControlScreenState extends State<NodeControlScreen>
   String? _walletAddress;
   double? _balance;
   bool _showLogs = false;
+  bool _isMonitorMode = false; // Genesis bootstrap validator → dashboard only
 
   @override
   void initState() {
@@ -38,8 +39,12 @@ class _NodeControlScreenState extends State<NodeControlScreen>
   Future<void> _loadWalletInfo() async {
     final walletService = context.read<WalletService>();
     final wallet = await walletService.getCurrentWallet();
+    final monitorMode = await walletService.isMonitorMode();
     if (wallet != null && mounted) {
-      setState(() => _walletAddress = wallet['address']);
+      setState(() {
+        _walletAddress = wallet['address'];
+        _isMonitorMode = monitorMode;
+      });
       _refreshBalance();
     }
   }
@@ -71,6 +76,28 @@ class _NodeControlScreenState extends State<NodeControlScreen>
           Text('UAT Validator'),
         ]),
         actions: [
+          if (_isMonitorMode)
+            Container(
+              margin: const EdgeInsets.only(right: 4),
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              decoration: BoxDecoration(
+                  color: const Color(0xFF6B4CE6).withValues(alpha: 0.2),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                      color: const Color(0xFF6B4CE6).withValues(alpha: 0.5))),
+              child: const Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.monitor_heart, size: 12, color: Color(0xFF6B4CE6)),
+                  SizedBox(width: 4),
+                  Text('MONITOR',
+                      style: TextStyle(
+                          fontSize: 10,
+                          fontWeight: FontWeight.bold,
+                          color: Color(0xFF6B4CE6))),
+                ],
+              ),
+            ),
           Container(
             margin: const EdgeInsets.only(right: 8),
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
@@ -115,6 +142,10 @@ class _NodeControlScreenState extends State<NodeControlScreen>
   // ================================================================
 
   Widget _buildNodeTab() {
+    // Monitor mode: no local node process — show info card instead of controls
+    if (_isMonitorMode) {
+      return _buildMonitorModeTab();
+    }
     return Consumer<NodeProcessService>(
       builder: (context, node, _) {
         return SingleChildScrollView(
@@ -133,6 +164,97 @@ class _NodeControlScreenState extends State<NodeControlScreen>
           ),
         );
       },
+    );
+  }
+
+  Widget _buildMonitorModeTab() {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          // Status card — monitor mode
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(20),
+              child: Column(children: [
+                const Icon(Icons.monitor_heart,
+                    size: 56, color: Color(0xFF6B4CE6)),
+                const SizedBox(height: 12),
+                const Text('Monitor Mode',
+                    style: TextStyle(
+                        fontSize: 24,
+                        fontWeight: FontWeight.bold,
+                        color: Color(0xFF6B4CE6))),
+                const SizedBox(height: 4),
+                Text('Viewing genesis bootstrap validator dashboard',
+                    style: TextStyle(color: Colors.grey[400], fontSize: 12)),
+              ]),
+            ),
+          ),
+          const SizedBox(height: 16),
+          // Info card
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Row(children: [
+                    Icon(Icons.shield, color: Colors.amber),
+                    SizedBox(width: 8),
+                    Text('Genesis Bootstrap Node',
+                        style: TextStyle(
+                            fontSize: 16, fontWeight: FontWeight.bold)),
+                  ]),
+                  const Divider(),
+                  _infoRow('Mode', 'Monitor Only (Read-Only)'),
+                  _infoRow(
+                      'Address', _walletAddress != null ? _shortAddr(_walletAddress!) : 'Loading...'),
+                  _infoRow('Balance',
+                      _balance != null ? '${BlockchainConstants.formatUat(_balance!)} UAT' : 'Loading...'),
+                  _infoRow('Local Node', 'Managed by CLI (not this app)'),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 16),
+          // Explanation card
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+                color: Colors.amber.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(8),
+                border:
+                    Border.all(color: Colors.amber.withValues(alpha: 0.3))),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Row(children: [
+                  Icon(Icons.info_outline, color: Colors.amber, size: 20),
+                  SizedBox(width: 8),
+                  Text('Why Monitor Mode?',
+                      style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          color: Colors.amber,
+                          fontSize: 14)),
+                ]),
+                const SizedBox(height: 8),
+                Text(
+                    'Your wallet belongs to a genesis bootstrap validator that is already '
+                    'running as a CLI node.\n\n'
+                    'To prevent equivocation (double-signing), this app will NOT:\n'
+                    '• Spawn a new uat-node process\n'
+                    '• Create a new Tor hidden service\n'
+                    '• Restart or interfere with the running bootstrap node\n\n'
+                    'You can safely view the Dashboard tab to monitor network health, '
+                    'validators, blocks, and peers.',
+                    style: TextStyle(fontSize: 13, color: Colors.grey[300])),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -307,6 +429,7 @@ class _NodeControlScreenState extends State<NodeControlScreen>
   }
 
   Future<void> _startNode(NodeProcessService node) async {
+    if (_isMonitorMode) return; // Monitor mode — CLI manages the node
     final torService = context.read<TorService>();
     String? onion = torService.onionAddress;
 
@@ -360,9 +483,13 @@ class _NodeControlScreenState extends State<NodeControlScreen>
           const SizedBox(height: 16),
           OutlinedButton.icon(
               onPressed: _confirmLogout,
-              icon: const Icon(Icons.logout, color: Colors.red),
-              label: const Text('Unregister Validator',
-                  style: TextStyle(color: Colors.red)),
+              icon: Icon(_isMonitorMode ? Icons.logout : Icons.logout,
+                  color: Colors.red),
+              label: Text(
+                  _isMonitorMode
+                      ? 'Disconnect Monitor'
+                      : 'Unregister Validator',
+                  style: const TextStyle(color: Colors.red)),
               style: OutlinedButton.styleFrom(
                   padding: const EdgeInsets.all(16),
                   side: const BorderSide(color: Colors.red))),
@@ -535,11 +662,17 @@ class _NodeControlScreenState extends State<NodeControlScreen>
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Unregister Validator?'),
-        content: const Text(
-            'This will stop the node and remove your wallet from this app. '
-            'Your funds are safe on the blockchain.\n\n'
-            'You can re-register anytime with the same seed phrase.'),
+        title: Text(_isMonitorMode
+            ? 'Exit Monitor Mode?'
+            : 'Unregister Validator?'),
+        content: Text(_isMonitorMode
+            ? 'This will disconnect from the bootstrap node dashboard and remove '
+                'your wallet from this app.\n\n'
+                'The bootstrap CLI node will continue running undisturbed.\n'
+                'You can reconnect anytime with the same wallet.'
+            : 'This will stop the node and remove your wallet from this app. '
+                'Your funds are safe on the blockchain.\n\n'
+                'You can re-register anytime with the same seed phrase.'),
         actions: [
           TextButton(
               onPressed: () => Navigator.pop(ctx), child: const Text('CANCEL')),
@@ -562,17 +695,20 @@ class _NodeControlScreenState extends State<NodeControlScreen>
                 }
 
                 // 3. Stop node & Tor in background (fire-and-forget)
-                try {
-                  final node = context.read<NodeProcessService>();
-                  if (node.isRunning) unawaited(node.stop());
-                } catch (_) {}
-                try {
-                  final tor = context.read<TorService>();
-                  unawaited(tor.stop());
-                } catch (_) {}
+                //    Skip for monitor mode — CLI node is not managed by this app
+                if (!_isMonitorMode) {
+                  try {
+                    final node = context.read<NodeProcessService>();
+                    if (node.isRunning) unawaited(node.stop());
+                  } catch (_) {}
+                  try {
+                    final tor = context.read<TorService>();
+                    unawaited(tor.stop());
+                  } catch (_) {}
+                }
               },
-              child: const Text('UNREGISTER',
-                  style: TextStyle(color: Colors.red))),
+              child: Text(_isMonitorMode ? 'DISCONNECT' : 'UNREGISTER',
+                  style: const TextStyle(color: Colors.red))),
         ],
       ),
     );

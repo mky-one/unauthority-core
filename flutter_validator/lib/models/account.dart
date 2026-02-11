@@ -127,6 +127,7 @@ class ValidatorInfo {
   final String address;
   final int stake; // In UAT (backend already divides by VOID_PER_UAT)
   final bool isActive;
+  final bool isGenesis; // Genesis bootstrap validator
   final double uptimePercentage;
   final int totalSlashed; // In VOID
   final String status;
@@ -135,6 +136,7 @@ class ValidatorInfo {
     required this.address,
     required this.stake,
     required this.isActive,
+    this.isGenesis = false,
     this.uptimePercentage = 99.5,
     this.totalSlashed = 0,
     this.status = 'active',
@@ -149,6 +151,7 @@ class ValidatorInfo {
           json['is_active'] == true ||
           json['is_active'] == 1 ||
           (json['status'] ?? '').toString().toLowerCase() == 'active',
+      isGenesis: json['is_genesis'] == true,
       uptimePercentage: _parseDouble(json['uptime_percentage'], 99.5),
       totalSlashed: _parseIntField(json['total_slashed']),
       status: (json['status'] ?? 'active').toString(),

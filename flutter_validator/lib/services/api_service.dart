@@ -363,6 +363,20 @@ class ApiService {
     }
   }
 
+  /// Check if an address is an active genesis bootstrap validator.
+  /// Returns true if the address is found in /validators with is_genesis=true and is_active=true.
+  Future<bool> isActiveGenesisValidator(String address) async {
+    try {
+      final validators = await getValidators();
+      return validators.any(
+        (v) => v.address == address && v.isGenesis && v.isActive,
+      );
+    } catch (e) {
+      debugPrint('⚠️ isActiveGenesisValidator check failed: $e');
+      return false;
+    }
+  }
+
   // Get Latest Block
   Future<BlockInfo> getLatestBlock() async {
     await ensureReady();

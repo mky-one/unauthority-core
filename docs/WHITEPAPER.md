@@ -1,6 +1,6 @@
 # Unauthority (UAT) — Technical Whitepaper
 
-**Version:** 1.0.3-testnet  
+**Version:** 1.0.6-testnet  
 **Date:** February 2026
 
 ---
@@ -235,6 +235,32 @@ Sanity bounds: ETH $10–$100,000 · BTC $100–$10,000,000. Oracle fails closed
 | Spam threshold | 10 tx/s per account |
 | Spam scaling | 2^n (exponential) |
 
+### 5.6 Validator Rewards
+
+Validators are incentivized through an epoch-based reward system drawn from a dedicated reward pool.
+
+| Parameter | Value |
+|-----------|-------|
+| Reward pool | 2,193,623 UAT (~10% of total supply) |
+| Epoch duration | 24 hours (86,400 seconds) |
+| Initial rate | 50 UAT per epoch |
+| Halving schedule | Every 365 epochs (~1 year) |
+| Minimum uptime | 95% (heartbeats per epoch) |
+| Probation period | 3 epochs after registration |
+| Heartbeat interval | 60 seconds |
+
+Reward distribution uses **quadratic fairness**:
+
+$$\text{share}_i = \frac{\sqrt{\text{stake}_i}}{\sum_j \sqrt{\text{stake}_j}} \times \text{epoch\_reward}$$
+
+This ensures smaller validators receive proportionally larger rewards relative to their stake, preventing whale concentration of reward income. Genesis bootstrap validators are permanently excluded from rewards.
+
+The reward halving follows the formula:
+
+$$\text{rate}(e) = \frac{\text{initial\_rate}}{2^{\lfloor e / 365 \rfloor}}$$
+
+where $e$ is the current epoch number. This creates a deflationary reward schedule that asymptotically approaches zero, ensuring the reward pool lasts indefinitely.
+
 ---
 
 ## 6. Smart Contracts (UVM)
@@ -299,7 +325,7 @@ Defined in `testnet-genesis/testnet_wallets.json`:
 
 ```
 crates/
-├── uat-core        # Ledger, accounts, block types, supply math, anti-whale
+├── uat-core        # Ledger, accounts, block types, supply math, anti-whale, validator rewards
 ├── uat-crypto      # Dilithium5, address derivation, key encryption
 ├── uat-consensus   # aBFT protocol, quadratic voting, slashing, checkpoints
 ├── uat-network     # libp2p, GossipSub, Tor transport, fee scaling

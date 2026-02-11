@@ -2,7 +2,7 @@
 
 The `uat-cli` command-line tool for interacting with a running UAT node.
 
-**Version:** v1.0.3-testnet
+**Version:** v1.0.6-testnet
 
 ---
 

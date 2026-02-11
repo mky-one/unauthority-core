@@ -19,17 +19,17 @@ Pre-built desktop apps for all platforms. No Tor Browser or command-line needed.
 
 | Platform | Download | Install |
 |----------|----------|---------|
-| macOS | [UAT-Wallet-macos.dmg](https://github.com/unauthoritymky-6236/unauthority-core/releases/tag/wallet-v1.0.3-testnet) | Open DMG → drag to Applications |
-| Windows | [UAT-Wallet-windows-x64.zip](https://github.com/unauthoritymky-6236/unauthority-core/releases/tag/wallet-v1.0.3-testnet) | Extract → run `flutter_wallet.exe` |
-| Linux | [UAT-Wallet-linux-x64.tar.gz](https://github.com/unauthoritymky-6236/unauthority-core/releases/tag/wallet-v1.0.3-testnet) | Extract → run `./run.sh` |
+| macOS | [UAT-Wallet-macos.dmg](https://github.com/unauthoritymky-6236/unauthority-core/releases/tag/wallet-v1.0.6-testnet) | Open DMG → drag to Applications |
+| Windows | [UAT-Wallet-windows-x64.zip](https://github.com/unauthoritymky-6236/unauthority-core/releases/tag/wallet-v1.0.6-testnet) | Extract → run `flutter_wallet.exe` |
+| Linux | [UAT-Wallet-linux-x64.tar.gz](https://github.com/unauthoritymky-6236/unauthority-core/releases/tag/wallet-v1.0.6-testnet) | Extract → run `./run.sh` |
 
 ### UAT Validator Dashboard (monitor node, manage keys)
 
 | Platform | Download | Install |
 |----------|----------|---------|
-| macOS | [UAT-Validator-macos.dmg](https://github.com/unauthoritymky-6236/unauthority-core/releases/tag/validator-v1.0.3-testnet) | Open DMG → drag to Applications |
-| Windows | [UAT-Validator-windows-x64.zip](https://github.com/unauthoritymky-6236/unauthority-core/releases/tag/validator-v1.0.3-testnet) | Extract → run `flutter_validator.exe` |
-| Linux | [UAT-Validator-linux-x64.tar.gz](https://github.com/unauthoritymky-6236/unauthority-core/releases/tag/validator-v1.0.3-testnet) | Extract → run `./run.sh` |
+| macOS | [UAT-Validator-macos.dmg](https://github.com/unauthoritymky-6236/unauthority-core/releases/tag/validator-v1.0.6-testnet) | Open DMG → drag to Applications |
+| Windows | [UAT-Validator-windows-x64.zip](https://github.com/unauthoritymky-6236/unauthority-core/releases/tag/validator-v1.0.6-testnet) | Extract → run `flutter_validator.exe` |
+| Linux | [UAT-Validator-linux-x64.tar.gz](https://github.com/unauthoritymky-6236/unauthority-core/releases/tag/validator-v1.0.6-testnet) | Extract → run `./run.sh` |
 
 Both apps include **built-in Tor** connectivity and **CRYSTALS-Dilithium5** post-quantum cryptography. No external dependencies required.
 
@@ -58,12 +58,14 @@ Unauthority is a Layer-1 blockchain built from scratch in Rust. It is designed t
 | **Smart Contracts** | WASM via Unauthority Virtual Machine (UVM) |
 | **Network Privacy** | All traffic via Tor Hidden Services |
 | **Distribution** | 93% public (Proof-of-Burn), 7% dev treasury |
+| **Validator Rewards** | Epoch-based (24h), quadratic √stake, halving schedule |
 
 ### Anti-Whale Economics
 
 - **Quadratic Voting** — voting power = √(stake), not linear
 - **Dynamic Fee Scaling** — fees increase x2/x4/x8 for spam bursts
 - **Burn Limits** — max 10 UAT minted per block via Proof-of-Burn
+- **Reward Fairness** — validator rewards use √stake, preventing whale dominance
 
 ---
 
@@ -131,6 +133,8 @@ Every UAT node exposes these endpoints. Default port: `3030`.
 | `/consensus` | GET | aBFT consensus parameters and safety status |
 | `/slashing` | GET | Network slashing statistics |
 | `/slashing/{address}` | GET | Slashing profile for a validator |
+| `/reward-info` | GET | Validator reward pool status, epoch info, per-validator stats |
+| `/fee-estimate` | GET | Dynamic fee estimate for transactions |
 | `/faucet` | POST | Claim testnet tokens (5,000 UAT, 1hr cooldown) |
 | `/send` | POST | Submit signed transaction |
 | `/burn` | POST | Submit Proof-of-Burn mint |
@@ -146,10 +150,10 @@ Full API documentation: [docs/API_REFERENCE.md](docs/API_REFERENCE.md)
 ```
 unauthority-core/
 ├── crates/
-│   ├── uat-core/          # Blockchain core — ledger, accounts, supply math
+│   ├── uat-core/          # Blockchain core — ledger, accounts, supply math, validator rewards
 │   ├── uat-crypto/        # Post-quantum crypto — Dilithium5, address derivation
 │   ├── uat-consensus/     # aBFT consensus — voting, slashing, checkpoints
-│   ├── uat-network/       # P2P networking — fee scaling, validator rewards
+│   ├── uat-network/       # P2P networking — fee scaling, Tor transport
 │   ├── uat-vm/            # Smart contract engine — WASM/wasmer runtime
 │   ├── uat-node/          # Full node binary — REST API + gRPC server
 │   └── uat-cli/           # Command-line interface
@@ -174,6 +178,8 @@ Both Flutter apps use native Rust FFI to call Dilithium5 functions compiled per 
 | **Dev Treasury** (8 wallets) | 1,535,536 | 7% |
 | **Total** | **21,936,236** | **100%** |
 
+A **Validator Reward Pool** of 2,193,623 UAT (~10% of total supply) is reserved within the public distribution for epoch-based validator incentives. This pool uses a halving schedule and does not increase total supply.
+
 Bootstrap validators (4 nodes × 1,000 UAT each) are funded from Treasury Wallet #8.
 
 ---
@@ -193,8 +199,8 @@ Bootstrap validators (4 nodes × 1,000 UAT each) are funded from Treasury Wallet
 ## Testing
 
 ```bash
-cargo test --workspace              # All 226 tests
-cargo test -p uat-core              # Core crate (55 tests)
+cargo test --workspace              # All 240 tests
+cargo test -p uat-core              # Core crate (69 tests, incl. reward system)
 cargo test -p uat-consensus         # Consensus (43 tests)
 cargo test -p uat-crypto            # Cryptography (30 tests)
 cargo test -p uat-network           # Network (57 tests)

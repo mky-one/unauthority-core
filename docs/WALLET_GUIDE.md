@@ -2,7 +2,7 @@
 
 Using the UAT Wallet — create wallets, send tokens, burn-to-mint, and manage accounts.
 
-**Version:** v1.0.3-testnet
+**Version:** v1.0.6-testnet
 
 ---
 
@@ -10,9 +10,9 @@ Using the UAT Wallet — create wallets, send tokens, burn-to-mint, and manage a
 
 | Platform | Download |
 |----------|----------|
-| macOS | [UAT-Wallet-macos.dmg](https://github.com/unauthoritymky-6236/unauthority-core/releases/tag/wallet-v1.0.3-testnet) |
-| Windows | [UAT-Wallet-windows-x64.zip](https://github.com/unauthoritymky-6236/unauthority-core/releases/tag/wallet-v1.0.3-testnet) |
-| Linux | [UAT-Wallet-linux-x64.tar.gz](https://github.com/unauthoritymky-6236/unauthority-core/releases/tag/wallet-v1.0.3-testnet) |
+| macOS | [UAT-Wallet-macos.dmg](https://github.com/unauthoritymky-6236/unauthority-core/releases/tag/wallet-v1.0.6-testnet) |
+| Windows | [UAT-Wallet-windows-x64.zip](https://github.com/unauthoritymky-6236/unauthority-core/releases/tag/wallet-v1.0.6-testnet) |
+| Linux | [UAT-Wallet-linux-x64.tar.gz](https://github.com/unauthoritymky-6236/unauthority-core/releases/tag/wallet-v1.0.6-testnet) |
 
 Built-in Tor + CRYSTALS-Dilithium5. No external dependencies.
 

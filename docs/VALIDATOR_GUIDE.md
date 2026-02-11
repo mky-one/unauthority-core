@@ -2,7 +2,7 @@
 
 How to run a UAT validator node — from setup to monitoring.
 
-**Version:** v1.0.3-testnet
+**Version:** v1.0.6-testnet
 
 ---
 
@@ -220,7 +220,49 @@ Quadratic voting: your voting power = √(your_stake), not your_stake. This give
 
 ---
 
-## 11. Console Commands
+## 11. Validator Rewards
+
+Validators earn UAT rewards for maintaining uptime. The reward system is epoch-based with quadratic fairness.
+
+### How It Works
+
+| Parameter | Value |
+|-----------|-------|
+| **Reward Pool** | 2,193,623 UAT (10% of total supply, reserved at genesis) |
+| **Epoch Duration** | 24 hours (86,400 seconds) |
+| **Initial Rate** | 50 UAT per epoch (distributed among all qualifying validators) |
+| **Halving** | Every 365 epochs (~1 year), reward rate halves |
+| **Min Uptime** | 95% heartbeats required to qualify |
+| **Probation** | First 3 epochs after registration (no rewards) |
+| **Heartbeat** | Every 60 seconds |
+
+### Reward Distribution
+
+At the end of each epoch:
+1. Validators with < 95% uptime are excluded
+2. Each qualifying validator's share = √(stake_in_void)
+3. Rewards distributed proportionally to √stake shares
+4. Rewards credited directly to validator account balances
+
+### Genesis Validator Exclusion
+
+The 4 bootstrap genesis validators are **permanently excluded** from rewards. They serve as initial network infrastructure funded by the development treasury.
+
+### Monitoring Rewards
+
+```bash
+curl http://127.0.0.1:3030/reward-info
+```
+
+Returns: pool remaining, current epoch, epoch progress, per-validator heartbeats, uptime %, qualification status, and cumulative rewards.
+
+### Monitor-Only Mode
+
+The Flutter Validator Dashboard supports **monitor-only mode** — connect to any running node to view its status, reward stats, and `.onion` address without running your own validator. This is useful for remote monitoring.
+
+---
+
+## 12. Console Commands
 
 When running interactively, the node provides a console:
 
@@ -238,13 +280,13 @@ When running interactively, the node provides a console:
 
 ---
 
-## 12. Docker Deployment
+## 13. Docker Deployment
 
 See [DOCKER_DEPLOYMENT.md](DOCKER_DEPLOYMENT.md) for running validators via Docker Compose with Prometheus and Grafana monitoring.
 
 ---
 
-## 13. Backup & Recovery
+## 14. Backup & Recovery
 
 ### Wallet Backup
 

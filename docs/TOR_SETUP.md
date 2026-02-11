@@ -2,7 +2,7 @@
 
 Configure Tor hidden services for UAT validator nodes. All network traffic routes through Tor — no public IP addresses are exposed.
 
-**Version:** v1.0.3-testnet
+**Version:** v1.0.6-testnet
 
 ---
 

@@ -2,7 +2,7 @@
 
 Quick start guide — from zero to sending tokens in 5 minutes.
 
-**Version:** v1.0.3-testnet
+**Version:** v1.0.6-testnet
 
 ---
 
@@ -12,9 +12,9 @@ Pre-built desktop apps with built-in Tor and Dilithium5 cryptography. No externa
 
 | Platform | Download |
 |----------|----------|
-| macOS | [UAT-Wallet-macos.dmg](https://github.com/unauthoritymky-6236/unauthority-core/releases/tag/wallet-v1.0.3-testnet) |
-| Windows | [UAT-Wallet-windows-x64.zip](https://github.com/unauthoritymky-6236/unauthority-core/releases/tag/wallet-v1.0.3-testnet) |
-| Linux | [UAT-Wallet-linux-x64.tar.gz](https://github.com/unauthoritymky-6236/unauthority-core/releases/tag/wallet-v1.0.3-testnet) |
+| macOS | [UAT-Wallet-macos.dmg](https://github.com/unauthoritymky-6236/unauthority-core/releases/tag/wallet-v1.0.6-testnet) |
+| Windows | [UAT-Wallet-windows-x64.zip](https://github.com/unauthoritymky-6236/unauthority-core/releases/tag/wallet-v1.0.6-testnet) |
+| Linux | [UAT-Wallet-linux-x64.tar.gz](https://github.com/unauthoritymky-6236/unauthority-core/releases/tag/wallet-v1.0.6-testnet) |
 
 ### macOS: Remove Gatekeeper Block
 
@@ -115,7 +115,7 @@ Minimum stake: 1,000 UAT.
 | Wallet won't connect | Ensure Tor is running — the app auto-installs it on first launch |
 | Faucet says "rate limited" | Wait 1 hour between claims |
 | Balance shows 0 after faucet | Wait ~3 seconds for finality, then refresh |
-| Address doesn't start with UAT | Update to v1.0.3 — older versions had incompatible address format |
+| Address doesn't start with UAT | Update to v1.0.6 — older versions had incompatible address format |
 
 ---
 

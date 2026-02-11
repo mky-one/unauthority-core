@@ -1,6 +1,6 @@
 # Unauthority Documentation
 
-All documentation for the Unauthority (UAT) blockchain — v1.0.3-testnet.
+All documentation for the Unauthority (UAT) blockchain — v1.0.6-testnet.
 
 ## User Guides
 

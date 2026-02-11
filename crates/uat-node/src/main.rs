@@ -92,7 +92,7 @@ struct SendRequest {
     from: Option<String>, // Sender address (if empty, use node's address)
     target: String,
     amount: u128,
-    amount_void: Option<u128>,  // Amount already in VOID (skips ×VOID_PER_UAT). Used by client-signed blocks.
+    amount_void: Option<u128>, // Amount already in VOID (skips ×VOID_PER_UAT). Used by client-signed blocks.
     signature: Option<String>, // Client-provided signature (if present, validate instead of signing)
     public_key: Option<String>, // Sender's public key (hex-encoded, REQUIRED for signature verification)
     previous: Option<String>,   // Previous block hash (for client-side signing)
@@ -1130,7 +1130,11 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
     let node_info_route = warp::path("node-info")
         .and(with_state((l_info, ab_info, aw_info)))
         .map(
-            move |(l, ab, aw): (Arc<Mutex<Ledger>>, Arc<Mutex<HashMap<String, String>>>, Arc<Mutex<AntiWhaleEngine>>)| {
+            move |(l, ab, aw): (
+                Arc<Mutex<Ledger>>,
+                Arc<Mutex<HashMap<String, String>>>,
+                Arc<Mutex<AntiWhaleEngine>>,
+            )| {
                 let l_guard = safe_lock(&l);
                 let aw_guard = safe_lock(&aw);
                 // Protocol constant: 21,936,236 UAT total supply (immutable)
@@ -1279,7 +1283,11 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
                         .unwrap_or_default()
                         .as_secs();
                     let elapsed = now.saturating_sub(a.window_start);
-                    let remaining = if elapsed >= window_secs { 0 } else { window_secs - elapsed };
+                    let remaining = if elapsed >= window_secs {
+                        0
+                    } else {
+                        window_secs - elapsed
+                    };
                     (a.tx_count, remaining)
                 }
                 None => (0, 0),
@@ -1919,9 +1927,8 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
 
     // 28. GET /reward-info (Validator reward pool status)
     let rp_info = reward_pool.clone();
-    let reward_info_route = warp::path("reward-info")
-        .and(with_state(rp_info))
-        .map(|rp: Arc<Mutex<ValidatorRewardPool>>| {
+    let reward_info_route = warp::path("reward-info").and(with_state(rp_info)).map(
+        |rp: Arc<Mutex<ValidatorRewardPool>>| {
             let pool = safe_lock(&rp);
             let now = std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
@@ -1931,19 +1938,23 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
             let remaining_secs = pool.epoch_remaining_secs(now);
 
             // Per-validator reward details
-            let validators_json: Vec<serde_json::Value> = pool.validators.iter().map(|(addr, v)| {
-                serde_json::json!({
-                    "address": addr,
-                    "is_genesis": v.is_genesis,
-                    "join_epoch": v.join_epoch,
-                    "stake_void": v.stake_void,
-                    "uptime_pct": v.uptime_pct(),
-                    "cumulative_rewards_void": v.cumulative_rewards_void,
-                    "eligible": v.is_eligible(pool.current_epoch),
-                    "heartbeats_current_epoch": v.heartbeats_current_epoch,
-                    "expected_heartbeats": v.expected_heartbeats,
+            let validators_json: Vec<serde_json::Value> = pool
+                .validators
+                .iter()
+                .map(|(addr, v)| {
+                    serde_json::json!({
+                        "address": addr,
+                        "is_genesis": v.is_genesis,
+                        "join_epoch": v.join_epoch,
+                        "stake_void": v.stake_void,
+                        "uptime_pct": v.uptime_pct(),
+                        "cumulative_rewards_void": v.cumulative_rewards_void,
+                        "eligible": v.is_eligible(pool.current_epoch),
+                        "heartbeats_current_epoch": v.heartbeats_current_epoch,
+                        "expected_heartbeats": v.expected_heartbeats,
+                    })
                 })
-            }).collect();
+                .collect();
 
             warp::reply::json(&serde_json::json!({
                 "pool": {
@@ -1974,7 +1985,8 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
                     "genesis_excluded": true,
                 }
             }))
-        });
+        },
+    );
 
     // Combine all routes with rate limiting
     // NOTE: Each route is .boxed() to prevent warp type recursion overflow (E0275)
@@ -3054,7 +3066,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Register all bootstrap validators as genesis (excluded from rewards)
     for addr in &bootstrap_validators {
-        let stake = ledger_state.accounts.get(addr)
+        let stake = ledger_state
+            .accounts
+            .get(addr)
             .map(|a| a.balance)
             .unwrap_or(0);
         reward_pool_state.register_validator(addr, true, stake);
@@ -3071,9 +3085,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     reward_pool_state.set_expected_heartbeats(60);
 
     let reward_pool = Arc::new(Mutex::new(reward_pool_state));
-    println!("🏆 Validator reward pool initialized: {} UAT, epoch rate {} UAT/month",
+    println!(
+        "🏆 Validator reward pool initialized: {} UAT, epoch rate {} UAT/month",
         uat_core::VALIDATOR_REWARD_POOL_VOID / VOID_PER_UAT,
-        uat_core::REWARD_RATE_INITIAL_VOID / VOID_PER_UAT);
+        uat_core::REWARD_RATE_INITIAL_VOID / VOID_PER_UAT
+    );
 
     // Now wrap in Arc after all initialization is complete
     let ledger = Arc::new(Mutex::new(ledger_state));

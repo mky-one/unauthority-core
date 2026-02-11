@@ -2,7 +2,7 @@
 
 Build Unauthority from source or download pre-built binaries.
 
-**Version:** v1.0.3-testnet
+**Version:** v1.0.6-testnet
 
 ---
 
@@ -12,17 +12,17 @@ Build Unauthority from source or download pre-built binaries.
 
 | Platform | Download |
 |----------|----------|
-| macOS | [UAT-Wallet-macos.dmg](https://github.com/unauthoritymky-6236/unauthority-core/releases/tag/wallet-v1.0.3-testnet) |
-| Windows | [UAT-Wallet-windows-x64.zip](https://github.com/unauthoritymky-6236/unauthority-core/releases/tag/wallet-v1.0.3-testnet) |
-| Linux | [UAT-Wallet-linux-x64.tar.gz](https://github.com/unauthoritymky-6236/unauthority-core/releases/tag/wallet-v1.0.3-testnet) |
+| macOS | [UAT-Wallet-macos.dmg](https://github.com/unauthoritymky-6236/unauthority-core/releases/tag/wallet-v1.0.6-testnet) |
+| Windows | [UAT-Wallet-windows-x64.zip](https://github.com/unauthoritymky-6236/unauthority-core/releases/tag/wallet-v1.0.6-testnet) |
+| Linux | [UAT-Wallet-linux-x64.tar.gz](https://github.com/unauthoritymky-6236/unauthority-core/releases/tag/wallet-v1.0.6-testnet) |
 
 ### Validator Dashboard
 
 | Platform | Download |
 |----------|----------|
-| macOS | [UAT-Validator-macos.dmg](https://github.com/unauthoritymky-6236/unauthority-core/releases/tag/validator-v1.0.3-testnet) |
-| Windows | [UAT-Validator-windows-x64.zip](https://github.com/unauthoritymky-6236/unauthority-core/releases/tag/validator-v1.0.3-testnet) |
-| Linux | [UAT-Validator-linux-x64.tar.gz](https://github.com/unauthoritymky-6236/unauthority-core/releases/tag/validator-v1.0.3-testnet) |
+| macOS | [UAT-Validator-macos.dmg](https://github.com/unauthoritymky-6236/unauthority-core/releases/tag/validator-v1.0.6-testnet) |
+| Windows | [UAT-Validator-windows-x64.zip](https://github.com/unauthoritymky-6236/unauthority-core/releases/tag/validator-v1.0.6-testnet) |
+| Linux | [UAT-Validator-linux-x64.tar.gz](https://github.com/unauthoritymky-6236/unauthority-core/releases/tag/validator-v1.0.6-testnet) |
 
 ---
 
@@ -85,7 +85,7 @@ flutter build macos --release    # or: linux, windows
 ## Run Tests
 
 ```bash
-# Full test suite (226 tests)
+# Full test suite (240 tests)
 cargo test --workspace --all-features --exclude uat-vm
 
 # Individual crates
@@ -107,7 +107,7 @@ cargo test --doc --workspace
 ```bash
 # Check node version
 ./target/release/uat-node --version
-# uat-node 1.0.3
+# uat-node 1.0.6
 
 # Run a dev-mode testnet node
 ./target/release/uat-node --dev

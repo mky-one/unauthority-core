@@ -22,10 +22,19 @@ class ApiService {
   /// Longer timeout for Tor connections
   static const Duration _torTimeout = Duration(seconds: 60);
 
+  /// Max retry attempts across bootstrap nodes before giving up
+  static const int _maxRetries = 4;
+
   late String baseUrl;
   http.Client _client = http.Client();
   NetworkEnvironment environment;
   final TorService _torService = TorService();
+
+  /// All available bootstrap URLs for round-robin failover
+  List<String> _bootstrapUrls = [];
+
+  /// Index of the currently active bootstrap node
+  int _currentNodeIndex = 0;
 
   /// Track client initialization so callers can await readiness
   late Future<void> _clientReady;
@@ -34,18 +43,29 @@ class ApiService {
     String? customUrl,
     this.environment = NetworkEnvironment.testnet,
   }) {
+    _loadBootstrapUrls(environment);
     if (customUrl != null) {
       baseUrl = customUrl;
     } else {
-      baseUrl = _getBaseUrl(environment);
+      baseUrl = _bootstrapUrls.isNotEmpty ? _bootstrapUrls.first : _getBaseUrl(environment);
     }
     _clientReady = _initializeClient();
     debugPrint(
-        '🔗 UAT Validator ApiService initialized with baseUrl: $baseUrl');
+        '🔗 UAT Validator ApiService initialized with baseUrl: $baseUrl '
+        '(${_bootstrapUrls.length} bootstrap nodes available)');
   }
 
   /// Await Tor/HTTP client initialization before first request.
   Future<void> ensureReady() => _clientReady;
+
+  /// Load all bootstrap URLs for the given environment
+  void _loadBootstrapUrls(NetworkEnvironment env) {
+    final nodes = env == NetworkEnvironment.testnet
+        ? NetworkConfig.testnetNodes
+        : NetworkConfig.mainnetNodes;
+    _bootstrapUrls = nodes.map((n) => n.restUrl).toList();
+    _currentNodeIndex = 0;
+  }
 
   String _getBaseUrl(NetworkEnvironment env) {
     switch (env) {
@@ -54,6 +74,50 @@ class ApiService {
       case NetworkEnvironment.mainnet:
         return NetworkConfig.mainnetUrl;
     }
+  }
+
+  /// Switch to the next bootstrap node in round-robin fashion.
+  /// Returns true if switched to a different node, false if only 1 node available.
+  bool _switchToNextNode() {
+    if (_bootstrapUrls.length <= 1) return false;
+    _currentNodeIndex = (_currentNodeIndex + 1) % _bootstrapUrls.length;
+    final newUrl = _bootstrapUrls[_currentNodeIndex];
+    if (newUrl != baseUrl) {
+      baseUrl = newUrl;
+      debugPrint('🔄 Failover: switched to node ${_currentNodeIndex + 1}/${_bootstrapUrls.length}: $baseUrl');
+      return true;
+    }
+    return false;
+  }
+
+  /// Execute an HTTP request with round-robin failover across all bootstrap nodes.
+  /// If the current node fails (timeout, connection error), tries the next one.
+  Future<http.Response> _requestWithFailover(
+    Future<http.Response> Function(String url) requestFn,
+    String endpoint,
+  ) async {
+    await ensureReady();
+    int attempts = 0;
+
+    while (attempts < _bootstrapUrls.length.clamp(1, _maxRetries)) {
+      try {
+        return await requestFn(baseUrl).timeout(_timeout);
+      } on Exception catch (e) {
+        final isLastAttempt = attempts >= _bootstrapUrls.length - 1 || attempts >= _maxRetries - 1;
+        debugPrint('⚠️ Node ${_currentNodeIndex + 1} failed for $endpoint: $e');
+
+        if (isLastAttempt) {
+          debugPrint('❌ All ${attempts + 1} bootstrap nodes failed for $endpoint');
+          rethrow;
+        }
+
+        _switchToNextNode();
+        attempts++;
+        debugPrint('🔄 Retrying $endpoint on node ${_currentNodeIndex + 1}...');
+      }
+    }
+    // Should not reach here, but satisfy the compiler
+    throw Exception('All bootstrap nodes unreachable for $endpoint');
   }
 
   /// Get appropriate timeout based on whether using Tor
@@ -107,17 +171,20 @@ class ApiService {
   // Switch network environment
   void switchEnvironment(NetworkEnvironment newEnv) {
     environment = newEnv;
-    baseUrl = _getBaseUrl(newEnv);
+    _loadBootstrapUrls(newEnv);
+    baseUrl = _bootstrapUrls.isNotEmpty ? _bootstrapUrls.first : _getBaseUrl(newEnv);
     _clientReady = _initializeClient();
-    debugPrint('🔄 Switched to ${newEnv.name.toUpperCase()}: $baseUrl');
+    debugPrint('🔄 Switched to ${newEnv.name.toUpperCase()}: $baseUrl '
+        '(${_bootstrapUrls.length} nodes)');
   }
 
   // Node Info
   Future<Map<String, dynamic>> getNodeInfo() async {
-    await ensureReady();
     try {
-      final response =
-          await _client.get(Uri.parse('$baseUrl/node-info')).timeout(_timeout);
+      final response = await _requestWithFailover(
+        (url) => _client.get(Uri.parse('$url/node-info')),
+        '/node-info',
+      );
       if (response.statusCode == 200) {
         return json.decode(response.body);
       }
@@ -145,10 +212,11 @@ class ApiService {
 
   // Health Check
   Future<Map<String, dynamic>> getHealth() async {
-    await ensureReady();
     try {
-      final response =
-          await _client.get(Uri.parse('$baseUrl/health')).timeout(_timeout);
+      final response = await _requestWithFailover(
+        (url) => _client.get(Uri.parse('$url/health')),
+        '/health',
+      );
       if (response.statusCode == 200) {
         return json.decode(response.body);
       }
@@ -171,13 +239,11 @@ class ApiService {
   // Backend: GET /balance/:address → {balance, balance_uat: string, balance_voi: u128-int}
   // Backend: GET /bal/:address     → {balance_uat: string, balance_void: u128-int}
   Future<Account> getBalance(String address) async {
-    await ensureReady();
     try {
-      final response = await _client
-          .get(
-            Uri.parse('$baseUrl/balance/$address'),
-          )
-          .timeout(_timeout);
+      final response = await _requestWithFailover(
+        (url) => _client.get(Uri.parse('$url/balance/$address')),
+        '/balance/$address',
+      );
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
         // FIX C12-01: Backend /balance/:address sends "balance_voi" (no 'd'),
@@ -228,13 +294,11 @@ class ApiService {
 
   // Get Account (with history)
   Future<Account> getAccount(String address) async {
-    await ensureReady();
     try {
-      final response = await _client
-          .get(
-            Uri.parse('$baseUrl/account/$address'),
-          )
-          .timeout(_timeout);
+      final response = await _requestWithFailover(
+        (url) => _client.get(Uri.parse('$url/account/$address')),
+        '/account/$address',
+      );
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
         return Account.fromJson(data);
@@ -248,12 +312,14 @@ class ApiService {
 
   // Request Faucet
   Future<Map<String, dynamic>> requestFaucet(String address) async {
-    await ensureReady();
     try {
-      final response = await _client.post(
-        Uri.parse('$baseUrl/faucet'),
-        headers: {'Content-Type': 'application/json'},
-        body: json.encode({'address': address}),
+      final response = await _requestWithFailover(
+        (url) => _client.post(
+          Uri.parse('$url/faucet'),
+          headers: {'Content-Type': 'application/json'},
+          body: json.encode({'address': address}),
+        ),
+        '/faucet',
       );
 
       final data = json.decode(response.body);
@@ -279,18 +345,20 @@ class ApiService {
     required String signature,
     required String publicKey,
   }) async {
-    await ensureReady();
     try {
-      final response = await _client.post(
-        Uri.parse('$baseUrl/send'),
-        headers: {'Content-Type': 'application/json'},
-        body: json.encode({
-          'from': from,
-          'target': to,
-          'amount': amount,
-          'signature': signature,
-          'public_key': publicKey,
-        }),
+      final response = await _requestWithFailover(
+        (url) => _client.post(
+          Uri.parse('$url/send'),
+          headers: {'Content-Type': 'application/json'},
+          body: json.encode({
+            'from': from,
+            'target': to,
+            'amount': amount,
+            'signature': signature,
+            'public_key': publicKey,
+          }),
+        ),
+        '/send',
       );
 
       final data = json.decode(response.body);
@@ -314,17 +382,19 @@ class ApiService {
     required String ethTxid,
     required int amount,
   }) async {
-    await ensureReady();
     try {
-      final response = await _client.post(
-        Uri.parse('$baseUrl/burn'),
-        headers: {'Content-Type': 'application/json'},
-        body: json.encode({
-          'uat_address': uatAddress,
-          'btc_txid': btcTxid,
-          'eth_txid': ethTxid,
-          'amount': amount,
-        }),
+      final response = await _requestWithFailover(
+        (url) => _client.post(
+          Uri.parse('$url/burn'),
+          headers: {'Content-Type': 'application/json'},
+          body: json.encode({
+            'uat_address': uatAddress,
+            'btc_txid': btcTxid,
+            'eth_txid': ethTxid,
+            'amount': amount,
+          }),
+        ),
+        '/burn',
       );
 
       final data = json.decode(response.body);
@@ -344,10 +414,11 @@ class ApiService {
   // Get Validators
   // FIX C-01: Backend wraps in {"validators": [...]}, not bare array
   Future<List<ValidatorInfo>> getValidators() async {
-    await ensureReady();
     try {
-      final response =
-          await _client.get(Uri.parse('$baseUrl/validators')).timeout(_timeout);
+      final response = await _requestWithFailover(
+        (url) => _client.get(Uri.parse('$url/validators')),
+        '/validators',
+      );
       if (response.statusCode == 200) {
         final decoded = json.decode(response.body);
         // Handle both {"validators": [...]} (backend) and bare [...] (future)
@@ -379,10 +450,11 @@ class ApiService {
 
   // Get Latest Block
   Future<BlockInfo> getLatestBlock() async {
-    await ensureReady();
     try {
-      final response =
-          await _client.get(Uri.parse('$baseUrl/block')).timeout(_timeout);
+      final response = await _requestWithFailover(
+        (url) => _client.get(Uri.parse('$url/block')),
+        '/block',
+      );
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
         return BlockInfo.fromJson(data);
@@ -396,11 +468,11 @@ class ApiService {
 
   // Get Recent Blocks
   Future<List<BlockInfo>> getRecentBlocks() async {
-    await ensureReady();
     try {
-      final response = await _client
-          .get(Uri.parse('$baseUrl/blocks/recent'))
-          .timeout(_timeout);
+      final response = await _requestWithFailover(
+        (url) => _client.get(Uri.parse('$url/blocks/recent')),
+        '/blocks/recent',
+      );
       if (response.statusCode == 200) {
         final decoded = json.decode(response.body);
         // FIX C11-07: Handle both bare array and wrapped {"blocks": [...]}
@@ -420,10 +492,11 @@ class ApiService {
   // FIX C12-02: Backend returns HashMap<String,String> → JSON object {"addr":"url",...}
   // NOT a List or {peers: [...]}.
   Future<List<String>> getPeers() async {
-    await ensureReady();
     try {
-      final response =
-          await _client.get(Uri.parse('$baseUrl/peers')).timeout(_timeout);
+      final response = await _requestWithFailover(
+        (url) => _client.get(Uri.parse('$url/peers')),
+        '/peers',
+      );
       if (response.statusCode == 200) {
         final decoded = json.decode(response.body);
         if (decoded is List) {
@@ -456,17 +529,19 @@ class ApiService {
     required String signature,
     required int timestamp,
   }) async {
-    await ensureReady();
     try {
-      final response = await _client.post(
-        Uri.parse('$baseUrl/register-validator'),
-        headers: {'Content-Type': 'application/json'},
-        body: json.encode({
-          'address': address,
-          'public_key': publicKey,
-          'signature': signature,
-          'timestamp': timestamp,
-        }),
+      final response = await _requestWithFailover(
+        (url) => _client.post(
+          Uri.parse('$url/register-validator'),
+          headers: {'Content-Type': 'application/json'},
+          body: json.encode({
+            'address': address,
+            'public_key': publicKey,
+            'signature': signature,
+            'timestamp': timestamp,
+          }),
+        ),
+        '/register-validator',
       );
 
       final data = json.decode(response.body);
@@ -478,6 +553,38 @@ class ApiService {
       return data;
     } catch (e) {
       debugPrint('❌ registerValidator error: $e');
+      rethrow;
+    }
+  }
+
+  /// Get the name of the currently connected bootstrap node (e.g. "validator-1")
+  String get connectedNodeName {
+    final nodes = environment == NetworkEnvironment.testnet
+        ? NetworkConfig.testnetNodes
+        : NetworkConfig.mainnetNodes;
+    if (_currentNodeIndex < nodes.length) {
+      return nodes[_currentNodeIndex].name;
+    }
+    return 'unknown';
+  }
+
+  /// Get the current connected node index and total count
+  String get connectionInfo =>
+      'Node ${_currentNodeIndex + 1}/${_bootstrapUrls.length}';
+
+  /// Fetch validator reward pool status from GET /reward-info.
+  Future<Map<String, dynamic>> getRewardInfo() async {
+    try {
+      final response = await _requestWithFailover(
+        (url) => _client.get(Uri.parse('$url/reward-info')),
+        '/reward-info',
+      );
+      if (response.statusCode == 200) {
+        return json.decode(response.body);
+      }
+      throw Exception('Failed to get reward info: ${response.statusCode}');
+    } catch (e) {
+      debugPrint('❌ getRewardInfo error: $e');
       rethrow;
     }
   }

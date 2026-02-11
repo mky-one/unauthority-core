@@ -2142,7 +2142,7 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
                     "epoch_reward_rate_uat": summary.epoch_reward_rate_void / VOID_PER_UAT,
                     "halvings_occurred": summary.halvings_occurred,
                     "epoch_remaining_secs": remaining_secs,
-                    "epoch_duration_secs": uat_core::REWARD_EPOCH_SECS,
+                    "epoch_duration_secs": pool.epoch_duration_secs,
                 },
                 "validators": {
                     "total": summary.total_validators,
@@ -3871,7 +3871,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let reward_pool_bg = Arc::clone(&reward_pool);
     let reward_my_addr = my_address.clone();
     tokio::spawn(async move {
-        let mut interval = tokio::time::interval(Duration::from_secs(60));
+        // Testnet: shorter heartbeat interval (10s) for 2-minute epochs
+        // Mainnet: 60s heartbeat for 30-day epochs
+        let heartbeat_secs = if uat_core::is_testnet_build() { 10 } else { 60 };
+        let mut interval = tokio::time::interval(Duration::from_secs(heartbeat_secs));
         loop {
             interval.tick().await;
 
@@ -3887,8 +3890,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
             // Check if the current epoch has ended
             if pool.is_epoch_complete(now) {
-                // Set expected heartbeats before distribution (60s interval)
-                pool.set_expected_heartbeats(60);
+                // Set expected heartbeats before distribution
+                pool.set_expected_heartbeats(heartbeat_secs);
 
                 // Distribute rewards for the completed epoch
                 let rewards = pool.distribute_epoch_rewards();

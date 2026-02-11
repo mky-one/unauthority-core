@@ -15,7 +15,7 @@ use std::collections::HashMap;
 use crate::{
     MIN_VALIDATOR_STAKE_VOID, REWARD_EPOCH_SECS, REWARD_HALVING_INTERVAL_EPOCHS,
     REWARD_MIN_UPTIME_PCT, REWARD_PROBATION_EPOCHS, REWARD_RATE_INITIAL_VOID,
-    VALIDATOR_REWARD_POOL_VOID, VOID_PER_UAT,
+    VALIDATOR_REWARD_POOL_VOID, VOID_PER_UAT, effective_reward_epoch_secs,
 };
 
 /// Per-validator reward tracking state.
@@ -102,6 +102,14 @@ pub struct ValidatorRewardPool {
     pub total_distributed_void: u128,
     /// Per-validator reward state (keyed by address)
     pub validators: HashMap<String, ValidatorRewardState>,
+    /// Epoch duration in seconds (testnet=120, mainnet=2592000)
+    /// Defaults to effective_reward_epoch_secs() if not present (backwards-compatible).
+    #[serde(default = "default_epoch_duration")]
+    pub epoch_duration_secs: u64,
+}
+
+fn default_epoch_duration() -> u64 {
+    effective_reward_epoch_secs()
 }
 
 impl ValidatorRewardPool {
@@ -115,6 +123,7 @@ impl ValidatorRewardPool {
             halvings_occurred: 0,
             total_distributed_void: 0,
             validators: HashMap::new(),
+            epoch_duration_secs: effective_reward_epoch_secs(),
         }
     }
 
@@ -127,6 +136,7 @@ impl ValidatorRewardPool {
             halvings_occurred: 0,
             total_distributed_void: 0,
             validators: HashMap::new(),
+            epoch_duration_secs: effective_reward_epoch_secs(),
         }
     }
 
@@ -164,12 +174,12 @@ impl ValidatorRewardPool {
 
     /// Check if the current epoch has ended (based on timestamp).
     pub fn is_epoch_complete(&self, now_secs: u64) -> bool {
-        now_secs >= self.epoch_start_timestamp + REWARD_EPOCH_SECS
+        now_secs >= self.epoch_start_timestamp + self.epoch_duration_secs
     }
 
     /// How many seconds remain in the current epoch.
     pub fn epoch_remaining_secs(&self, now_secs: u64) -> u64 {
-        let end = self.epoch_start_timestamp + REWARD_EPOCH_SECS;
+        let end = self.epoch_start_timestamp + self.epoch_duration_secs;
         end.saturating_sub(now_secs)
     }
 
@@ -177,7 +187,7 @@ impl ValidatorRewardPool {
     /// `heartbeat_interval_secs` = time between heartbeats (e.g., 60s).
     pub fn set_expected_heartbeats(&mut self, heartbeat_interval_secs: u64) {
         let expected = if heartbeat_interval_secs > 0 {
-            REWARD_EPOCH_SECS / heartbeat_interval_secs
+            self.epoch_duration_secs / heartbeat_interval_secs
         } else {
             0
         };
@@ -260,7 +270,7 @@ impl ValidatorRewardPool {
     /// Advance to the next epoch: increment counter, reset heartbeats, update halvings.
     fn advance_epoch(&mut self) {
         self.current_epoch += 1;
-        self.epoch_start_timestamp += REWARD_EPOCH_SECS;
+        self.epoch_start_timestamp += self.epoch_duration_secs;
         self.halvings_occurred = self.current_epoch / REWARD_HALVING_INTERVAL_EPOCHS;
 
         // Reset heartbeat counters for the new epoch
@@ -436,7 +446,9 @@ mod tests {
 
         pool.register_validator(addr, false, 1000 * VOID_PER_UAT);
         pool.current_epoch = 2;
-        pool.set_expected_heartbeats(60); // 43200 expected
+        // Use heartbeat interval of 1s so we get enough heartbeats
+        // for meaningful uptime calculation (epoch_duration / 1 = epoch_duration)
+        pool.set_expected_heartbeats(1);
 
         // 90% uptime — below 95% threshold
         {
@@ -545,21 +557,22 @@ mod tests {
     #[test]
     fn test_epoch_timing() {
         let pool = ValidatorRewardPool::new(GENESIS_TS);
+        let epoch_dur = pool.epoch_duration_secs;
 
         // Not complete at start
         assert!(!pool.is_epoch_complete(GENESIS_TS));
-        assert!(!pool.is_epoch_complete(GENESIS_TS + REWARD_EPOCH_SECS - 1));
+        assert!(!pool.is_epoch_complete(GENESIS_TS + epoch_dur - 1));
 
         // Complete at exactly epoch boundary
-        assert!(pool.is_epoch_complete(GENESIS_TS + REWARD_EPOCH_SECS));
+        assert!(pool.is_epoch_complete(GENESIS_TS + epoch_dur));
 
         // Remaining seconds
-        assert_eq!(pool.epoch_remaining_secs(GENESIS_TS), REWARD_EPOCH_SECS);
+        assert_eq!(pool.epoch_remaining_secs(GENESIS_TS), epoch_dur);
         assert_eq!(
-            pool.epoch_remaining_secs(GENESIS_TS + 1000),
-            REWARD_EPOCH_SECS - 1000
+            pool.epoch_remaining_secs(GENESIS_TS + 10),
+            epoch_dur - 10
         );
-        assert_eq!(pool.epoch_remaining_secs(GENESIS_TS + REWARD_EPOCH_SECS), 0);
+        assert_eq!(pool.epoch_remaining_secs(GENESIS_TS + epoch_dur), 0);
     }
 
     #[test]

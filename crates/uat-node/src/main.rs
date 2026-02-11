@@ -1122,11 +1122,13 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
     let ab_info = address_book.clone();
     let my_addr_info = my_address.clone();
     let bv_info = bootstrap_validators.clone();
+    let aw_info = anti_whale.clone();
     let node_info_route = warp::path("node-info")
-        .and(with_state((l_info, ab_info)))
+        .and(with_state((l_info, ab_info, aw_info)))
         .map(
-            move |(l, ab): (Arc<Mutex<Ledger>>, Arc<Mutex<HashMap<String, String>>>)| {
+            move |(l, ab, aw): (Arc<Mutex<Ledger>>, Arc<Mutex<HashMap<String, String>>>, Arc<Mutex<AntiWhaleEngine>>)| {
                 let l_guard = safe_lock(&l);
+                let aw_guard = safe_lock(&aw);
                 // Protocol constant: 21,936,236 UAT total supply (immutable)
                 // Validated against genesis_config.json on mainnet startup
                 let total_supply = TOTAL_SUPPLY_VOID;
@@ -1159,9 +1161,9 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
                         "void_per_uat": uat_core::VOID_PER_UAT,
                         "chain_id_numeric": uat_core::CHAIN_ID,
                         "anti_whale": {
-                            "max_tx_per_window": 5,
-                            "fee_scale_multiplier": 2,
-                            "window_secs": 60
+                            "max_tx_per_window": aw_guard.config().max_tx_per_block,
+                            "fee_scale_multiplier": aw_guard.config().fee_scale_multiplier,
+                            "window_secs": AntiWhaleEngine::ACTIVITY_WINDOW_SECS
                         }
                     }
                 }))
@@ -1263,6 +1265,8 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
             let base_fee = uat_core::BASE_FEE_VOID;
             let estimated_fee = aw_guard.estimate_fee(&addr, base_fee as u64);
             let multiplier = estimated_fee / (base_fee as u64);
+            let window_secs = AntiWhaleEngine::ACTIVITY_WINDOW_SECS;
+            let max_tx = aw_guard.config().max_tx_per_block;
             let activity = aw_guard.get_activity(&addr);
             let (tx_count, window_remaining) = match activity {
                 Some(a) => {
@@ -1271,7 +1275,7 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
                         .unwrap_or_default()
                         .as_secs();
                     let elapsed = now.saturating_sub(a.window_start);
-                    let remaining = if elapsed >= 60 { 0 } else { 60 - elapsed };
+                    let remaining = if elapsed >= window_secs { 0 } else { window_secs - elapsed };
                     (a.tx_count, remaining)
                 }
                 None => (0, 0),
@@ -1282,9 +1286,9 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
                 "estimated_fee_void": estimated_fee,
                 "fee_multiplier": multiplier,
                 "tx_count_in_window": tx_count,
-                "max_tx_per_window": 5,
+                "max_tx_per_window": max_tx,
                 "window_remaining_secs": window_remaining,
-                "window_duration_secs": 60
+                "window_duration_secs": window_secs
             }))
         });
 

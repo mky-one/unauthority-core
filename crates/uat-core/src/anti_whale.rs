@@ -57,7 +57,12 @@ impl AntiWhaleEngine {
     }
 
     /// Activity window duration in seconds (counters reset after this period)
-    const ACTIVITY_WINDOW_SECS: u64 = 60;
+    pub const ACTIVITY_WINDOW_SECS: u64 = 60;
+
+    /// Read-only access to the anti-whale config
+    pub fn config(&self) -> &AntiWhaleConfig {
+        &self.config
+    }
 
     /// Get current Unix timestamp
     fn now_secs() -> u64 {

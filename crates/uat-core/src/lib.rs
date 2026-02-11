@@ -18,6 +18,14 @@ pub const VOID_PER_UAT: u128 = 100_000_000_000;
 /// Minimum validator stake (1000 UAT in VOID units)
 pub const MIN_VALIDATOR_STAKE_VOID: u128 = 1_000 * VOID_PER_UAT;
 
+/// Base transaction fee in VOID (0.001 UAT = 100,000 VOID)
+/// Single source of truth — wallet fetches this via /node-info.
+/// Anti-whale engine may multiply this for high-frequency senders.
+pub const BASE_FEE_VOID: u128 = 100_000;
+
+/// Minimum PoW difficulty: 16 leading zero bits (anti-spam)
+pub const MIN_POW_DIFFICULTY_BITS: u32 = 16;
+
 /// Chain ID to prevent cross-chain replay attacks
 /// Mainnet = 1, Testnet = 2. Included in every block's signing hash.
 /// Compile with `--features mainnet` for mainnet build.
@@ -132,8 +140,6 @@ impl Block {
     /// This is NOT consensus PoW - just anti-spam measure
     /// Minimum: 16 leading zero bits (≈65,536 average attempts)
     pub fn verify_pow(&self) -> bool {
-        const MIN_POW_DIFFICULTY_BITS: u32 = 16;
-
         let hash = self.signing_hash();
         let hash_bytes = match hex::decode(&hash) {
             Ok(bytes) => bytes,

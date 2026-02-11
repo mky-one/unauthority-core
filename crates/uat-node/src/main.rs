@@ -514,7 +514,7 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
                 };
 
                 let initial_power: u128;
-                let base_fee = 100_000u128; // 0.001 UAT base fee
+                let base_fee = uat_core::BASE_FEE_VOID; // Protocol constant from uat-core
                 let final_fee: u128;
 
                 // DEADLOCK FIX #4a: Never hold L and AW simultaneously.
@@ -1152,7 +1152,13 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
                     "peer_count": peer_count,
                     "total_supply": format_balance_precise(total_supply),
                     "circulating_supply": format_balance_precise(circulating),
-                    "network_tps": 0
+                    "network_tps": 0,
+                    "protocol": {
+                        "base_fee_void": uat_core::BASE_FEE_VOID,
+                        "pow_difficulty_bits": uat_core::MIN_POW_DIFFICULTY_BITS,
+                        "void_per_uat": uat_core::VOID_PER_UAT,
+                        "chain_id_numeric": uat_core::CHAIN_ID
+                    }
                 }))
             },
         );
@@ -3633,7 +3639,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     public_key: hex::encode(&keys.public_key), // Node's public key
                                     work: 0,
                                     timestamp: std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_secs(),
-                                    fee: 100_000, // FIX C11-H1: Use minimum fee (0.001 UAT) — zero-fee blocks rejected by process_block
+                                    fee: uat_core::BASE_FEE_VOID, // Protocol constant from uat-core
                                 };
 
                                 solve_pow(&mut blk);

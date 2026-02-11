@@ -1984,6 +1984,177 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
         },
     );
 
+    // 29. POST /register-validator (Register as an active validator)
+    // Requires proof of ownership via Dilithium5 signature + minimum stake.
+    // Sets is_validator = true, registers in SlashingManager and RewardPool,
+    // and broadcasts to peers so the entire network knows about this validator.
+    let l_regval = ledger.clone();
+    let sm_regval = slashing_manager.clone();
+    let rp_regval = reward_pool.clone();
+    let tx_regval = tx_out.clone();
+    let bv_regval = bootstrap_validators.clone();
+    let db_regval = database.clone();
+    let register_validator_route = warp::path("register-validator")
+        .and(warp::post())
+        .and(warp::body::json())
+        .and(with_state((l_regval, sm_regval, rp_regval, tx_regval, db_regval)))
+        .then(#[allow(clippy::type_complexity)] move |req: serde_json::Value, (l, sm, rp, tx, db): (Arc<Mutex<Ledger>>, Arc<Mutex<SlashingManager>>, Arc<Mutex<ValidatorRewardPool>>, mpsc::Sender<String>, Arc<UatDatabase>)| {
+            let bv_inner = bv_regval.clone();
+            async move {
+            // Parse required fields
+            let address = match req["address"].as_str() {
+                Some(a) if !a.is_empty() => a.to_string(),
+                _ => return warp::reply::json(&serde_json::json!({
+                    "status": "error",
+                    "msg": "Missing 'address' field"
+                })),
+            };
+            let public_key = match req["public_key"].as_str() {
+                Some(pk) if !pk.is_empty() => pk.to_string(),
+                _ => return warp::reply::json(&serde_json::json!({
+                    "status": "error",
+                    "msg": "Missing 'public_key' field"
+                })),
+            };
+            let signature = match req["signature"].as_str() {
+                Some(s) if !s.is_empty() => s.to_string(),
+                _ => return warp::reply::json(&serde_json::json!({
+                    "status": "error",
+                    "msg": "Missing 'signature' field"
+                })),
+            };
+            let timestamp = req["timestamp"].as_u64().unwrap_or(0);
+
+            // 1. Validate address format
+            if !uat_crypto::validate_address(&address) {
+                return warp::reply::json(&serde_json::json!({
+                    "status": "error",
+                    "msg": "Invalid address format"
+                }));
+            }
+
+            // 2. Verify public_key derives to address (proves key ownership)
+            let pk_bytes = match hex::decode(&public_key) {
+                Ok(b) => b,
+                Err(_) => return warp::reply::json(&serde_json::json!({
+                    "status": "error",
+                    "msg": "Invalid public_key hex encoding"
+                })),
+            };
+            let derived_addr = uat_crypto::public_key_to_address(&pk_bytes);
+            if derived_addr != address {
+                return warp::reply::json(&serde_json::json!({
+                    "status": "error",
+                    "msg": "public_key does not match address"
+                }));
+            }
+
+            // 3. Verify signature (message = "REGISTER_VALIDATOR:<address>:<timestamp>")
+            let message = format!("REGISTER_VALIDATOR:{}:{}", address, timestamp);
+            let sig_bytes = match hex::decode(&signature) {
+                Ok(b) => b,
+                Err(_) => return warp::reply::json(&serde_json::json!({
+                    "status": "error",
+                    "msg": "Invalid signature hex encoding"
+                })),
+            };
+            if !uat_crypto::verify_signature(message.as_bytes(), &sig_bytes, &pk_bytes) {
+                return warp::reply::json(&serde_json::json!({
+                    "status": "error",
+                    "msg": "Signature verification failed"
+                }));
+            }
+
+            // 4. Timestamp freshness check (prevent replay attacks, allow 5 min window)
+            let now = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_secs();
+            if timestamp == 0 || now.abs_diff(timestamp) > 300 {
+                return warp::reply::json(&serde_json::json!({
+                    "status": "error",
+                    "msg": "Timestamp too old or missing (max 5 minute window)"
+                }));
+            }
+
+            // 5. Check balance >= MIN_VALIDATOR_STAKE_VOID
+            let (balance, already_validator) = {
+                let l_guard = safe_lock(&l);
+                match l_guard.accounts.get(&address) {
+                    Some(acc) => (acc.balance, acc.is_validator),
+                    None => (0, false),
+                }
+            };
+
+            if already_validator || bv_inner.contains(&address) {
+                return warp::reply::json(&serde_json::json!({
+                    "status": "ok",
+                    "msg": "Already registered as validator",
+                    "address": address,
+                    "is_validator": true,
+                    "is_genesis": bv_inner.contains(&address),
+                }));
+            }
+
+            if balance < MIN_VALIDATOR_STAKE_VOID {
+                let min_uat = MIN_VALIDATOR_STAKE_VOID / VOID_PER_UAT;
+                let current_uat = balance / VOID_PER_UAT;
+                return warp::reply::json(&serde_json::json!({
+                    "status": "error",
+                    "msg": format!("Insufficient stake: need {} UAT, have {} UAT", min_uat, current_uat)
+                }));
+            }
+
+            // 6. Set is_validator = true in ledger
+            {
+                let mut l_guard = safe_lock(&l);
+                if let Some(acc) = l_guard.accounts.get_mut(&address) {
+                    acc.is_validator = true;
+                }
+            }
+
+            // 7. Register in SlashingManager
+            {
+                let mut sm_guard = safe_lock(&sm);
+                if sm_guard.get_profile(&address).is_none() {
+                    sm_guard.register_validator(address.clone());
+                }
+            }
+
+            // 8. Register in RewardPool (non-genesis)
+            {
+                let mut rp_guard = safe_lock(&rp);
+                rp_guard.register_validator(&address, false, balance);
+            }
+
+            // 9. Mark ledger dirty for persistence
+            SAVE_DIRTY.store(true, Ordering::Relaxed);
+
+            // 10. Broadcast to peers so they also register this validator
+            let reg_msg = serde_json::json!({
+                "type": "VALIDATOR_REG",
+                "address": address,
+                "public_key": public_key,
+                "signature": signature,
+                "timestamp": timestamp,
+            });
+            let _ = tx.send(format!("VALIDATOR_REG:{}", reg_msg.to_string())).await;
+
+            println!("✅ New validator registered: {} (stake: {} UAT)", get_short_addr(&address), balance / VOID_PER_UAT);
+
+            // Persist immediately
+            let _ = db.save_ledger(&safe_lock(&l));
+
+            warp::reply::json(&serde_json::json!({
+                "status": "ok",
+                "msg": "Validator registered successfully",
+                "address": address,
+                "stake_uat": balance / VOID_PER_UAT,
+                "is_validator": true,
+                "is_genesis": false,
+            }))
+        }});
+
     // Combine all routes with rate limiting
     // NOTE: Each route is .boxed() to prevent warp type recursion overflow (E0275)
     // when compiling in release mode. This breaks the deeply nested type chain.
@@ -2024,6 +2195,7 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
         .or(sync_route.boxed())
         .or(consensus_route.boxed())
         .or(reward_info_route.boxed())
+        .or(register_validator_route.boxed())
         .boxed();
 
     let routes = group1
@@ -4861,6 +5033,101 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                         safe_lock(&pending_sends).remove(&tx_hash);
                                         safe_lock(&send_voters_clone).remove(&tx_hash);
                                     }
+                                }
+                            }
+                        } else if data.starts_with("VALIDATOR_REG:") {
+                            // Handle validator registration broadcast from peers.
+                            // Validates the same proof of ownership (Dilithium5 signature)
+                            // before accepting the registration — no trust assumptions.
+                            let json_str = &data["VALIDATOR_REG:".len()..];
+                            match serde_json::from_str::<serde_json::Value>(json_str) {
+                                Ok(reg) => {
+                                    let addr = reg["address"].as_str().unwrap_or_default().to_string();
+                                    let pk_hex = reg["public_key"].as_str().unwrap_or_default().to_string();
+                                    let sig_hex = reg["signature"].as_str().unwrap_or_default().to_string();
+                                    let ts = reg["timestamp"].as_u64().unwrap_or(0);
+
+                                    // Validate address format
+                                    if addr.is_empty() || !uat_crypto::validate_address(&addr) {
+                                        println!("🚫 VALIDATOR_REG: invalid address from peer");
+                                        continue;
+                                    }
+
+                                    // Verify public_key derives to claimed address
+                                    let pk_bytes = match hex::decode(&pk_hex) {
+                                        Ok(b) => b,
+                                        Err(_) => { println!("🚫 VALIDATOR_REG: invalid pk hex"); continue; }
+                                    };
+                                    if uat_crypto::public_key_to_address(&pk_bytes) != addr {
+                                        println!("🚫 VALIDATOR_REG: pk does not match address");
+                                        continue;
+                                    }
+
+                                    // Verify Dilithium5 signature
+                                    let message = format!("REGISTER_VALIDATOR:{}:{}", addr, ts);
+                                    let sig_bytes = match hex::decode(&sig_hex) {
+                                        Ok(b) => b,
+                                        Err(_) => { println!("🚫 VALIDATOR_REG: invalid sig hex"); continue; }
+                                    };
+                                    if !uat_crypto::verify_signature(message.as_bytes(), &sig_bytes, &pk_bytes) {
+                                        println!("🚫 VALIDATOR_REG: signature verification failed for {}", get_short_addr(&addr));
+                                        continue;
+                                    }
+
+                                    // Timestamp freshness (5 minute window)
+                                    let now = std::time::SystemTime::now()
+                                        .duration_since(std::time::UNIX_EPOCH)
+                                        .unwrap_or_default()
+                                        .as_secs();
+                                    if ts == 0 || now.abs_diff(ts) > 300 {
+                                        println!("🚫 VALIDATOR_REG: stale timestamp from {}", get_short_addr(&addr));
+                                        continue;
+                                    }
+
+                                    // Check balance & skip if already registered
+                                    let (balance, already) = {
+                                        let l = safe_lock(&ledger);
+                                        match l.accounts.get(&addr) {
+                                            Some(acc) => (acc.balance, acc.is_validator),
+                                            None => (0, false),
+                                        }
+                                    };
+
+                                    if already {
+                                        // Already registered on this node — silently ignore
+                                        continue;
+                                    }
+
+                                    if balance < MIN_VALIDATOR_STAKE_VOID {
+                                        println!("🚫 VALIDATOR_REG: {} has insufficient stake ({} UAT)",
+                                            get_short_addr(&addr), balance / VOID_PER_UAT);
+                                        continue;
+                                    }
+
+                                    // All checks passed — register the validator on this node
+                                    {
+                                        let mut l = safe_lock(&ledger);
+                                        if let Some(acc) = l.accounts.get_mut(&addr) {
+                                            acc.is_validator = true;
+                                        }
+                                    }
+                                    {
+                                        let mut sm = safe_lock(&slashing_clone);
+                                        if sm.get_profile(&addr).is_none() {
+                                            sm.register_validator(addr.clone());
+                                        }
+                                    }
+                                    {
+                                        let mut rp = safe_lock(&reward_pool);
+                                        rp.register_validator(&addr, false, balance);
+                                    }
+
+                                    SAVE_DIRTY.store(true, Ordering::Relaxed);
+                                    println!("✅ Validator registered via P2P: {} (stake: {} UAT)",
+                                        get_short_addr(&addr), balance / VOID_PER_UAT);
+                                },
+                                Err(e) => {
+                                    println!("⚠️ VALIDATOR_REG: invalid JSON from peer: {}", e);
                                 }
                             }
                         } else if let Ok(inc) = serde_json::from_str::<Block>(&data) {

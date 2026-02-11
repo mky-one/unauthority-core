@@ -447,6 +447,41 @@ class ApiService {
     }
   }
 
+  /// Register this node as an active validator on the local uat-node.
+  /// Requires Dilithium5 signature proof of key ownership.
+  /// The node will broadcast the registration to all peers via gossipsub.
+  Future<Map<String, dynamic>> registerValidator({
+    required String address,
+    required String publicKey,
+    required String signature,
+    required int timestamp,
+  }) async {
+    await ensureReady();
+    try {
+      final response = await _client.post(
+        Uri.parse('$baseUrl/register-validator'),
+        headers: {'Content-Type': 'application/json'},
+        body: json.encode({
+          'address': address,
+          'public_key': publicKey,
+          'signature': signature,
+          'timestamp': timestamp,
+        }),
+      );
+
+      final data = json.decode(response.body);
+
+      if (response.statusCode != 200 || data['status'] == 'error') {
+        throw Exception(data['msg'] ?? 'Validator registration failed');
+      }
+
+      return data;
+    } catch (e) {
+      debugPrint('❌ registerValidator error: $e');
+      rethrow;
+    }
+  }
+
   /// Release HTTP client resources. Called by Provider.dispose.
   void dispose() {
     _client.close();

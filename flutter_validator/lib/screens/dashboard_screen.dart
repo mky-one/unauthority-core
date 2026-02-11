@@ -92,7 +92,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
         _peers = results[4] as List<String>;
         _rewardInfo = rewardData.isNotEmpty ? rewardData : null;
         if (_rewardInfo != null && _rewardInfo!['epoch'] != null) {
-          _epochRemainingSecs = (_rewardInfo!['epoch']['epoch_remaining_secs'] as num?)?.toInt() ?? 0;
+          _epochRemainingSecs =
+              (_rewardInfo!['epoch']['epoch_remaining_secs'] as num?)
+                      ?.toInt() ??
+                  0;
         }
         _error = null;
         _isLoading = false;
@@ -321,7 +324,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
                             const SizedBox(height: 16),
 
                             // Reward Countdown Card
-                            if (_rewardInfo != null) _buildRewardCountdownCard(),
+                            if (_rewardInfo != null)
+                              _buildRewardCountdownCard(),
 
                             const SizedBox(height: 16),
 
@@ -574,16 +578,20 @@ class _DashboardScreenState extends State<DashboardScreen> {
   Widget _buildRewardCountdownCard() {
     final epoch = _rewardInfo?['epoch'] as Map<String, dynamic>? ?? {};
     final pool = _rewardInfo?['pool'] as Map<String, dynamic>? ?? {};
-    final validatorsInfo = _rewardInfo?['validators'] as Map<String, dynamic>? ?? {};
+    final validatorsInfo =
+        _rewardInfo?['validators'] as Map<String, dynamic>? ?? {};
     final currentEpoch = (epoch['current_epoch'] as num?)?.toInt() ?? 0;
     final epochDuration = (epoch['epoch_duration_secs'] as num?)?.toInt() ?? 0;
-    final rewardRateUat = (epoch['epoch_reward_rate_uat'] as num?)?.toInt() ?? 0;
+    final rewardRateUat =
+        (epoch['epoch_reward_rate_uat'] as num?)?.toInt() ?? 0;
     final eligibleCount = (validatorsInfo['eligible'] as num?)?.toInt() ?? 0;
     final remainingUat = (pool['remaining_uat'] as num?)?.toInt() ?? 0;
 
     // Calculate progress (0.0 to 1.0)
-    final elapsed = epochDuration > 0 ? (epochDuration - _epochRemainingSecs) : 0;
-    final progress = epochDuration > 0 ? (elapsed / epochDuration).clamp(0.0, 1.0) : 0.0;
+    final elapsed =
+        epochDuration > 0 ? (epochDuration - _epochRemainingSecs) : 0;
+    final progress =
+        epochDuration > 0 ? (elapsed / epochDuration).clamp(0.0, 1.0) : 0.0;
 
     // Check if my validator is eligible
     String myRewardStatus = 'Not registered';
@@ -631,7 +639,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 ),
                 const Spacer(),
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                   decoration: BoxDecoration(
                     color: Colors.blue.withOpacity(0.1),
                     borderRadius: BorderRadius.circular(12),

@@ -33,12 +33,15 @@ class BlockConstructionService {
   /// Defaults to testnet (2). Set to 1 for mainnet via constructor or setter.
   int chainId;
 
-  /// PoW difficulty: 16 leading zero bits (matches backend MIN_POW_DIFFICULTY_BITS)
-  static const int powDifficultyBits = 16;
+  /// PoW difficulty: fetched from /node-info (fallback 16 if cached)
+  int _powDifficultyBits = 16;
 
-  /// Minimum base fee in VOID (0.001 UAT = 100,000 VOID)
-  /// Must match backend base_fee to pass fee validation.
-  static const int baseFeeVoid = 100000;
+  /// Base fee in VOID — fetched from /node-info (single source of truth).
+  /// null until first fetch; sendTransaction will fail if node unreachable.
+  int? _baseFeeVoid;
+
+  /// Whether protocol params have been fetched from the node.
+  bool _protocolFetched = false;
 
   /// Maximum PoW iterations before giving up
   static const int maxPowIterations = 50000000;
@@ -65,6 +68,48 @@ class BlockConstructionService {
     chainId = id;
   }
 
+  /// Fetch protocol parameters from the node's /node-info endpoint.
+  /// Single source of truth — no hardcoded fee values in the wallet.
+  /// Cached after first successful fetch.
+  Future<void> _ensureProtocolParams() async {
+    if (_protocolFetched) return;
+    try {
+      await _api.ensureReady();
+      final info = await _api.getNodeInfo();
+      final protocol = info['protocol'] as Map<String, dynamic>?;
+      if (protocol != null) {
+        _baseFeeVoid = (protocol['base_fee_void'] as num).toInt();
+        _powDifficultyBits = (protocol['pow_difficulty_bits'] as num).toInt();
+        final nodeChainId = (protocol['chain_id_numeric'] as num).toInt();
+        if (nodeChainId != chainId) {
+          debugPrint(
+              '⚠️ Chain ID mismatch: wallet=$chainId, node=$nodeChainId — updating to node value');
+          chainId = nodeChainId;
+        }
+        _protocolFetched = true;
+        debugPrint(
+            '✅ Protocol params from node: base_fee=$_baseFeeVoid VOID, pow=$_powDifficultyBits bits, chain_id=$chainId');
+      } else {
+        throw Exception(
+            '/node-info missing "protocol" field — node upgrade required');
+      }
+    } catch (e) {
+      debugPrint('⚠️ Failed to fetch protocol params: $e');
+      if (_baseFeeVoid == null) {
+        throw Exception(
+            'Cannot send: protocol parameters unavailable from node. '
+            'Ensure the node is reachable.');
+      }
+      // If we have cached values from a previous fetch, continue with those
+    }
+  }
+
+  /// Invalidate cached protocol params (e.g., after network switch).
+  void invalidateProtocolCache() {
+    _protocolFetched = false;
+    _baseFeeVoid = null;
+  }
+
   /// Send UAT with full client-side block construction.
   ///
   /// 1. Fetch sender's frontier (head block hash) from node
@@ -78,6 +123,11 @@ class BlockConstructionService {
     required String to,
     required double amountUatDouble,
   }) async {
+    // 0. Fetch protocol params from node (base_fee, pow_difficulty, chain_id)
+    await _ensureProtocolParams();
+    final fee = _baseFeeVoid!;
+    final powBits = _powDifficultyBits;
+
     // 1. Get wallet info
     final walletInfo = await _wallet.getCurrentWallet();
     if (walletInfo == null) throw Exception('No wallet found');
@@ -102,7 +152,7 @@ class BlockConstructionService {
     // 4. Current timestamp
     final timestamp = DateTime.now().millisecondsSinceEpoch ~/ 1000;
 
-    debugPrint('⛏️ [Send] Mining PoW (16-bit difficulty)...');
+    debugPrint('⛏️ [Send] Mining PoW ($powBits-bit difficulty)...');
     final powStart = DateTime.now();
 
     // 5. Mine PoW in a background isolate (FIX U1: prevents UI freeze)
@@ -115,7 +165,7 @@ class BlockConstructionService {
       link: to,
       publicKey: publicKeyHex,
       timestamp: timestamp,
-      fee: baseFeeVoid,
+      fee: fee,
     );
 
     final powMs = DateTime.now().difference(powStart).inMilliseconds;
@@ -150,7 +200,7 @@ class BlockConstructionService {
       previous: previous,
       work: work,
       timestamp: timestamp,
-      fee: baseFeeVoid,
+      fee: fee,
       amountVoid: amountVoid.toString(),
     );
   }
@@ -245,7 +295,7 @@ class BlockConstructionService {
       final result = DilithiumService.minePow(
         buffer: buffer,
         workOffset: workOffset,
-        difficultyBits: powDifficultyBits,
+        difficultyBits: _powDifficultyBits,
         maxIterations: maxPowIterations,
       );
       if (result != null) {
@@ -269,7 +319,7 @@ class BlockConstructionService {
       'timestamp': timestamp,
       'fee': fee,
       'maxIter': maxPowIterations,
-      'diffBits': powDifficultyBits,
+      'diffBits': _powDifficultyBits,
     };
 
     return await Isolate.run(() => _minePoWSync(params));

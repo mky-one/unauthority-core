@@ -105,6 +105,32 @@ class TorService {
       return null;
     }
 
+    // Kill any existing Tor on our SocksPort BEFORE starting.
+    // The ApiService may have detected an old Tor on 9250 for outgoing requests,
+    // but we need to start a FRESH Tor with hidden service config.
+    // Without this, the new Tor process fails because SocksPort 9250 is already taken.
+    if (await _isPortOpen('localhost', _socksPort)) {
+      debugPrint(
+          '⚠️ Port $_socksPort already in use — killing old Tor process...');
+      // Kill any tor process using our socksPort
+      try {
+        if (Platform.isMacOS || Platform.isLinux) {
+          await Process.run('bash', [
+            '-c',
+            'lsof -ti :$_socksPort | xargs kill -9 2>/dev/null || true'
+          ]);
+        }
+        // Wait for port to be released
+        for (var i = 0; i < 10; i++) {
+          await Future.delayed(const Duration(milliseconds: 300));
+          if (!await _isPortOpen('localhost', _socksPort)) break;
+        }
+        debugPrint('✅ Port $_socksPort freed');
+      } catch (e) {
+        debugPrint('⚠️ Could not kill old Tor: $e');
+      }
+    }
+
     // Find Tor binary
     String? torBinary = await _findTorBinary();
     if (torBinary == null) {

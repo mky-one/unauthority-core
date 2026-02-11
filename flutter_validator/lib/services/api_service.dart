@@ -20,8 +20,8 @@ class ApiService {
   /// Default timeout for API calls
   static const Duration _defaultTimeout = Duration(seconds: 30);
 
-  /// Longer timeout for Tor connections
-  static const Duration _torTimeout = Duration(seconds: 60);
+  /// Longer timeout for Tor connections (15s is enough — Tor circuits complete in 5-10s)
+  static const Duration _torTimeout = Duration(seconds: 15);
 
   /// Max retry attempts across bootstrap nodes before giving up
   static const int _maxRetries = 4;

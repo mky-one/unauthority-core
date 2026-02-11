@@ -171,6 +171,11 @@ pub struct AccountState {
     pub head: String,
     pub balance: u128,
     pub block_count: u64,
+    /// True if this account has registered as a validator.
+    /// Set during genesis for bootstrap validators, or via register-validator flow.
+    /// Treasury/dev wallets have high balances but is_validator = false.
+    #[serde(default)]
+    pub is_validator: bool,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -246,6 +251,7 @@ impl Ledger {
                 head: "0".to_string(),
                 balance: 0,
                 block_count: 0,
+                is_validator: false,
             });
 
         if block.previous != state.head {

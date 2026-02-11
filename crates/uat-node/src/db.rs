@@ -441,6 +441,7 @@ mod tests {
                 head: "genesis".to_string(),
                 balance: 1000 * VOID_PER_UAT,
                 block_count: 1,
+                is_validator: false,
             },
         );
 
@@ -502,6 +503,7 @@ mod tests {
                     head: "genesis".to_string(),
                     balance: (i as u128) * VOID_PER_UAT,
                     block_count: 0,
+                    is_validator: false,
                 },
             );
         }
@@ -528,6 +530,7 @@ mod tests {
                 head: "0".to_string(),
                 balance: 100,
                 block_count: 0,
+                is_validator: false,
             },
         );
 

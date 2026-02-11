@@ -94,19 +94,19 @@ pub fn load_genesis_from_config(
 ) -> Result<HashMap<String, AccountState>, String> {
     let mut accounts = HashMap::new();
 
-    // Collect all wallets from whichever fields are present
-    let mut all_wallets: Vec<&GenesisWallet> = Vec::new();
+    // Collect all wallets from whichever fields are present, tracking validator status
+    let mut all_wallets: Vec<(&GenesisWallet, bool)> = Vec::new(); // (wallet, is_validator)
     if let Some(ref nodes) = config.bootstrap_nodes {
-        all_wallets.extend(nodes.iter());
+        all_wallets.extend(nodes.iter().map(|w| (w, true))); // bootstrap = validator
     }
     if let Some(ref devs) = config.dev_accounts {
-        all_wallets.extend(devs.iter());
+        all_wallets.extend(devs.iter().map(|w| (w, false))); // dev = NOT validator
     }
     if let Some(ref ws) = config.wallets {
-        all_wallets.extend(ws.iter());
+        all_wallets.extend(ws.iter().map(|w| (w, false))); // legacy = NOT validator
     }
 
-    for wallet in all_wallets {
+    for (wallet, is_validator) in all_wallets {
         let balance_voi = resolve_wallet_balance(wallet)
             .map_err(|e| format!("Invalid balance for {}: {}", wallet.address, e))?;
 
@@ -116,6 +116,7 @@ pub fn load_genesis_from_config(
                 head: "0".to_string(),
                 balance: balance_voi,
                 block_count: 0,
+                is_validator,
             },
         );
     }

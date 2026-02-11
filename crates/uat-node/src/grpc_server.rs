@@ -474,6 +474,7 @@ mod tests {
                 head: "genesis".to_string(),
                 balance: 500 * VOID_PER_UAT,
                 block_count: 0,
+                is_validator: false,
             },
         );
 
@@ -505,6 +506,7 @@ mod tests {
                 head: "genesis".to_string(),
                 balance: 5000 * VOID_PER_UAT,
                 block_count: 0,
+                is_validator: true,
             },
         );
         ledger.accounts.insert(
@@ -513,6 +515,7 @@ mod tests {
                 head: "genesis".to_string(),
                 balance: 10000 * VOID_PER_UAT,
                 block_count: 0,
+                is_validator: true,
             },
         );
 
@@ -523,6 +526,7 @@ mod tests {
                 head: "genesis".to_string(),
                 balance: 100 * VOID_PER_UAT,
                 block_count: 0,
+                is_validator: false,
             },
         );
 

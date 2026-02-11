@@ -219,15 +219,27 @@ class _SetupWizardScreenState extends State<SetupWizardScreen> {
           NetworkConfig.testnetNodes.map((n) => n.p2pAddress).join(',');
       debugPrint('🌐 Bootstrap nodes: $bootstrapAddresses');
 
-      final started = await nodeService.start(
-        port: nodePort,
-        onionAddress: onionAddress,
-        bootstrapNodes:
-            bootstrapAddresses.isNotEmpty ? bootstrapAddresses : null,
-      );
+      // If node is already running (e.g. survived hot-reload or previous session),
+      // skip starting and proceed directly to registration.
+      final bool nodeAlreadyRunning = nodeService.isRunning;
+      int activePort = nodePort;
 
-      if (!started) {
-        throw Exception(nodeService.errorMessage ?? 'Failed to start uat-node');
+      if (nodeAlreadyRunning) {
+        debugPrint(
+            '✅ Node already running on port ${nodeService.apiPort}, skipping start');
+        activePort = nodeService.apiPort;
+      } else {
+        final started = await nodeService.start(
+          port: nodePort,
+          onionAddress: onionAddress,
+          bootstrapNodes:
+              bootstrapAddresses.isNotEmpty ? bootstrapAddresses : null,
+        );
+
+        if (!started) {
+          throw Exception(
+              nodeService.errorMessage ?? 'Failed to start uat-node');
+        }
       }
 
       // Step C: Register as validator on the local node
@@ -253,9 +265,9 @@ class _SetupWizardScreenState extends State<SetupWizardScreen> {
           final message = 'REGISTER_VALIDATOR:$address:$timestamp';
           final signature = await walletService.signTransaction(message);
 
-          // Call the local node's register-validator endpoint
+          // Register on the LOCAL node (sets is_validator locally)
           final localApi = ApiService(
-            customUrl: 'http://127.0.0.1:$nodePort',
+            customUrl: 'http://127.0.0.1:$activePort',
           );
           await localApi.ensureReady();
 
@@ -266,12 +278,30 @@ class _SetupWizardScreenState extends State<SetupWizardScreen> {
               signature: signature,
               timestamp: timestamp,
             );
-            debugPrint('✅ Validator registration: ${result['msg']}');
+            debugPrint('✅ Local registration: ${result['msg']}');
           } catch (e) {
-            // Non-fatal: node is running, registration can be retried
-            debugPrint('⚠️ Validator registration deferred: $e');
+            debugPrint('⚠️ Local registration deferred: $e');
           } finally {
             localApi.dispose();
+          }
+
+          // Also register on the BOOTSTRAP node so the network knows about us.
+          // This is the permissionless approach: any node can accept a valid
+          // registration with a cryptographic proof of key ownership.
+          // The bootstrap node will gossipsub-broadcast to all its peers.
+          final bootstrapApi = context.read<ApiService>();
+          try {
+            await bootstrapApi.ensureReady();
+            final result = await bootstrapApi.registerValidator(
+              address: address,
+              publicKey: publicKey,
+              signature: signature,
+              timestamp: timestamp,
+            );
+            debugPrint('✅ Bootstrap registration: ${result['msg']}');
+          } catch (e) {
+            // Non-fatal: local node still runs, bootstrap may be unreachable
+            debugPrint('⚠️ Bootstrap registration deferred: $e');
           }
         }
       }

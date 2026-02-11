@@ -261,6 +261,8 @@ pub struct ApiServerConfig {
     pub bootstrap_validators: Vec<String>,
     /// Validator reward pool — epoch-based reward distribution engine
     pub reward_pool: Arc<Mutex<ValidatorRewardPool>>,
+    /// Burn vote deduplication — tracks which validators already voted per txid
+    pub burn_voters: Arc<Mutex<HashMap<String, HashSet<String>>>>,
 }
 
 #[allow(clippy::type_complexity)]
@@ -282,6 +284,7 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
         node_public_key,
         bootstrap_validators,
         reward_pool,
+        burn_voters,
     } = cfg;
     // Rate Limiter: 100 req/sec per IP, burst 200
     let limiter = RateLimiter::new(100, Some(200));
@@ -750,11 +753,12 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
     let aw_burn = anti_whale.clone();
     let pk_burn = node_public_key.clone();
     let sk_burn = secret_key.clone();
+    let bv_burn = burn_voters.clone();
     let burn_route = warp::path("burn")
         .and(warp::post())
         .and(warp::body::json())
-        .and(with_state((p_burn, tx_burn, my_address.clone(), l_burn, oc_burn, bl_burn, aw_burn, (pk_burn, sk_burn))))
-        .then(#[allow(clippy::type_complexity)] |req: BurnRequest, (p, tx, my_addr, l, oc, rate_lim, aw, (node_pk, node_sk)): (Arc<Mutex<HashMap<String, (f64, f64, String, u128, u64, String)>>>, mpsc::Sender<String>, String, Arc<Mutex<Ledger>>, Arc<Mutex<OracleConsensus>>, Arc<EndpointRateLimiter>, Arc<Mutex<AntiWhaleEngine>>, (Vec<u8>, Vec<u8>))| async move {
+        .and(with_state((p_burn, tx_burn, my_address.clone(), l_burn, oc_burn, bl_burn, aw_burn, (pk_burn, sk_burn, bv_burn))))
+        .then(#[allow(clippy::type_complexity)] |req: BurnRequest, (p, tx, my_addr, l, oc, rate_lim, aw, (node_pk, node_sk, bv)): (Arc<Mutex<HashMap<String, (f64, f64, String, u128, u64, String)>>>, mpsc::Sender<String>, String, Arc<Mutex<Ledger>>, Arc<Mutex<OracleConsensus>>, Arc<EndpointRateLimiter>, Arc<Mutex<AntiWhaleEngine>>, (Vec<u8>, Vec<u8>, Arc<Mutex<HashMap<String, HashSet<String>>>>))| async move {
 
             // 1. Sanitize TXID
             let clean_txid = req.txid.trim().trim_start_matches("0x").to_lowercase();
@@ -942,8 +946,100 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
                 // Production: Add to pending with initial power = our own balance + recipient address
                 let created_at = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_secs();
                 let burn_recipient = req.recipient_address.as_ref().unwrap_or(&my_addr).clone();
-                safe_lock(&p).insert(clean_txid.clone(), (amt, prc, sym.to_string(), my_power, created_at, burn_recipient));
+                safe_lock(&p).insert(clean_txid.clone(), (amt, prc, sym.to_string(), my_power, created_at, burn_recipient.clone()));
 
+                // SECURITY: Register self in burn_voters dedup to prevent double-counting
+                // when VOTE_RES arrives from peers (same logic as VOTE_RES handler).
+                {
+                    let mut voters = safe_lock(&bv);
+                    let voter_set = voters.entry(clean_txid.clone()).or_default();
+                    voter_set.insert(my_addr.clone());
+                }
+
+                // CONSENSUS CHECK: If self-vote power alone meets aBFT threshold,
+                // consensus is legitimately achieved — mint immediately.
+                // This is NOT a bypass: the same threshold and quadratic voting math
+                // is used here as in the VOTE_RES handler. On mainnet with many validators,
+                // the threshold will be higher and this path will rarely trigger.
+                let threshold = if !testnet_config::get_testnet_config().should_enable_consensus() {
+                    TESTNET_FUNCTIONAL_THRESHOLD
+                } else {
+                    BURN_CONSENSUS_THRESHOLD
+                };
+
+                if my_power >= threshold {
+                    println!("✅ Self-Consensus Achieved (Power: {} >= Threshold: {})!", my_power, threshold);
+
+                    // Mint using same logic as VOTE_RES consensus path
+                    let mint_result: Result<(u128, String), String> = {
+                        let mut l_guard = safe_lock(&l);
+
+                        // Ensure recipient account exists
+                        if !l_guard.accounts.contains_key(&burn_recipient) {
+                            l_guard.accounts.insert(burn_recipient.clone(), AccountState {
+                                head: "0".to_string(), balance: 0, block_count: 0, is_validator: false,
+                            });
+                        }
+                        let state = l_guard.accounts.get(&burn_recipient).cloned().unwrap_or(AccountState {
+                            head: "0".to_string(), balance: 0, block_count: 0, is_validator: false,
+                        });
+
+                        let mut mint_blk = Block {
+                            account: burn_recipient.clone(),
+                            previous: state.head.clone(),
+                            block_type: BlockType::Mint,
+                            amount: uat_to_mint,
+                            link: format!("Src:{}:{}:{}", sym, clean_txid, prc as u128),
+                            signature: "".to_string(),
+                            public_key: hex::encode(&node_pk),
+                            work: 0,
+                            timestamp: std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_secs(),
+                            fee: 0,
+                        };
+
+                        solve_pow(&mut mint_blk);
+                        let signing_hash = mint_blk.signing_hash();
+                        mint_blk.signature = hex::encode(uat_crypto::sign_message(signing_hash.as_bytes(), &node_sk).expect("BUG: signing failed — key corrupted"));
+
+                        match l_guard.process_block(&mint_blk) {
+                            Ok(_hash) => {
+                                SAVE_DIRTY.store(true, Ordering::Relaxed);
+                                println!("🔥 Burn Minting Successful: +{} UAT to {}!", format_u128(uat_to_mint / VOID_PER_UAT), get_short_addr(&burn_recipient));
+                                // Gossip the mint block to peers
+                                Ok((uat_to_mint, serde_json::to_string(&mint_blk).unwrap_or_default()))
+                            }
+                            Err(e) => Err(format!("Mint failed: {}", e))
+                        }
+                    }; // L dropped
+
+                    // Cleanup pending state
+                    safe_lock(&p).remove(&clean_txid);
+                    safe_lock(&bv).remove(&clean_txid);
+
+                    match mint_result {
+                        Ok((minted, gossip_msg)) => {
+                            // Gossip mint block to peers
+                            let _ = tx.send(gossip_msg).await;
+                            // Record rate limit
+                            rate_lim.record_success(recipient);
+                            return warp::reply::json(&serde_json::json!({
+                                "status": "success",
+                                "msg": "Burn finalized (consensus reached)",
+                                "uat_minted": minted / VOID_PER_UAT,
+                                "usd_value": format!("{:.2}", amt * prc),
+                                "recipient": burn_recipient
+                            }));
+                        }
+                        Err(e) => {
+                            return warp::reply::json(&serde_json::json!({
+                                "status": "error",
+                                "msg": e
+                            }));
+                        }
+                    }
+                }
+
+                // Self-vote alone insufficient — wait for peer votes via VOTE_RES
                 // Record rate limit ONLY after successful pending insertion
                 rate_lim.record_success(recipient);
 
@@ -954,8 +1050,9 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
 
                 warp::reply::json(&serde_json::json!({
                     "status":"success",
-                    "msg":"Verification started",
-                    "initial_power": my_power
+                    "msg":"Verification started — waiting for peer consensus",
+                    "initial_power": my_power,
+                    "threshold": threshold
                 }))
             } else {
                 warp::reply::json(&serde_json::json!({"status":"error","msg":"Invalid TXID or Oracle data failed"}))
@@ -1434,6 +1531,85 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
                     }))
                 }
             }
+        });
+
+    // 15b. POST /reset-burn-txid (TESTNET ONLY — Remove used burn TXIDs to allow re-testing)
+    // MAINNET: is_testnet_build() is a const fn that returns false on mainnet builds,
+    // so the compiler eliminates this endpoint entirely — it cannot exist in mainnet binary.
+    let l_reset = ledger.clone();
+    let reset_burn_route = warp::path("reset-burn-txid")
+        .and(warp::post())
+        .and(warp::body::json())
+        .and(with_state(l_reset))
+        .map(|req: serde_json::Value, l: Arc<Mutex<Ledger>>| {
+            // HARD GUARD: Only available on testnet builds
+            if !uat_core::is_testnet_build() {
+                return warp::reply::json(&serde_json::json!({
+                    "status": "error",
+                    "msg": "This endpoint is only available on testnet"
+                }));
+            }
+
+            let txids: Vec<String> = match req.get("txids") {
+                Some(serde_json::Value::Array(arr)) => {
+                    arr.iter().filter_map(|v| v.as_str().map(|s| s.trim().trim_start_matches("0x").to_lowercase())).collect()
+                }
+                _ => {
+                    return warp::reply::json(&serde_json::json!({
+                        "status": "error",
+                        "msg": "Provide { \"txids\": [\"txid1\", \"txid2\"] }"
+                    }));
+                }
+            };
+
+            if txids.is_empty() {
+                return warp::reply::json(&serde_json::json!({
+                    "status": "error",
+                    "msg": "No TXIDs provided"
+                }));
+            }
+
+            let mut l_guard = safe_lock(&l);
+            let mut removed_count = 0u32;
+            let mut details: Vec<serde_json::Value> = Vec::new();
+
+            for txid in &txids {
+                // Find all Mint blocks that reference this TXID
+                let matching_hashes: Vec<String> = l_guard.blocks.iter()
+                    .filter(|(_, b)| b.block_type == BlockType::Mint && b.link.contains(txid.as_str()))
+                    .map(|(h, _)| h.clone())
+                    .collect();
+
+                for hash in &matching_hashes {
+                    if let Some(block) = l_guard.blocks.remove(hash) {
+                        // Reverse the balance: subtract minted amount from account
+                        if let Some(account) = l_guard.accounts.get_mut(&block.account) {
+                            account.balance = account.balance.saturating_sub(block.amount);
+                            // Reset head to previous block
+                            account.head = block.previous.clone();
+                            account.block_count = account.block_count.saturating_sub(1);
+                        }
+                        details.push(serde_json::json!({
+                            "txid": txid,
+                            "block_hash": hash,
+                            "amount_reversed": block.amount / VOID_PER_UAT,
+                            "account": get_short_addr(&block.account)
+                        }));
+                        removed_count += 1;
+                    }
+                }
+            }
+
+            if removed_count > 0 {
+                SAVE_DIRTY.store(true, Ordering::Relaxed);
+            }
+
+            warp::reply::json(&serde_json::json!({
+                "status": "success",
+                "msg": format!("Cleared {} Mint block(s) for {} TXID(s)", removed_count, txids.len()),
+                "removed": removed_count,
+                "details": details
+            }))
         });
 
     // 16. GET /blocks/recent (Recent blocks for validator dashboard)
@@ -2180,6 +2356,7 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
         .or(fee_estimate_route.boxed())
         .or(block_route.boxed())
         .or(faucet_route.boxed())
+        .or(reset_burn_route.boxed())
         .or(blocks_recent_route.boxed())
         .or(whoami_route.boxed())
         .boxed();
@@ -3588,6 +3765,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let api_pk = keys.public_key.clone();
     let api_bootstrap = bootstrap_validators; // Move — only used by API server
     let api_reward_pool = Arc::clone(&reward_pool);
+    let api_burn_voters = Arc::clone(&burn_voters);
 
     tokio::spawn(async move {
         start_api_server(ApiServerConfig {
@@ -3607,6 +3785,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             node_public_key: api_pk,
             bootstrap_validators: api_bootstrap,
             reward_pool: api_reward_pool,
+            burn_voters: api_burn_voters,
         })
         .await;
     });

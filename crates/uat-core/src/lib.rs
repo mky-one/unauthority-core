@@ -18,9 +18,14 @@ pub const VOID_PER_UAT: u128 = 100_000_000_000;
 /// Minimum validator stake (1000 UAT in VOID units)
 pub const MIN_VALIDATOR_STAKE_VOID: u128 = 1_000 * VOID_PER_UAT;
 
-/// Base transaction fee in VOID (0.001 UAT = 100,000 VOID)
+/// Base transaction fee in VOID (0.000001 UAT = 100,000 VOID)
 /// Single source of truth — wallet fetches this via /node-info.
 /// Anti-whale engine may multiply this for high-frequency senders.
+///
+/// Future: This will become a governance-adjustable parameter.
+/// For mainnet launch, validators can vote to change the base fee
+/// through on-chain governance without requiring a binary upgrade.
+/// The /node-info endpoint ensures wallets always get the current value.
 pub const BASE_FEE_VOID: u128 = 100_000;
 
 /// Minimum PoW difficulty: 16 leading zero bits (anti-spam)

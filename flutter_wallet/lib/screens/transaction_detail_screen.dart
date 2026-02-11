@@ -14,6 +14,11 @@ class TransactionDetailScreen extends StatelessWidget {
     this.currentAddress,
   });
 
+  /// Format large numbers with thousand separators (e.g., 100000 → "100,000")
+  static String _formatNumber(int value) {
+    return NumberFormat('#,###').format(value);
+  }
+
   void _copyToClipboard(BuildContext context, String text, String label) {
     Clipboard.setData(ClipboardData(text: text));
     ScaffoldMessenger.of(context).showSnackBar(
@@ -102,9 +107,9 @@ class TransactionDetailScreen extends StatelessWidget {
                 const Divider(height: 1),
                 _DetailRow(
                   label: 'Amount',
-                  value: '${transaction.amount} VOID',
-                  subtitle:
+                  value:
                       '${BlockchainConstants.formatUat(transaction.amountUAT)} UAT',
+                  subtitle: '${_formatNumber(transaction.amount)} VOID',
                   icon: Icons.attach_money,
                 ),
                 // Fee: only shown when backend returns actual fee (fee > 0)
@@ -112,9 +117,9 @@ class TransactionDetailScreen extends StatelessWidget {
                   const Divider(height: 1),
                   _DetailRow(
                     label: 'Fee',
-                    value: '${transaction.fee} VOID',
-                    subtitle:
+                    value:
                         '${BlockchainConstants.formatUat(transaction.feeUAT)} UAT',
+                    subtitle: '${_formatNumber(transaction.fee)} VOID',
                     icon: Icons.local_gas_station,
                   ),
                 ],

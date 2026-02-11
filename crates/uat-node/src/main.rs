@@ -1163,14 +1163,14 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
             },
         );
 
-    // 12. GET /validators (List active bootstrap validators from genesis config)
-    // Reads bootstrap_validators from genesis — NOT hardcoded.
-    // Mainnet: loaded from genesis_config.json bootstrap_nodes[].address
-    // Testnet: loaded from testnet_wallets.json wallets[] where role="validator"
+    // 12. GET /validators (List ALL active validators — genesis + dynamically registered)
+    // Includes bootstrap validators from genesis AND user-registered validators
+    // with balance >= MIN_VALIDATOR_STAKE_VOID (1000 UAT).
     let l_validators = ledger.clone();
     let ab_validators = address_book.clone();
     let my_addr_validators = my_address.clone();
     let bv_validators = bootstrap_validators.clone();
+    let sm_validators = slashing_manager.clone();
     let validators_route = warp::path("validators")
         .and(with_state((l_validators, ab_validators)))
         .map(
@@ -1178,13 +1178,32 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
                 let l_guard = safe_lock(&l);
                 let ab_guard = safe_lock(&ab);
 
-                let validators: Vec<serde_json::Value> = bv_validators
+                // Collect ALL validator addresses: genesis bootstrap + dynamically registered
+                let mut all_validator_addrs: Vec<String> = bv_validators.clone();
+                {
+                    let sm_guard = safe_lock(&sm_validators);
+                    for addr in sm_guard.get_all_validator_addresses() {
+                        if !all_validator_addrs.contains(&addr) {
+                            all_validator_addrs.push(addr);
+                        }
+                    }
+                }
+                // Also scan ledger for any account with >= MIN_VALIDATOR_STAKE_VOID
+                for (addr, acc) in &l_guard.accounts {
+                    if acc.balance >= MIN_VALIDATOR_STAKE_VOID
+                        && !all_validator_addrs.contains(addr)
+                    {
+                        all_validator_addrs.push(addr.clone());
+                    }
+                }
+
+                let validators: Vec<serde_json::Value> = all_validator_addrs
                     .iter()
                     .filter_map(|addr| {
                         l_guard.accounts.get(addr.as_str()).map(|acc| {
-                            // Validator is "active" if it is self or appears in address_book
                             let is_self = addr == &my_addr_validators;
                             let in_peers = ab_guard.values().any(|v| v.contains(addr.as_str()));
+                            let is_genesis = bv_validators.contains(addr);
                             let active =
                                 is_self || in_peers || acc.balance >= MIN_VALIDATOR_STAKE_VOID;
                             serde_json::json!({
@@ -1192,6 +1211,7 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
                                 "stake": acc.balance / VOID_PER_UAT,
                                 "is_active": active,
                                 "active": active,
+                                "is_genesis": is_genesis,
                                 "uptime_percentage": if active { 99.9 } else { 0.0 }
                             })
                         })

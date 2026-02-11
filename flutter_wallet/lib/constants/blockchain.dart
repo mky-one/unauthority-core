@@ -20,6 +20,10 @@ class BlockchainConstants {
   /// Number of decimal places for display
   static const int decimalPlaces = 11;
 
+  /// Base transaction fee in VOID (0.001 UAT = 100,000 VOID)
+  /// Must match backend base_fee
+  static const int baseFeeVoid = 100000;
+
   /// UAT address prefix
   static const String addressPrefix = 'UAT';
 

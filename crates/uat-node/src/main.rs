@@ -1283,11 +1283,7 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
                         .unwrap_or_default()
                         .as_secs();
                     let elapsed = now.saturating_sub(a.window_start);
-                    let remaining = if elapsed >= window_secs {
-                        0
-                    } else {
-                        window_secs - elapsed
-                    };
+                    let remaining = window_secs.saturating_sub(elapsed);
                     (a.tx_count, remaining)
                 }
                 None => (0, 0),

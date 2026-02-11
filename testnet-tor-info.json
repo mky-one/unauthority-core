@@ -1,13 +1,44 @@
 {
-  "network": "testnet",
-  "generated_at": "2026-02-10T18:07:15Z",
-  "bootstrap_nodes": [
+  "generated_at": "2026-02-11T00:11:55Z",
+  "tor_socks_port": 9052,
+  "validators": [
     {
-      "name": "validator-1",
-      "onion": "ll22j45prmu3oymratallztx74peen4gsxudzbgf5qvybezobitvywyd.onion",
-      "rest_url": "http://ll22j45prmu3oymratallztx74peen4gsxudzbgf5qvybezobitvywyd.onion",
-      "p2p": "ll22j45prmu3oymratallztx74peen4gsxudzbgf5qvybezobitvywyd.onion:4001"
+      "id": 1,
+      "onion": "u3kilz7tv3ffhl2rafrzarbmiiojfcjz3eg527td5ocmibq44gj4htqd.onion",
+      "rest_url": "http://u3kilz7tv3ffhl2rafrzarbmiiojfcjz3eg527td5ocmibq44gj4htqd.onion",
+      "p2p": "u3kilz7tv3ffhl2rafrzarbmiiojfcjz3eg527td5ocmibq44gj4htqd.onion:4001",
+      "local_rest": "http://127.0.0.1:3030",
+      "local_p2p": "127.0.0.1:4001"
+    },
+    {
+      "id": 2,
+      "onion": "5yvqf4sdbif4pegxgrgfq5ksv3gqqpt27x2xzx5nvrmdqmsrk4mnkgad.onion",
+      "rest_url": "http://5yvqf4sdbif4pegxgrgfq5ksv3gqqpt27x2xzx5nvrmdqmsrk4mnkgad.onion",
+      "p2p": "5yvqf4sdbif4pegxgrgfq5ksv3gqqpt27x2xzx5nvrmdqmsrk4mnkgad.onion:4001",
+      "local_rest": "http://127.0.0.1:3031",
+      "local_p2p": "127.0.0.1:4002"
+    },
+    {
+      "id": 3,
+      "onion": "3e3vi6ealajwangzmiz2ec7b5gqahnysk3tjs7yol7rptmsrthrpjvad.onion",
+      "rest_url": "http://3e3vi6ealajwangzmiz2ec7b5gqahnysk3tjs7yol7rptmsrthrpjvad.onion",
+      "p2p": "3e3vi6ealajwangzmiz2ec7b5gqahnysk3tjs7yol7rptmsrthrpjvad.onion:4001",
+      "local_rest": "http://127.0.0.1:3032",
+      "local_p2p": "127.0.0.1:4003"
+    },
+    {
+      "id": 4,
+      "onion": "yapub6hgjr3eyxnxzvgd4yejt7rkhwlmaivdpy6757o3tr5iicckgjyd.onion",
+      "rest_url": "http://yapub6hgjr3eyxnxzvgd4yejt7rkhwlmaivdpy6757o3tr5iicckgjyd.onion",
+      "p2p": "yapub6hgjr3eyxnxzvgd4yejt7rkhwlmaivdpy6757o3tr5iicckgjyd.onion:4001",
+      "local_rest": "http://127.0.0.1:3033",
+      "local_p2p": "127.0.0.1:4004"
     }
   ],
-  "verify": "curl --socks5-hostname 127.0.0.1:9050 http://ll22j45prmu3oymratallztx74peen4gsxudzbgf5qvybezobitvywyd.onion/health"
+  "flutter_wallet_url": "http://u3kilz7tv3ffhl2rafrzarbmiiojfcjz3eg527td5ocmibq44gj4htqd.onion",
+  "flutter_validator_url": "http://u3kilz7tv3ffhl2rafrzarbmiiojfcjz3eg527td5ocmibq44gj4htqd.onion",
+  "connection_guide": {
+    "tor_browser": "http://u3kilz7tv3ffhl2rafrzarbmiiojfcjz3eg527td5ocmibq44gj4htqd.onion/node-info",
+    "curl_via_tor": "curl --socks5-hostname 127.0.0.1:9052 http://u3kilz7tv3ffhl2rafrzarbmiiojfcjz3eg527td5ocmibq44gj4htqd.onion/health"
+  }
 }

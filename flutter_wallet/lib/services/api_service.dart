@@ -7,6 +7,7 @@ import 'package:socks5_proxy/socks_client.dart';
 import '../models/account.dart';
 import 'tor_service.dart';
 import 'network_config.dart';
+import 'peer_discovery_service.dart';
 
 enum NetworkEnvironment { testnet, mainnet }
 
@@ -42,6 +43,9 @@ class ApiService {
   /// the default http.Client on .onion URLs before Tor is ready.
   late Future<void> _clientReady;
 
+  /// Whether we've already run peer discovery after first successful connection
+  bool _peerDiscoveryDone = false;
+
   ApiService({
     String? customUrl,
     this.environment = NetworkEnvironment.testnet,
@@ -50,7 +54,9 @@ class ApiService {
     if (customUrl != null) {
       baseUrl = customUrl;
     } else {
-      baseUrl = _bootstrapUrls.isNotEmpty ? _bootstrapUrls.first : _getBaseUrl(environment);
+      baseUrl = _bootstrapUrls.isNotEmpty
+          ? _bootstrapUrls.first
+          : _getBaseUrl(environment);
     }
     _clientReady = _initializeClient();
     debugPrint('🔗 UAT ApiService initialized with baseUrl: $baseUrl '
@@ -61,13 +67,30 @@ class ApiService {
   /// Safe to call multiple times — resolves immediately after first init.
   Future<void> ensureReady() => _clientReady;
 
-  /// Load all bootstrap URLs for the given environment
+  /// Load all bootstrap URLs for the given environment.
+  /// Includes saved peers from local storage (Bitcoin's peers.dat equivalent)
+  /// BEFORE the hardcoded bootstrap nodes, so the app can survive
+  /// even if all 4 bootstrap nodes go offline.
   void _loadBootstrapUrls(NetworkEnvironment env) {
     final nodes = env == NetworkEnvironment.testnet
         ? NetworkConfig.testnetNodes
         : NetworkConfig.mainnetNodes;
     _bootstrapUrls = nodes.map((n) => n.restUrl).toList();
     _currentNodeIndex = 0;
+  }
+
+  /// Async initialization: load saved peers and prepend to bootstrap list.
+  Future<void> _loadSavedPeers() async {
+    final savedPeers = await PeerDiscoveryService.loadSavedPeers();
+    if (savedPeers.isNotEmpty) {
+      final newPeers =
+          savedPeers.where((p) => !_bootstrapUrls.contains(p)).toList();
+      if (newPeers.isNotEmpty) {
+        _bootstrapUrls = [...newPeers, ..._bootstrapUrls];
+        debugPrint('🔗 PeerDiscovery: added ${newPeers.length} saved peer(s) '
+            '(total: ${_bootstrapUrls.length} endpoints)');
+      }
+    }
   }
 
   String _getBaseUrl(NetworkEnvironment env) {
@@ -86,7 +109,8 @@ class ApiService {
     final newUrl = _bootstrapUrls[_currentNodeIndex];
     if (newUrl != baseUrl) {
       baseUrl = newUrl;
-      debugPrint('🔄 Failover: switched to node ${_currentNodeIndex + 1}/${_bootstrapUrls.length}: $baseUrl');
+      debugPrint(
+          '🔄 Failover: switched to node ${_currentNodeIndex + 1}/${_bootstrapUrls.length}: $baseUrl');
       return true;
     }
     return false;
@@ -101,12 +125,20 @@ class ApiService {
     int attempts = 0;
     while (attempts < _bootstrapUrls.length.clamp(1, _maxRetries)) {
       try {
-        return await requestFn(baseUrl).timeout(_timeout);
+        final response = await requestFn(baseUrl).timeout(_timeout);
+        // On first successful connection, trigger background peer discovery
+        if (!_peerDiscoveryDone) {
+          _peerDiscoveryDone = true;
+          Future.microtask(() => discoverAndSavePeers());
+        }
+        return response;
       } on Exception catch (e) {
-        final isLastAttempt = attempts >= _bootstrapUrls.length - 1 || attempts >= _maxRetries - 1;
+        final isLastAttempt = attempts >= _bootstrapUrls.length - 1 ||
+            attempts >= _maxRetries - 1;
         debugPrint('⚠️ Node ${_currentNodeIndex + 1} failed for $endpoint: $e');
         if (isLastAttempt) {
-          debugPrint('❌ All ${attempts + 1} bootstrap nodes failed for $endpoint');
+          debugPrint(
+              '❌ All ${attempts + 1} bootstrap nodes failed for $endpoint');
           rethrow;
         }
         _switchToNextNode();
@@ -130,6 +162,8 @@ class ApiService {
       _client = http.Client();
       debugPrint('✅ Direct HTTP client (no Tor proxy needed for $baseUrl)');
     }
+    // After client is ready, load saved peers into bootstrap list
+    await _loadSavedPeers();
   }
 
   /// Create Tor-enabled HTTP client
@@ -176,7 +210,8 @@ class ApiService {
   void switchEnvironment(NetworkEnvironment newEnv) {
     environment = newEnv;
     _loadBootstrapUrls(newEnv);
-    baseUrl = _bootstrapUrls.isNotEmpty ? _bootstrapUrls.first : _getBaseUrl(newEnv);
+    baseUrl =
+        _bootstrapUrls.isNotEmpty ? _bootstrapUrls.first : _getBaseUrl(newEnv);
     _clientReady = _initializeClient();
     debugPrint('🔄 Switched to ${newEnv.name.toUpperCase()}: $baseUrl '
         '(${_bootstrapUrls.length} nodes)');
@@ -493,8 +528,8 @@ class ApiService {
   }
 
   // Get Peers
-  // FIX C12-03: Backend GET /peers returns HashMap<String,String> (JSON object),
-  // not a JSON array. Handle both Map and List for resilience.
+  // Get Peers
+  // Backend returns {"peers": [{...}], "peer_count": N, ...}
   Future<List<String>> getPeers() async {
     try {
       final response = await _requestWithFailover(
@@ -504,10 +539,18 @@ class ApiService {
       if (response.statusCode == 200) {
         final decoded = json.decode(response.body);
         if (decoded is Map) {
-          // Backend returns {"addr1": "addr2", ...} — extract keys as peer list
+          // New format: {"peers": [{"address": "...", ...}], "peer_count": N}
+          if (decoded.containsKey('peers') && decoded['peers'] is List) {
+            return (decoded['peers'] as List)
+                .map((p) =>
+                    p is Map ? (p['address'] ?? '').toString() : p.toString())
+                .where((s) => s.isNotEmpty)
+                .toList();
+          }
+          // Legacy fallback: flat HashMap<String, String>
           return decoded.keys.cast<String>().toList();
         } else if (decoded is List) {
-          return decoded.cast<String>();
+          return decoded.whereType<String>().toList();
         }
         return [];
       }
@@ -545,5 +588,40 @@ class ApiService {
   Future<void> dispose() async {
     _client.close();
     await _torService.stop();
+  }
+
+  /// Discover new validator endpoints from the network and save locally.
+  /// Call this periodically (e.g., after balance check) to build up
+  /// the local peer database. Once saved, these peers persist across restarts.
+  Future<void> discoverAndSavePeers() async {
+    try {
+      final response = await _requestWithFailover(
+        (url) => _client.get(Uri.parse('$url/network/peers')),
+        '/network/peers',
+      );
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        final endpoints = (data['endpoints'] as List<dynamic>?)
+                ?.map((e) => e as Map<String, dynamic>)
+                .toList() ??
+            [];
+        if (endpoints.isNotEmpty) {
+          await PeerDiscoveryService.savePeers(endpoints);
+          for (final ep in endpoints) {
+            final onion = ep['onion_address']?.toString() ?? '';
+            if (onion.isNotEmpty && onion.endsWith('.onion')) {
+              final url = 'http://$onion';
+              if (!_bootstrapUrls.contains(url)) {
+                _bootstrapUrls.add(url);
+              }
+            }
+          }
+          debugPrint('🌐 Discovery: ${endpoints.length} endpoint(s), '
+              'total URLs: ${_bootstrapUrls.length}');
+        }
+      }
+    } catch (e) {
+      debugPrint('⚠️ Peer discovery failed (non-critical): $e');
+    }
   }
 }

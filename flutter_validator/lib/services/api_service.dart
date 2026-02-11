@@ -8,6 +8,7 @@ import '../models/account.dart';
 import '../constants/blockchain.dart';
 import 'tor_service.dart';
 import 'network_config.dart';
+import 'peer_discovery_service.dart';
 
 enum NetworkEnvironment { testnet, mainnet }
 
@@ -39,6 +40,9 @@ class ApiService {
   /// Track client initialization so callers can await readiness
   late Future<void> _clientReady;
 
+  /// Whether we've already run peer discovery after first successful connection
+  bool _peerDiscoveryDone = false;
+
   ApiService({
     String? customUrl,
     this.environment = NetworkEnvironment.testnet,
@@ -47,24 +51,45 @@ class ApiService {
     if (customUrl != null) {
       baseUrl = customUrl;
     } else {
-      baseUrl = _bootstrapUrls.isNotEmpty ? _bootstrapUrls.first : _getBaseUrl(environment);
+      baseUrl = _bootstrapUrls.isNotEmpty
+          ? _bootstrapUrls.first
+          : _getBaseUrl(environment);
     }
     _clientReady = _initializeClient();
-    debugPrint(
-        '🔗 UAT Validator ApiService initialized with baseUrl: $baseUrl '
+    debugPrint('🔗 UAT Validator ApiService initialized with baseUrl: $baseUrl '
         '(${_bootstrapUrls.length} bootstrap nodes available)');
   }
 
   /// Await Tor/HTTP client initialization before first request.
   Future<void> ensureReady() => _clientReady;
 
-  /// Load all bootstrap URLs for the given environment
+  /// Load all bootstrap URLs for the given environment.
+  /// Includes saved peers from local storage (Bitcoin's peers.dat equivalent)
+  /// BEFORE the hardcoded bootstrap nodes, so the app can survive
+  /// even if all 4 bootstrap nodes go offline.
   void _loadBootstrapUrls(NetworkEnvironment env) {
     final nodes = env == NetworkEnvironment.testnet
         ? NetworkConfig.testnetNodes
         : NetworkConfig.mainnetNodes;
     _bootstrapUrls = nodes.map((n) => n.restUrl).toList();
     _currentNodeIndex = 0;
+  }
+
+  /// Async initialization: load saved peers and prepend to bootstrap list.
+  /// Called during ensureReady() — before the first actual API request.
+  Future<void> _loadSavedPeers() async {
+    final savedPeers = await PeerDiscoveryService.loadSavedPeers();
+    if (savedPeers.isNotEmpty) {
+      // Prepend saved peers BEFORE bootstrap nodes (tried first)
+      // Deduplicate: don't add if already in bootstrap list
+      final newPeers =
+          savedPeers.where((p) => !_bootstrapUrls.contains(p)).toList();
+      if (newPeers.isNotEmpty) {
+        _bootstrapUrls = [...newPeers, ..._bootstrapUrls];
+        debugPrint('🔗 PeerDiscovery: added ${newPeers.length} saved peer(s) '
+            '(total: ${_bootstrapUrls.length} endpoints)');
+      }
+    }
   }
 
   String _getBaseUrl(NetworkEnvironment env) {
@@ -84,7 +109,8 @@ class ApiService {
     final newUrl = _bootstrapUrls[_currentNodeIndex];
     if (newUrl != baseUrl) {
       baseUrl = newUrl;
-      debugPrint('🔄 Failover: switched to node ${_currentNodeIndex + 1}/${_bootstrapUrls.length}: $baseUrl');
+      debugPrint(
+          '🔄 Failover: switched to node ${_currentNodeIndex + 1}/${_bootstrapUrls.length}: $baseUrl');
       return true;
     }
     return false;
@@ -101,13 +127,22 @@ class ApiService {
 
     while (attempts < _bootstrapUrls.length.clamp(1, _maxRetries)) {
       try {
-        return await requestFn(baseUrl).timeout(_timeout);
+        final response = await requestFn(baseUrl).timeout(_timeout);
+        // On first successful connection, trigger background peer discovery
+        if (!_peerDiscoveryDone) {
+          _peerDiscoveryDone = true;
+          // Fire-and-forget — don't block the current request
+          Future.microtask(() => discoverAndSavePeers());
+        }
+        return response;
       } on Exception catch (e) {
-        final isLastAttempt = attempts >= _bootstrapUrls.length - 1 || attempts >= _maxRetries - 1;
+        final isLastAttempt = attempts >= _bootstrapUrls.length - 1 ||
+            attempts >= _maxRetries - 1;
         debugPrint('⚠️ Node ${_currentNodeIndex + 1} failed for $endpoint: $e');
 
         if (isLastAttempt) {
-          debugPrint('❌ All ${attempts + 1} bootstrap nodes failed for $endpoint');
+          debugPrint(
+              '❌ All ${attempts + 1} bootstrap nodes failed for $endpoint');
           rethrow;
         }
 
@@ -132,6 +167,8 @@ class ApiService {
       _client = http.Client();
       debugPrint('✅ Direct HTTP client (no Tor proxy needed for $baseUrl)');
     }
+    // After client is ready, load saved peers into bootstrap list
+    await _loadSavedPeers();
   }
 
   /// Create Tor-enabled HTTP client
@@ -172,7 +209,8 @@ class ApiService {
   void switchEnvironment(NetworkEnvironment newEnv) {
     environment = newEnv;
     _loadBootstrapUrls(newEnv);
-    baseUrl = _bootstrapUrls.isNotEmpty ? _bootstrapUrls.first : _getBaseUrl(newEnv);
+    baseUrl =
+        _bootstrapUrls.isNotEmpty ? _bootstrapUrls.first : _getBaseUrl(newEnv);
     _clientReady = _initializeClient();
     debugPrint('🔄 Switched to ${newEnv.name.toUpperCase()}: $baseUrl '
         '(${_bootstrapUrls.length} nodes)');
@@ -489,8 +527,7 @@ class ApiService {
   }
 
   // Get Peers
-  // FIX C12-02: Backend returns HashMap<String,String> → JSON object {"addr":"url",...}
-  // NOT a List or {peers: [...]}.
+  // Backend returns {"peers": [{"address":..., "is_validator":..., ...}], "peer_count": N, ...}
   Future<List<String>> getPeers() async {
     try {
       final response = await _requestWithFailover(
@@ -499,17 +536,19 @@ class ApiService {
       );
       if (response.statusCode == 200) {
         final decoded = json.decode(response.body);
-        if (decoded is List) {
-          // Future-proof: if backend ever returns a plain array
-          return decoded.whereType<String>().toList();
-        } else if (decoded is Map) {
-          // Current backend: HashMap<String, String> → JSON object
-          // Keys are peer addresses/IDs, values are URLs
+        if (decoded is Map) {
+          // New format: {"peers": [{"address": "...", ...}], "peer_count": N}
           if (decoded.containsKey('peers') && decoded['peers'] is List) {
-            return (decoded['peers'] as List).whereType<String>().toList();
+            return (decoded['peers'] as List)
+                .map((p) =>
+                    p is Map ? (p['address'] ?? '').toString() : p.toString())
+                .where((s) => s.isNotEmpty)
+                .toList();
           }
-          // Extract keys (peer addresses) from the map
+          // Legacy fallback: flat HashMap<String, String>
           return decoded.keys.cast<String>().toList();
+        } else if (decoded is List) {
+          return decoded.whereType<String>().toList();
         }
         return [];
       }
@@ -586,6 +625,43 @@ class ApiService {
     } catch (e) {
       debugPrint('❌ getRewardInfo error: $e');
       rethrow;
+    }
+  }
+
+  /// Discover new validator endpoints from the network and save locally.
+  /// Call this periodically (e.g., every dashboard refresh) to build up
+  /// the local peer database. Once saved, these peers persist across restarts.
+  Future<void> discoverAndSavePeers() async {
+    try {
+      final response = await _requestWithFailover(
+        (url) => _client.get(Uri.parse('$url/network/peers')),
+        '/network/peers',
+      );
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        final endpoints = (data['endpoints'] as List<dynamic>?)
+                ?.map((e) => e as Map<String, dynamic>)
+                .toList() ??
+            [];
+        if (endpoints.isNotEmpty) {
+          await PeerDiscoveryService.savePeers(endpoints);
+          // Also add newly discovered peers to current session's URL list
+          for (final ep in endpoints) {
+            final onion = ep['onion_address']?.toString() ?? '';
+            if (onion.isNotEmpty && onion.endsWith('.onion')) {
+              final url = 'http://$onion';
+              if (!_bootstrapUrls.contains(url)) {
+                _bootstrapUrls.add(url);
+              }
+            }
+          }
+          debugPrint('🌐 Discovery: ${endpoints.length} endpoint(s), '
+              'total URLs: ${_bootstrapUrls.length}');
+        }
+      }
+    } catch (e) {
+      // Non-critical — silently fail, will retry on next refresh
+      debugPrint('⚠️ Peer discovery failed (non-critical): $e');
     }
   }
 

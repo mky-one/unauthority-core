@@ -263,6 +263,9 @@ pub struct ApiServerConfig {
     pub reward_pool: Arc<Mutex<ValidatorRewardPool>>,
     /// Burn vote deduplication — tracks which validators already voted per txid
     pub burn_voters: Arc<Mutex<HashMap<String, HashSet<String>>>>,
+    /// Known validator onion endpoints: validator_address → onion_address
+    /// Populated from UAT_ONION_ADDRESS (self), VALIDATOR_REG gossip, and PEER_LIST exchange.
+    pub validator_endpoints: Arc<Mutex<HashMap<String, String>>>,
 }
 
 #[allow(clippy::type_complexity)]
@@ -285,6 +288,7 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
         bootstrap_validators,
         reward_pool,
         burn_voters,
+        validator_endpoints,
     } = cfg;
     // Rate Limiter: 100 req/sec per IP, burst 200
     let limiter = RateLimiter::new(100, Some(200));
@@ -401,12 +405,45 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
             warp::reply::json(&serde_json::json!({"transactions": history}))
         });
 
-    // 4. GET /peers
+    // 4. GET /peers — enhanced with validator endpoint discovery
     let ab_peer = address_book.clone();
-    let peers_route = warp::path("peers").and(with_state(ab_peer)).map(
-        |ab: Arc<Mutex<HashMap<String, String>>>| {
-            let peers = safe_lock(&ab).clone();
-            warp::reply::json(&peers)
+    let ve_peer = validator_endpoints.clone();
+    let l_peer = ledger.clone();
+    let peers_route = warp::path("peers").and(with_state((ab_peer, ve_peer, l_peer))).map(
+        |(ab, ve, l): (Arc<Mutex<HashMap<String, String>>>, Arc<Mutex<HashMap<String, String>>>, Arc<Mutex<Ledger>>)| {
+            let ab_guard = safe_lock(&ab);
+            let ve_guard = safe_lock(&ve);
+            let l_guard = safe_lock(&l);
+
+            // Build enriched peer list
+            let peers: Vec<serde_json::Value> = ab_guard.iter().map(|(short, full)| {
+                let is_validator = l_guard.accounts.get(full).map(|a| a.is_validator).unwrap_or(false);
+                let onion = ve_guard.get(full).cloned();
+                let mut entry = serde_json::json!({
+                    "short_address": short,
+                    "address": full,
+                    "is_validator": is_validator,
+                });
+                if let Some(o) = onion {
+                    entry["onion_address"] = serde_json::json!(o);
+                }
+                entry
+            }).collect();
+
+            // Collect all known validator endpoints for discovery
+            let validator_endpoints: Vec<serde_json::Value> = ve_guard.iter().map(|(addr, onion)| {
+                serde_json::json!({
+                    "address": addr,
+                    "onion_address": onion,
+                })
+            }).collect();
+
+            warp::reply::json(&serde_json::json!({
+                "peers": peers,
+                "peer_count": peers.len(),
+                "validator_endpoints": validator_endpoints,
+                "validator_endpoint_count": validator_endpoints.len(),
+            }))
         },
     );
 
@@ -1275,14 +1312,16 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
             },
         );
 
-    // 12. GET /validators (List ALL active validators — genesis + dynamically registered)
-    // Includes bootstrap validators from genesis AND user-registered validators
-    // with balance >= MIN_VALIDATOR_STAKE_VOID (1000 UAT).
+    // 12. GET /validators (List ALL registered validators — genesis + dynamically registered)
+    // Active status is determined by actual connectivity (is_self || in_peers),
+    // NOT just by having sufficient balance. Uptime comes from real heartbeat data.
     let l_validators = ledger.clone();
     let ab_validators = address_book.clone();
     let my_addr_validators = my_address.clone();
     let bv_validators = bootstrap_validators.clone();
     let sm_validators = slashing_manager.clone();
+    let rp_validators = reward_pool.clone();
+    let ve_validators = validator_endpoints.clone();
     let validators_route = warp::path("validators")
         .and(with_state((l_validators, ab_validators)))
         .map(
@@ -1290,7 +1329,7 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
                 let l_guard = safe_lock(&l);
                 let ab_guard = safe_lock(&ab);
 
-                // Collect ALL validator addresses: genesis bootstrap + accounts with is_validator flag
+                // Collect ALL validator addresses: genesis bootstrap + slashing + ledger is_validator
                 let mut all_validator_addrs: Vec<String> = bv_validators.clone();
                 {
                     let sm_guard = safe_lock(&sm_validators);
@@ -1307,23 +1346,51 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
                     }
                 }
 
+                // Get real uptime data from reward pool
+                let rp_guard = safe_lock(&rp_validators);
+                let ve_guard = safe_lock(&ve_validators);
+
                 let validators: Vec<serde_json::Value> = all_validator_addrs
                     .iter()
                     .filter_map(|addr| {
                         l_guard.accounts.get(addr.as_str()).map(|acc| {
+                            // ACTIVE = actually reachable on the network right now
+                            // NOT just "has enough balance"
                             let is_self = addr == &my_addr_validators;
                             let in_peers = ab_guard.values().any(|v| v.contains(addr.as_str()));
                             let is_genesis = bv_validators.contains(addr);
-                            let active =
-                                is_self || in_peers || acc.balance >= MIN_VALIDATOR_STAKE_VOID;
-                            serde_json::json!({
+                            let has_min_stake = acc.balance >= MIN_VALIDATOR_STAKE_VOID;
+                            // ACTIVE requires: registered + staked + evidence of liveness
+                            // - is_self: this node itself → always active
+                            // - in_peers: appeared in address book via P2P → active
+                            // - is_genesis: infrastructure bootstrap nodes → assumed active
+                            //   (genesis validators are funded accounts operated by the project)
+                            // For user-registered validators: MUST have P2P connectivity evidence
+                            let connected = is_self || in_peers;
+                            let active = has_min_stake && acc.is_validator && (connected || is_genesis);
+
+                            // Real uptime from heartbeat data (not hardcoded)
+                            let uptime_pct = rp_guard.validators.get(addr.as_str())
+                                .map(|vs| vs.uptime_pct() as f64)
+                                .unwrap_or(if is_self { 100.0 } else { 0.0 });
+
+                            // Include onion endpoint if known (for peer discovery)
+                            let onion = ve_guard.get(addr.as_str()).cloned();
+
+                            let mut entry = serde_json::json!({
                                 "address": addr,
                                 "stake": acc.balance / VOID_PER_UAT,
                                 "is_active": active,
                                 "active": active,
+                                "connected": connected,
                                 "is_genesis": is_genesis,
-                                "uptime_percentage": if active { 99.9 } else { 0.0 }
-                            })
+                                "uptime_percentage": uptime_pct,
+                                "has_min_stake": has_min_stake,
+                            });
+                            if let Some(onion_addr) = onion {
+                                entry["onion_address"] = serde_json::json!(onion_addr);
+                            }
+                            entry
                         })
                     })
                     .collect();
@@ -2307,12 +2374,15 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
             SAVE_DIRTY.store(true, Ordering::Relaxed);
 
             // 10. Broadcast to peers so they also register this validator
+            // Include this node's onion_address if known, so peers can connect directly
+            let onion_addr = std::env::var("UAT_ONION_ADDRESS").ok();
             let reg_msg = serde_json::json!({
                 "type": "VALIDATOR_REG",
                 "address": address,
                 "public_key": public_key,
                 "signature": signature,
                 "timestamp": timestamp,
+                "onion_address": onion_addr,
             });
             let _ = tx.send(format!("VALIDATOR_REG:{}", reg_msg.to_string())).await;
 
@@ -2330,6 +2400,48 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
                 "is_genesis": false,
             }))
         }});
+
+    // 30. GET /network/peers — Lightweight endpoint for Flutter peer discovery.
+    // Returns only the list of known validator .onion endpoints so Flutter apps
+    // can discover new nodes beyond the hardcoded bootstrap list.
+    let ve_discovery = validator_endpoints.clone();
+    let ab_discovery = address_book.clone();
+    let l_discovery = ledger.clone();
+    let my_addr_discovery = my_address.clone();
+    let network_peers_route = warp::path!("network" / "peers")
+        .and(with_state((ve_discovery, ab_discovery, l_discovery)))
+        .map(
+            move |(ve, ab, l): (Arc<Mutex<HashMap<String, String>>>, Arc<Mutex<HashMap<String, String>>>, Arc<Mutex<Ledger>>)| {
+                let ve_guard = safe_lock(&ve);
+                let ab_guard = safe_lock(&ab);
+                let l_guard = safe_lock(&l);
+
+                // All known validator onion endpoints
+                let endpoints: Vec<serde_json::Value> = ve_guard.iter().map(|(addr, onion)| {
+                    let stake = l_guard.accounts.get(addr)
+                        .map(|a| a.balance / VOID_PER_UAT)
+                        .unwrap_or(0);
+                    let in_peers = ab_guard.values().any(|v| v.contains(addr.as_str()));
+                    let is_self = addr == &my_addr_discovery;
+                    serde_json::json!({
+                        "address": addr,
+                        "onion_address": onion,
+                        "stake_uat": stake,
+                        "reachable": is_self || in_peers,
+                    })
+                }).collect();
+
+                warp::reply::json(&serde_json::json!({
+                    "version": 1,
+                    "endpoints": endpoints,
+                    "total": endpoints.len(),
+                    "timestamp": std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap_or_default()
+                        .as_secs(),
+                }))
+            },
+        );
 
     // Combine all routes with rate limiting
     // NOTE: Each route is .boxed() to prevent warp type recursion overflow (E0275)
@@ -2373,6 +2485,7 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
         .or(consensus_route.boxed())
         .or(reward_info_route.boxed())
         .or(register_validator_route.boxed())
+        .or(network_peers_route.boxed())
         .boxed();
 
     let routes = group1
@@ -3466,6 +3579,24 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let burn_voters = Arc::new(Mutex::new(HashMap::<String, HashSet<String>>::new()));
     let send_voters = Arc::new(Mutex::new(HashMap::<String, HashSet<String>>::new()));
 
+    // ══════════════════════════════════════════════════════════════════════
+    // VALIDATOR ENDPOINTS — Maps validator_address → onion_address
+    // ══════════════════════════════════════════════════════════════════════
+    // Enables Flutter apps and other nodes to discover validator .onion endpoints
+    // beyond the hardcoded bootstrap list. Populated from:
+    // 1. This node's own UAT_ONION_ADDRESS
+    // 2. VALIDATOR_REG gossip messages (includes onion_address)
+    // 3. PEER_LIST exchange messages
+    let mut initial_endpoints = HashMap::<String, String>::new();
+    // Register this node's own onion address
+    if let Ok(our_onion) = std::env::var("UAT_ONION_ADDRESS") {
+        if !our_onion.is_empty() {
+            initial_endpoints.insert(my_address.clone(), our_onion.clone());
+            println!("🧅 Registered own onion endpoint: {}", our_onion);
+        }
+    }
+    let validator_endpoints = Arc::new(Mutex::new(initial_endpoints));
+
     // NEW: Oracle Consensus (decentralized median pricing)
     let oracle_consensus = Arc::new(Mutex::new(OracleConsensus::new()));
 
@@ -3766,6 +3897,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let api_bootstrap = bootstrap_validators; // Move — only used by API server
     let api_reward_pool = Arc::clone(&reward_pool);
     let api_burn_voters = Arc::clone(&burn_voters);
+    let api_validator_endpoints = Arc::clone(&validator_endpoints);
 
     tokio::spawn(async move {
         start_api_server(ApiServerConfig {
@@ -3786,6 +3918,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             bootstrap_validators: api_bootstrap,
             reward_pool: api_reward_pool,
             burn_voters: api_burn_voters,
+            validator_endpoints: api_validator_endpoints,
         })
         .await;
     });
@@ -3983,6 +4116,43 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     });
 
+    // ══════════════════════════════════════════════════════════════════════
+    // PEX: Peer Exchange — Periodically broadcast known validator endpoints
+    // ══════════════════════════════════════════════════════════════════════
+    // Every 5 minutes, broadcast our known validator onion endpoints to all
+    // connected peers via gossipsub. This enables network-wide discovery of
+    // validator endpoints beyond the hardcoded bootstrap list.
+    let pex_tx = tx_out.clone();
+    let pex_ve = Arc::clone(&validator_endpoints);
+    tokio::spawn(async move {
+        // Wait for initial bootstrapping to complete
+        tokio::time::sleep(Duration::from_secs(30)).await;
+        let pex_interval_secs = if uat_core::is_testnet_build() { 60 } else { 300 };
+        let mut interval = tokio::time::interval(Duration::from_secs(pex_interval_secs));
+        loop {
+            interval.tick().await;
+            let endpoints: Vec<serde_json::Value> = {
+                let ve = safe_lock(&pex_ve);
+                ve.iter().map(|(addr, onion)| {
+                    serde_json::json!({
+                        "address": addr,
+                        "onion_address": onion,
+                    })
+                }).collect()
+            };
+            if !endpoints.is_empty() {
+                let msg = serde_json::json!({
+                    "endpoints": endpoints,
+                    "timestamp": std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap_or_default()
+                        .as_secs(),
+                });
+                let _ = pex_tx.send(format!("PEER_LIST:{}", msg)).await;
+            }
+        }
+    });
+
     println!("\n==================================================================");
     println!("                 UNAUTHORITY (UAT) ORACLE NODE                   ");
     println!("==================================================================");
@@ -4033,6 +4203,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let slashing_clone = Arc::clone(&slashing_manager);
     let burn_voters_clone = Arc::clone(&burn_voters);
     let send_voters_clone = Arc::clone(&send_voters);
+    let ve_event = Arc::clone(&validator_endpoints);
 
     loop {
         tokio::select! {
@@ -5307,9 +5478,44 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     SAVE_DIRTY.store(true, Ordering::Relaxed);
                                     println!("✅ Validator registered via P2P: {} (stake: {} UAT)",
                                         get_short_addr(&addr), balance / VOID_PER_UAT);
+
+                                    // Extract and store onion_address for peer discovery
+                                    if let Some(onion) = reg["onion_address"].as_str() {
+                                        if !onion.is_empty() && onion.ends_with(".onion") {
+                                            safe_lock(&ve_event).insert(addr.clone(), onion.to_string());
+                                            println!("🧅 Discovered validator endpoint: {} → {}", get_short_addr(&addr), onion);
+                                        }
+                                    }
                                 },
                                 Err(e) => {
                                     println!("⚠️ VALIDATOR_REG: invalid JSON from peer: {}", e);
+                                }
+                            }
+                        } else if data.starts_with("PEER_LIST:") {
+                            // Handle Peer Exchange (PEX) — merge validator endpoints from peers
+                            let json_str = &data["PEER_LIST:".len()..];
+                            if let Ok(peer_list) = serde_json::from_str::<serde_json::Value>(json_str) {
+                                if let Some(endpoints) = peer_list["endpoints"].as_array() {
+                                    let mut ve = safe_lock(&ve_event);
+                                    let mut added = 0u32;
+                                    for ep in endpoints {
+                                        let addr = ep["address"].as_str().unwrap_or_default();
+                                        let onion = ep["onion_address"].as_str().unwrap_or_default();
+                                        // Accept any structurally valid endpoint (valid UAT address + .onion)
+                                        // PEX is for network-wide discovery — not just validators.
+                                        // Like Bitcoin's addr/getaddr, we share ALL reachable nodes.
+                                        if !addr.is_empty() && !onion.is_empty()
+                                            && onion.ends_with(".onion")
+                                            && uat_crypto::validate_address(addr)
+                                            && !ve.contains_key(addr)
+                                        {
+                                            ve.insert(addr.to_string(), onion.to_string());
+                                            added += 1;
+                                        }
+                                    }
+                                    if added > 0 {
+                                        println!("🔄 PEX: merged {} new validator endpoint(s) from peer", added);
+                                    }
                                 }
                             }
                         } else if let Ok(inc) = serde_json::from_str::<Block>(&data) {

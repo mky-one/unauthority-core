@@ -4,6 +4,7 @@ import '../services/wallet_service.dart';
 import '../services/api_service.dart';
 import '../services/node_process_service.dart';
 import '../services/tor_service.dart';
+import '../services/network_config.dart';
 import '../constants/blockchain.dart';
 
 /// Validator Setup Wizard - 3-step flow:
@@ -212,13 +213,67 @@ class _SetupWizardScreenState extends State<SetupWizardScreen> {
         _launchProgress = 0.6;
       });
 
+      // Load bootstrap nodes so uat-node can discover peers on the network
+      await NetworkConfig.load();
+      final bootstrapAddresses =
+          NetworkConfig.testnetNodes.map((n) => n.p2pAddress).join(',');
+      debugPrint('🌐 Bootstrap nodes: $bootstrapAddresses');
+
       final started = await nodeService.start(
         port: nodePort,
         onionAddress: onionAddress,
+        bootstrapNodes:
+            bootstrapAddresses.isNotEmpty ? bootstrapAddresses : null,
       );
 
       if (!started) {
         throw Exception(nodeService.errorMessage ?? 'Failed to start uat-node');
+      }
+
+      // Step C: Register as validator on the local node
+      // This requires a Dilithium5 signed proof of key ownership.
+      // The node will broadcast the registration to all peers via gossipsub.
+      setState(() {
+        _launchStatus = 'Registering as validator...';
+        _launchProgress = 0.8;
+      });
+
+      // Give the node a moment to fully initialize its API server
+      await Future.delayed(const Duration(seconds: 2));
+
+      final isAddressOnly = await walletService.isAddressOnlyImport();
+      if (!isAddressOnly) {
+        final wallet = await walletService.getCurrentWallet();
+        final address = wallet?['address'];
+        final publicKey = wallet?['public_key'];
+
+        if (address != null && publicKey != null) {
+          final timestamp =
+              DateTime.now().millisecondsSinceEpoch ~/ 1000; // Unix seconds
+          final message = 'REGISTER_VALIDATOR:$address:$timestamp';
+          final signature = await walletService.signTransaction(message);
+
+          // Call the local node's register-validator endpoint
+          final localApi = ApiService(
+            customUrl: 'http://127.0.0.1:$nodePort',
+          );
+          await localApi.ensureReady();
+
+          try {
+            final result = await localApi.registerValidator(
+              address: address,
+              publicKey: publicKey,
+              signature: signature,
+              timestamp: timestamp,
+            );
+            debugPrint('✅ Validator registration: ${result['msg']}');
+          } catch (e) {
+            // Non-fatal: node is running, registration can be retried
+            debugPrint('⚠️ Validator registration deferred: $e');
+          } finally {
+            localApi.dispose();
+          }
+        }
       }
 
       setState(() {

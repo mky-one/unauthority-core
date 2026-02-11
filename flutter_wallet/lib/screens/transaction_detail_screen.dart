@@ -107,24 +107,16 @@ class TransactionDetailScreen extends StatelessWidget {
                       '${BlockchainConstants.formatUat(transaction.amountUAT)} UAT',
                   icon: Icons.attach_money,
                 ),
-                // Show fee for Send transactions (base fee = 100,000 VOID minimum)
-                // Use actual fee from API if available, otherwise show base fee for sends
-                if (transaction.type == 'send') ...[
+                // Fee: only shown when backend returns actual fee (fee > 0)
+                if (transaction.fee > 0) ...[
                   const Divider(height: 1),
-                  Builder(builder: (_) {
-                    final feeVoid = transaction.fee > 0
-                        ? transaction.fee
-                        : BlockchainConstants.baseFeeVoid;
-                    final feeUat =
-                        BlockchainConstants.voidToUat(feeVoid);
-                    return _DetailRow(
-                      label: 'Fee',
-                      value: '$feeVoid VOID',
-                      subtitle:
-                          '${BlockchainConstants.formatUat(feeUat)} UAT',
-                      icon: Icons.local_gas_station,
-                    );
-                  }),
+                  _DetailRow(
+                    label: 'Fee',
+                    value: '${transaction.fee} VOID',
+                    subtitle:
+                        '${BlockchainConstants.formatUat(transaction.feeUAT)} UAT',
+                    icon: Icons.local_gas_station,
+                  ),
                 ],
               ],
             ),

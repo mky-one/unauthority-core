@@ -34,6 +34,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   Map<String, dynamic>? _rewardInfo;
   int _epochRemainingSecs = 0;
   Timer? _countdownTimer;
+  Timer? _autoRefreshTimer;
 
   @override
   void initState() {
@@ -41,11 +42,16 @@ class _DashboardScreenState extends State<DashboardScreen> {
     _loadMyAddress();
     _loadDashboard();
     _startCountdownTimer();
+    // Auto-refresh dashboard every 30s to pick up new registrations & status changes
+    _autoRefreshTimer = Timer.periodic(const Duration(seconds: 30), (_) {
+      if (mounted) _loadDashboard();
+    });
   }
 
   @override
   void dispose() {
     _countdownTimer?.cancel();
+    _autoRefreshTimer?.cancel();
     super.dispose();
   }
 

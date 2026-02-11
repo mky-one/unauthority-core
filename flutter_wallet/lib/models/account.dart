@@ -118,7 +118,9 @@ class Transaction {
       type: (json['type'] ?? 'transfer').toString().toLowerCase(),
       memo: json['memo'],
       signature: json['signature'],
-      fee: (json['fee'] is int) ? json['fee'] : (json['fee'] is String ? int.tryParse(json['fee']) ?? 0 : 0),
+      fee: (json['fee'] is int)
+          ? json['fee']
+          : (json['fee'] is String ? int.tryParse(json['fee']) ?? 0 : 0),
     );
   }
 

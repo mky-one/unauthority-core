@@ -2,7 +2,7 @@
 
 Technical architecture of the Unauthority blockchain.
 
-**Version:** v1.0.3-testnet
+**Version:** v1.0.6-testnet
 
 ---
 
@@ -35,6 +35,7 @@ Technical architecture of the Unauthority blockchain.
 │  │                   uat-core                         │ │
 │  │  Ledger (block-lattice) · Accounts · Supply math   │ │
 │  │  Anti-whale · Distribution · Oracle consensus      │ │
+│  │  Validator Rewards (epoch-based, √stake)           │ │
 │  └───────────┬──────────────┬──────────────┬──────────┘ │
 │              │              │              │             │
 │  ┌───────────▼──┐  ┌───────▼──────┐  ┌───▼──────────┐  │
@@ -60,7 +61,7 @@ Technical architecture of the Unauthority blockchain.
 ## Crate Dependency Graph
 
 ```
-                    uat-node (v1.0.3)
+                    uat-node (v1.0.6)
                    /     |     \      \
                   /      |      \      \
            uat-core  uat-crypto  uat-network  uat-vm
@@ -72,11 +73,11 @@ Technical architecture of the Unauthority blockchain.
 
 | Crate | Version | Lines | Purpose |
 |-------|---------|-------|---------|
-| `uat-node` | 1.0.3 | ~4,500 | Full node binary — REST + gRPC + P2P + console |
-| `uat-core` | 0.1.0 | ~2,200 | Ledger, block types, accounts, supply math, anti-whale, oracle |
+| `uat-node` | 1.0.6 | ~5,100 | Full node binary — REST + gRPC + P2P + console + reward engine |
+| `uat-core` | 0.1.0 | ~2,800 | Ledger, block types, accounts, supply math, anti-whale, oracle, validator rewards |
 | `uat-crypto` | 0.1.0 | ~620 | Dilithium5 keypairs, address derivation, key encryption |
 | `uat-consensus` | 0.1.0 | ~2,700 | aBFT protocol, quadratic voting, slashing, checkpoints |
-| `uat-network` | 0.1.0 | ~1,200 | libp2p, GossipSub, Tor transport, fee scaling, rewards |
+| `uat-network` | 0.1.0 | ~1,200 | libp2p, GossipSub, Tor transport, fee scaling |
 | `uat-vm` | 0.1.0 | ~830 | WASM smart contracts (Wasmer + Cranelift) |
 | `uat-cli` | 0.1.0 | ~250 | Command-line interface (reqwest + clap) |
 | `genesis` | 2.0.0 | ~200 | Genesis block generator (BIP39 + deterministic keygen) |
@@ -267,6 +268,7 @@ node_data/
 
 - **Ledger**: Debounced writes to `ledger_state.json` every 5 seconds with checkpoint
 - **Faucet**: Persistent cooldowns in sled (survives restart)
+- **Reward Pool**: In-memory state, re-initialized from genesis on restart (sled persistence planned for mainnet)
 - **State sync**: GZIP-compressed HTTP-based full sync (`/sync` endpoint)
 - **Deadlock prevention**: Never hold two `Arc<Mutex>` simultaneously
 

@@ -2,7 +2,7 @@
 
 Run a 4-node UAT testnet with Prometheus and Grafana monitoring via Docker Compose.
 
-**Version:** v1.0.3-testnet
+**Version:** v1.0.6-testnet
 
 ---
 

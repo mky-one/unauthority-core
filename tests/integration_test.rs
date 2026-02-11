@@ -87,6 +87,7 @@ async fn test_three_validator_consensus() {
                 head: "0".to_string(),
                 balance: 1000_00000000,
                 block_count: 0,
+                is_validator: false,
             },
         );
 
@@ -283,6 +284,7 @@ async fn test_load_1000_tps() {
                         head: format!("block_{}", tx_count),
                         balance: 1000_00000000 - (tx_count as u128 * 100000),
                         block_count: tx_count as u64 + 1,
+                        is_validator: false,
                     },
                 );
             }
@@ -340,6 +342,7 @@ async fn test_database_persistence() {
                     head: format!("block_{}", i),
                     balance: (i * 100000) as u128,
                     block_count: i as u64,
+                    is_validator: false,
                 },
             );
         }

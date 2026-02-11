@@ -2,7 +2,7 @@
 
 Complete reference for the UAT node REST API and gRPC service.
 
-**Version:** v1.0.3-testnet  
+**Version:** v1.0.6-testnet  
 **Default REST port:** 3030  
 **Default gRPC port:** 23030 (REST port + 20,000)
 
@@ -46,7 +46,7 @@ Node metadata.
 ```json
 {
   "chain_id": "uat-testnet",
-  "version": "1.0.3",
+  "version": "1.0.6",
   "total_supply": 21936236,
   "circulating_supply": 1535536,
   "burned_supply": 0,
@@ -312,6 +312,64 @@ Global slashing statistics and validator safety.
 #### `GET /slashing/{address}`
 
 Slashing profile for a specific validator address.
+
+---
+
+### Validator Rewards
+
+#### `GET /reward-info`
+
+Validator reward pool status, current epoch, and per-validator reward details.
+
+```json
+{
+  "pool_remaining_void": 219362360000000000,
+  "pool_remaining_uat": "2193623.60000000000",
+  "total_distributed_void": 0,
+  "current_epoch": 0,
+  "epoch_start": 1770580908,
+  "epoch_duration_secs": 86400,
+  "epoch_remaining_secs": 43200,
+  "current_rate_void_per_epoch": 5000000000000,
+  "current_rate_uat_per_epoch": "50.00000000000",
+  "halving_interval_epochs": 365,
+  "validators": [
+    {
+      "address": "UAT...",
+      "heartbeats": 720,
+      "expected_heartbeats": 1440,
+      "uptime_pct": 50.0,
+      "qualified": false,
+      "sqrt_stake": 316227766016,
+      "is_genesis": true,
+      "cumulative_reward_void": 0
+    }
+  ],
+  "config": {
+    "pool_total_void": 219362360000000000,
+    "epoch_secs": 86400,
+    "initial_rate_void": 5000000000000,
+    "halving_interval_epochs": 365,
+    "min_uptime_pct": 95,
+    "probation_epochs": 3
+  }
+}
+```
+
+Validators with ≥ 95% uptime qualify for epoch rewards. Reward shares are proportional to √stake (quadratic). Genesis bootstrap validators are excluded from rewards. The reward rate halves every 365 epochs (~1 year).
+
+#### `GET /fee-estimate`
+
+Dynamic fee estimate based on current network activity and anti-whale parameters.
+
+```json
+{
+  "base_fee_void": 100000,
+  "recommended_fee_void": 100000,
+  "spam_multiplier": 1,
+  "network_load": "low"
+}
+```
 
 ---
 

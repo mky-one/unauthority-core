@@ -339,20 +339,28 @@ mod tests {
 
         // First 5 transactions should be at base fee
         for i in 0..5 {
-            let fee = engine.register_transaction("spammer".to_string(), 100).unwrap();
+            let fee = engine
+                .register_transaction("spammer".to_string(), 100)
+                .unwrap();
             assert_eq!(fee, 100, "tx {} should be base fee", i + 1);
         }
 
         // 6th transaction: 2× base fee
-        let fee6 = engine.register_transaction("spammer".to_string(), 100).unwrap();
+        let fee6 = engine
+            .register_transaction("spammer".to_string(), 100)
+            .unwrap();
         assert_eq!(fee6, 200, "tx 6 should be 2× base fee");
 
         // 7th transaction: 4× base fee
-        let fee7 = engine.register_transaction("spammer".to_string(), 100).unwrap();
+        let fee7 = engine
+            .register_transaction("spammer".to_string(), 100)
+            .unwrap();
         assert_eq!(fee7, 400, "tx 7 should be 4× base fee");
 
         // 8th transaction: 8× base fee
-        let fee8 = engine.register_transaction("spammer".to_string(), 100).unwrap();
+        let fee8 = engine
+            .register_transaction("spammer".to_string(), 100)
+            .unwrap();
         assert_eq!(fee8, 800, "tx 8 should be 8× base fee");
 
         let activity = engine.get_activity("spammer").unwrap();
@@ -483,9 +491,9 @@ mod tests {
 
         // After threshold: exponential scaling
         // tx 6: 2×, tx 7: 4×, tx 8: 8×, tx 9: 16×, tx 10: 32×
-        assert_eq!(fees[5], 200);  // 2^1 × 100
-        assert_eq!(fees[6], 400);  // 2^2 × 100
-        assert_eq!(fees[7], 800);  // 2^3 × 100
+        assert_eq!(fees[5], 200); // 2^1 × 100
+        assert_eq!(fees[6], 400); // 2^2 × 100
+        assert_eq!(fees[7], 800); // 2^3 × 100
         assert_eq!(fees[8], 1600); // 2^4 × 100
         assert_eq!(fees[9], 3200); // 2^5 × 100
     }
@@ -548,7 +556,9 @@ mod tests {
         assert_eq!(engine.estimate_fee("alice", base), 200);
 
         // Actually register the 6th tx
-        let fee6 = engine.register_transaction("alice".to_string(), base).unwrap();
+        let fee6 = engine
+            .register_transaction("alice".to_string(), base)
+            .unwrap();
         assert_eq!(fee6, 200);
 
         // Now estimate for 7th should be 4×

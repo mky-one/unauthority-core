@@ -13,9 +13,9 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 use crate::{
-    REWARD_EPOCH_SECS, REWARD_HALVING_INTERVAL_EPOCHS, REWARD_MIN_UPTIME_PCT,
-    REWARD_PROBATION_EPOCHS, REWARD_RATE_INITIAL_VOID, VALIDATOR_REWARD_POOL_VOID,
-    VOID_PER_UAT, MIN_VALIDATOR_STAKE_VOID,
+    MIN_VALIDATOR_STAKE_VOID, REWARD_EPOCH_SECS, REWARD_HALVING_INTERVAL_EPOCHS,
+    REWARD_MIN_UPTIME_PCT, REWARD_PROBATION_EPOCHS, REWARD_RATE_INITIAL_VOID,
+    VALIDATOR_REWARD_POOL_VOID, VOID_PER_UAT,
 };
 
 /// Per-validator reward tracking state.
@@ -52,7 +52,8 @@ impl ValidatorRewardState {
         if self.expected_heartbeats == 0 {
             return 0;
         }
-        let ratio = (self.heartbeats_current_epoch as f64 / self.expected_heartbeats as f64) * 100.0;
+        let ratio =
+            (self.heartbeats_current_epoch as f64 / self.expected_heartbeats as f64) * 100.0;
         ratio.min(100.0) as u64
     }
 
@@ -131,12 +132,7 @@ impl ValidatorRewardPool {
 
     /// Register a validator for reward tracking.
     /// If already registered, updates stake and genesis status.
-    pub fn register_validator(
-        &mut self,
-        address: &str,
-        is_genesis: bool,
-        stake_void: u128,
-    ) {
+    pub fn register_validator(&mut self, address: &str, is_genesis: bool, stake_void: u128) {
         self.validators
             .entry(address.to_string())
             .and_modify(|v| {
@@ -174,11 +170,7 @@ impl ValidatorRewardPool {
     /// How many seconds remain in the current epoch.
     pub fn epoch_remaining_secs(&self, now_secs: u64) -> u64 {
         let end = self.epoch_start_timestamp + REWARD_EPOCH_SECS;
-        if now_secs >= end {
-            0
-        } else {
-            end - now_secs
-        }
+        end.saturating_sub(now_secs)
     }
 
     /// Set expected heartbeats for all validators at the start of an epoch.
@@ -332,7 +324,7 @@ fn isqrt(n: u128) -> u128 {
         return 0;
     }
     let mut x = n;
-    let mut y = (x + 1) / 2;
+    let mut y = x.div_ceil(2);
     while y < x {
         x = y;
         y = (x + n / x) / 2;
@@ -563,7 +555,10 @@ mod tests {
 
         // Remaining seconds
         assert_eq!(pool.epoch_remaining_secs(GENESIS_TS), REWARD_EPOCH_SECS);
-        assert_eq!(pool.epoch_remaining_secs(GENESIS_TS + 1000), REWARD_EPOCH_SECS - 1000);
+        assert_eq!(
+            pool.epoch_remaining_secs(GENESIS_TS + 1000),
+            REWARD_EPOCH_SECS - 1000
+        );
         assert_eq!(pool.epoch_remaining_secs(GENESIS_TS + REWARD_EPOCH_SECS), 0);
     }
 
@@ -577,7 +572,10 @@ mod tests {
         pool.record_heartbeat("UATval1");
 
         assert_eq!(
-            pool.validators.get("UATval1").unwrap().heartbeats_current_epoch,
+            pool.validators
+                .get("UATval1")
+                .unwrap()
+                .heartbeats_current_epoch,
             3
         );
 

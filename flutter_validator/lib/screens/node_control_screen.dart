@@ -68,16 +68,14 @@ class _NodeControlScreenState extends State<NodeControlScreen>
       // Check if already registered on bootstrap node
       final apiService = context.read<ApiService>();
       final validators = await apiService.getValidators();
-      final alreadyRegistered =
-          validators.any((v) => v.address == address);
+      final alreadyRegistered = validators.any((v) => v.address == address);
       if (alreadyRegistered) {
         debugPrint('✅ Validator already registered on bootstrap node');
         return;
       }
 
       // Not registered — sign and register
-      final timestamp =
-          DateTime.now().millisecondsSinceEpoch ~/ 1000;
+      final timestamp = DateTime.now().millisecondsSinceEpoch ~/ 1000;
       final message = 'REGISTER_VALIDATOR:$address:$timestamp';
       final signature = await walletService.signTransaction(message);
 

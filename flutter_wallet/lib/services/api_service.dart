@@ -21,12 +21,21 @@ class ApiService {
   /// Longer timeout for Tor connections
   static const Duration _torTimeout = Duration(seconds: 60);
 
+  /// Max retry attempts across bootstrap nodes before giving up
+  static const int _maxRetries = 4;
+
   late String baseUrl;
   // FIX H-01: Initialize with safe default to prevent LateInitializationError
   // _initializeClient() replaces with Tor client asynchronously when needed
   http.Client _client = http.Client();
   NetworkEnvironment environment;
   final TorService _torService = TorService();
+
+  /// All available bootstrap URLs for round-robin failover
+  List<String> _bootstrapUrls = [];
+
+  /// Index of the currently active bootstrap node
+  int _currentNodeIndex = 0;
 
   /// FIX C11-08: Track client initialization future so callers can await
   /// readiness before making requests. Prevents DNS leaks from using
@@ -37,18 +46,29 @@ class ApiService {
     String? customUrl,
     this.environment = NetworkEnvironment.testnet,
   }) {
+    _loadBootstrapUrls(environment);
     if (customUrl != null) {
       baseUrl = customUrl;
     } else {
-      baseUrl = _getBaseUrl(environment);
+      baseUrl = _bootstrapUrls.isNotEmpty ? _bootstrapUrls.first : _getBaseUrl(environment);
     }
     _clientReady = _initializeClient();
-    debugPrint('🔗 UAT ApiService initialized with baseUrl: $baseUrl');
+    debugPrint('🔗 UAT ApiService initialized with baseUrl: $baseUrl '
+        '(${_bootstrapUrls.length} bootstrap nodes available)');
   }
 
   /// Await Tor/HTTP client initialization before first request.
   /// Safe to call multiple times — resolves immediately after first init.
   Future<void> ensureReady() => _clientReady;
+
+  /// Load all bootstrap URLs for the given environment
+  void _loadBootstrapUrls(NetworkEnvironment env) {
+    final nodes = env == NetworkEnvironment.testnet
+        ? NetworkConfig.testnetNodes
+        : NetworkConfig.mainnetNodes;
+    _bootstrapUrls = nodes.map((n) => n.restUrl).toList();
+    _currentNodeIndex = 0;
+  }
 
   String _getBaseUrl(NetworkEnvironment env) {
     switch (env) {
@@ -57,6 +77,44 @@ class ApiService {
       case NetworkEnvironment.mainnet:
         return NetworkConfig.mainnetUrl;
     }
+  }
+
+  /// Switch to the next bootstrap node in round-robin fashion.
+  bool _switchToNextNode() {
+    if (_bootstrapUrls.length <= 1) return false;
+    _currentNodeIndex = (_currentNodeIndex + 1) % _bootstrapUrls.length;
+    final newUrl = _bootstrapUrls[_currentNodeIndex];
+    if (newUrl != baseUrl) {
+      baseUrl = newUrl;
+      debugPrint('🔄 Failover: switched to node ${_currentNodeIndex + 1}/${_bootstrapUrls.length}: $baseUrl');
+      return true;
+    }
+    return false;
+  }
+
+  /// Execute an HTTP request with round-robin failover across all bootstrap nodes.
+  Future<http.Response> _requestWithFailover(
+    Future<http.Response> Function(String url) requestFn,
+    String endpoint,
+  ) async {
+    await ensureReady();
+    int attempts = 0;
+    while (attempts < _bootstrapUrls.length.clamp(1, _maxRetries)) {
+      try {
+        return await requestFn(baseUrl).timeout(_timeout);
+      } on Exception catch (e) {
+        final isLastAttempt = attempts >= _bootstrapUrls.length - 1 || attempts >= _maxRetries - 1;
+        debugPrint('⚠️ Node ${_currentNodeIndex + 1} failed for $endpoint: $e');
+        if (isLastAttempt) {
+          debugPrint('❌ All ${attempts + 1} bootstrap nodes failed for $endpoint');
+          rethrow;
+        }
+        _switchToNextNode();
+        attempts++;
+        debugPrint('🔄 Retrying $endpoint on node ${_currentNodeIndex + 1}...');
+      }
+    }
+    throw Exception('All bootstrap nodes unreachable for $endpoint');
   }
 
   /// Get appropriate timeout based on whether using Tor
@@ -117,17 +175,20 @@ class ApiService {
   // Switch network environment
   void switchEnvironment(NetworkEnvironment newEnv) {
     environment = newEnv;
-    baseUrl = _getBaseUrl(newEnv);
-    _clientReady = _initializeClient(); // Re-initialize and track readiness
-    debugPrint('🔄 Switched to ${newEnv.name.toUpperCase()}: $baseUrl');
+    _loadBootstrapUrls(newEnv);
+    baseUrl = _bootstrapUrls.isNotEmpty ? _bootstrapUrls.first : _getBaseUrl(newEnv);
+    _clientReady = _initializeClient();
+    debugPrint('🔄 Switched to ${newEnv.name.toUpperCase()}: $baseUrl '
+        '(${_bootstrapUrls.length} nodes)');
   }
 
   // Node Info
   Future<Map<String, dynamic>> getNodeInfo() async {
-    await ensureReady();
     try {
-      final response =
-          await _client.get(Uri.parse('$baseUrl/node-info')).timeout(_timeout);
+      final response = await _requestWithFailover(
+        (url) => _client.get(Uri.parse('$url/node-info')),
+        '/node-info',
+      );
       if (response.statusCode == 200) {
         return json.decode(response.body);
       }
@@ -142,11 +203,11 @@ class ApiService {
   /// Returns the estimated fee in VOID, accounting for anti-whale scaling.
   /// Wallet MUST call this before constructing a signed block.
   Future<Map<String, dynamic>> getFeeEstimate(String address) async {
-    await ensureReady();
     try {
-      final response = await _client
-          .get(Uri.parse('$baseUrl/fee-estimate/$address'))
-          .timeout(_timeout);
+      final response = await _requestWithFailover(
+        (url) => _client.get(Uri.parse('$url/fee-estimate/$address')),
+        '/fee-estimate/$address',
+      );
       if (response.statusCode == 200) {
         return json.decode(response.body);
       }
@@ -165,10 +226,11 @@ class ApiService {
 
   // Health Check
   Future<Map<String, dynamic>> getHealth() async {
-    await ensureReady();
     try {
-      final response =
-          await _client.get(Uri.parse('$baseUrl/health')).timeout(_timeout);
+      final response = await _requestWithFailover(
+        (url) => _client.get(Uri.parse('$url/health')),
+        '/health',
+      );
       if (response.statusCode == 200) {
         return json.decode(response.body);
       }
@@ -181,11 +243,11 @@ class ApiService {
 
   // Get Balance
   Future<Account> getBalance(String address) async {
-    await ensureReady();
     try {
-      final response = await _client
-          .get(Uri.parse('$baseUrl/bal/$address'))
-          .timeout(_timeout);
+      final response = await _requestWithFailover(
+        (url) => _client.get(Uri.parse('$url/bal/$address')),
+        '/bal/$address',
+      );
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
         return Account(
@@ -204,11 +266,11 @@ class ApiService {
 
   // Get Account (with history)
   Future<Account> getAccount(String address) async {
-    await ensureReady();
     try {
-      final response = await _client
-          .get(Uri.parse('$baseUrl/account/$address'))
-          .timeout(_timeout);
+      final response = await _requestWithFailover(
+        (url) => _client.get(Uri.parse('$url/account/$address')),
+        '/account/$address',
+      );
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
         // Backend /account/:address may not include 'address' field — inject it
@@ -226,16 +288,16 @@ class ApiService {
 
   // Request Faucet
   Future<Map<String, dynamic>> requestFaucet(String address) async {
-    await ensureReady();
     debugPrint('🚠 [API] requestFaucet -> $baseUrl/faucet  address=$address');
     try {
-      final response = await _client
-          .post(
-            Uri.parse('$baseUrl/faucet'),
-            headers: {'Content-Type': 'application/json'},
-            body: json.encode({'address': address}),
-          )
-          .timeout(_timeout);
+      final response = await _requestWithFailover(
+        (url) => _client.post(
+          Uri.parse('$url/faucet'),
+          headers: {'Content-Type': 'application/json'},
+          body: json.encode({'address': address}),
+        ),
+        '/faucet',
+      );
 
       final data = json.decode(response.body);
 
@@ -269,7 +331,6 @@ class ApiService {
     String?
         amountVoid, // Amount already in VOID (for sub-UAT precision), as string to avoid overflow
   }) async {
-    await ensureReady();
     debugPrint(
         '💸 [API] sendTransaction -> $baseUrl/send  from=$from to=$to amount=$amount sig=${signature != null}');
     try {
@@ -302,13 +363,14 @@ class ApiService {
         body['fee'] = fee;
       }
 
-      final response = await _client
-          .post(
-            Uri.parse('$baseUrl/send'),
-            headers: {'Content-Type': 'application/json'},
-            body: json.encode(body),
-          )
-          .timeout(_timeout);
+      final response = await _requestWithFailover(
+        (url) => _client.post(
+          Uri.parse('$url/send'),
+          headers: {'Content-Type': 'application/json'},
+          body: json.encode(body),
+        ),
+        '/send',
+      );
 
       final data = json.decode(response.body);
 
@@ -332,7 +394,6 @@ class ApiService {
     required String txid,
     String? recipientAddress,
   }) async {
-    await ensureReady();
     debugPrint(
         '🔥 [API] submitBurn -> $baseUrl/burn  coin=$coinType txid=$txid');
     try {
@@ -344,13 +405,14 @@ class ApiService {
         body['recipient_address'] = recipientAddress;
       }
 
-      final response = await _client
-          .post(
-            Uri.parse('$baseUrl/burn'),
-            headers: {'Content-Type': 'application/json'},
-            body: json.encode(body),
-          )
-          .timeout(_timeout);
+      final response = await _requestWithFailover(
+        (url) => _client.post(
+          Uri.parse('$url/burn'),
+          headers: {'Content-Type': 'application/json'},
+          body: json.encode(body),
+        ),
+        '/burn',
+      );
 
       final data = json.decode(response.body);
 
@@ -370,10 +432,11 @@ class ApiService {
 
   // Get Validators
   Future<List<ValidatorInfo>> getValidators() async {
-    await ensureReady();
     try {
-      final response =
-          await _client.get(Uri.parse('$baseUrl/validators')).timeout(_timeout);
+      final response = await _requestWithFailover(
+        (url) => _client.get(Uri.parse('$url/validators')),
+        '/validators',
+      );
       if (response.statusCode == 200) {
         final decoded = json.decode(response.body);
         // Handle both {"validators": [...]} wrapper and bare [...]
@@ -391,10 +454,11 @@ class ApiService {
 
   // Get Latest Block
   Future<BlockInfo> getLatestBlock() async {
-    await ensureReady();
     try {
-      final response =
-          await _client.get(Uri.parse('$baseUrl/block')).timeout(_timeout);
+      final response = await _requestWithFailover(
+        (url) => _client.get(Uri.parse('$url/block')),
+        '/block',
+      );
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
         return BlockInfo.fromJson(data);
@@ -408,11 +472,11 @@ class ApiService {
 
   // Get Recent Blocks
   Future<List<BlockInfo>> getRecentBlocks() async {
-    await ensureReady();
     try {
-      final response = await _client
-          .get(Uri.parse('$baseUrl/blocks/recent'))
-          .timeout(_timeout);
+      final response = await _requestWithFailover(
+        (url) => _client.get(Uri.parse('$url/blocks/recent')),
+        '/blocks/recent',
+      );
       if (response.statusCode == 200) {
         final decoded = json.decode(response.body);
         // Handle both {"blocks": [...]} wrapper and bare [...]
@@ -432,10 +496,11 @@ class ApiService {
   // FIX C12-03: Backend GET /peers returns HashMap<String,String> (JSON object),
   // not a JSON array. Handle both Map and List for resilience.
   Future<List<String>> getPeers() async {
-    await ensureReady();
     try {
-      final response =
-          await _client.get(Uri.parse('$baseUrl/peers')).timeout(_timeout);
+      final response = await _requestWithFailover(
+        (url) => _client.get(Uri.parse('$url/peers')),
+        '/peers',
+      );
       if (response.statusCode == 200) {
         final decoded = json.decode(response.body);
         if (decoded is Map) {
@@ -455,11 +520,11 @@ class ApiService {
 
   // Get Transaction History for address
   Future<List<Transaction>> getHistory(String address) async {
-    await ensureReady();
     try {
-      final response = await _client
-          .get(Uri.parse('$baseUrl/history/$address'))
-          .timeout(_timeout);
+      final response = await _requestWithFailover(
+        (url) => _client.get(Uri.parse('$url/history/$address')),
+        '/history/$address',
+      );
       if (response.statusCode == 200) {
         // FIX C11-04: Backend returns {"transactions": [...]} wrapper,
         // not a bare array. Handle both formats for resilience.

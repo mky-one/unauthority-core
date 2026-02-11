@@ -66,6 +66,20 @@ pub const VALIDATOR_REWARD_POOL_VOID: u128 = 500_000 * VOID_PER_UAT;
 /// One epoch = 30 days in seconds (reward distribution cycle)
 pub const REWARD_EPOCH_SECS: u64 = 30 * 24 * 60 * 60; // 2,592,000
 
+/// Testnet epoch = 2 minutes (for rapid testing of reward mechanics)
+pub const TESTNET_REWARD_EPOCH_SECS: u64 = 2 * 60; // 120
+
+/// Get the effective reward epoch duration based on network type.
+/// Testnet: 2 minutes for rapid reward testing.
+/// Mainnet: 30 days (standard epoch).
+pub const fn effective_reward_epoch_secs() -> u64 {
+    if is_testnet_build() {
+        TESTNET_REWARD_EPOCH_SECS
+    } else {
+        REWARD_EPOCH_SECS
+    }
+}
+
 /// Initial reward rate: 5,000 UAT per epoch (before halving)
 pub const REWARD_RATE_INITIAL_VOID: u128 = 5_000 * VOID_PER_UAT;
 

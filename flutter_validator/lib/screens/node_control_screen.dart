@@ -46,6 +46,74 @@ class _NodeControlScreenState extends State<NodeControlScreen>
         _isMonitorMode = monitorMode;
       });
       _refreshBalance();
+      // Auto-register as validator on the bootstrap node if not already registered.
+      // This ensures the network knows about this validator even if the setup wizard
+      // registration was skipped (e.g. node was already running, or Tor was down).
+      _ensureValidatorRegistered(walletService, wallet);
+    }
+  }
+
+  /// Register this wallet as a validator on the bootstrap node if not yet registered.
+  /// Uses the same Dilithium5 signed proof of ownership — fully mainnet-ready.
+  Future<void> _ensureValidatorRegistered(
+      WalletService walletService, Map<String, String> wallet) async {
+    try {
+      final isAddressOnly = await walletService.isAddressOnlyImport();
+      if (isAddressOnly) return; // Can't sign without keys
+
+      final address = wallet['address'];
+      final publicKey = wallet['public_key'];
+      if (address == null || publicKey == null) return;
+
+      // Check if already registered on bootstrap node
+      final apiService = context.read<ApiService>();
+      final validators = await apiService.getValidators();
+      final alreadyRegistered =
+          validators.any((v) => v.address == address);
+      if (alreadyRegistered) {
+        debugPrint('✅ Validator already registered on bootstrap node');
+        return;
+      }
+
+      // Not registered — sign and register
+      final timestamp =
+          DateTime.now().millisecondsSinceEpoch ~/ 1000;
+      final message = 'REGISTER_VALIDATOR:$address:$timestamp';
+      final signature = await walletService.signTransaction(message);
+
+      // Register on bootstrap node (shared ApiService points to .onion)
+      await apiService.ensureReady();
+      final result = await apiService.registerValidator(
+        address: address,
+        publicKey: publicKey,
+        signature: signature,
+        timestamp: timestamp,
+      );
+      debugPrint('✅ Auto-registered on bootstrap: ${result['msg']}');
+
+      // Also register on local node if running
+      final nodeService = context.read<NodeProcessService>();
+      if (nodeService.isRunning) {
+        final localApi = ApiService(
+          customUrl: 'http://127.0.0.1:${nodeService.apiPort}',
+        );
+        await localApi.ensureReady();
+        try {
+          await localApi.registerValidator(
+            address: address,
+            publicKey: publicKey,
+            signature: signature,
+            timestamp: timestamp,
+          );
+          debugPrint('✅ Auto-registered on local node');
+        } catch (e) {
+          debugPrint('⚠️ Local registration: $e');
+        } finally {
+          localApi.dispose();
+        }
+      }
+    } catch (e) {
+      debugPrint('⚠️ Auto-registration deferred: $e');
     }
   }
 

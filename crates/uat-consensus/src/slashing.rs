@@ -403,6 +403,11 @@ impl SlashingManager {
         self.current_block_height = height;
     }
 
+    /// Get all registered validator addresses (genesis + dynamically registered)
+    pub fn get_all_validator_addresses(&self) -> Vec<String> {
+        self.validators.keys().cloned().collect()
+    }
+
     /// Get network safety statistics
     pub fn get_safety_stats(&self) -> SafetyStats {
         let total_validators = self.validators.len() as u32;

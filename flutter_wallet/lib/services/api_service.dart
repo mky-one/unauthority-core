@@ -183,30 +183,19 @@ class ApiService {
     await _loadSavedPeers();
   }
 
-  /// Create Tor-enabled HTTP client
-  /// Priority: 1. Bundled Tor (port 9250) → 2. Existing Tor → 3. Tor Browser (9150)
+  /// Create Tor-enabled HTTP client.
+  /// Uses the shared TorService.start() so _isRunning is properly synced.
   Future<http.Client> _createTorClient() async {
     final httpClient = HttpClient();
-    int socksPort = 9250; // Default: bundled Tor
 
-    // Try to detect existing Tor or start bundled Tor
-    final existing = await _torService.detectExistingTor();
-    if (existing['found'] == true) {
-      final proxy = existing['proxy'] as String;
-      socksPort = int.parse(proxy.split(':').last);
-      debugPrint('✅ Using existing Tor: ${existing['type']} ($proxy)');
-    } else {
-      // Start bundled Tor daemon
-      final started = await _torService.start();
-      if (started) {
-        socksPort = 9250; // Bundled Tor port
-        debugPrint('✅ Bundled Tor started on port $socksPort');
-      } else {
-        // Fallback: try Tor Browser port
-        socksPort = 9150;
-        debugPrint(
-            '⚠️ Bundled Tor failed, trying Tor Browser on port $socksPort');
-      }
+    // Always go through start() — it detects existing Tor internally
+    // AND sets _isRunning=true, which is critical for shared TorService state.
+    final started = await _torService.start();
+    final socksPort = started
+        ? _torService.activeSocksPort
+        : 9150; // Last resort: Tor Browser
+    if (!started) {
+      debugPrint('⚠️ TorService.start() failed, trying Tor Browser on port $socksPort');
     }
 
     SocksTCPClient.assignToHttpClient(

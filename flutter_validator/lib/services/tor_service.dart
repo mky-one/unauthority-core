@@ -17,7 +17,7 @@ import 'package:path/path.dart' as path;
 class TorService {
   Process? _torProcess;
   String? _torDataDir;
-  final int _socksPort = 9250;
+  int _socksPort = 9250;
   bool _isRunning = false;
   String? _activeProxy; // "host:port" of the active SOCKS proxy
   String? _onionAddress; // Generated .onion address (hidden service mode)
@@ -73,17 +73,17 @@ class TorService {
     return await _startTorProcess(torBinary);
   }
 
-  /// Stop Tor daemon
+  /// Stop Tor daemon (managed process only — won't kill external Tor)
   Future<void> stop() async {
     if (_torProcess != null) {
-      debugPrint('🛑 Stopping Tor daemon...');
+      debugPrint('🛑 Stopping Tor daemon (PID: ${_torProcess!.pid})...');
       _torProcess!.kill(ProcessSignal.sigterm);
       await Future.delayed(const Duration(milliseconds: 500));
       _torProcess = null;
-      _isRunning = false;
-      _activeProxy = null;
-      debugPrint('✅ Tor stopped');
     }
+    _isRunning = false;
+    _activeProxy = null;
+    debugPrint('✅ Tor state reset');
   }
 
   // ════════════════════════════════════════════════════════════════════════
@@ -115,6 +115,25 @@ class TorService {
       for (var i = 0; i < 10; i++) {
         await Future.delayed(const Duration(milliseconds: 300));
         if (!await _isPortOpen('localhost', _socksPort)) break;
+      }
+    }
+
+    // If port is STILL busy (external/zombie Tor not managed by us),
+    // find a free alternative SocksPort instead of failing.
+    if (await _isPortOpen('localhost', _socksPort)) {
+      debugPrint('⚠️ Port $_socksPort still occupied — finding free port...');
+      bool found = false;
+      for (int p = _socksPort + 1; p <= _socksPort + 20; p++) {
+        if (!await _isPortOpen('localhost', p)) {
+          debugPrint('✅ Using alternative SocksPort $p');
+          _socksPort = p;
+          found = true;
+          break;
+        }
+      }
+      if (!found) {
+        debugPrint('❌ No free SocksPort available (${_socksPort}..${_socksPort + 20})');
+        return null;
       }
     }
 
@@ -182,21 +201,27 @@ ExitPolicy reject *:*
     try {
       _torProcess = await Process.start(torBinary, ['-f', torrcPath]);
 
-      // Monitor for bootstrap completion
-      _torProcess!.stdout.listen((data) {
-        final output = String.fromCharCodes(data);
+      // Bootstrap detection callback — Tor may output to stdout OR stderr
+      void checkBootstrap(String output) {
         if (output.contains('Bootstrapped 100%') ||
             output.contains('Tor has successfully opened a circuit')) {
           _isRunning = true;
           _activeProxy = 'localhost:$_socksPort';
         }
+      }
+
+      // Monitor BOTH stdout AND stderr for bootstrap completion.
+      // Some Tor builds (Debian/Homebrew) log to stderr even with `Log notice stdout`.
+      _torProcess!.stdout.listen((data) {
+        final output = String.fromCharCodes(data);
+        debugPrint('🔧 Tor[out]: ${output.trim()}');
+        checkBootstrap(output);
       });
 
       _torProcess!.stderr.listen((data) {
-        final error = String.fromCharCodes(data);
-        if (error.contains('[err]') || error.contains('Error')) {
-          debugPrint('⚠️  Tor: $error');
-        }
+        final output = String.fromCharCodes(data);
+        debugPrint('🔧 Tor[err]: ${output.trim()}');
+        checkBootstrap(output);
       });
 
       _torProcess!.exitCode.then((code) {

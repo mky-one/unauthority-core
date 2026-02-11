@@ -210,9 +210,25 @@ class _NodeControlScreenState extends State<NodeControlScreen>
                   const Divider(),
                   _infoRow('Mode', 'Monitor Only (Read-Only)'),
                   _infoRow(
-                      'Address', _walletAddress != null ? _shortAddr(_walletAddress!) : 'Loading...'),
-                  _infoRow('Balance',
-                      _balance != null ? '${BlockchainConstants.formatUat(_balance!)} UAT' : 'Loading...'),
+                      'Address',
+                      _walletAddress != null
+                          ? _shortAddr(_walletAddress!)
+                          : 'Loading...'),
+                  _infoRow(
+                      'Balance',
+                      _balance != null
+                          ? '${BlockchainConstants.formatUat(_balance!)} UAT'
+                          : 'Loading...'),
+                  // Show connected bootstrap node's .onion host
+                  Builder(builder: (ctx) {
+                    final url = context.read<ApiService>().baseUrl;
+                    final uri = Uri.tryParse(url);
+                    final host = uri?.host ?? url;
+                    if (host.endsWith('.onion')) {
+                      return _infoTapRow('Onion Host', _shortOnion(host), host);
+                    }
+                    return _infoRow('Host', host);
+                  }),
                   _infoRow('Local Node', 'Managed by CLI (not this app)'),
                 ],
               ),
@@ -225,8 +241,7 @@ class _NodeControlScreenState extends State<NodeControlScreen>
             decoration: BoxDecoration(
                 color: Colors.amber.withValues(alpha: 0.1),
                 borderRadius: BorderRadius.circular(8),
-                border:
-                    Border.all(color: Colors.amber.withValues(alpha: 0.3))),
+                border: Border.all(color: Colors.amber.withValues(alpha: 0.3))),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -662,9 +677,8 @@ class _NodeControlScreenState extends State<NodeControlScreen>
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: Text(_isMonitorMode
-            ? 'Exit Monitor Mode?'
-            : 'Unregister Validator?'),
+        title: Text(
+            _isMonitorMode ? 'Exit Monitor Mode?' : 'Unregister Validator?'),
         content: Text(_isMonitorMode
             ? 'This will disconnect from the bootstrap node dashboard and remove '
                 'your wallet from this app.\n\n'

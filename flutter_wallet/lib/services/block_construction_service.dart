@@ -125,7 +125,6 @@ class BlockConstructionService {
   }) async {
     // 0. Fetch protocol params from node (base_fee, pow_difficulty, chain_id)
     await _ensureProtocolParams();
-    final fee = _baseFeeVoid!;
     final powBits = _powDifficultyBits;
 
     // 1. Get wallet info
@@ -137,6 +136,15 @@ class BlockConstructionService {
     if (publicKeyHex == null) {
       throw Exception(
           'No public key available — wallet must have Dilithium5 keypair');
+    }
+
+    // 1b. Fetch dynamic fee from anti-whale engine (may be > base_fee if rapid sends)
+    final feeData = await _api.getFeeEstimate(address);
+    final fee = (feeData['estimated_fee_void'] as num).toInt();
+    final multiplier = (feeData['fee_multiplier'] as num).toInt();
+    if (multiplier > 1) {
+      debugPrint(
+          '⚠️ Anti-whale fee scaling active: $multiplier× base fee ($fee VOID)');
     }
 
     // 2. Fetch account state (frontier)

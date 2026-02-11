@@ -676,7 +676,7 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
                         let mut l_guard = safe_lock(&l);
                         if !l_guard.accounts.contains_key(&target) {
                             l_guard.accounts.insert(target.clone(), AccountState {
-                                head: "0".to_string(), balance: 0, block_count: 0,
+                                head: "0".to_string(), balance: 0, block_count: 0, is_validator: false,
                             });
                         }
                         if let Some(recv_state) = l_guard.accounts.get(&target).cloned() {
@@ -857,12 +857,12 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
                             // Ensure account exists
                             if !l_guard.accounts.contains_key(&recipient) {
                                 l_guard.accounts.insert(recipient.clone(), AccountState {
-                                    head: "0".to_string(), balance: 0, block_count: 0
+                                    head: "0".to_string(), balance: 0, block_count: 0, is_validator: false,
                                 });
                             }
 
                             let state = l_guard.accounts.get(&recipient).cloned().unwrap_or(AccountState {
-                                head: "0".to_string(), balance: 0, block_count: 0
+                                head: "0".to_string(), balance: 0, block_count: 0, is_validator: false,
                             });
 
                             let mut mint_blk = Block {
@@ -1183,7 +1183,7 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
                 let l_guard = safe_lock(&l);
                 let ab_guard = safe_lock(&ab);
 
-                // Collect ALL validator addresses: genesis bootstrap + dynamically registered
+                // Collect ALL validator addresses: genesis bootstrap + accounts with is_validator flag
                 let mut all_validator_addrs: Vec<String> = bv_validators.clone();
                 {
                     let sm_guard = safe_lock(&sm_validators);
@@ -1193,11 +1193,9 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
                         }
                     }
                 }
-                // Also scan ledger for any account with >= MIN_VALIDATOR_STAKE_VOID
+                // Also include accounts explicitly marked as validators (user-registered)
                 for (addr, acc) in &l_guard.accounts {
-                    if acc.balance >= MIN_VALIDATOR_STAKE_VOID
-                        && !all_validator_addrs.contains(addr)
-                    {
+                    if acc.is_validator && !all_validator_addrs.contains(addr) {
                         all_validator_addrs.push(addr.clone());
                     }
                 }
@@ -1367,6 +1365,7 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
                     head: "0".to_string(),
                     balance: 0,
                     block_count: 0,
+                    is_validator: false,
                 });
             }
 
@@ -1374,6 +1373,7 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
                 head: "0".to_string(),
                 balance: 0,
                 block_count: 0,
+                is_validator: false,
             });
 
             // CRITICAL FIX: Create proper Mint block with PoW + signature, use process_block()
@@ -1477,6 +1477,7 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
                     head: "0".to_string(),
                     balance: 0,
                     block_count: 0,
+                    is_validator: false,
                 });
 
             // Get transaction history for this account
@@ -2924,6 +2925,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                                 head: "0".to_string(),
                                                 balance: balance_voi,
                                                 block_count: 0,
+                                                is_validator,
                                             },
                                         );
                                         genesis_supply_deducted += balance_voi;
@@ -2998,12 +3000,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // NEW: Slashing Manager (validator accountability)
     let slashing_manager = Arc::new(Mutex::new(SlashingManager::new()));
-    // Register existing validators from genesis
+    // Register existing validators from genesis (only accounts with is_validator flag)
     {
         let l = safe_lock(&ledger);
         let mut sm = safe_lock(&slashing_manager);
         for (addr, acc) in &l.accounts {
-            if acc.balance >= MIN_VALIDATOR_STAKE_VOID {
+            if acc.is_validator {
                 sm.register_validator(addr.clone());
             }
         }
@@ -3071,6 +3073,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         head: "0".to_string(),
                         balance: 0,
                         block_count: 0,
+                        is_validator: false,
                     },
                 );
 
@@ -3122,6 +3125,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         head: "0".to_string(),
                         balance: 0,
                         block_count: 0,
+                        is_validator: false,
                     },
                 );
             }
@@ -3674,7 +3678,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 let state = {
                                     let l = safe_lock(&ledger);
                                     l.accounts.get(&my_address).cloned().unwrap_or(AccountState {
-                                        head: "0".to_string(), balance: 0, block_count: 0
+                                        head: "0".to_string(), balance: 0, block_count: 0, is_validator: false,
                                     })
                                 }; // L dropped
 
@@ -3922,7 +3926,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
                                                 if !l.accounts.contains_key(&blk.account) {
                                                     l.accounts.insert(blk.account.clone(), AccountState {
-                                                        head: "0".to_string(), balance: 0, block_count: 0
+                                                        head: "0".to_string(), balance: 0, block_count: 0, is_validator: false,
                                                     });
                                                 }
 
@@ -4420,11 +4424,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                             // Ensure recipient account exists
                                             if !l.accounts.contains_key(&mint_recipient) {
                                                 l.accounts.insert(mint_recipient.clone(), AccountState {
-                                                    head: "0".to_string(), balance: 0, block_count: 0
+                                                    head: "0".to_string(), balance: 0, block_count: 0, is_validator: false,
                                                 });
                                             }
                                             let state = l.accounts.get(&mint_recipient).cloned().unwrap_or(AccountState {
-                                                head: "0".to_string(), balance: 0, block_count: 0
+                                                head: "0".to_string(), balance: 0, block_count: 0, is_validator: false,
                                             });
 
                                             let mut mint_blk = Block {
@@ -4631,7 +4635,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                                     let mut l = safe_lock(&ledger);
                                                     if !l.accounts.contains_key(&my_address) {
                                                         l.accounts.insert(my_address.clone(), AccountState {
-                                                            head: "0".to_string(), balance: 0, block_count: 0,
+                                                            head: "0".to_string(), balance: 0, block_count: 0, is_validator: false,
                                                         });
                                                     }
                                                     if let Some(recv_state) = l.accounts.get(&my_address).cloned() {
@@ -4727,15 +4731,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             let (double_sign_detected, ds_gossip) = {
                                 let mut l = safe_lock(&ledger);
                                 if !l.accounts.contains_key(&inc.account) {
-                                    l.accounts.insert(inc.account.clone(), AccountState { head: "0".to_string(), balance: 0, block_count: 0 });
+                                    l.accounts.insert(inc.account.clone(), AccountState { head: "0".to_string(), balance: 0, block_count: 0, is_validator: false });
                                 }
 
                                 let double_sign_detected = {
                                     let mut sm = safe_lock(&slashing_clone);
-                                    // Register validator if not exists
+                                    // Register validator if not exists (only if flagged as validator)
                                     if sm.get_profile(&inc.account).is_none() {
                                         if let Some(acc) = l.accounts.get(&inc.account) {
-                                            if acc.balance >= MIN_VALIDATOR_STAKE_VOID {
+                                            if acc.is_validator {
                                                 sm.register_validator(inc.account.clone());
                                             }
                                         }
@@ -4764,7 +4768,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                         // FIX: Create proper Slash block instead of direct balance mutation
                                         // This ensures all nodes see the slash in the blockchain
                                         let cheater_state = l.accounts.get(&inc.account).cloned().unwrap_or(AccountState {
-                                            head: "0".to_string(), balance: 0, block_count: 0,
+                                            head: "0".to_string(), balance: 0, block_count: 0, is_validator: false,
                                         });
                                         let mut slash_blk = Block {
                                             account: inc.account.clone(),
@@ -4829,7 +4833,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
                                                     // Create proper Slash block for downtime penalty
                                                     let dt_state = l.accounts.get(&inc.account).cloned().unwrap_or(AccountState {
-                                                        head: "0".to_string(), balance: 0, block_count: 0,
+                                                        head: "0".to_string(), balance: 0, block_count: 0, is_validator: false,
                                                     });
                                                     let mut dt_slash = Block {
                                                         account: inc.account.clone(),
@@ -4864,7 +4868,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
                                         if inc.block_type == BlockType::Send && inc.link == my_address {
                                             if !l.accounts.contains_key(&my_address) {
-                                                l.accounts.insert(my_address.clone(), AccountState { head: "0".to_string(), balance: 0, block_count: 0 });
+                                                l.accounts.insert(my_address.clone(), AccountState { head: "0".to_string(), balance: 0, block_count: 0, is_validator: false });
                                             }
                                             if let Some(state) = l.accounts.get(&my_address).cloned() {
                                                 let mut rb = Block {

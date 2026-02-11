@@ -43,6 +43,14 @@ class ApiService {
   /// Whether we've already run peer discovery after first successful connection
   bool _peerDiscoveryDone = false;
 
+  /// Whether this instance has been disposed (client closed).
+  /// Prevents fire-and-forget tasks from using a closed client.
+  bool _disposed = false;
+
+  /// Whether the HTTP client can reach .onion addresses (Tor SOCKS5 configured).
+  /// When false, failover skips .onion URLs entirely — they'll never work.
+  bool _hasTor = false;
+
   ApiService({
     String? customUrl,
     this.environment = NetworkEnvironment.testnet,
@@ -103,16 +111,22 @@ class ApiService {
 
   /// Switch to the next bootstrap node in round-robin fashion.
   /// Returns true if switched to a different node, false if only 1 node available.
+  /// Skips .onion URLs when Tor is not available (_hasTor == false).
   bool _switchToNextNode() {
     if (_bootstrapUrls.length <= 1) return false;
-    _currentNodeIndex = (_currentNodeIndex + 1) % _bootstrapUrls.length;
-    final newUrl = _bootstrapUrls[_currentNodeIndex];
-    if (newUrl != baseUrl) {
-      baseUrl = newUrl;
-      debugPrint(
-          '🔄 Failover: switched to node ${_currentNodeIndex + 1}/${_bootstrapUrls.length}: $baseUrl');
-      return true;
-    }
+    final startIndex = _currentNodeIndex;
+    do {
+      _currentNodeIndex = (_currentNodeIndex + 1) % _bootstrapUrls.length;
+      final candidate = _bootstrapUrls[_currentNodeIndex];
+      // Skip .onion URLs if we don't have a Tor client
+      if (!_hasTor && candidate.contains('.onion')) continue;
+      if (candidate != baseUrl) {
+        baseUrl = candidate;
+        debugPrint(
+            '🔄 Failover: switched to node ${_currentNodeIndex + 1}/${_bootstrapUrls.length}: $baseUrl');
+        return true;
+      }
+    } while (_currentNodeIndex != startIndex);
     return false;
   }
 
@@ -163,8 +177,10 @@ class ApiService {
   Future<void> _initializeClient() async {
     if (baseUrl.contains('.onion')) {
       _client = await _createTorClient();
+      _hasTor = true;
     } else {
       _client = http.Client();
+      _hasTor = false;
       debugPrint('✅ Direct HTTP client (no Tor proxy needed for $baseUrl)');
     }
     // After client is ready, load saved peers into bootstrap list
@@ -632,6 +648,7 @@ class ApiService {
   /// Call this periodically (e.g., every dashboard refresh) to build up
   /// the local peer database. Once saved, these peers persist across restarts.
   Future<void> discoverAndSavePeers() async {
+    if (_disposed) return; // Client already closed — skip silently
     try {
       final response = await _requestWithFailover(
         (url) => _client.get(Uri.parse('$url/network/peers')),
@@ -667,6 +684,7 @@ class ApiService {
 
   /// Release HTTP client resources. Called by Provider.dispose.
   void dispose() {
+    _disposed = true;
     _client.close();
   }
 }

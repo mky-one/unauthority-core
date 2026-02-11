@@ -1354,20 +1354,21 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
                     .iter()
                     .filter_map(|addr| {
                         l_guard.accounts.get(addr.as_str()).map(|acc| {
-                            // ACTIVE = actually reachable on the network right now
-                            // NOT just "has enough balance"
+                            // ACTIVE = verified validator with sufficient stake
                             let is_self = addr == &my_addr_validators;
                             let in_peers = ab_guard.values().any(|v| v.contains(addr.as_str()));
                             let is_genesis = bv_validators.contains(addr);
                             let has_min_stake = acc.balance >= MIN_VALIDATOR_STAKE_VOID;
-                            // ACTIVE requires: registered + staked + evidence of liveness
-                            // - is_self: this node itself → always active
-                            // - in_peers: appeared in address book via P2P → active
-                            // - is_genesis: infrastructure bootstrap nodes → assumed active
-                            //   (genesis validators are funded accounts operated by the project)
-                            // For user-registered validators: MUST have P2P connectivity evidence
+                            // Connected = evidence of P2P liveness (online indicator)
                             let connected = is_self || in_peers;
-                            let active = has_min_stake && acc.is_validator && (connected || is_genesis);
+                            // in_reward_pool = registered via verified Dilithium5 signature
+                            // (registration checks: valid sig + address match + min stake)
+                            let in_reward_pool = rp_guard.validators.contains_key(addr.as_str());
+                            // ACTIVE requires: registered + staked + evidence of legitimacy
+                            // - connected: appeared in P2P address book → online
+                            // - is_genesis: infrastructure bootstrap nodes → assumed active
+                            // - in_reward_pool: verified registration (Dilithium5 proof) → active
+                            let active = has_min_stake && acc.is_validator && (connected || is_genesis || in_reward_pool);
 
                             // Real uptime from heartbeat data (not hardcoded)
                             let uptime_pct = rp_guard.validators.get(addr.as_str())

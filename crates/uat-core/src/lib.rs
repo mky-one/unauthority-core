@@ -10,6 +10,7 @@ pub mod bonding_curve;
 pub mod distribution;
 pub mod oracle_consensus;
 pub mod validator_config;
+pub mod validator_rewards;
 use crate::distribution::DistributionState;
 
 /// 1 UAT = 100_000_000_000 VOID (10^11 precision)
@@ -48,6 +49,34 @@ pub const fn is_testnet_build() -> bool {
 pub const fn is_mainnet_build() -> bool {
     CHAIN_ID == 1
 }
+
+// ─────────────────────────────────────────────────────────────────
+// VALIDATOR REWARD SYSTEM CONSTANTS
+// ─────────────────────────────────────────────────────────────────
+// Pool: 500,000 UAT from public allocation.
+// Rate: 5,000 UAT/epoch (30 days), halving every 4 years (48 epochs).
+// Distribution: √stake-weighted proportional among eligible validators.
+// Genesis bootstrap validators are EXCLUDED from rewards.
+// Pool asymptotically approaches ~480,000 UAT total distributed.
+// ─────────────────────────────────────────────────────────────────
+
+/// Total validator reward pool: 500,000 UAT in VOID
+pub const VALIDATOR_REWARD_POOL_VOID: u128 = 500_000 * VOID_PER_UAT;
+
+/// One epoch = 30 days in seconds (reward distribution cycle)
+pub const REWARD_EPOCH_SECS: u64 = 30 * 24 * 60 * 60; // 2,592,000
+
+/// Initial reward rate: 5,000 UAT per epoch (before halving)
+pub const REWARD_RATE_INITIAL_VOID: u128 = 5_000 * VOID_PER_UAT;
+
+/// Halving interval: every 48 epochs (4 years × 12 months)
+pub const REWARD_HALVING_INTERVAL_EPOCHS: u64 = 48;
+
+/// Minimum uptime percentage required to receive rewards (95%)
+pub const REWARD_MIN_UPTIME_PCT: u64 = 95;
+
+/// Probation period: 1 epoch (30 days) before a new validator earns rewards
+pub const REWARD_PROBATION_EPOCHS: u64 = 1;
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub enum BlockType {

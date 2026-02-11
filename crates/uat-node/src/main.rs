@@ -10,6 +10,7 @@ use uat_consensus::slashing::SlashingManager; // Slashing enforcement
 use uat_consensus::voting::calculate_voting_power; // Quadratic voting: Power = √Stake
 use uat_core::anti_whale::{AntiWhaleConfig, AntiWhaleEngine}; // NEW: Anti-whale mechanisms
 use uat_core::oracle_consensus::OracleConsensus; // NEW: Oracle consensus
+use uat_core::validator_rewards::ValidatorRewardPool;
 use uat_core::{AccountState, Block, BlockType, Ledger, MIN_VALIDATOR_STAKE_VOID, VOID_PER_UAT};
 use uat_network::{NetworkEvent, UatNode};
 #[cfg(feature = "vm")]
@@ -258,6 +259,8 @@ pub struct ApiServerConfig {
     /// On mainnet: from genesis_config.json bootstrap_nodes.
     /// On testnet: from testnet_wallets.json wallets with role="validator".
     pub bootstrap_validators: Vec<String>,
+    /// Validator reward pool — epoch-based reward distribution engine
+    pub reward_pool: Arc<Mutex<ValidatorRewardPool>>,
 }
 
 #[allow(clippy::type_complexity)]
@@ -278,6 +281,7 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
         anti_whale,
         node_public_key,
         bootstrap_validators,
+        reward_pool,
     } = cfg;
     // Rate Limiter: 100 req/sec per IP, burst 200
     let limiter = RateLimiter::new(100, Some(200));
@@ -1557,7 +1561,8 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
                     "faucet": "POST /faucet {address} - Claim testnet tokens (Functional/Consensus testnet)",
                     "send": "POST /send {from, target, amount} - Send transaction",
                     "burn": "POST /burn {chain, tx_hash} - Proof-of-burn mint",
-                    "consensus": "GET /consensus - aBFT consensus parameters and safety status"
+                    "consensus": "GET /consensus - aBFT consensus parameters and safety status",
+                    "reward_info": "GET /reward-info - Validator reward pool status and epoch info"
                 },
                 "docs": "https://github.com/unauthoritymky-6236/unauthority-core",
                 "status": "operational"
@@ -1912,6 +1917,65 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
             },
         );
 
+    // 28. GET /reward-info (Validator reward pool status)
+    let rp_info = reward_pool.clone();
+    let reward_info_route = warp::path("reward-info")
+        .and(with_state(rp_info))
+        .map(|rp: Arc<Mutex<ValidatorRewardPool>>| {
+            let pool = safe_lock(&rp);
+            let now = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_secs();
+            let summary = pool.pool_summary();
+            let remaining_secs = pool.epoch_remaining_secs(now);
+
+            // Per-validator reward details
+            let validators_json: Vec<serde_json::Value> = pool.validators.iter().map(|(addr, v)| {
+                serde_json::json!({
+                    "address": addr,
+                    "is_genesis": v.is_genesis,
+                    "join_epoch": v.join_epoch,
+                    "stake_void": v.stake_void,
+                    "uptime_pct": v.uptime_pct(),
+                    "cumulative_rewards_void": v.cumulative_rewards_void,
+                    "eligible": v.is_eligible(pool.current_epoch),
+                    "heartbeats_current_epoch": v.heartbeats_current_epoch,
+                    "expected_heartbeats": v.expected_heartbeats,
+                })
+            }).collect();
+
+            warp::reply::json(&serde_json::json!({
+                "pool": {
+                    "remaining_void": summary.remaining_void,
+                    "remaining_uat": summary.remaining_void / VOID_PER_UAT,
+                    "total_distributed_void": summary.total_distributed_void,
+                    "total_distributed_uat": summary.total_distributed_void / VOID_PER_UAT,
+                    "pool_exhaustion_pct": summary.pool_exhaustion_pct,
+                },
+                "epoch": {
+                    "current_epoch": summary.current_epoch,
+                    "epoch_reward_rate_void": summary.epoch_reward_rate_void,
+                    "epoch_reward_rate_uat": summary.epoch_reward_rate_void / VOID_PER_UAT,
+                    "halvings_occurred": summary.halvings_occurred,
+                    "epoch_remaining_secs": remaining_secs,
+                    "epoch_duration_secs": uat_core::REWARD_EPOCH_SECS,
+                },
+                "validators": {
+                    "total": summary.total_validators,
+                    "eligible": summary.eligible_validators,
+                    "details": validators_json,
+                },
+                "config": {
+                    "min_uptime_pct": uat_core::REWARD_MIN_UPTIME_PCT,
+                    "probation_epochs": uat_core::REWARD_PROBATION_EPOCHS,
+                    "halving_interval_epochs": uat_core::REWARD_HALVING_INTERVAL_EPOCHS,
+                    "distribution_model": "sqrt(stake)-weighted proportional",
+                    "genesis_excluded": true,
+                }
+            }))
+        });
+
     // Combine all routes with rate limiting
     // NOTE: Each route is .boxed() to prevent warp type recursion overflow (E0275)
     // when compiling in release mode. This breaks the deeply nested type chain.
@@ -1951,6 +2015,7 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
         .or(search_route.boxed())
         .or(sync_route.boxed())
         .or(consensus_route.boxed())
+        .or(reward_info_route.boxed())
         .boxed();
 
     let routes = group1
@@ -2969,6 +3034,47 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
+    // ══════════════════════════════════════════════════════════════════════
+    // VALIDATOR REWARD POOL — Initialize and register known validators
+    // ══════════════════════════════════════════════════════════════════════
+    // Uses genesis_timestamp from genesis_config.json (mainnet) or hardcoded (testnet).
+    // Bootstrap validators are registered as is_genesis=true (excluded from rewards).
+    // Pool is initialized from VALIDATOR_REWARD_POOL_VOID constant.
+    let genesis_ts: u64 = if uat_core::is_mainnet_build() {
+        // Re-parse genesis config for timestamp (lightweight — already validated above)
+        std::fs::read_to_string("genesis_config.json")
+            .ok()
+            .and_then(|json| serde_json::from_str::<serde_json::Value>(&json).ok())
+            .and_then(|v| v["genesis_timestamp"].as_u64())
+            .unwrap_or(1_770_580_908)
+    } else {
+        1_770_580_908 // Testnet: hardcoded genesis timestamp
+    };
+    let mut reward_pool_state = ValidatorRewardPool::new(genesis_ts);
+
+    // Register all bootstrap validators as genesis (excluded from rewards)
+    for addr in &bootstrap_validators {
+        let stake = ledger_state.accounts.get(addr)
+            .map(|a| a.balance)
+            .unwrap_or(0);
+        reward_pool_state.register_validator(addr, true, stake);
+    }
+
+    // Register any other validators already in the ledger (non-genesis)
+    for (addr, acct) in &ledger_state.accounts {
+        if acct.is_validator && !bootstrap_validators.contains(addr) {
+            reward_pool_state.register_validator(addr, false, acct.balance);
+        }
+    }
+
+    // Set expected heartbeats for the first epoch (60-second heartbeat interval)
+    reward_pool_state.set_expected_heartbeats(60);
+
+    let reward_pool = Arc::new(Mutex::new(reward_pool_state));
+    println!("🏆 Validator reward pool initialized: {} UAT, epoch rate {} UAT/month",
+        uat_core::VALIDATOR_REWARD_POOL_VOID / VOID_PER_UAT,
+        uat_core::REWARD_RATE_INITIAL_VOID / VOID_PER_UAT);
+
     // Now wrap in Arc after all initialization is complete
     let ledger = Arc::new(Mutex::new(ledger_state));
 
@@ -3297,6 +3403,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let api_aw = Arc::clone(&anti_whale);
     let api_pk = keys.public_key.clone();
     let api_bootstrap = bootstrap_validators; // Move — only used by API server
+    let api_reward_pool = Arc::clone(&reward_pool);
 
     tokio::spawn(async move {
         start_api_server(ApiServerConfig {
@@ -3315,6 +3422,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             anti_whale: api_aw,
             node_public_key: api_pk,
             bootstrap_validators: api_bootstrap,
+            reward_pool: api_reward_pool,
         })
         .await;
     });
@@ -3386,6 +3494,67 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     "📊 Broadcasting signed oracle prices: ETH=${:.2}, BTC=${:.2}",
                     eth_price, btc_price
                 );
+            }
+        }
+    });
+
+    // ══════════════════════════════════════════════════════════════════════
+    // VALIDATOR REWARD SYSTEM — Heartbeat recording + Epoch distribution
+    // ══════════════════════════════════════════════════════════════════════
+    // - Records heartbeats every 60s for all known validators
+    // - Checks epoch completion and distributes rewards
+    // - Credits reward amounts to validator balances in the ledger
+    let reward_ledger = Arc::clone(&ledger);
+    let reward_pool_bg = Arc::clone(&reward_pool);
+    let reward_my_addr = my_address.clone();
+    tokio::spawn(async move {
+        let mut interval = tokio::time::interval(Duration::from_secs(60));
+        loop {
+            interval.tick().await;
+
+            let now = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_secs();
+
+            let mut pool = safe_lock(&reward_pool_bg);
+
+            // Record heartbeat for this node (proving liveness)
+            pool.record_heartbeat(&reward_my_addr);
+
+            // Check if the current epoch has ended
+            if pool.is_epoch_complete(now) {
+                // Set expected heartbeats before distribution (60s interval)
+                pool.set_expected_heartbeats(60);
+
+                // Distribute rewards for the completed epoch
+                let rewards = pool.distribute_epoch_rewards();
+
+                if !rewards.is_empty() {
+                    // Credit reward amounts to validator balances in the ledger
+                    let mut l = safe_lock(&reward_ledger);
+                    let mut total_credited: u128 = 0;
+                    for (addr, reward_void) in &rewards {
+                        if let Some(acct) = l.accounts.get_mut(addr) {
+                            acct.balance += reward_void;
+                            total_credited += reward_void;
+                        }
+                    }
+                    if total_credited > 0 {
+                        SAVE_DIRTY.store(true, Ordering::Relaxed);
+                        println!(
+                            "🏆 Epoch {} rewards: {} UAT distributed to {} validators",
+                            pool.current_epoch.saturating_sub(1),
+                            total_credited / VOID_PER_UAT,
+                            rewards.len()
+                        );
+                    }
+                } else {
+                    println!(
+                        "🏆 Epoch {} complete: no eligible validators for rewards",
+                        pool.current_epoch.saturating_sub(1)
+                    );
+                }
             }
         }
     });

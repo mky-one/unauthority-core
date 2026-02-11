@@ -51,8 +51,7 @@ class Account {
       balance: parsedBalance,
       voidBalance: 0,
       // Backend sends "transactions", not "history"
-      history:
-          ((json['transactions'] ?? json['history']) as List?)
+      history: ((json['transactions'] ?? json['history']) as List?)
               ?.map((tx) => Transaction.fromJson(tx))
               .toList() ??
           [],
@@ -147,8 +146,7 @@ class ValidatorInfo {
     return ValidatorInfo(
       address: (json['address'] ?? '').toString(),
       stake: _parseIntField(json['stake']),
-      isActive:
-          json['is_active'] == true ||
+      isActive: json['is_active'] == true ||
           json['is_active'] == 1 ||
           (json['status'] ?? '').toString().toLowerCase() == 'active',
       isGenesis: json['is_genesis'] == true,

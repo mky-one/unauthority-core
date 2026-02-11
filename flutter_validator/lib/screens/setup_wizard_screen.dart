@@ -31,7 +31,8 @@ class _SetupWizardScreenState extends State<SetupWizardScreen> {
 
   bool _isValidating = false;
   bool _isLaunching = false;
-  bool _isGenesisMonitor = false; // Genesis bootstrap validator → monitor-only mode
+  bool _isGenesisMonitor =
+      false; // Genesis bootstrap validator → monitor-only mode
   String? _error;
   String? _validatedAddress;
   double? _validatedBalance;
@@ -361,8 +362,8 @@ class _SetupWizardScreenState extends State<SetupWizardScreen> {
                 decoration: BoxDecoration(
                     color: Colors.amber.withValues(alpha: 0.1),
                     borderRadius: BorderRadius.circular(8),
-                    border: Border.all(
-                        color: Colors.amber.withValues(alpha: 0.5))),
+                    border:
+                        Border.all(color: Colors.amber.withValues(alpha: 0.5))),
                 child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
@@ -380,8 +381,8 @@ class _SetupWizardScreenState extends State<SetupWizardScreen> {
                           'This address is an active genesis bootstrap validator.\n'
                           'The node is already running via CLI — no new node will be spawned.\n\n'
                           'You will enter monitor-only mode to view the dashboard.',
-                          style: TextStyle(
-                              fontSize: 13, color: Colors.grey[300])),
+                          style:
+                              TextStyle(fontSize: 13, color: Colors.grey[300])),
                     ])),
           ] else ...[
             // Normal validator — full node spawn flow
@@ -416,8 +417,9 @@ class _SetupWizardScreenState extends State<SetupWizardScreen> {
                   style: const TextStyle(
                       fontSize: 16, fontWeight: FontWeight.bold)),
               style: ElevatedButton.styleFrom(
-                  backgroundColor:
-                      _isGenesisMonitor ? const Color(0xFF6B4CE6) : Colors.green,
+                  backgroundColor: _isGenesisMonitor
+                      ? const Color(0xFF6B4CE6)
+                      : Colors.green,
                   foregroundColor: Colors.white,
                   padding:
                       const EdgeInsets.symmetric(horizontal: 32, vertical: 16),

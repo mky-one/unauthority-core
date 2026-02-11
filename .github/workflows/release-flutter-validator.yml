@@ -60,6 +60,9 @@ jobs:
           cargo build --release
           cargo test --release -- --nocapture
 
+      - name: Build uat-node binary
+        run: cargo build --release -p uat-node
+
       - name: Flutter pub get
         working-directory: flutter_validator
         run: flutter pub get
@@ -68,14 +71,18 @@ jobs:
         working-directory: flutter_validator
         run: flutter build macos --release
 
-      - name: Bundle native library
+      - name: Bundle native library + uat-node binary
         working-directory: flutter_validator
         run: |
           APP="build/macos/Build/Products/Release/UAT Validator Node.app"
           FRAMEWORKS="$APP/Contents/Frameworks"
-          mkdir -p "$FRAMEWORKS"
+          RESOURCES="$APP/Contents/Resources"
+          mkdir -p "$FRAMEWORKS" "$RESOURCES/bin"
           cp native/uat_crypto_ffi/target/release/libuat_crypto_ffi.dylib "$FRAMEWORKS/"
           install_name_tool -id "@executable_path/../Frameworks/libuat_crypto_ffi.dylib" "$FRAMEWORKS/libuat_crypto_ffi.dylib"
+          # Bundle the uat-node binary so the validator can start a local node
+          cp ../target/release/uat-node "$RESOURCES/bin/uat-node"
+          chmod +x "$RESOURCES/bin/uat-node"
           codesign --force --deep --sign - "$APP"
 
       - name: Create DMG
@@ -162,6 +169,9 @@ jobs:
           cargo build --release
           cargo test --release -- --nocapture
 
+      - name: Build uat-node binary
+        run: cargo build --release -p uat-node
+
       - name: Flutter pub get
         working-directory: flutter_validator
         run: flutter pub get
@@ -170,7 +180,7 @@ jobs:
         working-directory: flutter_validator
         run: flutter build linux --release
 
-      - name: Bundle native library & package
+      - name: Bundle native library, uat-node binary & package
         working-directory: flutter_validator
         run: |
           VERSION="${GITHUB_REF_NAME#validator-v}"
@@ -180,6 +190,9 @@ jobs:
           BUNDLE="build/linux/x64/release/bundle"
 
           cp native/uat_crypto_ffi/target/release/libuat_crypto_ffi.so "$BUNDLE/lib/"
+          # Bundle the uat-node binary so the validator can start a local node
+          cp ../target/release/uat-node "$BUNDLE/uat-node"
+          chmod +x "$BUNDLE/uat-node"
 
           cat > "$BUNDLE/run.sh" << 'LAUNCHER'
           #!/bin/bash
@@ -249,6 +262,9 @@ jobs:
           cargo build --release
           cargo test --release -- --nocapture
 
+      - name: Build uat-node binary
+        run: cargo build --release -p uat-node
+
       - name: Flutter pub get
         working-directory: flutter_validator
         run: flutter pub get
@@ -257,7 +273,7 @@ jobs:
         working-directory: flutter_validator
         run: flutter build windows --release
 
-      - name: Bundle native library & package
+      - name: Bundle native library, uat-node binary & package
         working-directory: flutter_validator
         shell: pwsh
         run: |
@@ -267,6 +283,8 @@ jobs:
           $bundle = "build\windows\x64\runner\Release"
 
           Copy-Item "native\uat_crypto_ffi\target\release\uat_crypto_ffi.dll" "$bundle\"
+          # Bundle the uat-node binary so the validator can start a local node
+          Copy-Item "..\target\release\uat-node.exe" "$bundle\"
 
           @"
           ═══════════════════════════════════════════════════════════════
@@ -354,6 +372,7 @@ jobs:
 
             ## ✅ What's Included
 
+            - �️ **Bundled uat-node** — Full validator node binary included, no separate build needed
             - 🔐 **CRYSTALS-Dilithium5** — Post-quantum digital signatures
             - 🧅 **Automatic Tor** — Zero-config .onion connectivity
             - 📊 **Live Dashboard** — Validator stats, peers, blocks, uptime
@@ -365,13 +384,13 @@ jobs:
 
             1. Install & open the validator dashboard
             2. Import existing keys or generate new ones
-            3. Configure your node endpoint (localhost or .onion)
-            4. Dashboard connects automatically via Tor
+            3. Click **START NODE** — the bundled uat-node starts automatically
+            4. Dashboard connects via Tor to the testnet peers
 
             ## ⚠️ Notes
 
             - This is a **testnet** release — tokens have no real value
-            - Requires a running UAT node (see [Testnet Guide](https://github.com/unauthoritymky-6236/unauthority-core/blob/main/docs/TESTNET_OPERATION.md))
+            - The uat-node binary is bundled — no Rust toolchain or compilation needed
             - Minimum 1,000 UAT stake for validator participation
 
           files: |

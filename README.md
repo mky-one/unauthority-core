@@ -1,238 +1,178 @@
-# Unauthority (LOS) — The Sovereign Machine
+# Unauthority (LOS) — Lattice Of Sovereignty
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Rust](https://img.shields.io/badge/Rust-1.75+-orange.svg)](https://www.rust-lang.org/)
-[![Tests](https://img.shields.io/badge/Tests-226%20Passing-brightgreen.svg)]()
-[![CI](https://github.com/unauthoritymky-6236/unauthority-core/actions/workflows/ci.yml/badge.svg)](https://github.com/unauthoritymky-6236/unauthority-core/actions)
+**A 100% Immutable, Permissionless, and Decentralized Blockchain.**
 
-A truly decentralized, permissionless blockchain with zero admin keys, instant finality, and post-quantum security.
+[![Build](https://img.shields.io/badge/build-passing-brightgreen)]()
+[![Tests](https://img.shields.io/badge/tests-462-blue)]()
+[![Rust](https://img.shields.io/badge/rust-2024--edition-orange)]()
+[![License](https://img.shields.io/badge/license-AGPL--3.0-purple)]()
+[![Version](https://img.shields.io/badge/version-1.0.9-blue)]()
 
-> **Testnet is LIVE.** Download the apps below and start testing.
+## Overview
 
----
+Unauthority is a post-quantum secure, block-lattice (DAG) blockchain with aBFT consensus, designed to operate exclusively over the Tor network. Every validator hosts a `.onion` hidden service — no DNS, no clearnet, no central point of failure.
 
-## Download
-
-Pre-built desktop apps for all platforms. No Tor Browser or command-line needed.
-
-### LOS Wallet (send, receive, burn-to-mint)
-
-| Platform | Download | Install |
-|----------|----------|---------|
-| macOS | [LOS-Wallet-macos.dmg](https://github.com/unauthoritymky-6236/unauthority-core/releases/tag/wallet-v1.0.6-testnet) | Open DMG → drag to Applications |
-| Windows | [LOS-Wallet-windows-x64.zip](https://github.com/unauthoritymky-6236/unauthority-core/releases/tag/wallet-v1.0.6-testnet) | Extract → run `flutter_wallet.exe` |
-| Linux | [LOS-Wallet-linux-x64.tar.gz](https://github.com/unauthoritymky-6236/unauthority-core/releases/tag/wallet-v1.0.6-testnet) | Extract → run `./run.sh` |
-
-### LOS Validator Dashboard (monitor node, manage keys)
-
-| Platform | Download | Install |
-|----------|----------|---------|
-| macOS | [LOS-Validator-macos.dmg](https://github.com/unauthoritymky-6236/unauthority-core/releases/tag/validator-v1.0.6-testnet) | Open DMG → drag to Applications |
-| Windows | [LOS-Validator-windows-x64.zip](https://github.com/unauthoritymky-6236/unauthority-core/releases/tag/validator-v1.0.6-testnet) | Extract → run `flutter_validator.exe` |
-| Linux | [LOS-Validator-linux-x64.tar.gz](https://github.com/unauthoritymky-6236/unauthority-core/releases/tag/validator-v1.0.6-testnet) | Extract → run `./run.sh` |
-
-Both apps include **built-in Tor** connectivity and **CRYSTALS-Dilithium5** post-quantum cryptography. No external dependencies required.
-
-> **macOS users:** Apple will block the app on first launch ("cannot verify"). Fix:
-> ```bash
-> xattr -cr /Applications/LOS\ Wallet.app
-> xattr -cr /Applications/flutter_validator.app
-> ```
-> Or: **System Settings → Privacy & Security → Open Anyway**
-
----
-
-## What is Unauthority?
-
-Unauthority is a Layer-1 blockchain built from scratch in Rust. It is designed to be **100% immutable** — no admin keys, no pause function, no upgradability. Once deployed, the chain runs autonomously.
-
-### Key Properties
-
-| Property | Detail |
-|----------|--------|
-| **Total Supply** | 21,936,236 LOS (fixed forever, no inflation) |
-| **Smallest Unit** | 1 CIL (1 LOS = 100,000,000,000 CIL) |
-| **Consensus** | aBFT — Asynchronous Byzantine Fault Tolerance |
-| **Finality** | < 3 seconds |
-| **Cryptography** | CRYSTALS-Dilithium5 (post-quantum secure) |
-| **Smart Contracts** | WASM via Unauthority Virtual Machine (UVM) |
-| **Network Privacy** | All traffic via Tor Hidden Services |
-| **Distribution** | 93% public (Proof-of-Burn), 7% dev treasury |
-| **Validator Rewards** | Epoch-based (24h), quadratic √stake, halving schedule |
-
-### Anti-Whale Economics
-
-- **Quadratic Voting** — voting power = √(stake), not linear
-- **Dynamic Fee Scaling** — fees increase x2/x4/x8 for spam bursts
-- **Burn Limits** — max 10 LOS minted per block via Proof-of-Burn
-- **Reward Fairness** — validator rewards use √stake, preventing whale dominance
-
----
-
-## Quick Start
-
-### For Users (Wallet)
-
-1. Download the **LOS Wallet** from the table above
-2. Install and open
-3. Click **"Create New Wallet"** — save your 24-word seed phrase securely
-4. Go to **Faucet** tab → click **"Request LOS"** (5,000 LOS per claim, testnet only)
-5. Go to **Send** tab → enter a recipient address and amount → send
-
-The wallet connects to the testnet automatically via Tor.
-
-### For Validators
-
-1. Download the **LOS Validator Dashboard** from the table above
-2. To run your own node, see [Validator Guide](docs/VALIDATOR_GUIDE.md)
-3. Minimum stake: 1,000 LOS
-
-### Build from Source
-
-```bash
-git clone https://github.com/unauthoritymky-6236/unauthority-core.git
-cd unauthority-core
-
-# Build the Rust node
-cargo build --release --bin los-node
-
-# Build the Flutter wallet
-cd flutter_wallet && flutter pub get && flutter build macos --release
-
-# Build the Flutter validator dashboard
-cd ../flutter_validator && flutter pub get && flutter build macos --release
-```
-
-Replace `macos` with `linux` or `windows` as needed.
-
----
-
-## REST API
-
-Every LOS node exposes these endpoints. Default port: `3030`.
-
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/node-info` | GET | Chain metadata, supply, height, validators |
-| `/health` | GET | Node health status |
-| `/bal/{address}` | GET | Balance in LOS and CIL |
-| `/balance/{address}` | GET | Balance (alias) |
-| `/account/{address}` | GET | Account details + recent transactions |
-| `/history/{address}` | GET | Full transaction history |
-| `/validators` | GET | Active validators with stake amounts |
-| `/peers` | GET | Connected P2P peers |
-| `/block` | GET | Latest block |
-| `/block/{height}` | GET | Block at specific height |
-| `/block/{hash}` | GET | Block by hash |
-| `/transaction/{hash}` | GET | Transaction by hash |
-| `/search/{query}` | GET | Search blocks, transactions, addresses |
-| `/blocks/recent` | GET | Last N blocks |
-| `/supply` | GET | Total and circulating supply |
-| `/metrics` | GET | Prometheus-format metrics |
-| `/whoami` | GET | Node's own signing address |
-| `/consensus` | GET | aBFT consensus parameters and safety status |
-| `/slashing` | GET | Network slashing statistics |
-| `/slashing/{address}` | GET | Slashing profile for a validator |
-| `/reward-info` | GET | Validator reward pool status, epoch info, per-validator stats |
-| `/fee-estimate` | GET | Dynamic fee estimate for transactions |
-| `/faucet` | POST | Claim testnet tokens (5,000 LOS, 1hr cooldown) |
-| `/send` | POST | Submit signed transaction |
-| `/burn` | POST | Submit Proof-of-Burn mint |
-| `/deploy-contract` | POST | Deploy WASM smart contract |
-| `/call-contract` | POST | Call a deployed contract |
-
-Full API documentation: [docs/API_REFERENCE.md](docs/API_REFERENCE.md)
-
----
+| Property | Value |
+|---|---|
+| **Ticker** | LOS |
+| **Atomic Unit** | CIL (1 LOS = 10¹¹ CIL) |
+| **Total Supply** | 21,936,236 LOS (Fixed) |
+| **Consensus** | aBFT (Asynchronous Byzantine Fault Tolerance) |
+| **Structure** | Block-Lattice (DAG) + Global State |
+| **Cryptography** | Dilithium5 (Post-Quantum) + SHA-3 |
+| **Network** | Tor Hidden Services (.onion) exclusively |
 
 ## Architecture
 
 ```
 unauthority-core/
 ├── crates/
-│   ├── los-core/          # Blockchain core — ledger, accounts, supply math, validator rewards
-│   ├── los-crypto/        # Post-quantum crypto — Dilithium5, address derivation
-│   ├── los-consensus/     # aBFT consensus — voting, slashing, checkpoints
-│   ├── los-network/       # P2P networking — fee scaling, Tor transport
-│   ├── los-vm/            # Smart contract engine — WASM/wasmer runtime
-│   ├── los-node/          # Full node binary — REST API + gRPC server
-│   └── los-cli/           # Command-line interface
-├── flutter_wallet/        # Desktop wallet app (Flutter + Dilithium5 FFI)
-├── flutter_validator/     # Desktop validator dashboard (Flutter + Dilithium5 FFI)
-├── genesis/               # Genesis block generator
-├── testnet-genesis/       # Pre-funded testnet wallets
-├── examples/contracts/    # Smart contract examples
-├── docs/                  # Documentation
-└── dev_docs/              # Internal developer notes
+│   ├── los-node/         # Main validator binary (REST API + gRPC + P2P gossip)
+│   ├── los-core/         # Blockchain primitives (Block, Tx, Ledger, Oracle)
+│   ├── los-consensus/    # aBFT consensus, checkpointing, slashing
+│   ├── los-network/      # P2P networking, Tor transport, fee scaling
+│   ├── los-crypto/       # Dilithium5 key generation, signing, verification
+│   ├── los-vm/           # WASM Virtual Machine (smart contracts)
+│   └── los-cli/          # Command-line wallet & node management
+├── flutter_wallet/       # Mobile/Desktop wallet (Flutter + Rust via FRB)
+├── flutter_validator/    # Validator dashboard (Flutter + Rust via FRB)
+├── genesis/              # Genesis block generator
+├── examples/contracts/   # Sample WASM smart contracts
+└── testnet-genesis/      # Testnet wallet configuration
 ```
 
-Both Flutter apps use native Rust FFI to call Dilithium5 functions compiled per platform (`.dylib` on macOS, `.so` on Linux, `.dll` on Windows).
+## Token Economics
 
----
+| Allocation | Amount | Percentage |
+|---|---|---|
+| **Public (Proof-of-Burn)** | 21,258,413 LOS | ~96.9% |
+| **Dev Treasury 1** | 428,113 LOS | ~1.95% |
+| **Dev Treasury 2** | 245,710 LOS | ~1.12% |
+| **Bootstrap Validators (4×1,000)** | 4,000 LOS | ~0.02% |
+| **Total** | **21,936,236 LOS** | **100%** |
 
-## Genesis Allocation
+### Validator Rewards
+- **Pool:** 500,000 LOS (Non-inflationary, from total supply)
+- **Rate:** 5,000 LOS/epoch, halving every 48 epochs
+- **Formula:** `reward_i = budget × √stake_i / Σ√stake_all` (Integer sqrt only)
+- **Eligibility:** Min 1,000 LOS stake, ≥95% uptime
 
-| Component | LOS | Percentage |
-|-----------|-----|-----------|
-| **Public Distribution** (Proof-of-Burn) | 20,400,700 | 93% |
-| **Dev Treasury** (8 wallets) | 1,535,536 | 7% |
-| **Total** | **21,936,236** | **100%** |
+### Anti-Whale Protection
+- Quadratic Voting: `√Stake` instead of raw stake
+- Dynamic Fee Scaling based on network congestion
+- Burn rate limits per address
 
-A **Validator Reward Pool** of 2,193,623 LOS (~10% of total supply) is reserved within the public distribution for epoch-based validator incentives. This pool uses a halving schedule and does not increase total supply.
+## Quick Start
 
-Bootstrap validators (4 nodes × 1,000 LOS each) are funded from Treasury Wallet #8.
+### Prerequisites
+- Rust 1.75+ with `cargo`
+- Tor (for mainnet/testnet network connectivity)
 
----
-
-## Security
-
-- **Zero Admin Keys** — no pause, no upgrade, no kill switch
-- **Integer-Only Math** — no floating-point anywhere in consensus or supply
-- **Automated Slashing** — double-signing = 100% stake burn + permanent ban; downtime = 1%/epoch
-- **Sentry Architecture** — public shield nodes + private validator core
-- **P2P Encryption** — Noise Protocol Framework
-- **Rate Limiting** — 100 req/sec per IP, per-endpoint cooldowns
-- **Memory Safety** — `Zeroize` for all private keys in memory
-
----
-
-## Testing
-
+### Build
 ```bash
-cargo test --workspace              # All 240 tests
-cargo test -p los-core              # Core crate (69 tests, incl. reward system)
-cargo test -p los-consensus         # Consensus (43 tests)
-cargo test -p los-crypto            # Cryptography (30 tests)
-cargo test -p los-network           # Network (57 tests)
-cargo test -p los-vm                # Smart contracts / WASM (20 tests)
-cargo test -p los-node              # Node integration (13 tests)
+# Testnet build (default)
+cargo build --release
+
+# Mainnet build
+cargo build --release -p los-node -p los-cli --features los-core/mainnet
 ```
 
-CI runs automatically on every push: format check, clippy, full test suite, security audit, release build, integration tests, and VM tests.
+### Run a Validator Node
+```bash
+# Set required environment variables
+export LOS_WALLET_PASSWORD='your-secure-password'
+export LOS_NODE_ID='my-validator'
+export LOS_TESTNET_LEVEL='consensus'  # functional | consensus | production
+export LOS_BOOTSTRAP_NODES='peer1.onion:4001,peer2.onion:4001'
 
----
+# Start the node
+./target/release/los-node --port 3030 --data-dir node_data/my-validator
+```
+
+### CLI Flags
+| Flag | Description | Default |
+|---|---|---|
+| `--port <PORT>` | REST API port | 3030 |
+| `--data-dir <DIR>` | Data storage directory | `node_data/node-{port}/` |
+| `--node-id <ID>` | Node identifier | `node-{port}` |
+| `--json-log` | Machine-readable JSON output (for Flutter) | off |
+| `--config <FILE>` | Load config from TOML file | none |
+
+### Environment Variables
+| Variable | Required | Description |
+|---|---|---|
+| `LOS_WALLET_PASSWORD` | **Mainnet only** | Wallet encryption password |
+| `LOS_NODE_ID` | No | Node identifier (default: `node-{port}`) |
+| `LOS_BOOTSTRAP_NODES` | No | Comma-separated peer addresses |
+| `LOS_TESTNET_LEVEL` | No | `functional`, `consensus` (default), or `production` |
+| `LOS_ONION_ADDRESS` | No | This node's .onion address |
+| `LOS_SOCKS5_PROXY` | No | Tor SOCKS5 proxy (e.g. `socks5h://127.0.0.1:9050`) |
+| `LOS_BIND_ALL` | No | Set `1` to bind to 0.0.0.0 instead of 127.0.0.1 |
+
+### Port Scheme
+| Service | Port | Formula |
+|---|---|---|
+| REST API | 3030 | `--port` value |
+| gRPC | 23030 | REST + 20,000 |
+| P2P Gossip | 4001 | Via libp2p |
+
+## API Endpoints
+
+The REST API exposes 33+ endpoints. See [docs/API_REFERENCE.md](docs/API_REFERENCE.md) for full documentation.
+
+| Method | Endpoint | Description |
+|---|---|---|
+| GET | `/` | Node status & API index |
+| GET | `/health` | Health check |
+| GET | `/node-info` | Node info (version, block count, peers) |
+| GET | `/bal/{address}` | Balance in CIL |
+| GET | `/balance/{address}` | Balance in CIL (alias) |
+| GET | `/supply` | Total/circulating supply |
+| GET | `/history/{address}` | Transaction history |
+| GET | `/block` | Latest block |
+| GET | `/block/{hash}` | Block by hash |
+| GET | `/blocks/recent` | Recent blocks |
+| GET | `/transaction/{hash}` | Transaction by hash |
+| GET | `/search/{query}` | Search blocks/accounts |
+| GET | `/validators` | Active validators list |
+| GET | `/consensus` | aBFT consensus status |
+| GET | `/reward-info` | Reward pool & epoch info |
+| GET | `/slashing` | Slashing status |
+| GET | `/slashing/{address}` | Slashing profile for validator |
+| GET | `/metrics` | Prometheus metrics |
+| GET | `/fee-estimate/{amount}` | Fee estimate |
+| GET | `/whoami` | This node's address |
+| GET | `/account/{address}` | Full account details |
+| GET | `/peers` | Connected peers |
+| GET | `/network/peers` | Network peer discovery |
+| GET | `/mempool/stats` | Mempool statistics |
+| GET | `/sync` | Ledger sync (GZIP compressed) |
+| POST | `/send` | Send LOS transaction |
+| POST | `/burn` | Proof-of-Burn (ETH/BTC → LOS) |
+| POST | `/faucet` | Testnet faucet |
+| POST | `/register-validator` | Register as validator |
+| POST | `/unregister-validator` | Unregister validator |
+| POST | `/deploy-contract` | Deploy WASM contract |
+| POST | `/call-contract` | Call WASM contract |
+| GET | `/contract/{id}` | Get contract state |
+| POST | `/reset-burn-txid` | Reset stuck burn (testnet) |
+
+## Testnet Levels
+
+| Level | Signatures | Consensus | Oracle | Faucet | Use Case |
+|---|---|---|---|---|---|
+| `functional` | Skipped | Off | Mock prices | On | Single-node dev |
+| `consensus` | Validated | On (aBFT) | Mock prices | On | Multi-node testing |
+| `production` | Validated | On (aBFT) | Live oracles | Off | Mainnet simulation |
 
 ## Documentation
 
-| Document | For |
-|----------|-----|
-| [JOIN_TESTNET.md](docs/JOIN_TESTNET.md) | **Quick start for public users** |
-| [WALLET_GUIDE.md](docs/WALLET_GUIDE.md) | Complete wallet features guide |
-| [INSTALLATION.md](docs/INSTALLATION.md) | Build from source on all platforms |
-| [VALIDATOR_GUIDE.md](docs/VALIDATOR_GUIDE.md) | Run a validator node |
-| [API_REFERENCE.md](docs/API_REFERENCE.md) | REST & gRPC API docs (27 endpoints) |
-| [CLI_REFERENCE.md](docs/CLI_REFERENCE.md) | `los-cli` command reference |
-| [ARCHITECTURE.md](docs/ARCHITECTURE.md) | Technical architecture & diagrams |
-| [DOCKER_DEPLOYMENT.md](docs/DOCKER_DEPLOYMENT.md) | Docker Compose deployment |
-| [TOR_SETUP.md](docs/TOR_SETUP.md) | Tor hidden service setup |
-| [WHITEPAPER.md](docs/WHITEPAPER.md) | Full technical whitepaper |
-
----
+- [API Reference](docs/API_REFERENCE.md) — Full REST & gRPC API documentation
+- [Architecture](docs/ARCHITECTURE.md) — System design and crate structure
+- [Validator Guide](docs/VALIDATOR_GUIDE.md) — Running a validator node
+- [Tor Setup](docs/TOR_SETUP.md) — Tor hidden service configuration
+- [Whitepaper](docs/WHITEPAPER.md) — Technical whitepaper
 
 ## License
 
-MIT — see [LICENSE](LICENSE)
-
----
-
-Built with Rust | Powered by aBFT | Secured by Dilithium5
+AGPL-3.0 — See [LICENSE](LICENSE)

@@ -1,309 +1,175 @@
-# Validator Guide
+# Validator Guide — Unauthority (LOS) v1.0.9
 
-How to run a LOS validator node — from setup to monitoring.
+## Overview
 
-**Version:** v1.0.6-testnet
-
----
+Running a validator node on Unauthority means hosting a Tor hidden service that participates in aBFT consensus. This guide covers setup for both testnet and mainnet.
 
 ## Requirements
 
-| Resource | Minimum |
-|----------|---------|
-| CPU | 2 cores |
-| RAM | 2 GB |
-| Disk | 10 GB SSD |
-| Network | Tor hidden service (no public IP needed) |
-| Stake | 1,000 LOS minimum |
-| Rust | 1.75+ |
-| Protobuf | 3.x+ (`protoc`) |
+| Component | Minimum |
+|---|---|
+| **OS** | Linux / macOS |
+| **Rust** | 1.75+ |
+| **RAM** | 2 GB |
+| **Disk** | 10 GB SSD |
+| **Tor** | Installed and running |
+| **Stake** | 1,000 LOS minimum |
+| **Uptime** | ≥95% for reward eligibility |
 
----
-
-## 1. Build the Node
+## Building
 
 ```bash
-git clone https://github.com/unauthoritymky-6236/unauthority-core.git
+# Clone the repository
+git clone https://github.com/your-org/unauthority-core.git
 cd unauthority-core
-cargo build --release --bin los-node
+
+# Testnet build
+cargo build --release
+
+# Mainnet build (strict: no faucet, no mock oracle, signature validation enforced)
+cargo build --release -p los-node -p los-cli --features los-core/mainnet
 ```
 
-Binary: `target/release/los-node`
+The binary is at `target/release/los-node`.
 
----
+## Tor Hidden Service Setup
 
-## 2. Run in Dev Mode
+Each validator MUST have its own `.onion` address. The node automatically generates one on startup if Tor is configured, but you can also set it up manually.
 
-The fastest way to start — testnet with auto-generated wallet:
+### Option 1: Manual Tor Configuration
+
+Add to your `torrc`:
+```
+HiddenServiceDir /var/lib/tor/los-validator/
+HiddenServicePort 3030 127.0.0.1:3030
+HiddenServicePort 4001 127.0.0.1:4001
+```
+
+Restart Tor:
+```bash
+sudo systemctl restart tor
+```
+
+Your `.onion` address is in `/var/lib/tor/los-validator/hostname`.
+
+### Option 2: Environment Variable
 
 ```bash
-./target/release/los-node --dev
+export LOS_ONION_ADDRESS=$(cat /var/lib/tor/los-validator/hostname)
 ```
 
-This starts a validator on `127.0.0.1:3030` (REST API) and `127.0.0.1:4001` (P2P).
+The node will announce this address to the network for peer discovery.
 
-Dev mode automatically:
-- Generates a Dilithium5 keypair
-- Loads testnet genesis (12 wallets, 4 bootstrap validators)
-- Awards the node 1,000 LOS initial balance
-- Enables faucet at `/faucet`
-- Connects to bootstrap validators via Tor (if available)
+## Starting a Validator Node
 
----
+### Testnet (Consensus Level)
+```bash
+export LOS_NODE_ID='my-validator'
+export LOS_TESTNET_LEVEL='consensus'
+export LOS_ONION_ADDRESS='your-onion-address.onion'
+export LOS_SOCKS5_PROXY='socks5h://127.0.0.1:9050'
+export LOS_BOOTSTRAP_NODES='peer1.onion:4001,peer2.onion:4001'
 
-## 3. Node CLI Flags
-
-```
-USAGE:
-    los-node [OPTIONS]
-
-OPTIONS:
-    --dev                    Run in testnet dev mode
-    --port <PORT>            REST API port (default: 3030)
-    --p2p-port <PORT>        P2P listen port (default: 4001)
-    --data-dir <DIR>         Data directory (default: ./node_data)
-    --bootstrap <ADDR>       Bootstrap peer multiaddr
-    --tor-socks <HOST:PORT>  Tor SOCKS5 proxy (e.g., 127.0.0.1:9052)
-    --tor-onion <HOST>       This node's .onion address
-    --log-level <LEVEL>      Log verbosity: error, warn, info, debug, trace
+./target/release/los-node --port 3030 --data-dir node_data/my-validator
 ```
 
----
+### Mainnet
+```bash
+export LOS_WALLET_PASSWORD='your-strong-password'
+export LOS_NODE_ID='my-validator'
+export LOS_ONION_ADDRESS='your-onion-address.onion'
+export LOS_SOCKS5_PROXY='socks5h://127.0.0.1:9050'
+export LOS_BOOTSTRAP_NODES='boot1.onion:4001,boot2.onion:4001'
 
-## 4. Configuration via Environment
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `LOS_BIND_ALL` | `0` | Set to `1` to bind `0.0.0.0` instead of `127.0.0.1` |
-| `LOS_WALLET_PASSWORD` | — | Encrypt wallet at rest (required on mainnet, min 12 chars) |
-| `LOS_NODE_ID` | — | Unique node identifier for multi-validator setups |
-| `LOS_VALIDATOR_ADDRESS` | — | Override validator address |
-| `LOS_PRIVKEY_PATH` | — | Path to encrypted private key file |
-| `LOS_STAKE_CIL` | — | Override stake amount |
-| `RUST_LOG` | `info` | Log level filter |
-
----
-
-## 5. Validator Configuration (validator.toml)
-
-The `validator.toml` file provides advanced configuration:
-
-```toml
-[node]
-# Sentry/signer architecture
-type = "sentry"                          # "sentry" or "signer"
-signer_address = "127.0.0.1:31333"       # Signer node internal address
-
-[network]
-max_peers = 128
-min_peers = 8
-peer_discovery_interval = 300            # seconds
-p2p_encryption = "noise_protocol"
-
-[consensus]
-type = "aBFT"
-finality_time = 3                        # seconds
-byzantine_tolerance = 0.33               # tolerate 33% faulty
-min_votes = 67                           # % required for finality
-vote_timeout = 5                         # seconds
-
-[storage]
-db_backend = "rocksdb"
-prune_older_than = 90                    # days
-snapshot_interval = 10000                # blocks
-
-[logging]
-level = "INFO"
-format = "json"
-metrics_port = 9090
+./target/release/los-node --port 3030 --data-dir node_data/my-validator
 ```
 
----
+## Registering as a Validator
 
-## 6. Multi-Node Local Testnet
-
-Run 4 validators locally using the provided script:
+After your node is running and funded with ≥1,000 LOS:
 
 ```bash
-./start.sh
+curl -X POST http://localhost:3030/register-validator \
+  -H "Content-Type: application/json" \
+  -d '{
+    "address": "YOUR_LOS_ADDRESS",
+    "public_key": "YOUR_HEX_PUBLIC_KEY",
+    "signature": "HEX_SIGNATURE_OF_REGISTER_PAYLOAD",
+    "endpoint": "your-onion-address.onion:3030"
+  }'
 ```
 
-This launches validators on ports 3030–3033 (REST) and 4001–4004 (P2P) with `RUST_LOG=info`.
+The registration is signed with Dilithium5 and gossiped to all peers.
 
-Stop all validators:
+## Validator Responsibilities
 
-```bash
-./stop.sh
-```
+1. **Block Confirmation:** Vote on incoming blocks from peers
+2. **Burn Verification:** Verify ETH/BTC burn transactions via oracle
+3. **Oracle Submission:** Submit price feeds for burn valuation
+4. **Uptime:** Maintain ≥95% uptime for reward eligibility
 
----
-
-## 7. Setup Tor Hidden Services
-
-For production deployments, run validators as Tor hidden services:
-
-```bash
-./setup_tor_testnet.sh
-```
-
-This script:
-1. Installs Tor (if not present)
-2. Generates 4 hidden service directories
-3. Creates `torrc` configuration
-4. Outputs `.onion` addresses to `testnet-tor-info.json`
-
-See [TOR_SETUP.md](TOR_SETUP.md) for detailed instructions.
-
----
-
-## 8. Monitoring
-
-### Health Check
-
-```bash
-curl http://127.0.0.1:3030/health
-# {"status":"healthy"}     — node is operational
-# {"status":"degraded"}    — node has issues
-```
-
-### Node Info
-
-```bash
-curl http://127.0.0.1:3030/node-info
-# Returns: chain_id, version, total_supply, circulating_supply,
-#          burned_supply, validators, peers, estimated_finality_ms
-```
-
-### Prometheus Metrics
-
-```bash
-curl http://127.0.0.1:3030/metrics
-```
-
-Available at `:9090` for Grafana dashboards. A pre-built dashboard is at `docs/grafana-dashboard.json`.
-
-### Validator Status
-
-```bash
-# All validators
-curl http://127.0.0.1:3030/validators
-
-# Specific validator slashing profile
-curl http://127.0.0.1:3030/slashing/LOSYourAddress...
-
-# Consensus parameters
-curl http://127.0.0.1:3030/consensus
-```
-
----
-
-## 9. Slashing Rules
-
-| Violation | Detection | Penalty |
-|-----------|-----------|---------|
-| **Double-signing** | Two blocks at same height | 100% stake burn + permanent ban |
-| **Downtime** | < 95% uptime in 50,000 blocks | 1% stake burn |
-
-Downtime window: 50,000 blocks (~5 hours). First slash triggers after 10,000 missed blocks (~1 hour).
-
-Slash proposals require multi-validator confirmation — a single validator cannot unilaterally slash another.
-
----
-
-## 10. Staking
-
-Minimum stake: **1,000 LOS** (= 100,000,000,000,000 CIL).
-
-Staking is implicit — any account with balance ≥ 1,000 LOS and running a validator node is considered an active validator.
-
-Quadratic voting: your voting power = √(your_stake), not your_stake. This gives smaller validators proportionally more influence.
-
----
-
-## 11. Validator Rewards
-
-Validators earn LOS rewards for maintaining uptime. The reward system is epoch-based with quadratic fairness.
-
-### How It Works
+## Reward Distribution
 
 | Parameter | Value |
-|-----------|-------|
-| **Reward Pool** | 2,193,623 LOS (10% of total supply, reserved at genesis) |
-| **Epoch Duration** | 24 hours (86,400 seconds) |
-| **Initial Rate** | 50 LOS per epoch (distributed among all qualifying validators) |
-| **Halving** | Every 365 epochs (~1 year), reward rate halves |
-| **Min Uptime** | 95% heartbeats required to qualify |
-| **Probation** | First 3 epochs after registration (no rewards) |
-| **Heartbeat** | Every 60 seconds |
+|---|---|
+| **Total Pool** | 500,000 LOS |
+| **Per Epoch** | 5,000 LOS (halving every 48 epochs) |
+| **Formula** | `reward = budget × √(your_stake) / Σ√(all_stakes)` |
+| **Min Stake** | 1,000 LOS |
+| **Min Uptime** | 95% |
 
-### Reward Distribution
+Rewards use integer square root (`isqrt`) — never floating-point.
 
-At the end of each epoch:
-1. Validators with < 95% uptime are excluded
-2. Each qualifying validator's share = √(stake_in_cil)
-3. Rewards distributed proportionally to √stake shares
-4. Rewards credited directly to validator account balances
+## Slashing Conditions
 
-### Genesis Validator Exclusion
+| Offense | Penalty |
+|---|---|
+| Double-signing a block | Stake reduction |
+| Submitting fake burn TXID | Stake reduction + blacklist |
+| Extended downtime (>5%) | Reward ineligibility |
+| Oracle price manipulation | Outlier detection + penalty |
 
-The 4 bootstrap genesis validators are **permanently excluded** from rewards. They serve as initial network infrastructure funded by the development treasury.
+## Monitoring
 
-### Monitoring Rewards
+### Prometheus Metrics
+```bash
+curl http://localhost:3030/metrics
+```
+
+Key metrics:
+- `los_active_validators` — Number of active validators
+- `los_blocks_total` — Total blocks processed
+- `los_accounts_total` — Total accounts
+- `los_consensus_rounds` — aBFT rounds completed
+
+### Health Check
+```bash
+curl http://localhost:3030/health
+```
+
+### Node Status
+```bash
+curl http://localhost:3030/node-info
+```
+
+## Data Directory Structure
+
+```
+node_data/my-validator/
+├── los_database/          # RocksDB ledger data
+├── checkpoints/           # Periodic state checkpoints
+├── wallet.json.enc        # Encrypted wallet (Dilithium5 keypair)
+└── pid.txt                # Process ID file
+```
+
+## Unregistering
 
 ```bash
-curl http://127.0.0.1:3030/reward-info
+curl -X POST http://localhost:3030/unregister-validator \
+  -H "Content-Type: application/json" \
+  -d '{
+    "address": "YOUR_LOS_ADDRESS",
+    "public_key": "YOUR_HEX_PUBLIC_KEY",
+    "signature": "HEX_SIGNATURE"
+  }'
 ```
-
-Returns: pool remaining, current epoch, epoch progress, per-validator heartbeats, uptime %, qualification status, and cumulative rewards.
-
-### Monitor-Only Mode
-
-The Flutter Validator Dashboard supports **monitor-only mode** — connect to any running node to view its status, reward stats, and `.onion` address without running your own validator. This is useful for remote monitoring.
-
----
-
-## 12. Console Commands
-
-When running interactively, the node provides a console:
-
-```
-> bal                    # Show this node's balance
-> whoami                 # Show this node's address
-> history                # Show transaction history
-> send <address> <amount> # Send LOS to address
-> burn <amount>          # Proof-of-Burn
-> supply                 # Show supply stats
-> peers                  # Show connected peers
-> dial <multiaddr>       # Connect to a specific peer
-> exit                   # Graceful shutdown
-```
-
----
-
-## 13. Docker Deployment
-
-See [DOCKER_DEPLOYMENT.md](DOCKER_DEPLOYMENT.md) for running validators via Docker Compose with Prometheus and Grafana monitoring.
-
----
-
-## 14. Backup & Recovery
-
-### Wallet Backup
-
-The node's private key is stored in `node_data/wallet.json` (encrypted with `age` if `LOS_WALLET_PASSWORD` is set).
-
-```bash
-# Backup wallet
-cp node_data/wallet.json /secure/backup/
-
-# The wallet file contains the Dilithium5 keypair
-# If encrypted, you need LOS_WALLET_PASSWORD to decrypt
-```
-
-### Ledger State
-
-Ledger state is persisted to `node_data/ledger_state.json` with debounced writes every 5 seconds. On startup, the node loads this state and can sync missing blocks from peers.
-
-### State Sync
-
-New nodes can sync from existing peers via the `/sync` endpoint (GZIP-compressed, max 8MB/50MB decompressed). The node validates supply within 1% tolerance to detect malicious peers.

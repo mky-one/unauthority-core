@@ -308,6 +308,20 @@ impl ValidatorRewardPool {
         }
     }
 
+    /// Unregister a validator from reward tracking (voluntary exit or auto-unregister).
+    /// Returns true if the validator was found and removed.
+    pub fn unregister_validator(&mut self, address: &str) -> bool {
+        self.validators.remove(address).is_some()
+    }
+
+    /// Update stake weight for a validator (e.g., after receiving rewards or additional funds).
+    /// This ensures reward distribution reflects the current balance.
+    pub fn update_stake(&mut self, address: &str, new_stake_cil: u128) {
+        if let Some(state) = self.validators.get_mut(address) {
+            state.stake_cil = new_stake_cil;
+        }
+    }
+
     /// Get reward info for a specific validator.
     pub fn validator_info(&self, address: &str) -> Option<&ValidatorRewardState> {
         self.validators.get(address)

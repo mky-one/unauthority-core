@@ -392,7 +392,7 @@ mod tests {
         // 10000 LOS = 1_000_000_000_000_000 CIL
         let power = calculate_voting_power(10_000 * LOS);
         // √(10^15) ≈ 31,622,776 (integer floor)
-        assert!(power >= 31_622_776 && power <= 31_622_777);
+        assert!((31_622_776..=31_622_777).contains(&power));
     }
 
     #[test]

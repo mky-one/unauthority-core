@@ -240,7 +240,7 @@ mod tests {
         // Simulate gradual distribution (0.1% of supply per burn)
         let small_burn = curve.total_supply / 1000; // 0.1%
         for _ in 0..5 {
-            curve.process_burn(small_burn as u64);
+            curve.process_burn(small_burn);
         }
 
         let new_cost = curve.satoshi_cost_per_los();

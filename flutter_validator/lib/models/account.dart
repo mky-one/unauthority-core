@@ -12,33 +12,33 @@ int _parseIntField(dynamic v, [int fallback = 0]) {
 
 class Account {
   final String address;
-  final int balance; // In VOID (smallest unit)
-  final int voidBalance; // Staked/locked VOID
+  final int balance; // In CIL (smallest unit)
+  final int cilBalance; // Staked/locked CIL
   final List<Transaction> history;
 
   Account({
     required this.address,
     required this.balance,
-    required this.voidBalance,
+    required this.cilBalance,
     required this.history,
   });
 
   factory Account.fromJson(Map<String, dynamic> json) {
-    // Backend returns balance_voi / balance_void as integer VOID,
-    // and balance / balance_uat as formatted strings.
+    // Backend returns balance_cil / balance_cil as integer CILD,
+    // and balance / balance_los as formatted strings.
     int parsedBalance;
-    if (json['balance_voi'] != null) {
-      final v = json['balance_voi'];
+    if (json['balance_cil'] != null) {
+      final v = json['balance_cil'];
       parsedBalance = v is int ? v : int.tryParse(v.toString()) ?? 0;
-    } else if (json['balance_void'] != null) {
-      final v = json['balance_void'];
+    } else if (json['balance_cil'] != null) {
+      final v = json['balance_cil'];
       parsedBalance = v is int ? v : int.tryParse(v.toString()) ?? 0;
     } else if (json['balance'] != null) {
       final val = json['balance'];
       if (val is int) {
         parsedBalance = val;
       } else if (val is String) {
-        parsedBalance = BlockchainConstants.uatStringToVoid(val);
+        parsedBalance = BlockchainConstants.losStringToCil(val);
       } else {
         parsedBalance = 0;
       }
@@ -49,7 +49,7 @@ class Account {
     return Account(
       address: json['address'] ?? '',
       balance: parsedBalance,
-      voidBalance: 0,
+      cilBalance: 0,
       // Backend sends "transactions", not "history"
       history: ((json['transactions'] ?? json['history']) as List?)
               ?.map((tx) => Transaction.fromJson(tx))
@@ -58,17 +58,17 @@ class Account {
     );
   }
 
-  /// Convert balance from VOID to UAT for display
-  /// 1 UAT = 100,000,000,000 VOID (10^11)
-  double get balanceUAT => BlockchainConstants.voidToUat(balance);
-  double get voidBalanceUAT => BlockchainConstants.voidToUat(voidBalance);
+  /// Convert balance from CIL to LOS for display
+  /// 1 LOS = 100,000,000,000 CIL (10^11)
+  double get balanceLOS => BlockchainConstants.cilToLos(balance);
+  double get cilBalanceLOS => BlockchainConstants.cilToLos(cilBalance);
 }
 
 class Transaction {
   final String txid;
   final String from;
   final String to;
-  final int amount; // In VOID
+  final int amount; // In CIL
   final int timestamp;
   final String type;
 
@@ -93,8 +93,8 @@ class Transaction {
     );
   }
 
-  /// Convert amount from VOID to UAT for display
-  double get amountUAT => BlockchainConstants.voidToUat(amount);
+  /// Convert amount from CIL to LOS for display
+  double get amountLOS => BlockchainConstants.cilToLos(amount);
 }
 
 class BlockInfo {
@@ -124,11 +124,11 @@ class BlockInfo {
 
 class ValidatorInfo {
   final String address;
-  final int stake; // In UAT (backend already divides by VOID_PER_UAT)
+  final int stake; // In LOS (backend already divides by CIL_PER_LOS)
   final bool isActive;
   final bool isGenesis; // Genesis bootstrap validator
   final double uptimePercentage;
-  final int totalSlashed; // In VOID
+  final int totalSlashed; // In CIL
   final String status;
 
   ValidatorInfo({
@@ -164,16 +164,16 @@ class ValidatorInfo {
     return double.tryParse(v.toString()) ?? fallback;
   }
 
-  /// Backend already sends stake as integer UAT (balance / VOID_PER_UAT).
-  /// FIX C-02: Do NOT divide again — value is already in UAT.
-  double get stakeUAT => stake.toDouble();
+  /// Backend already sends stake as integer LOS (balance / CIL_PER_LOS).
+  /// FIX C-02: Do NOT divide again — value is already in LOS.
+  double get stakeLOS => stake.toDouble();
 
-  /// Quadratic voting power: sqrt(stake in UAT)
+  /// Quadratic voting power: sqrt(stake in LOS)
   /// Matches backend: calculate_voting_power() in anti_whale.rs
   double get votingPower {
-    final stakeInUat = stakeUAT;
-    if (stakeInUat <= 0) return 0;
-    return math.sqrt(stakeInUat);
+    final stakeInLos = stakeLOS;
+    if (stakeInLos <= 0) return 0;
+    return math.sqrt(stakeInLos);
   }
 
   /// Get voting power percentage relative to all validators
@@ -183,8 +183,8 @@ class ValidatorInfo {
     return (votingPower / totalPower) * 100;
   }
 
-  /// Slashed amount in UAT for display
-  double get totalSlashedUat => BlockchainConstants.voidToUat(totalSlashed);
+  /// Slashed amount in LOS for display
+  double get totalSlashedLos => BlockchainConstants.cilToLos(totalSlashed);
 
   /// Uptime status text
   String get uptimeStatus {

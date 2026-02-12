@@ -6,7 +6,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: uat-validator-1
+    container_name: los-validator-1
     hostname: validator-1
     networks:
       uat-network:
@@ -21,11 +21,11 @@ services:
       - ./validator.toml:/config/validator.toml:ro
     environment:
       - RUST_LOG=info
-      - UAT_NODE_NAME=validator-1
-      - UAT_VALIDATOR_MODE=true
+      - LOS_NODE_NAME=validator-1
+      - LOS_VALIDATOR_MODE=true
       # FIX C11-08: Explicit testnet level and network config
-      - UAT_TESTNET_LEVEL=consensus
-      - UAT_NETWORK=testnet
+      - LOS_TESTNET_LEVEL=consensus
+      - LOS_NETWORK=testnet
     command: >
       --config /config/validator.toml
       --data-dir /data
@@ -34,9 +34,9 @@ services:
       --grpc-listen 0.0.0.0:50051
       --metrics-listen 0.0.0.0:9090
     restart: unless-stopped
-    # FIX C12-03: Use uat-cli instead of curl (curl not installed in image)
+    # FIX C12-03: Use los-cli instead of curl (curl not installed in image)
     healthcheck:
-      test: ["CMD", "/usr/local/bin/uat-cli", "node-info"]
+      test: ["CMD", "/usr/local/bin/los-cli", "node-info"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -47,7 +47,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: uat-validator-2
+    container_name: los-validator-2
     hostname: validator-2
     networks:
       uat-network:
@@ -62,11 +62,11 @@ services:
       - ./validator.toml:/config/validator.toml:ro
     environment:
       - RUST_LOG=info
-      - UAT_NODE_NAME=validator-2
-      - UAT_VALIDATOR_MODE=true
-      - UAT_TESTNET_LEVEL=consensus
-      - UAT_NETWORK=testnet
-      - UAT_BOOTSTRAP_PEER=172.20.0.11:9000
+      - LOS_NODE_NAME=validator-2
+      - LOS_VALIDATOR_MODE=true
+      - LOS_TESTNET_LEVEL=consensus
+      - LOS_NETWORK=testnet
+      - LOS_BOOTSTRAP_PEER=172.20.0.11:9000
     command: >
       --config /config/validator.toml
       --data-dir /data
@@ -80,7 +80,7 @@ services:
         condition: service_healthy
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "/usr/local/bin/uat-cli", "node-info"]
+      test: ["CMD", "/usr/local/bin/los-cli", "node-info"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -91,7 +91,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: uat-validator-3
+    container_name: los-validator-3
     hostname: validator-3
     networks:
       uat-network:
@@ -106,11 +106,11 @@ services:
       - ./validator.toml:/config/validator.toml:ro
     environment:
       - RUST_LOG=info
-      - UAT_NODE_NAME=validator-3
-      - UAT_VALIDATOR_MODE=true
-      - UAT_TESTNET_LEVEL=consensus
-      - UAT_NETWORK=testnet
-      - UAT_BOOTSTRAP_PEER=172.20.0.11:9000,172.20.0.12:9000
+      - LOS_NODE_NAME=validator-3
+      - LOS_VALIDATOR_MODE=true
+      - LOS_TESTNET_LEVEL=consensus
+      - LOS_NETWORK=testnet
+      - LOS_BOOTSTRAP_PEER=172.20.0.11:9000,172.20.0.12:9000
     command: >
       --config /config/validator.toml
       --data-dir /data
@@ -127,7 +127,7 @@ services:
         condition: service_healthy
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "/usr/local/bin/uat-cli", "node-info"]
+      test: ["CMD", "/usr/local/bin/los-cli", "node-info"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -138,7 +138,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: uat-validator-4
+    container_name: los-validator-4
     hostname: validator-4
     networks:
       uat-network:
@@ -153,11 +153,11 @@ services:
       - ./validator.toml:/config/validator.toml:ro
     environment:
       - RUST_LOG=info
-      - UAT_NODE_NAME=validator-4
-      - UAT_VALIDATOR_MODE=true
-      - UAT_TESTNET_LEVEL=consensus
-      - UAT_NETWORK=testnet
-      - UAT_BOOTSTRAP_PEER=172.20.0.11:9000,172.20.0.12:9000,172.20.0.13:9000
+      - LOS_NODE_NAME=validator-4
+      - LOS_VALIDATOR_MODE=true
+      - LOS_TESTNET_LEVEL=consensus
+      - LOS_NETWORK=testnet
+      - LOS_BOOTSTRAP_PEER=172.20.0.11:9000,172.20.0.12:9000,172.20.0.13:9000
     command: >
       --config /config/validator.toml
       --data-dir /data
@@ -177,7 +177,7 @@ services:
         condition: service_healthy
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "/usr/local/bin/uat-cli", "node-info"]
+      test: ["CMD", "/usr/local/bin/los-cli", "node-info"]
       interval: 30s
       timeout: 10s
       retries: 3

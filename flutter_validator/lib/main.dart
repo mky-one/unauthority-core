@@ -74,7 +74,7 @@ class _MyAppState extends State<MyApp> {
         ),
       ],
       child: MaterialApp(
-        title: 'UAT Validator Node',
+        title: 'LOS Validator Node',
         debugShowCheckedModeBanner: false,
         theme: ThemeData(
           colorScheme: ColorScheme.fromSeed(
@@ -98,7 +98,7 @@ class _MyAppState extends State<MyApp> {
 }
 
 /// Routes based on wallet registration state:
-/// - No wallet → SetupWizard (import wallet + validate balance >= 1000 UAT)
+/// - No wallet → SetupWizard (import wallet + validate balance >= 1000 LOS)
 /// - Wallet registered → NodeControlScreen (dashboard + settings)
 class _AppRouter extends StatefulWidget {
   const _AppRouter({super.key});

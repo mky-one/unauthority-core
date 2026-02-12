@@ -1,4 +1,4 @@
-# 🔐 Unauthority (UAT) - Genesis Generator
+# 🔐 Unauthority (LOS) - Genesis Generator
 
 ## Overview
 
@@ -9,28 +9,28 @@ The Genesis Generator adalah tool untuk inisialisasi blockchain Unauthority deng
 ```
 UNAUTHORITY GENESIS WALLETS (8 Total)
 ├── BOOTSTRAP NODES (3)
-│   ├── Node #1 - Validator 1 (191,942 UAT)
-│   ├── Node #2 - Validator 2 (191,942 UAT)
-│   └── Node #3 - Validator 3 (191,942 UAT)
+│   ├── Node #1 - Validator 1 (191,942 LOS)
+│   ├── Node #2 - Validator 2 (191,942 LOS)
+│   └── Node #3 - Validator 3 (191,942 LOS)
 └── TREASURY (5)
-    ├── Treasury #1 - Reserve (191,942 UAT)
-    ├── Treasury #2 - Reserve (191,942 UAT)
-    ├── Treasury #3 - Reserve (191,942 UAT)
-    ├── Treasury #4 - Reserve (191,942 UAT)
-    └── Treasury #5 - Reserve (191,942 UAT)
+    ├── Treasury #1 - Reserve (191,942 LOS)
+    ├── Treasury #2 - Reserve (191,942 LOS)
+    ├── Treasury #3 - Reserve (191,942 LOS)
+    ├── Treasury #4 - Reserve (191,942 LOS)
+    └── Treasury #5 - Reserve (191,942 LOS)
 
-TOTAL: 1,535,536 UAT (Fixed Supply, No Minting)
+TOTAL: 1,535,536 LOS (Fixed Supply, No Minting)
 ```
 
 ## Supply Constants
 
-| Parameter | Value | Void (VOI) |
+| Parameter | Value | Void (CIL) |
 |-----------|-------|-----------|
-| **1 UAT** | = | 100,000,000 VOI |
-| **Total Supply** | 21,936,236 UAT | 2,193,623,600,000,000 VOI |
-| **Dev Allocation** | 1,535,536 UAT | 153,553,600,000,000 VOI |
-| **Public Allocation** | 20,400,700 UAT | 2,040,070,000,000,000 VOI |
-| **Per Wallet** | 191,942 UAT | 19,194,200,000,000 VOI |
+| **1 LOS** | = | 100,000,000 CIL |
+| **Total Supply** | 21,936,236 LOS | 2,193,623,600,000,000 CIL |
+| **Dev Allocation** | 1,535,536 LOS | 153,553,600,000,000 CIL |
+| **Public Allocation** | 20,400,700 LOS | 2,040,070,000,000,000 CIL |
+| **Per Wallet** | 191,942 LOS | 19,194,200,000,000 CIL |
 
 ## Running the Genesis Generator
 
@@ -49,23 +49,25 @@ cargo run -p genesis
 
 ```
 ╔════════════════════════════════════════════════════════════╗
-║   UNAUTHORITY (UAT) - GENESIS WALLET GENERATOR v1.0      ║
-║   Generating 8 Dev Wallets (Immutable Bootstrap)         ║
+║   UNAUTHORITY (LOS) - GENESIS WALLET GENERATOR v5.0      ║
+║   Generating 6 Wallets (2 Dev Treasury + 4 Bootstrap)    ║
 ╚════════════════════════════════════════════════════════════╝
 
 📊 CONFIGURATION:
-   • Total Dev Supply: 1535536 UAT (153553600000000 VOI)
-   • Per Wallet: 19194200000000 VOI (191942 UAT)
-   • Node Bootstrap Wallets: 3 (Initial Validators)
-   • Treasury Wallets: 5 (Long-term Storage)
+   • Total Supply: 21,936,236 LOS
+   • Dev Treasury 1: 428,113 LOS
+   • Dev Treasury 2: 245,710 LOS
+   • Bootstrap Nodes: 4 × 1,000 LOS = 4,000 LOS
+   • Total Dev: 677,823 LOS (~3%)
+   • Public: 21,258,413 LOS (~97%)
 
 ┌─────────────────────────────────────────────────────────┐
 │ 🔐 NODE BOOTSTRAP WALLETS (Initial Validators)          │
 └─────────────────────────────────────────────────────────┘
 
    Type            : BOOTSTRAP NODE #1
-   Address         : UAT3ea85825b3e13862274365118cafed2939fa8947
-   Balance         : 19194200000000 VOI (191942 UAT)
+   Address         : LOS3ea85825b3e13862274365118cafed2939fa8947
+   Balance         : 19194200000000 CIL (191942 LOS)
    Private Key     : 40ad3e2f9a787e771da8112fa2af1448eb542175f5906adbd0b...
 ```
 
@@ -79,16 +81,16 @@ Use the generated addresses in `genesis/genesis_config.json`:
 {
   "bootstrap_nodes": [
     {
-      "address": "UAT3ea85825b3e13862274365118cafed2939fa8947",
-      "initial_stake_void": 1000000000000,
+      "address": "LOS3ea85825b3e13862274365118cafed2939fa8947",
+      "initial_stake_cil": 1000000000000,
       "role": "validator"
     },
     // ... 2 more
   ],
   "treasury_wallets": [
     {
-      "address": "UAT25a18ce74482bb544847cc95aa3f4b42f02d8663",
-      "balance_void": 19194200000000
+      "address": "LOS25a18ce74482bb544847cc95aa3f4b42f02d8663",
+      "balance_cil": 19194200000000
     },
     // ... 4 more
   ]
@@ -101,9 +103,9 @@ Use template `validator.toml` untuk setup validator node:
 
 ```toml
 [validator]
-address = "UAT3ea85825b3e13862274365118cafed2939fa8947"
-private_key_path = "${UAT_VALIDATOR_PRIVKEY_PATH}"
-stake_void = 100000000000  # 1000 UAT minimum
+address = "LOS3ea85825b3e13862274365118cafed2939fa8947"
+private_key_path = "${LOS_VALIDATOR_PRIVKEY_PATH}"
+stake_cil = 100000000000  # 1000 LOS minimum
 
 [sentry_public]
 listen_addr = "0.0.0.0"
@@ -120,22 +122,22 @@ signer_endpoint = "127.0.0.1:30334"
 
 **Step 1:** Generate Pre-Shared Key (PSK) untuk signer:
 ```bash
-openssl rand -hex 32 > /etc/uat-validator/signer.psk
-chmod 600 /etc/uat-validator/signer.psk
+openssl rand -hex 32 > /etc/los-validator/signer.psk
+chmod 600 /etc/los-validator/signer.psk
 ```
 
 **Step 2:** Store Private Key securely:
 ```bash
 # Option 1: Cold Storage (Recommended)
-cp /tmp/uat_privkey.txt /offline/storage/validator-1.key
+cp /tmp/los_privkey.txt /offline/storage/validator-1.key
 chmod 600 /offline/storage/validator-1.key
 
 # Option 2: HSM (Hardware Security Module)
 # Load private key into HSM and reference via PKCS#11
 
 # Option 3: Environment Variable
-export UAT_VALIDATOR_PRIVKEY_PATH="/secure/location/validator-1.key"
-chmod 600 "$UAT_VALIDATOR_PRIVKEY_PATH"
+export LOS_VALIDATOR_PRIVKEY_PATH="/secure/location/validator-1.key"
+chmod 600 "$LOS_VALIDATOR_PRIVKEY_PATH"
 ```
 
 **Step 3:** Firewall Configuration
@@ -154,7 +156,7 @@ sudo ufw default deny incoming
 ## Key Features
 
 ### ✅ Zero Remainder Protocol
-- 1,535,536 UAT ÷ 8 wallets = **191,942 UAT per wallet (exactly)**
+- 1,535,536 LOS ÷ 8 wallets = **191,942 LOS per wallet (exactly)**
 - No floating-point errors
 - Cryptographic verification of total supply
 
@@ -180,16 +182,16 @@ sudo ufw default deny incoming
 ```
 
 ### ✅ Dynamic Fee Scaling (Anti-Spam)
-- Base gas: 1,000 VOI per transaction
+- Base gas: 1,000 CIL per transaction
 - If address sends >10 tx/sec: gas × 2
 - Multiple violations: gas × 4, × 8, etc.
-- Burn limit per block: 1,000,000,000 VOI
+- Burn limit per block: 1,000,000,000 CIL
 
 ### ✅ Validator Rewards
 - 100% transaction fees go to block producer
 - No new minting (Fixed Supply)
 - Quadratic voting power: √(Total Stake)
-- Minimum stake: 1,000 UAT
+- Minimum stake: 1,000 LOS
 
 ## Files Generated
 
@@ -204,7 +206,7 @@ sudo ufw default deny incoming
 ### 🔴 CRITICAL
 
 1. **Never commit private keys to Git**
-   - Always use environment variables: `$UAT_VALIDATOR_PRIVKEY_PATH`
+   - Always use environment variables: `$LOS_VALIDATOR_PRIVKEY_PATH`
    - Store in cold storage or HSM only
 
 2. **Sentry Node Architecture**
@@ -236,8 +238,8 @@ let priv_key = Keccak256(seed || "private")
 // Public Key = SHA3(seed || "public")
 let pub_key = Keccak256(seed || "public")
 
-// Address = "UAT" + first_40_chars(Keccak256(pub_key))
-let address = "UAT" + Keccak256(pub_key)[0:40]
+// Address = "LOS" + first_40_chars(Keccak256(pub_key))
+let address = "LOS" + Keccak256(pub_key)[0:40]
 ```
 
 **Quantum Safety:** Ready to migrate to CRYSTALS-Dilithium or FALCON at hardfork.
@@ -248,15 +250,15 @@ let address = "UAT" + Keccak256(pub_key)[0:40]
 
 ```bash
 # 1. Load genesis config
-export UAT_GENESIS_CONFIG="./genesis/genesis_config.json"
+export LOS_GENESIS_CONFIG="./genesis/genesis_config.json"
 
 # 2. Set validator private key
-export UAT_VALIDATOR_PRIVKEY_PATH="/secure/validator-1.key"
+export LOS_VALIDATOR_PRIVKEY_PATH="/secure/validator-1.key"
 
 # 3. Start node with sentry architecture
-./uat-node \
+./los-node \
   --config validator.toml \
-  --genesis "$UAT_GENESIS_CONFIG" \
+  --genesis "$LOS_GENESIS_CONFIG" \
   --role validator
 ```
 
@@ -266,8 +268,8 @@ export UAT_VALIDATOR_PRIVKEY_PATH="/secure/validator-1.key"
 # Run on secure/isolated machine
 ./uat-signer \
   --config validator.toml \
-  --psk /etc/uat-validator/signer.psk \
-  --privkey "$UAT_VALIDATOR_PRIVKEY_PATH"
+  --psk /etc/los-validator/signer.psk \
+  --privkey "$LOS_VALIDATOR_PRIVKEY_PATH"
 ```
 
 ## Troubleshooting
@@ -275,14 +277,14 @@ export UAT_VALIDATOR_PRIVKEY_PATH="/secure/validator-1.key"
 ### Issue: "Private Key not found"
 ```bash
 # Solution: Set environment variable
-export UAT_VALIDATOR_PRIVKEY_PATH="/path/to/key"
-chmod 600 "$UAT_VALIDATOR_PRIVKEY_PATH"
+export LOS_VALIDATOR_PRIVKEY_PATH="/path/to/key"
+chmod 600 "$LOS_VALIDATOR_PRIVKEY_PATH"
 ```
 
 ### Issue: "Signer connection failed"
 ```bash
 # Check PSK file exists and readable
-ls -la /etc/uat-validator/signer.psk
+ls -la /etc/los-validator/signer.psk
 
 # Verify firewall allows port 30334
 sudo ufw status | grep 30334
@@ -301,14 +303,14 @@ sudo wg show  # if using WireGuard
 
 ## Next Steps
 
-1. **Validator Reward Distribution Logic** - See `crates/uat-node/src/validator_rewards.rs`
-2. **Dynamic Fee Scaling Implementation** - See `crates/uat-network/src/fee_scaling.rs`
-3. **Quadratic Voting Mechanism** - See `crates/uat-consensus/src/voting.rs`
-4. **Slashing Implementation** - See `crates/uat-consensus/src/slashing.rs`
+1. **Validator Reward Distribution Logic** - See `crates/los-node/src/validator_rewards.rs`
+2. **Dynamic Fee Scaling Implementation** - See `crates/los-network/src/fee_scaling.rs`
+3. **Quadratic Voting Mechanism** - See `crates/los-consensus/src/voting.rs`
+4. **Slashing Implementation** - See `crates/los-consensus/src/slashing.rs`
 
 ---
 
 **Genesis Generated:** 2026-02-03  
-**Network:** Unauthority (UAT)  
+**Network:** Unauthority (LOS)  
 **Consensus:** Asynchronous Byzantine Fault Tolerance (aBFT)  
 **Supply Model:** Fixed (No Minting)

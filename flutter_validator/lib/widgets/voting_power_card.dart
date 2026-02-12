@@ -19,7 +19,7 @@ class VotingPowerCard extends StatelessWidget {
     );
     final totalNetworkStake = allValidators.fold(
       0.0,
-      (sum, v) => sum + v.stakeUAT,
+      (sum, v) => sum + v.stakeLOS,
     );
     final totalVotingPower = allValidators.fold(
       0.0,
@@ -153,7 +153,7 @@ class VotingPowerCard extends StatelessWidget {
                     icon: Icons.account_balance_wallet,
                     iconColor: Colors.green.shade400,
                     label: 'Your Stake',
-                    value: '${validatorInfo.stakeUAT.toStringAsFixed(2)} UAT',
+                    value: '${validatorInfo.stakeLOS.toStringAsFixed(2)} LOS',
                   ),
                 ),
                 const SizedBox(width: 12),
@@ -163,7 +163,7 @@ class VotingPowerCard extends StatelessWidget {
                     icon: Icons.group,
                     iconColor: Colors.blue.shade400,
                     label: 'Network Stake',
-                    value: '${totalNetworkStake.toStringAsFixed(0)} UAT',
+                    value: '${totalNetworkStake.toStringAsFixed(0)} LOS',
                   ),
                 ),
               ],
@@ -248,7 +248,7 @@ class VotingPowerCard extends StatelessWidget {
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(
-                      'UAT uses quadratic voting to prevent whale dominance. Doubling your stake increases voting power by only 41%.',
+                      'LOS uses quadratic voting to prevent whale dominance. Doubling your stake increases voting power by only 41%.',
                       style: TextStyle(
                         fontSize: 11,
                         color: Colors.green.shade400,

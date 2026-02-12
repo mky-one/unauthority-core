@@ -1,8 +1,8 @@
 #!/bin/bash
-# Bulk translation script for Indonesian to English in UAT codebase
+# Bulk translation script for Indonesian to English in LOS codebase
 
 # Main translation file
-FILE="crates/uat-node/src/main.rs"
+FILE="crates/los-node/src/main.rs"
 
 sed -i '' '
 # Error messages
@@ -72,7 +72,7 @@ s/untuk /for /g
 echo "✅ Translated $FILE"
 
 # Core lib
-FILE="crates/uat-core/src/lib.rs"
+FILE="crates/los-core/src/lib.rs"
 sed -i '' '
 s/tidak memenuhi kriteria/does not meet criteria/g
 s/Verifikasi kunci publik gagal/Public key verification failed/g
@@ -87,7 +87,7 @@ s/Penerima mendapatkan penambahan saldo/Receiver gets balance addition/g
 echo "✅ Translated $FILE"
 
 # Oracle
-FILE="crates/uat-node/src/oracle.rs"
+FILE="crates/los-node/src/oracle.rs"
 sed -i '' '
 s/Catatan: Ini draf sederhana/Note: This is a simple draft/g
 s/di produksi butuh/in production needs/g
@@ -98,7 +98,7 @@ s/Memverifikasi/Verify/g
 echo "✅ Translated $FILE"
 
 # Build script
-FILE="crates/uat-node/build.rs"
+FILE="crates/los-node/build.rs"
 sed -i '' '
 s/tidak deprecated/not deprecated/g
 ' "$FILE"
@@ -106,7 +106,7 @@ s/tidak deprecated/not deprecated/g
 echo "✅ Translated $FILE"
 
 # Crypto lib
-FILE="crates/uat-crypto/src/lib.rs"
+FILE="crates/los-crypto/src/lib.rs"
 sed -i '' '
 s/Memverifikasi tanda tangan/Verify signature/g
 ' "$FILE"

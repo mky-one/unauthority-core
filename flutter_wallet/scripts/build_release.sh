@@ -1,6 +1,6 @@
 #!/bin/bash
 # ══════════════════════════════════════════════════════════════════════════════
-# UAT WALLET — ONE-CLICK RELEASE BUILD
+# LOS WALLET — ONE-CLICK RELEASE BUILD
 # ══════════════════════════════════════════════════════════════════════════════
 #
 # Builds a complete, standalone installer for macOS (.dmg) or Linux (.tar.gz)
@@ -16,8 +16,8 @@
 #   ./scripts/build_release.sh linux       # Force Linux build
 #
 # Output:
-#   release/UAT-Wallet-v1.0.0-macos.dmg   (macOS)
-#   release/UAT-Wallet-v1.0.0-linux.tar.gz (Linux)
+#   release/LOS-Wallet-v1.0.0-macos.dmg   (macOS)
+#   release/LOS-Wallet-v1.0.0-linux.tar.gz (Linux)
 #
 # Prerequisites:
 #   - Flutter SDK installed
@@ -30,12 +30,12 @@ set -e
 
 # ── Configuration ────────────────────────────────────────────────────────────
 VERSION="1.0.0-testnet"
-APP_NAME="UAT Wallet"
+APP_NAME="LOS Wallet"
 BUNDLE_ID="com.unauthority.wallet"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 WALLET_DIR="$(dirname "$SCRIPT_DIR")"
-NATIVE_DIR="$WALLET_DIR/native/uat_crypto_ffi"
+NATIVE_DIR="$WALLET_DIR/native/los_crypto_ffi"
 RELEASE_DIR="$WALLET_DIR/release"
 
 # ── Detect Platform ──────────────────────────────────────────────────────────
@@ -50,7 +50,7 @@ fi
 
 echo ""
 echo "═══════════════════════════════════════════════════════════════"
-echo "  🚀 UAT Wallet Release Build"
+echo "  🚀 LOS Wallet Release Build"
 echo "═══════════════════════════════════════════════════════════════"
 echo "  Version:   $VERSION"
 echo "  Platform:  $TARGET_PLATFORM"
@@ -119,9 +119,9 @@ echo "━━━━━━━━━━━━━━━━━━━━━━━━�
 
 if [ "$TARGET_PLATFORM" = "macos" ]; then
     # ── macOS: Copy .dylib into .app/Contents/Frameworks/ ──
-    APP_PATH="$WALLET_DIR/build/macos/Build/Products/Release/UAT Wallet.app"
+    APP_PATH="$WALLET_DIR/build/macos/Build/Products/Release/LOS Wallet.app"
     FRAMEWORKS_DIR="$APP_PATH/Contents/Frameworks"
-    LIB_NAME="libuat_crypto_ffi.dylib"
+    LIB_NAME="liblos_crypto_ffi.dylib"
     LIB_SRC="$NATIVE_DIR/target/release/$LIB_NAME"
 
     if [ ! -f "$LIB_SRC" ]; then
@@ -146,7 +146,7 @@ elif [ "$TARGET_PLATFORM" = "linux" ]; then
     # ── Linux: Copy .so into bundle/lib/ ──
     BUNDLE_PATH="$WALLET_DIR/build/linux/x64/release/bundle"
     LIB_DIR="$BUNDLE_PATH/lib"
-    LIB_NAME="libuat_crypto_ffi.so"
+    LIB_NAME="liblos_crypto_ffi.so"
     LIB_SRC="$NATIVE_DIR/target/release/$LIB_NAME"
 
     if [ ! -f "$LIB_SRC" ]; then
@@ -170,7 +170,7 @@ mkdir -p "$RELEASE_DIR"
 
 if [ "$TARGET_PLATFORM" = "macos" ]; then
     # ── Create .dmg installer ──
-    DMG_NAME="UAT-Wallet-v${VERSION}-macos.dmg"
+    DMG_NAME="LOS-Wallet-v${VERSION}-macos.dmg"
     DMG_PATH="$RELEASE_DIR/$DMG_NAME"
     DMG_TEMP="$RELEASE_DIR/dmg_staging"
 
@@ -186,12 +186,12 @@ if [ "$TARGET_PLATFORM" = "macos" ]; then
     # Create README
     cat > "$DMG_TEMP/README.txt" << 'README'
 ╔══════════════════════════════════════════════╗
-║         UAT WALLET - TESTNET RELEASE         ║
+║         LOS WALLET - TESTNET RELEASE         ║
 ║         Unauthority Blockchain v1.0          ║
 ╚══════════════════════════════════════════════╝
 
 INSTALLATION:
-  Drag "UAT Wallet.app" to the Applications folder.
+  Drag "LOS Wallet.app" to the Applications folder.
 
 FIRST RUN:
   1. Open the app from Applications
@@ -204,8 +204,8 @@ FIRST RUN:
 FEATURES:
   ✅ Post-Quantum Cryptography (CRYSTALS-Dilithium5)
   ✅ Automatic Tor Connectivity (zero config)
-  ✅ Send/Receive UAT tokens
-  ✅ Proof-of-Burn (BTC/ETH → UAT)
+  ✅ Send/Receive LOS tokens
+  ✅ Proof-of-Burn (BTC/ETH → LOS)
   ✅ 24-word BIP39 seed phrase backup
 
 NETWORK:
@@ -219,7 +219,7 @@ README
     # Create DMG
     echo "   📦 Creating $DMG_NAME..."
     hdiutil create \
-        -volname "UAT Wallet" \
+        -volname "LOS Wallet" \
         -srcfolder "$DMG_TEMP" \
         -ov \
         -format UDZO \
@@ -233,7 +233,7 @@ README
 
 elif [ "$TARGET_PLATFORM" = "linux" ]; then
     # ── Create .tar.gz archive ──
-    ARCHIVE_NAME="UAT-Wallet-v${VERSION}-linux-x64.tar.gz"
+    ARCHIVE_NAME="LOS-Wallet-v${VERSION}-linux-x64.tar.gz"
     ARCHIVE_PATH="$RELEASE_DIR/$ARCHIVE_NAME"
     STAGING="$RELEASE_DIR/staging"
 
@@ -246,7 +246,7 @@ elif [ "$TARGET_PLATFORM" = "linux" ]; then
     # Create launcher script
     cat > "$STAGING/uat-wallet/run.sh" << 'LAUNCHER'
 #!/bin/bash
-# UAT Wallet Launcher
+# LOS Wallet Launcher
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 export LD_LIBRARY_PATH="${SCRIPT_DIR}/lib:${LD_LIBRARY_PATH}"
 exec "${SCRIPT_DIR}/flutter_wallet" "$@"
@@ -256,12 +256,12 @@ LAUNCHER
     # Create README
     cat > "$STAGING/uat-wallet/README.txt" << 'LREADME'
 ═══════════════════════════════════════════════
-  UAT WALLET - TESTNET RELEASE (Linux)
+  LOS WALLET - TESTNET RELEASE (Linux)
   Unauthority Blockchain v1.0
 ═══════════════════════════════════════════════
 
 INSTALLATION:
-  1. Extract this archive: tar xzf UAT-Wallet-*.tar.gz
+  1. Extract this archive: tar xzf LOS-Wallet-*.tar.gz
   2. Run: ./uat-wallet/run.sh
 
 The wallet automatically handles Tor and crypto setup.
@@ -307,11 +307,11 @@ echo ""
 echo "  Send this file to your friend. They just:"
 if [ "$TARGET_PLATFORM" = "macos" ]; then
     echo "    1. Open the .dmg file"
-    echo "    2. Drag 'UAT Wallet' to Applications"
+    echo "    2. Drag 'LOS Wallet' to Applications"
     echo "    3. Open from Applications (right-click → Open if blocked)"
     echo "    4. Wallet auto-configures everything"
 elif [ "$TARGET_PLATFORM" = "linux" ]; then
-    echo "    1. Extract: tar xzf UAT-Wallet-*.tar.gz"
+    echo "    1. Extract: tar xzf LOS-Wallet-*.tar.gz"
     echo "    2. Run: ./uat-wallet/run.sh"
     echo "    3. Wallet auto-configures everything"
 fi

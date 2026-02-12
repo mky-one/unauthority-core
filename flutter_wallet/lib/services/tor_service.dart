@@ -495,7 +495,7 @@ class TorService {
     final torrc = File(torrcPath);
 
     final config = '''
-# UAT Wallet — Auto-managed Tor Configuration
+# LOS Wallet — Auto-managed Tor Configuration
 # Generated automatically — do not edit manually
 
 DataDirectory $_torDataDir
@@ -527,11 +527,11 @@ UseBridges 0
 
   /// Detect existing Tor SOCKS proxies
   Future<Map<String, dynamic>> detectExistingTor() async {
-    // Check UAT bundled Tor (port 9250)
+    // Check LOS bundled Tor (port 9250)
     if (await _isPortOpen('localhost', 9250)) {
       return {
         'found': true,
-        'type': 'UAT Bundled Tor',
+        'type': 'LOS Bundled Tor',
         'proxy': 'localhost:9250'
       };
     }
@@ -541,11 +541,11 @@ UseBridges 0
       return {'found': true, 'type': 'Tor Browser', 'proxy': 'localhost:9150'};
     }
 
-    // Check UAT testnet Tor (port 9052)
+    // Check LOS testnet Tor (port 9052)
     if (await _isPortOpen('localhost', 9052)) {
       return {
         'found': true,
-        'type': 'UAT Testnet Tor',
+        'type': 'LOS Testnet Tor',
         'proxy': 'localhost:9052'
       };
     }

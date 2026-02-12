@@ -19,10 +19,10 @@ class EarningsChart extends StatelessWidget {
     }
 
     final maxEarnings = dailyHistory
-        .map((e) => e.earningsUAT)
+        .map((e) => e.earningsLOS)
         .reduce((a, b) => a > b ? a : b);
     final minEarnings = dailyHistory
-        .map((e) => e.earningsUAT)
+        .map((e) => e.earningsLOS)
         .reduce((a, b) => a < b ? a : b);
 
     return CustomPaint(
@@ -85,7 +85,7 @@ class _EarningsChartPainter extends CustomPainter {
     final stepX = size.width / (dailyHistory.length - 1);
 
     for (int i = 0; i < dailyHistory.length; i++) {
-      final earning = dailyHistory[i].earningsUAT;
+      final earning = dailyHistory[i].earningsLOS;
       // FIX M-02: Prevent division by zero when all earnings are equal
       final range = maxEarnings - minEarnings;
       final normalizedY = range > 0 ? (earning - minEarnings) / range : 0.5;

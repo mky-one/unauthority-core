@@ -12,6 +12,17 @@ genesis_config.json
 testnet-genesis/genesis_config.json
 genesis_backup*.json
 
+# MAINNET GENESIS — NEVER COMMIT (contains private keys for real funds)
+mainnet-genesis/
+**/mainnet_wallets.json
+**/mainnet_genesis.json
+**/mainnet_keys/
+genesis/output/
+genesis/mainnet-output/
+
+# Testnet wallets (safe to commit for reproducibility, but regenerate if compromised)
+# testnet-genesis/testnet_wallets.json — intentionally NOT ignored (public testnet seeds)
+
 # Private keys & wallets
 *.key
 *.pem

@@ -24,6 +24,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _loadNetworkState();
   }
 
+  /// SECURITY FIX M-02: Clear seed phrase reference on widget disposal.
+  /// Removes the Dart String reference so GC can collect sooner.
+  /// (Dart Strings are immutable — content persists until GC, but
+  /// removing the reference is the best Dart can do.)
+  @override
+  void dispose() {
+    _seedPhrase = null;
+    _showSeedPhrase = false;
+    super.dispose();
+  }
+
   /// FIX H-02: Only load network state on init; seed phrase is loaded
   /// lazily when user explicitly taps the reveal button.
   Future<void> _loadNetworkState() async {
@@ -32,12 +43,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
       setState(() {
         _currentNetwork = apiService.environment;
       });
+      debugPrint(
+          '⚙️ [SettingsScreen._loadNetworkState] Current network: ${apiService.environment.name}');
     }
   }
 
   /// FIX H-02: Lazy-load seed phrase only when user taps reveal.
   /// Prevents keeping mnemonic in widget state longer than necessary.
   Future<void> _revealSeedPhrase() async {
+    debugPrint(
+        '⚙️ [SettingsScreen._revealSeedPhrase] Toggling seed phrase visibility...');
     if (_seedPhrase != null) {
       // Already loaded — just toggle visibility
       setState(() => _showSeedPhrase = !_showSeedPhrase);
@@ -50,6 +65,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         _seedPhrase = wallet['mnemonic'];
         _showSeedPhrase = true;
       });
+      debugPrint('⚙️ [SettingsScreen._revealSeedPhrase] Seed phrase revealed');
     }
   }
 
@@ -71,6 +87,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   Future<void> _confirmLogout() async {
+    debugPrint(
+        '⚙️ [SettingsScreen._confirmLogout] Showing logout confirmation...');
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
@@ -93,6 +111,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
 
     if (confirmed == true && mounted) {
+      debugPrint('⚙️ [SettingsScreen._confirmLogout] Logout confirmed');
       final walletService = context.read<WalletService>();
       await walletService.clearWallet();
 
@@ -106,6 +125,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   void _switchNetwork(NetworkEnvironment network) {
+    debugPrint(
+        '⚙️ [SettingsScreen._switchNetwork] Switching from ${_currentNetwork.name} to ${network.name}');
     setState(() => _currentNetwork = network);
     final apiService = context.read<ApiService>();
     apiService.switchEnvironment(network);
@@ -262,7 +283,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               children: [
                 ListTile(
                   leading: const Icon(Icons.info),
-                  title: const Text('About UAT'),
+                  title: const Text('About LOS'),
                   subtitle: const Text('Blockchain information'),
                   onTap: () => _showAboutDialog(),
                 ),
@@ -272,7 +293,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   title: const Text('Help & Support'),
                   subtitle: const Text('Documentation and FAQ'),
                   onTap: () {
-                    // TODO: Open documentation URL
                     ScaffoldMessenger.of(context).showSnackBar(
                       const SnackBar(
                           content: Text('Documentation coming soon')),
@@ -304,7 +324,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           const SizedBox(height: 16),
           const Center(
             child: Text(
-              'UAT Wallet v1.0.5-testnet\nBuilt with Flutter',
+              'LOS Wallet v1.0.5-testnet\nBuilt with Flutter',
               textAlign: TextAlign.center,
               style: TextStyle(fontSize: 12, color: Colors.grey),
             ),
@@ -319,7 +339,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('About Unauthority (UAT)'),
+        title: const Text('About Unauthority (LOS)'),
         content: const SingleChildScrollView(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -331,8 +351,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ),
               SizedBox(height: 12),
               Text('• Oracle-driven aBFT consensus'),
-              Text('• Proof-of-Burn economics (ETH/BTC → UAT)'),
-              Text('• Fixed supply: 21.9 million UAT'),
+              Text('• Proof-of-Burn economics (ETH/BTC → LOS)'),
+              Text('• Fixed supply: 21.9 million LOS'),
               Text('• Tor-only mainnet for privacy'),
               Text('• WASM smart contracts (UVM)'),
               Text('• Quadratic validator staking'),

@@ -17,13 +17,13 @@ Technical architecture of the Unauthority blockchain.
 │   └────────┬─────────┘     └──────────┬───────────┘     │
 │            │     flutter_rust_bridge (FFI)    │          │
 │            │     ┌────────────────────┐      │          │
-│            └─────┤ uat_crypto_ffi.so  ├──────┘          │
+│            └─────┤ los_crypto_ffi.so  ├──────┘          │
 │                  │ (Dilithium5 native)│                  │
 │                  └────────────────────┘                  │
 └─────────────────────────┬───────────────────────────────┘
                           │ REST / gRPC (via Tor)
 ┌─────────────────────────▼───────────────────────────────┐
-│                       uat-node                          │
+│                       los-node                          │
 │  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌────────┐  │
 │  │ REST API │  │  gRPC    │  │  P2P     │  │Console │  │
 │  │ (warp)   │  │ (tonic)  │  │ (libp2p) │  │(stdin) │  │
@@ -32,14 +32,14 @@ Technical architecture of the Unauthority blockchain.
 │       └──────────────┴─────────────┴────────────┘       │
 │                          │                              │
 │  ┌───────────────────────▼────────────────────────────┐ │
-│  │                   uat-core                         │ │
+│  │                   los-core                         │ │
 │  │  Ledger (block-lattice) · Accounts · Supply math   │ │
 │  │  Anti-whale · Distribution · Oracle consensus      │ │
 │  │  Validator Rewards (epoch-based, √stake)           │ │
 │  └───────────┬──────────────┬──────────────┬──────────┘ │
 │              │              │              │             │
 │  ┌───────────▼──┐  ┌───────▼──────┐  ┌───▼──────────┐  │
-│  │  uat-crypto  │  │uat-consensus │  │  uat-network  │  │
+│  │  los-crypto  │  │los-consensus │  │  los-network  │  │
 │  │  Dilithium5  │  │  aBFT        │  │  libp2p      │  │
 │  │  BLAKE2b     │  │  Quadratic   │  │  GossipSub   │  │
 │  │  Base58Check │  │  Voting      │  │  Tor/SOCKS5  │  │
@@ -48,7 +48,7 @@ Technical architecture of the Unauthority blockchain.
 │  └──────────────┘  └──────────────┘  └──────────────┘  │
 │              │                                          │
 │  ┌───────────▼──┐                                       │
-│  │   uat-vm     │                                       │
+│  │   los-vm     │                                       │
 │  │  Wasmer      │                                       │
 │  │  Cranelift   │                                       │
 │  │  WASM exec   │                                       │
@@ -61,25 +61,25 @@ Technical architecture of the Unauthority blockchain.
 ## Crate Dependency Graph
 
 ```
-                    uat-node (v1.0.6)
+                    los-node (v1.0.6)
                    /     |     \      \
                   /      |      \      \
-           uat-core  uat-crypto  uat-network  uat-vm
+           los-core  los-crypto  los-network  los-vm
                |         |          |
-         uat-consensus   |    uat-consensus
+         los-consensus   |    los-consensus
                |         |
-          uat-crypto  (standalone)
+          los-crypto  (standalone)
 ```
 
 | Crate | Version | Lines | Purpose |
 |-------|---------|-------|---------|
-| `uat-node` | 1.0.6 | ~5,100 | Full node binary — REST + gRPC + P2P + console + reward engine |
-| `uat-core` | 0.1.0 | ~2,800 | Ledger, block types, accounts, supply math, anti-whale, oracle, validator rewards |
-| `uat-crypto` | 0.1.0 | ~620 | Dilithium5 keypairs, address derivation, key encryption |
-| `uat-consensus` | 0.1.0 | ~2,700 | aBFT protocol, quadratic voting, slashing, checkpoints |
-| `uat-network` | 0.1.0 | ~1,200 | libp2p, GossipSub, Tor transport, fee scaling |
-| `uat-vm` | 0.1.0 | ~830 | WASM smart contracts (Wasmer + Cranelift) |
-| `uat-cli` | 0.1.0 | ~250 | Command-line interface (reqwest + clap) |
+| `los-node` | 1.0.6 | ~5,100 | Full node binary — REST + gRPC + P2P + console + reward engine |
+| `los-core` | 0.1.0 | ~2,800 | Ledger, block types, accounts, supply math, anti-whale, oracle, validator rewards |
+| `los-crypto` | 0.1.0 | ~620 | Dilithium5 keypairs, address derivation, key encryption |
+| `los-consensus` | 0.1.0 | ~2,700 | aBFT protocol, quadratic voting, slashing, checkpoints |
+| `los-network` | 0.1.0 | ~1,200 | libp2p, GossipSub, Tor transport, fee scaling |
+| `los-vm` | 0.1.0 | ~830 | WASM smart contracts (Wasmer + Cranelift) |
+| `los-cli` | 0.1.0 | ~250 | Command-line interface (reqwest + clap) |
 | `genesis` | 2.0.0 | ~200 | Genesis block generator (BIP39 + deterministic keygen) |
 
 ---
@@ -103,12 +103,12 @@ Alice's chain:           Bob's chain:
 ```
 signing_hash = Keccak-256(
     chain_id      ||    // 1 = mainnet, 2 = testnet
-    account       ||    // UAT... address
+    account       ||    // LOS... address
     previous      ||    // Hash of previous block
     representative ||   // Delegated voting address
-    balance       ||    // Balance AFTER this block (VOID)
+    balance       ||    // Balance AFTER this block (CIL)
     link          ||    // Recipient / Send hash / Burn proof
-    fee           ||    // Transaction fee (VOID)
+    fee           ||    // Transaction fee (CIL)
     timestamp          // Unix timestamp
 )
 
@@ -142,7 +142,7 @@ BIP39 Mnemonic (24 words)
     ▼
 BIP39 Seed (64 bytes)
     │
-    ▼ SHA-256("uat-dilithium5-keygen-v1") = salt
+    ▼ SHA-256("los-dilithium5-keygen-v1") = salt
     │ SHA-256(salt || seed) = derived_seed (32 bytes)
     │
     ▼ ChaCha20-seeded Dilithium5 keygen
@@ -153,10 +153,10 @@ BIP39 Seed (64 bytes)
         │
         ▼ BLAKE2b-512 → first 20 bytes → version 0x4A
         │ → SHA-256(SHA-256()) → first 4 bytes (checksum)
-        │ → Base58(versioned + checksum) → prepend "UAT"
+        │ → Base58(versioned + checksum) → prepend "LOS"
         │
         ▼
-UAT Address (e.g., "UATBwXk9m2P3dU7...")
+LOS Address (e.g., "LOSBwXk9m2P3dU7...")
 ```
 
 ### Cross-Platform Consistency

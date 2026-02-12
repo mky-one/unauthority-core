@@ -18,7 +18,7 @@ echo -e "${YELLOW}Test 1: PoW Verification${NC}"
 echo "Testing Block::verify_pow() with different difficulties..."
 
 cat > /tmp/test_pow.rs << 'EOF'
-use uat_core::{Block, BlockType};
+use los_core::{Block, BlockType};
 
 fn main() {
     // Test block with insufficient PoW (should fail)
@@ -55,7 +55,7 @@ fn main() {
 EOF
 
 # Compile and run test
-cd crates/uat-core
+cd crates/los-core
 if cargo run --example test_pow 2>/dev/null || echo "PoW verification method exists"; then
     echo -e "${GREEN}✓ PoW validation implemented${NC}"
 else
@@ -70,20 +70,20 @@ echo -e "${YELLOW}Test 2: Quadratic Voting${NC}"
 echo "Testing calculate_voting_power() function..."
 
 cat > /tmp/test_voting.rs << 'EOF'
-use uat_consensus::voting::calculate_voting_power;
+use los_consensus::voting::calculate_voting_power;
 
 fn main() {
-    let void_per_uat = 100_000_000_000u128;
+    let cil_per_los = 100_000_000_000u128;
     
-    // Test 1: Single whale with 100,000 UAT
-    let whale_stake = 100_000 * void_per_uat;
+    // Test 1: Single whale with 100,000 LOS
+    let whale_stake = 100_000 * cil_per_los;
     let whale_power = calculate_voting_power(whale_stake);
-    println!("Whale (100k UAT): Power = {}", whale_power);
+    println!("Whale (100k LOS): Power = {}", whale_power);
     
-    // Test 2: Small node with 1,000 UAT
-    let small_stake = 1_000 * void_per_uat;
+    // Test 2: Small node with 1,000 LOS
+    let small_stake = 1_000 * cil_per_los;
     let small_power = calculate_voting_power(small_stake);
-    println!("Node (1k UAT): Power = {}", small_power);
+    println!("Node (1k LOS): Power = {}", small_power);
     
     // Test 3: 100 small nodes vs 1 whale
     let total_small = small_power * 100;
@@ -99,7 +99,7 @@ fn main() {
 }
 EOF
 
-cd crates/uat-consensus
+cd crates/los-consensus
 if cargo run --quiet --example test_voting 2>/dev/null || echo "Quadratic voting function exists"; then
     echo -e "${GREEN}✓ Quadratic voting implemented${NC}"
 else
@@ -113,7 +113,7 @@ echo ""
 echo -e "${YELLOW}Test 3: Mutex Poisoning Recovery${NC}"
 echo "Checking safe_lock() implementation in main.rs..."
 
-if grep -q "fn safe_lock" crates/uat-node/src/main.rs; then
+if grep -q "fn safe_lock" crates/los-node/src/main.rs; then
     echo -e "${GREEN}✓ safe_lock() helper function exists${NC}"
     echo "  Function recovers from poisoned Mutex without panic"
 else
@@ -125,8 +125,8 @@ echo ""
 echo -e "${YELLOW}Test 4: Timestamp Validation${NC}"
 echo "Checking timestamp drift validation in process_block()..."
 
-if grep -q "MAX_TIMESTAMP_DRIFT_SECS" crates/uat-core/src/lib.rs; then
-    drift=$(grep "MAX_TIMESTAMP_DRIFT_SECS: u64 = " crates/uat-core/src/lib.rs | grep -o "[0-9]*")
+if grep -q "MAX_TIMESTAMP_DRIFT_SECS" crates/los-core/src/lib.rs; then
+    drift=$(grep "MAX_TIMESTAMP_DRIFT_SECS: u64 = " crates/los-core/src/lib.rs | grep -o "[0-9]*")
     echo -e "${GREEN}✓ Timestamp validation active${NC}"
     echo "  Max drift allowed: ${drift} seconds (5 minutes)"
 else
@@ -138,12 +138,12 @@ echo ""
 echo -e "${YELLOW}Test 5: Slashing Proposal System${NC}"
 echo "Checking SlashProposal struct and confirmation mechanism..."
 
-if grep -q "pub struct SlashProposal" crates/uat-consensus/src/slashing.rs; then
+if grep -q "pub struct SlashProposal" crates/los-consensus/src/slashing.rs; then
     echo -e "${GREEN}✓ SlashProposal system implemented${NC}"
-    if grep -q "pub fn propose_slash" crates/uat-consensus/src/slashing.rs; then
+    if grep -q "pub fn propose_slash" crates/los-consensus/src/slashing.rs; then
         echo "  - propose_slash() method exists"
     fi
-    if grep -q "pub fn confirm_slash" crates/uat-consensus/src/slashing.rs; then
+    if grep -q "pub fn confirm_slash" crates/los-consensus/src/slashing.rs; then
         echo "  - confirm_slash() method exists"
         echo "  - Requires 2/3+1 validator confirmations"
     fi
@@ -157,14 +157,14 @@ echo -e "${YELLOW}Test 6: Atomic Transaction Flows${NC}"
 echo "Verifying atomic operations in critical paths..."
 
 # Check burn flow atomicity
-if grep -q "ATOMIC.*anti-whale.*ledger" crates/uat-node/src/main.rs; then
+if grep -q "ATOMIC.*anti-whale.*ledger" crates/los-node/src/main.rs; then
     echo -e "${GREEN}✓ Atomic burn flow (anti-whale + ledger)${NC}"
 else
     echo -e "${YELLOW}⚠ Burn flow atomicity unclear${NC}"
 fi
 
 # Check TXID double-claim protection
-if grep -q "ATOMIC DOUBLE-CLAIM PROTECTION" crates/uat-node/src/main.rs; then
+if grep -q "ATOMIC DOUBLE-CLAIM PROTECTION" crates/los-node/src/main.rs; then
     echo -e "${GREEN}✓ Atomic TXID check (ledger + pending)${NC}"
 else
     echo -e "${YELLOW}⚠ TXID atomicity unclear${NC}"
@@ -176,8 +176,8 @@ echo -e "${YELLOW}Test 7: Supply Validation Order${NC}"
 echo "Checking if supply is validated BEFORE balance modification..."
 
 # Check if supply check returns error before balance modification in Mint case
-if grep -A8 "BlockType::Mint" crates/uat-core/src/lib.rs | grep -q "remaining_supply < block.amount" && \
-   grep -A8 "BlockType::Mint" crates/uat-core/src/lib.rs | grep "remaining_supply < block.amount" -A5 | grep -q "state.balance += block.amount"; then
+if grep -A8 "BlockType::Mint" crates/los-core/src/lib.rs | grep -q "remaining_supply < block.amount" && \
+   grep -A8 "BlockType::Mint" crates/los-core/src/lib.rs | grep "remaining_supply < block.amount" -A5 | grep -q "state.balance += block.amount"; then
     echo -e "${GREEN}✓ Supply checked before balance modification${NC}"
     echo "  Prevents mint beyond total supply"
 else
@@ -199,4 +199,4 @@ echo "  ✓ Atomic transaction flows"
 echo "  ✓ Supply check order"
 echo ""
 echo "Run 'cargo test' for full test suite"
-echo "Run './target/release/uat-node' to start node"
+echo "Run './target/release/los-node' to start node"

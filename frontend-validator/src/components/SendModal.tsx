@@ -62,12 +62,12 @@ export default function SendModal({ isOpen, onClose, fromAddress }: SendModalPro
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm">
-      <div className="bg-uat-gray border border-gray-700 rounded-xl w-full max-w-md p-6 shadow-2xl">
+      <div className="bg-los-gray border border-gray-700 rounded-xl w-full max-w-md p-6 shadow-2xl">
         {/* Header */}
         <div className="flex items-center justify-between mb-6">
           <div className="flex items-center space-x-3">
-            <Send className="w-6 h-6 text-uat-cyan" />
-            <h2 className="text-xl font-bold text-white">Send UAT</h2>
+            <Send className="w-6 h-6 text-los-cyan" />
+            <h2 className="text-xl font-bold text-white">Send LOS</h2>
           </div>
           <button
             onClick={onClose}
@@ -82,7 +82,7 @@ export default function SendModal({ isOpen, onClose, fromAddress }: SendModalPro
           {/* From Address (readonly) */}
           <div>
             <label className="block text-sm font-medium text-gray-300 mb-2">From</label>
-            <div className="bg-uat-dark/50 border border-gray-600 rounded-lg px-4 py-2">
+            <div className="bg-los-dark/50 border border-gray-600 rounded-lg px-4 py-2">
               <p className="font-mono text-sm text-gray-400 truncate">
                 {fromAddress || 'Not set'}
               </p>
@@ -96,14 +96,14 @@ export default function SendModal({ isOpen, onClose, fromAddress }: SendModalPro
               type="text"
               value={toAddress}
               onChange={(e) => setToAddress(e.target.value)}
-              placeholder="UAT1..."
-              className="w-full bg-uat-dark border border-gray-600 rounded-lg px-4 py-2 text-white focus:outline-none focus:border-uat-blue"
+              placeholder="LOS1..."
+              className="w-full bg-los-dark border border-gray-600 rounded-lg px-4 py-2 text-white focus:outline-none focus:border-los-blue"
             />
           </div>
 
           {/* Amount */}
           <div>
-            <label className="block text-sm font-medium text-gray-300 mb-2">Amount (UAT)</label>
+            <label className="block text-sm font-medium text-gray-300 mb-2">Amount (LOS)</label>
             <input
               type="number"
               value={amount}
@@ -111,7 +111,7 @@ export default function SendModal({ isOpen, onClose, fromAddress }: SendModalPro
               placeholder="0.00"
               step="0.01"
               min="0"
-              className="w-full bg-uat-dark border border-gray-600 rounded-lg px-4 py-2 text-white focus:outline-none focus:border-uat-blue"
+              className="w-full bg-los-dark border border-gray-600 rounded-lg px-4 py-2 text-white focus:outline-none focus:border-los-blue"
             />
           </div>
 
@@ -140,7 +140,7 @@ export default function SendModal({ isOpen, onClose, fromAddress }: SendModalPro
             <button
               onClick={handleSend}
               disabled={loading}
-              className="flex-1 bg-gradient-to-r from-uat-blue to-uat-cyan hover:opacity-90 text-white font-medium py-2 px-4 rounded-lg transition-opacity disabled:opacity-50 flex items-center justify-center space-x-2"
+              className="flex-1 bg-gradient-to-r from-los-blue to-los-cyan hover:opacity-90 text-white font-medium py-2 px-4 rounded-lg transition-opacity disabled:opacity-50 flex items-center justify-center space-x-2"
             >
               {loading ? (
                 <>

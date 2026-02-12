@@ -1,6 +1,6 @@
-export function formatVoidToUAT(void_amount: number): string {
-  const uat = void_amount / 100_000_000;
-  return uat.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 8 });
+export function formatCilToLOS(cil_amount: number): string {
+  const los = cil_amount / 100_000_000;
+  return los.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 8 });
 }
 
 export function formatTimestamp(timestamp: number): string {

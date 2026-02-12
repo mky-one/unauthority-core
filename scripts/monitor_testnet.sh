@@ -69,7 +69,7 @@ check_validators() {
     
     if [ $? -eq 0 ] && [ ! -z "$validators" ]; then
         if command -v jq &> /dev/null; then
-            echo "$validators" | jq -r '.validators[] | "  • \(.address[0:20])... | Stake: \(.stake) UAT | Active: \(.active)"'
+            echo "$validators" | jq -r '.validators[] | "  • \(.address[0:20])... | Stake: \(.stake) LOS | Active: \(.active)"'
         else
             echo "$validators" | grep -o '"address":"[^"]*"' | cut -d'"' -f4 | head -3
         fi
@@ -120,9 +120,9 @@ check_metrics() {
     
     if [ $? -eq 0 ] && [ ! -z "$metrics" ]; then
         # Extract key metrics
-        tps=$(echo "$metrics" | grep "^uat_transactions_per_second" | awk '{print $2}')
-        finality=$(echo "$metrics" | grep "^uat_finality_time_ms" | awk '{print $2}')
-        mempool=$(echo "$metrics" | grep "^uat_mempool_size" | awk '{print $2}')
+        tps=$(echo "$metrics" | grep "^los_transactions_per_second" | awk '{print $2}')
+        finality=$(echo "$metrics" | grep "^los_finality_time_ms" | awk '{print $2}')
+        mempool=$(echo "$metrics" | grep "^los_mempool_size" | awk '{print $2}')
         
         echo "  TPS:          ${tps:-N/A}"
         echo "  Finality:     ${finality:-N/A} ms"

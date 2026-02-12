@@ -2,7 +2,7 @@
   "name": "unauthority-wallet",
   "type": "module",
   "version": "0.1.0",
-  "description": "Unauthority (UAT) Public Wallet - Burn BTC/ETH to mint UAT",
+  "description": "Unauthority (LOS) Public Wallet - Burn BTC/ETH to mint LOS",
   "author": {
     "name": "Unauthority Core Team",
     "email": "dev@unauthority.io"

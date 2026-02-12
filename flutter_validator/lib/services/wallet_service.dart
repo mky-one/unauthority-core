@@ -1,5 +1,4 @@
 import 'dart:convert';
-import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -9,7 +8,7 @@ import 'package:pointycastle/digests/blake2b.dart';
 import 'package:cryptography/cryptography.dart' as ed_crypto;
 import 'dilithium_service.dart';
 
-/// Wallet Service for UAT Validator Dashboard
+/// Wallet Service for LOS Validator Dashboard
 ///
 /// SECURITY: All secret material (seed, private key) is stored in
 /// platform Keychain/Keystore via flutter_secure_storage.
@@ -18,7 +17,7 @@ import 'dilithium_service.dart';
 /// Dilithium5 mode (native library available):
 /// - Real CRYSTALS-Dilithium5 keypair (PK: 2592 bytes, SK: 4864 bytes)
 /// - Deterministic from BIP39 seed via HMAC-SHA512 DRBG seeding
-/// - Real UAT address: "UAT" + Base58Check(BLAKE2b-160(pubkey))
+/// - Real LOS address: "LOS" + Base58Check(BLAKE2b-160(pubkey))
 /// - Real post-quantum signatures for transactions
 ///
 /// Fallback mode (native library not compiled):
@@ -47,6 +46,11 @@ class WalletService {
     mOptions: MacOsOptions(useDataProtectionKeyChain: false),
   );
 
+  /// SECURITY: When true, only Dilithium5 crypto is permitted.
+  /// Ed25519 fallback is refused — mainnet requires post-quantum signatures.
+  /// Set by ApiService.switchEnvironment() when connecting to mainnet.
+  static bool mainnetMode = false;
+
   /// One-time migration from SharedPreferences → SecureStorage
   /// Called on app startup. Silent if already migrated.
   Future<void> migrateFromSharedPreferences() async {
@@ -74,11 +78,14 @@ class WalletService {
   /// Whether this wallet uses real Dilithium5 cryptography
   Future<bool> isDilithium5Wallet() async {
     final prefs = await SharedPreferences.getInstance();
-    return prefs.getString(_cryptoModeKey) == 'dilithium5';
+    final result = prefs.getString(_cryptoModeKey) == 'dilithium5';
+    debugPrint('💰 [WalletService.isDilithium5Wallet] Result: $result');
+    return result;
   }
 
   /// Generate new wallet with real Dilithium5 keypair (if available)
   Future<Map<String, String>> generateWallet() async {
+    debugPrint('💰 [WalletService.generateWallet] Generating wallet...');
     final mnemonic = bip39.generateMnemonic(strength: 256);
     String address;
     String cryptoMode;
@@ -117,7 +124,16 @@ class WalletService {
         seed.fillRange(0, seed.length, 0);
       }
     } else {
-      // Ed25519 + BLAKE2b fallback (matches uat-crypto address format)
+      // SECURITY FIX F2: Refuse Ed25519 fallback on mainnet.
+      // Mainnet requires Dilithium5 post-quantum signatures.
+      if (mainnetMode) {
+        throw Exception(
+          'MAINNET SECURITY: Dilithium5 native library required for wallet generation. '
+          'Ed25519 fallback is disabled on mainnet. Please build the native library.',
+        );
+      }
+
+      // Ed25519 + BLAKE2b fallback (TESTNET ONLY — matches uat-crypto address format)
       final seed = bip39.mnemonicToSeed(mnemonic);
       try {
         address = await _deriveAddressEd25519(seed);
@@ -131,13 +147,15 @@ class WalletService {
         await prefs.setString(_cryptoModeKey, cryptoMode);
 
         debugPrint(
-          '⚠️ Ed25519 fallback wallet (Dilithium5 native lib not loaded)',
+          '⚠️ Ed25519 fallback wallet — TESTNET ONLY (Dilithium5 native lib not loaded)',
         );
       } finally {
         seed.fillRange(0, seed.length, 0);
       }
     }
 
+    debugPrint(
+        '💰 [WalletService.generateWallet] Wallet generated: $address, mode: $cryptoMode');
     return {
       'mnemonic': mnemonic,
       'address': address,
@@ -150,6 +168,8 @@ class WalletService {
   /// Dilithium5: Deterministic from seed — same mnemonic = same address.
   /// SHA256 fallback: Also deterministic.
   Future<Map<String, String>> importWallet(String mnemonic) async {
+    debugPrint(
+        '💰 [WalletService.importWallet] Importing wallet from mnemonic (${mnemonic.split(' ').length} words)...');
     if (!bip39.validateMnemonic(mnemonic)) {
       throw Exception('Invalid mnemonic phrase');
     }
@@ -193,6 +213,14 @@ class WalletService {
         seed.fillRange(0, seed.length, 0);
       }
     } else {
+      // SECURITY FIX F2: Refuse Ed25519 fallback on mainnet.
+      if (mainnetMode) {
+        throw Exception(
+          'MAINNET SECURITY: Dilithium5 native library required for wallet import. '
+          'Ed25519 fallback is disabled on mainnet.',
+        );
+      }
+
       final seed = bip39.mnemonicToSeed(mnemonic);
       try {
         address = await _deriveAddressEd25519(seed);
@@ -209,6 +237,8 @@ class WalletService {
       }
     }
 
+    debugPrint(
+        '💰 [WalletService.importWallet] Imported: $address, mode: $cryptoMode');
     return {
       'mnemonic': mnemonic,
       'address': address,
@@ -218,8 +248,10 @@ class WalletService {
 
   /// Import by address only (testnet genesis accounts)
   Future<Map<String, String>> importByAddress(String address) async {
-    if (!address.startsWith('UAT') || address.length < 30) {
-      throw Exception('Invalid UAT address format');
+    debugPrint(
+        '💰 [WalletService.importByAddress] Importing address-only: $address');
+    if (!address.startsWith('LOS') || address.length < 30) {
+      throw Exception('Invalid LOS address format');
     }
 
     final prefs = await SharedPreferences.getInstance();
@@ -231,6 +263,8 @@ class WalletService {
     await _secureStorage.delete(key: _publicKeyKey);
     await _secureStorage.delete(key: _secretKeyKey);
 
+    debugPrint(
+        '💰 [WalletService.importByAddress] Imported address-only: $address');
     return {'address': address};
   }
 
@@ -239,6 +273,8 @@ class WalletService {
   /// Derives the public key and address from the secret key.
   /// Supports both Dilithium5 and Ed25519 fallback.
   Future<Map<String, String>> importByPrivateKey(String hexKey) async {
+    debugPrint(
+        '💰 [WalletService.importByPrivateKey] Importing by private key (${hexKey.trim().length} hex chars)...');
     final cleanHex = hexKey.trim();
     if (cleanHex.isEmpty || cleanHex.length < 64) {
       throw Exception('Invalid private key (too short)');
@@ -283,7 +319,15 @@ class WalletService {
         keypair.secretKey.fillRange(0, keypair.secretKey.length, 0);
       }
     } else {
-      // Ed25519 fallback — treat hex as seed
+      // SECURITY FIX F2: Refuse Ed25519 fallback on mainnet.
+      if (mainnetMode) {
+        throw Exception(
+          'MAINNET SECURITY: Dilithium5 native library required for key import. '
+          'Ed25519 fallback is disabled on mainnet.',
+        );
+      }
+
+      // Ed25519 fallback — treat hex as seed (TESTNET ONLY)
       final seedBytes = _hexToBytes(cleanHex);
       address = await _deriveAddressEd25519(seedBytes);
       cryptoMode = 'ed25519';
@@ -296,6 +340,8 @@ class WalletService {
     // No mnemonic for PK import
     await _secureStorage.delete(key: _seedKey);
 
+    debugPrint(
+        '💰 [WalletService.importByPrivateKey] Imported: $address, mode: $cryptoMode');
     return {
       'address': address,
       'crypto_mode': cryptoMode,
@@ -318,6 +364,8 @@ class WalletService {
   Future<Map<String, String>?> getCurrentWallet({
     bool includeMnemonic = false,
   }) async {
+    debugPrint(
+        '💰 [WalletService.getCurrentWallet] includeMnemonic: $includeMnemonic');
     final prefs = await SharedPreferences.getInstance();
     final address = prefs.getString(_addressKey);
     if (address == null) return null;
@@ -332,16 +380,23 @@ class WalletService {
     final mode = prefs.getString(_cryptoModeKey);
     if (mode != null) result['crypto_mode'] = mode;
 
+    debugPrint(
+        '💰 [WalletService.getCurrentWallet] Result: ${result['address']}');
     return result;
   }
 
   /// Get hex-encoded public key (for sending with transactions)
   Future<String?> getPublicKeyHex() async {
-    return await _secureStorage.read(key: _publicKeyKey);
+    debugPrint('💰 [WalletService.getPublicKeyHex] Fetching public key...');
+    final pk = await _secureStorage.read(key: _publicKeyKey);
+    debugPrint(
+        '💰 [WalletService.getPublicKeyHex] Result: ${pk != null ? '${pk.length} hex chars' : 'null'}');
+    return pk;
   }
 
   /// Delete wallet — wipes all sensitive and non-sensitive data
   Future<void> deleteWallet() async {
+    debugPrint('💰 [WalletService.deleteWallet] Deleting wallet...');
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(_addressKey);
     await prefs.remove(_importModeKey);
@@ -364,21 +419,27 @@ class WalletService {
     } catch (e) {
       debugPrint('⚠️ Failed to delete secret key from keychain: $e');
     }
+    debugPrint('💰 [WalletService.deleteWallet] Wallet deleted');
   }
 
   /// Clear wallet — alias for deleteWallet
   Future<void> clearWallet() async {
+    debugPrint('💰 [WalletService.clearWallet] Clearing wallet...');
     await deleteWallet();
+    debugPrint('💰 [WalletService.clearWallet] Wallet cleared');
   }
 
   /// Check if wallet was imported by address only
   Future<bool> isAddressOnlyImport() async {
     final prefs = await SharedPreferences.getInstance();
-    return prefs.getString(_importModeKey) == 'address';
+    final result = prefs.getString(_importModeKey) == 'address';
+    debugPrint('💰 [WalletService.isAddressOnlyImport] Result: $result');
+    return result;
   }
 
   /// Set monitor-only mode (genesis bootstrap validator — no local node spawn)
   Future<void> setMonitorMode(bool enabled) async {
+    debugPrint('⚙️ [WalletService.setMonitorMode] enabled: $enabled');
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(_monitorModeKey, enabled);
   }
@@ -387,7 +448,9 @@ class WalletService {
   /// (genesis bootstrap validator already running as CLI node)
   Future<bool> isMonitorMode() async {
     final prefs = await SharedPreferences.getInstance();
-    return prefs.getBool(_monitorModeKey) ?? false;
+    final result = prefs.getBool(_monitorModeKey) ?? false;
+    debugPrint('⚙️ [WalletService.isMonitorMode] Result: $result');
+    return result;
   }
 
   // ══════════════════════════════════════════════════════════════════════
@@ -396,6 +459,8 @@ class WalletService {
 
   /// Sign transaction data with Dilithium5 or SHA256 fallback.
   Future<String> signTransaction(String txData) async {
+    debugPrint(
+        '🔑 [WalletService.signTransaction] Signing tx (${txData.length} bytes)...');
     final wallet = await getCurrentWallet();
     if (wallet == null) throw Exception('No wallet found');
 
@@ -416,23 +481,48 @@ class WalletService {
       final message = Uint8List.fromList(utf8.encode(txData));
       try {
         final signature = DilithiumService.sign(message, secretKey);
-        return DilithiumService.bytesToHex(signature);
+        final sigHex = DilithiumService.bytesToHex(signature);
+        debugPrint(
+            '🔑 [WalletService.signTransaction] Signed (${sigHex.length} hex chars), mode: dilithium5');
+        return sigHex;
       } finally {
         // SECURITY FIX L-01: Zero secret key in Dart memory after signing.
         // FFI layer zeros its copy, but Dart Uint8List remains until GC.
         secretKey.fillRange(0, secretKey.length, 0);
       }
     } else {
+      // SECURITY FIX F1: Replaced broken SHA256(msg||key) hash with proper Ed25519 signing.
+      // SHA256(msg||key) is NOT a signature scheme — it's vulnerable to length-extension
+      // attacks and allows anyone with the hash to forge new messages.
+      // Ed25519 is a proper asymmetric signature scheme.
+
+      // SECURITY FIX F2: Refuse Ed25519 fallback on mainnet.
+      if (mainnetMode) {
+        throw Exception(
+          'MAINNET SECURITY: Dilithium5 native library required for signing. '
+          'Ed25519 fallback is disabled on mainnet.',
+        );
+      }
+
       final mnemonic = await _secureStorage.read(key: _seedKey);
       if (mnemonic == null) throw Exception('No mnemonic for signing');
       final seed = bip39.mnemonicToSeed(mnemonic);
-      final privateKey = seed.sublist(0, 32);
+      final privateKeyBytes = seed.sublist(0, 32);
       try {
-        final signature = sha256.convert(utf8.encode(txData) + privateKey);
-        return signature.toString();
+        final algorithm = ed_crypto.Ed25519();
+        final keyPair = await algorithm.newKeyPairFromSeed(privateKeyBytes);
+        final message = utf8.encode(txData);
+        final signature = await algorithm.sign(message, keyPair: keyPair);
+        // Return hex-encoded Ed25519 signature bytes
+        final sigHex = signature.bytes
+            .map((b) => b.toRadixString(16).padLeft(2, '0'))
+            .join('');
+        debugPrint(
+            '🔑 [WalletService.signTransaction] Signed (${sigHex.length} hex chars), mode: ed25519');
+        return sigHex;
       } finally {
         // SECURITY FIX L-01: Zero private key material after signing
-        privateKey.fillRange(0, privateKey.length, 0);
+        privateKeyBytes.fillRange(0, privateKeyBytes.length, 0);
         seed.fillRange(0, seed.length, 0);
       }
     }
@@ -475,7 +565,7 @@ class WalletService {
     return result.toString();
   }
 
-  /// Derive UAT address from Ed25519 public key (uat-crypto compatible).
+  /// Derive LOS address from Ed25519 public key (uat-crypto compatible).
   static String _deriveAddressFromPublicKey(Uint8List publicKey) {
     const versionByte = 0x4A;
     final blake2b = Blake2bDigest(digestSize: 64);
@@ -496,17 +586,22 @@ class WalletService {
     addressBytes.setRange(0, 21, payload);
     addressBytes.setRange(21, 25, checksum);
 
-    return 'UAT${_base58Encode(addressBytes)}';
+    return 'LOS${_base58Encode(addressBytes)}';
   }
 
-  /// Derive Ed25519 keypair from BIP39 seed and return UAT address.
+  /// Derive Ed25519 keypair from BIP39 seed and return LOS address.
   Future<String> _deriveAddressEd25519(List<int> seed) async {
+    debugPrint(
+        '🔑 [WalletService._deriveAddressEd25519] Deriving address from Ed25519 seed...');
     final privateSeed = Uint8List.fromList(seed.sublist(0, 32));
     try {
       final algorithm = ed_crypto.Ed25519();
       final keyPair = await algorithm.newKeyPairFromSeed(privateSeed.toList());
       final pubKey = await keyPair.extractPublicKey();
-      return _deriveAddressFromPublicKey(Uint8List.fromList(pubKey.bytes));
+      final address =
+          _deriveAddressFromPublicKey(Uint8List.fromList(pubKey.bytes));
+      debugPrint('🔑 [WalletService._deriveAddressEd25519] Address: $address');
+      return address;
     } finally {
       privateSeed.fillRange(0, privateSeed.length, 0);
     }

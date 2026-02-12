@@ -32,15 +32,20 @@ class _AddressBookScreenState extends State<AddressBookScreen> {
   }
 
   Future<void> _loadEntries() async {
+    debugPrint('📒 [AddressBookScreen._loadEntries] Loading entries...');
     setState(() => _isLoading = true);
     try {
       final entries = await _addressBookService.getEntriesSortedByName();
+      if (!mounted) return;
       setState(() {
         _entries = entries;
         _filteredEntries = entries;
         _isLoading = false;
       });
+      debugPrint(
+          '📒 [AddressBookScreen._loadEntries] Loaded ${entries.length} entries');
     } catch (e) {
+      if (!mounted) return;
       setState(() => _isLoading = false);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -102,8 +107,8 @@ class _AddressBookScreenState extends State<AddressBookScreen> {
                 TextFormField(
                   controller: addressController,
                   decoration: const InputDecoration(
-                    labelText: 'UAT Address *',
-                    hintText: 'UAT...',
+                    labelText: 'LOS Address *',
+                    hintText: 'LOS...',
                     prefixIcon: Icon(Icons.account_balance_wallet),
                   ),
                   validator: (value) {
@@ -138,6 +143,8 @@ class _AddressBookScreenState extends State<AddressBookScreen> {
               if (!formKey.currentState!.validate()) return;
 
               try {
+                debugPrint(
+                    '📒 [AddressBookScreen._showAddDialog] Adding: ${nameController.text.trim()}');
                 await _addressBookService.addEntry(
                   name: nameController.text.trim(),
                   address: addressController.text.trim(),
@@ -154,9 +161,12 @@ class _AddressBookScreenState extends State<AddressBookScreen> {
                       backgroundColor: Colors.green,
                     ),
                   );
+                  debugPrint(
+                      '📒 [AddressBookScreen._showAddDialog] Added successfully');
                   _loadEntries();
                 }
               } catch (e) {
+                debugPrint('📒 [AddressBookScreen._showAddDialog] ERROR: $e');
                 if (dialogContext.mounted) {
                   ScaffoldMessenger.of(dialogContext).showSnackBar(
                     SnackBar(
@@ -210,7 +220,7 @@ class _AddressBookScreenState extends State<AddressBookScreen> {
                 TextFormField(
                   controller: addressController,
                   decoration: const InputDecoration(
-                    labelText: 'UAT Address *',
+                    labelText: 'LOS Address *',
                     prefixIcon: Icon(Icons.account_balance_wallet),
                   ),
                   validator: (value) {
@@ -261,9 +271,12 @@ class _AddressBookScreenState extends State<AddressBookScreen> {
                       backgroundColor: Colors.green,
                     ),
                   );
+                  debugPrint(
+                      '📒 [AddressBookScreen._showEditDialog] Updated successfully');
                   _loadEntries();
                 }
               } catch (e) {
+                debugPrint('📒 [AddressBookScreen._showEditDialog] ERROR: $e');
                 if (dialogContext.mounted) {
                   ScaffoldMessenger.of(dialogContext).showSnackBar(
                     SnackBar(
@@ -305,6 +318,8 @@ class _AddressBookScreenState extends State<AddressBookScreen> {
 
     if (confirmed == true) {
       try {
+        debugPrint(
+            '📒 [AddressBookScreen._deleteEntry] Deleting ${entry.name}...');
         await _addressBookService.deleteEntry(entry.id);
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -313,6 +328,8 @@ class _AddressBookScreenState extends State<AddressBookScreen> {
               backgroundColor: Colors.green,
             ),
           );
+          debugPrint(
+              '📒 [AddressBookScreen._deleteEntry] Deleted ${entry.name}');
           _loadEntries();
         }
       } catch (e) {

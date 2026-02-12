@@ -1,6 +1,6 @@
 # Docker Deployment
 
-Run a 4-node UAT testnet with Prometheus and Grafana monitoring via Docker Compose.
+Run a 4-node LOS testnet with Prometheus and Grafana monitoring via Docker Compose.
 
 **Version:** v1.0.6-testnet
 
@@ -67,7 +67,7 @@ All services run on a bridge network `172.20.0.0/24`.
 
 Multi-stage build:
 
-1. **Build stage**: `rust:1.75-slim` — compiles `uat-node` and `uat-cli`
+1. **Build stage**: `rust:1.75-slim` — compiles `los-node` and `los-cli`
 2. **Runtime stage**: `debian:bookworm-slim` — minimal runtime
 
 Security:
@@ -83,18 +83,18 @@ Each validator container uses these environment variables:
 
 | Variable | Description |
 |----------|-------------|
-| `UAT_NODE_ID` | Unique node identifier (1–4) |
-| `UAT_VALIDATOR_ADDRESS` | Validator's UAT address |
-| `UAT_PRIVKEY_PATH` | Path to encrypted private key |
-| `UAT_STAKE_VOID` | Stake amount in VOID |
-| `UAT_WALLET_PASSWORD` | Key encryption password |
-| `UAT_BIND_ALL` | `1` to bind `0.0.0.0` (required in containers) |
+| `LOS_NODE_ID` | Unique node identifier (1–4) |
+| `LOS_VALIDATOR_ADDRESS` | Validator's LOS address |
+| `LOS_PRIVKEY_PATH` | Path to encrypted private key |
+| `LOS_STAKE_CIL` | Stake amount in CIL |
+| `LOS_WALLET_PASSWORD` | Key encryption password |
+| `LOS_BIND_ALL` | `1` to bind `0.0.0.0` (required in containers) |
 
 ---
 
 ## Health Checks
 
-Docker Compose uses `uat-cli node-info` as the health check command. Validators start sequentially — each waits for the previous to be healthy via `depends_on` + `service_healthy`.
+Docker Compose uses `los-cli node-info` as the health check command. Validators start sequentially — each waits for the previous to be healthy via `depends_on` + `service_healthy`.
 
 ---
 
@@ -168,5 +168,5 @@ For faster iteration during development, use the shell scripts:
 Or run a single dev-mode node:
 
 ```bash
-cargo run --release --bin uat-node -- --dev
+cargo run --release --bin los-node -- --dev
 ```

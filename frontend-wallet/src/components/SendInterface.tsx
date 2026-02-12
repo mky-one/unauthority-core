@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Send, AlertCircle } from 'lucide-react';
 import { useWalletStore } from '../store/walletStore';
 import { sendTransaction } from '../utils/api';
-import { isValidUATAddress, formatBalance, signTransaction } from '../utils/wallet';
+import { isValidLOSAddress, formatBalance, signTransaction } from '../utils/wallet';
 
 interface Props {
   nodeOnline: boolean;
@@ -24,8 +24,8 @@ export default function SendInterface({ nodeOnline }: Props) {
       return;
     }
 
-    if (!isValidUATAddress(recipient.trim())) {
-      setResult({ status: 'error', message: 'Invalid UAT address format' });
+    if (!isValidLOSAddress(recipient.trim())) {
+      setResult({ status: 'error', message: 'Invalid LOS address format' });
       return;
     }
 
@@ -35,7 +35,7 @@ export default function SendInterface({ nodeOnline }: Props) {
       return;
     }
 
-    // Balance is already in UAT, compare directly
+    // Balance is already in LOS, compare directly
     if (amountNum > balance) {
       setResult({ status: 'error', message: 'Insufficient balance' });
       return;
@@ -50,7 +50,7 @@ export default function SendInterface({ nodeOnline }: Props) {
       const accountJson = await accountData.json();
       const previous = accountJson.head || '0';
       
-      // Convert UAT to VOI for block amount
+      // Convert LOS to CIL for block amount
       const amountVoi = Math.floor(amountNum * 100_000_000);
       
       // Sign transaction client-side
@@ -82,7 +82,7 @@ export default function SendInterface({ nodeOnline }: Props) {
 
       setResult({
         status: 'success',
-        message: `Successfully sent ${amount} UAT to ${recipient.slice(0, 12)}...`,
+        message: `Successfully sent ${amount} LOS to ${recipient.slice(0, 12)}...`,
       });
       
       // Clear form
@@ -98,21 +98,21 @@ export default function SendInterface({ nodeOnline }: Props) {
 
   return (
     <div className="max-w-2xl mx-auto p-6">
-      <div className="bg-uat-gray border border-gray-700 rounded-2xl p-8">
+      <div className="bg-los-gray border border-gray-700 rounded-2xl p-8">
         <div className="flex items-center space-x-3 mb-6">
-          <div className="w-12 h-12 bg-gradient-to-br from-uat-blue to-uat-cyan rounded-xl flex items-center justify-center">
+          <div className="w-12 h-12 bg-gradient-to-br from-los-blue to-los-cyan rounded-xl flex items-center justify-center">
             <Send className="w-6 h-6 text-white" />
           </div>
           <div>
-            <h2 className="text-2xl font-bold">Send UAT</h2>
-            <p className="text-sm text-gray-400">Transfer UAT to another address</p>
+            <h2 className="text-2xl font-bold">Send LOS</h2>
+            <p className="text-sm text-gray-400">Transfer LOS to another address</p>
           </div>
         </div>
 
         {/* Balance Display */}
-        <div className="bg-uat-dark border border-gray-600 rounded-xl p-4 mb-6">
+        <div className="bg-los-dark border border-gray-600 rounded-xl p-4 mb-6">
           <p className="text-sm text-gray-400">Available Balance</p>
-          <p className="text-3xl font-bold mt-1">{formatBalance(balance)} UAT</p>
+          <p className="text-3xl font-bold mt-1">{formatBalance(balance)} LOS</p>
         </div>
 
         {/* Recipient Address */}
@@ -122,15 +122,15 @@ export default function SendInterface({ nodeOnline }: Props) {
             type="text"
             value={recipient}
             onChange={(e) => setRecipient(e.target.value)}
-            placeholder="UAT..."
-            className="w-full bg-uat-dark border border-gray-600 rounded-lg px-4 py-3 text-sm font-mono focus:ring-2 focus:ring-uat-blue focus:border-transparent"
+            placeholder="LOS..."
+            className="w-full bg-los-dark border border-gray-600 rounded-lg px-4 py-3 text-sm font-mono focus:ring-2 focus:ring-los-blue focus:border-transparent"
             disabled={!nodeOnline}
           />
         </div>
 
         {/* Amount */}
         <div className="mb-6">
-          <label className="block text-sm font-medium mb-2">Amount (UAT)</label>
+          <label className="block text-sm font-medium mb-2">Amount (LOS)</label>
           <div className="relative">
             <input
               type="number"
@@ -139,12 +139,12 @@ export default function SendInterface({ nodeOnline }: Props) {
               placeholder="0.00"
               step="0.01"
               min="0"
-              className="w-full bg-uat-dark border border-gray-600 rounded-lg px-4 py-3 text-sm focus:ring-2 focus:ring-uat-blue focus:border-transparent"
+              className="w-full bg-los-dark border border-gray-600 rounded-lg px-4 py-3 text-sm focus:ring-2 focus:ring-los-blue focus:border-transparent"
               disabled={!nodeOnline}
             />
             <button
               onClick={() => setAmount(formatBalance(balance))}
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-uat-blue hover:text-uat-cyan font-semibold"
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-los-blue hover:text-los-cyan font-semibold"
               disabled={!nodeOnline}
             >
               MAX
@@ -159,10 +159,10 @@ export default function SendInterface({ nodeOnline }: Props) {
           className={`w-full py-4 rounded-xl font-semibold transition-all ${
             loading || !nodeOnline
               ? 'bg-gray-700 text-gray-500 cursor-not-allowed'
-              : 'bg-gradient-to-r from-uat-blue to-uat-cyan text-white hover:shadow-lg'
+              : 'bg-gradient-to-r from-los-blue to-los-cyan text-white hover:shadow-lg'
           }`}
         >
-          {loading ? 'Sending...' : 'Send UAT'}
+          {loading ? 'Sending...' : 'Send LOS'}
         </button>
 
         {/* Result Display */}

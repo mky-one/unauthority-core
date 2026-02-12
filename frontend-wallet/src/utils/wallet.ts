@@ -8,7 +8,7 @@ import nacl from 'tweetnacl';
 import bs58 from 'bs58';
 import { mnemonicToSeedSync } from '@scure/bip39';
 
-const UAT_PREFIX = 'UAT';
+const LOS_PREFIX = 'LOS';
 
 export interface Wallet {
   address: string;
@@ -72,13 +72,13 @@ function deriveFromSeed(seedPhrase: string): { publicKey: Uint8Array; secretKey:
 }
 
 /**
- * Create UAT address from public key (Genesis-compatible format)
- * Format: "UAT" + Base58(PublicKey) - SIMPLE, no checksum
+ * Create LOS address from public key (Genesis-compatible format)
+ * Format: "LOS" + Base58(PublicKey) - SIMPLE, no checksum
  */
 function createAddress(publicKey: Uint8Array): string {
   // Simple Base58 encoding (same as Python genesis generator)
   const base58Address = bs58.encode(Buffer.from(publicKey));
-  return UAT_PREFIX + base58Address;
+  return LOS_PREFIX + base58Address;
 }
 
 /**
@@ -143,30 +143,30 @@ export function importFromPrivateKey(privateKeyHex: string): Wallet {
 
 /**
  * Format balance for display
- * Balance is already in UAT from API (balance_uat field)
+ * Balance is already in LOS from API (balance_los field)
  */
-export function formatBalance(uatBalance: number): string {
-  // Balance is already in UAT, just format it
-  return uatBalance.toFixed(2).replace(/\.?0+$/, '');
+export function formatBalance(losBalance: number): string {
+  // Balance is already in LOS, just format it
+  return losBalance.toFixed(2).replace(/\.?0+$/, '');
 }
 
 /**
- * Convert UAT to VOI for API calls
+ * Convert LOS to CIL for API calls
  */
-export function uatToVoid(uat: number): number {
-  return Math.floor(uat * 100_000_000);
+export function losToCil(los: number): number {
+  return Math.floor(los * 100_000_000);
 }
 
 /**
- * Validate UAT address format
- * Must start with "UAT" and contain valid Base58 characters
+ * Validate LOS address format
+ * Must start with "LOS" and contain valid Base58 characters
  */
-export function isValidUATAddress(address: string): boolean {
-  if (!address.startsWith(UAT_PREFIX)) return false;
+export function isValidLOSAddress(address: string): boolean {
+  if (!address.startsWith(LOS_PREFIX)) return false;
   if (address.length < 20 || address.length > 100) return false;
 
   try {
-    const base58Part = address.slice(UAT_PREFIX.length);
+    const base58Part = address.slice(LOS_PREFIX.length);
     bs58.decode(base58Part);
     return true;
   } catch {

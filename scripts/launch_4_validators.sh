@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # =============================================================================
-# LAUNCH 4 UNAUTHORITY VALIDATORS (GRADUATED TESTNET SUPPORT)
+# LAUNCH 4 LOS VALIDATORS (GRADUATED TESTNET SUPPORT)
 # Supports graduated testnet levels: functional, consensus, production
 # =============================================================================
 
@@ -11,10 +11,10 @@ PROJECT_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$PROJECT_ROOT"
 
 # Detect testnet level
-TESTNET_LEVEL=${UAT_TESTNET_LEVEL:-functional}
+TESTNET_LEVEL=${LOS_TESTNET_LEVEL:-functional}
 
 echo "╔════════════════════════════════════════════════════════════╗"
-echo "║   LAUNCHING 4 UNAUTHORITY VALIDATORS (LEVEL: $TESTNET_LEVEL)      ║"
+echo "║   LAUNCHING 4 LOS VALIDATORS (LEVEL: $TESTNET_LEVEL)      ║"
 echo "╚════════════════════════════════════════════════════════════╝"
 echo ""
 
@@ -39,22 +39,22 @@ esac
 echo ""
 
 # Export testnet level for all validator processes
-export UAT_TESTNET_LEVEL=$TESTNET_LEVEL
+export LOS_TESTNET_LEVEL=$TESTNET_LEVEL
 
 # Kill existing nodes
 echo "🔄 Stopping existing nodes..."
-pkill -f "uat-node" 2>/dev/null || true
+pkill -f "los-node" 2>/dev/null || true
 sleep 2
 
 # Clean old data
 echo "🧹 Cleaning old data..."
 rm -rf node_data/validator-*
-rm -rf uat_database/
+rm -rf los_database/
 mkdir -p node_data logs
 
 # Check if built
-if [ ! -f "./target/release/uat-node" ]; then
-    echo "⚠️  uat-node not found. Building..."
+if [ ! -f "./target/release/los-node" ]; then
+    echo "⚠️  los-node not found. Building..."
     cargo build --release
 fi
 
@@ -70,7 +70,7 @@ echo ""
 
 # Validator 1 (Port 3030, gRPC 23030)
 echo "  ├─ Validator 1: http://localhost:3030 (gRPC: 23030)"
-./target/release/uat-node \
+./target/release/los-node \
     --port 23030 \
     --api-port 3030 \
     --db node_data/validator-1 \
@@ -81,7 +81,7 @@ sleep 1
 
 # Validator 2 (Port 3031, gRPC 23031)
 echo "  ├─ Validator 2: http://localhost:3031 (gRPC: 23031)"
-./target/release/uat-node \
+./target/release/los-node \
     --port 23031 \
     --api-port 3031 \
     --db node_data/validator-2 \
@@ -93,7 +93,7 @@ sleep 1
 
 # Validator 3 (Port 3032, gRPC 23032)
 echo "  ├─ Validator 3: http://localhost:3032 (gRPC: 23032)"
-./target/release/uat-node \
+./target/release/los-node \
     --port 23032 \
     --api-port 3032 \
     --db node_data/validator-3 \
@@ -106,7 +106,7 @@ sleep 1
 
 # Validator 4 (Port 3033, gRPC 23033)
 echo "  └─ Validator 4: http://localhost:3033 (gRPC: 23033)"
-./target/release/uat-node \
+./target/release/los-node \
     --port 23033 \
     --api-port 3033 \
     --db node_data/validator-4 \
@@ -157,5 +157,5 @@ echo "   tail -f logs/validator-3.log"
 echo "   tail -f logs/validator-4.log"
 echo ""
 echo "🛑 Stop All Validators:"
-echo "   pkill -f uat-node"
+echo "   pkill -f los-node"
 echo ""

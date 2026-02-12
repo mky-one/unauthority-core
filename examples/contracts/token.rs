@@ -12,7 +12,7 @@
 //! ## Deployment:
 //! ```bash
 //! cargo build --release --target wasm32-unknown-unknown
-//! uat-cli deploy target/wasm32-unknown-unknown/release/token.wasm \
+//! los-cli deploy target/wasm32-unknown-unknown/release/token.wasm \
 //!   --args '{"name":"MyToken","symbol":"MTK","total_supply":1000000}'
 //! ```
 
@@ -66,7 +66,7 @@ fn get_state() -> &'static mut TokenState {
 
 fn get_caller() -> String {
     // In real implementation, this would come from transaction context
-    "UAT_CALLER_ADDRESS".to_string()
+    "LOS_CALLER_ADDRESS".to_string()
 }
 
 #[no_mangle]
@@ -89,7 +89,7 @@ pub extern "C" fn init(name_ptr: *const u8, name_len: usize,
             info: TokenInfo {
                 name,
                 symbol,
-                decimals: 8, // Match UAT's VOI denomination
+                decimals: 8, // Match LOS's CIL denomination
                 total_supply,
             },
             balances,
@@ -190,6 +190,6 @@ pub extern "C" fn execute(input_ptr: *const u8, input_len: usize) -> *const u8 {
 }
 
 fn main() {
-    println!("ERC20-like Token Contract for UAT");
+    println!("ERC20-like Token Contract for LOS");
     println!("Compile to WASM before deployment");
 }

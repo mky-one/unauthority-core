@@ -2,7 +2,7 @@
 
 ## ✅ COMPLETE - Zero Manual Setup Required
 
-UAT Wallet now bundles Tor daemon just like Bitcoin Core - **users don't need to install Tor Browser!**
+LOS Wallet now bundles Tor daemon just like Bitcoin Core - **users don't need to install Tor Browser!**
 
 ---
 
@@ -226,7 +226,7 @@ Wallet: *Just works!* ✅ 😊
 
 ## 📊 Comparison with Bitcoin Core
 
-| Feature | Bitcoin Core | UAT Wallet |
+| Feature | Bitcoin Core | LOS Wallet |
 |---------|-------------|------------|
 | Bundled Tor | ✅ Yes | ✅ Yes |
 | Auto-start | ✅ Yes | ✅ Yes |
@@ -239,7 +239,7 @@ Wallet: *Just works!* ✅ 😊
 
 ## 🎉 Result
 
-**UAT Wallet = Bitcoin Core-level UX for Tor privacy!**
+**LOS Wallet = Bitcoin Core-level UX for Tor privacy!**
 
 No more:
 - ❌ "Install Tor Browser first"

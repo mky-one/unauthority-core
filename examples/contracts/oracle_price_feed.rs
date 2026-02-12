@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 //! # Oracle Price Feed Consumer Contract
 //! 
-//! Smart contract demonstrating integration with UAT's decentralized oracle system.
+//! Smart contract demonstrating integration with LOS's decentralized oracle system.
 //! 
 //! ## Features:
 //! - Fetch BTC/USD and ETH/USD prices from oracle
@@ -12,7 +12,7 @@
 //! ## Deployment:
 //! ```bash
 //! cargo build --release --target wasm32-unknown-unknown
-//! uat-cli deploy target/wasm32-unknown-unknown/release/oracle_price_feed.wasm
+//! los-cli deploy target/wasm32-unknown-unknown/release/oracle_price_feed.wasm
 //! ```
 
 use serde::{Deserialize, Serialize};
@@ -229,5 +229,5 @@ fn error_response(message: &str) -> *const u8 {
 
 fn main() {
     println!("Oracle Price Feed Consumer Contract");
-    println!("Integrates with UAT's decentralized oracle system");
+    println!("Integrates with LOS's decentralized oracle system");
 }

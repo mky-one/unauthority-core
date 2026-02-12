@@ -31,9 +31,9 @@ echo "📋 TEST 1: Build & Compilation"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo ""
 
-if cargo build --release -p uat-node 2>&1 | grep -q "Finished"; then
+if cargo build --release -p los-node 2>&1 | grep -q "Finished"; then
     test_pass "Release binary compiled successfully"
-    BINARY_SIZE=$(du -h target/release/uat-node | cut -f1)
+    BINARY_SIZE=$(du -h target/release/los-node | cut -f1)
     test_info "Binary size: $BINARY_SIZE"
 else
     test_fail "Compilation failed"
@@ -68,7 +68,7 @@ echo ""
 sleep 2
 
 # Clean databases for fresh test
-rm -rf node_data/validator-*/uat_database 2>/dev/null || true
+rm -rf node_data/validator-*/los_database 2>/dev/null || true
 
 # Start 3-node network
 test_info "Starting 3-node testnet..."
@@ -76,9 +76,9 @@ test_info "Starting 3-node testnet..."
 sleep 8
 
 # Check database isolation
-if [ -d "node_data/validator-1/uat_database" ] && \
-   [ -d "node_data/validator-2/uat_database" ] && \
-   [ -d "node_data/validator-3/uat_database" ]; then
+if [ -d "node_data/validator-1/los_database" ] && \
+   [ -d "node_data/validator-2/los_database" ] && \
+   [ -d "node_data/validator-3/los_database" ]; then
     test_pass "Each validator has isolated database"
 else
     test_fail "Database isolation broken"
@@ -141,9 +141,9 @@ echo "📋 TEST 6: Consensus & Supply Synchronization"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo ""
 
-S1=$(curl -s http://localhost:3030/supply | jq -r '.remaining_supply_void' 2>/dev/null || echo "0")
-S2=$(curl -s http://localhost:3031/supply | jq -r '.remaining_supply_void' 2>/dev/null || echo "0")
-S3=$(curl -s http://localhost:3032/supply | jq -r '.remaining_supply_void' 2>/dev/null || echo "0")
+S1=$(curl -s http://localhost:3030/supply | jq -r '.remaining_supply_cil' 2>/dev/null || echo "0")
+S2=$(curl -s http://localhost:3031/supply | jq -r '.remaining_supply_cil' 2>/dev/null || echo "0")
+S3=$(curl -s http://localhost:3032/supply | jq -r '.remaining_supply_cil' 2>/dev/null || echo "0")
 
 if [ "$S1" = "$S2" ] && [ "$S2" = "$S3" ] && [ "$S1" != "0" ]; then
     test_pass "All nodes report identical supply: $S1 VOI"
@@ -176,11 +176,11 @@ echo ""
 for port in 3030 3031 3032; do
     ADDR=$(curl -s http://localhost:$port/whoami | jq -r '.short' 2>/dev/null)
     if [ -n "$ADDR" ] && [ "$ADDR" != "null" ]; then
-        BALANCE=$(curl -s http://localhost:$port/bal/$ADDR | jq -r '.balance_uat' 2>/dev/null || echo "0")
+        BALANCE=$(curl -s http://localhost:$port/bal/$ADDR | jq -r '.balance_los' 2>/dev/null || echo "0")
         if [ "$BALANCE" = "1000" ]; then
-            test_pass "Node $port has correct DEV_MODE balance (1000 UAT)"
+            test_pass "Node $port has correct DEV_MODE balance (1000 LOS)"
         else
-            test_fail "Node $port has incorrect balance: $BALANCE UAT (expected 1000)"
+            test_fail "Node $port has incorrect balance: $BALANCE LOS (expected 1000)"
         fi
     else
         test_fail "Could not retrieve address for node $port"

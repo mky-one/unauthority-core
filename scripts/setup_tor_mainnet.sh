@@ -144,7 +144,7 @@ sudo apt install torsocks  # Linux
 torsocks curl http://$ONION_ADDRESS/node-info
 
 # Check balance
-torsocks curl http://$ONION_ADDRESS/balance/UAT...
+torsocks curl http://$ONION_ADDRESS/balance/LOS...
 
 DAEMON INFO:
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -156,7 +156,7 @@ Hidden Service Dir: $TOR_DIR/hidden_service
 MAINTAINER:
 Keep both running in background:
 1. Tor daemon (PID $TOR_PID)
-2. UAT node (localhost:3030)
+2. LOS node (localhost:3030)
 
 To stop:
 kill $TOR_PID

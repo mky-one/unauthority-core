@@ -19,7 +19,7 @@ echo "╚═══════════════════════�
 echo ""
 
 echo -e "${YELLOW}[1/2] Stopping backend nodes...${NC}"
-pkill -9 uat-node 2>/dev/null && echo "   ✅ Backend nodes stopped" || echo "   • No backend nodes running"
+pkill -9 los-node 2>/dev/null && echo "   ✅ Backend nodes stopped" || echo "   • No backend nodes running"
 sleep 1
 
 echo ""

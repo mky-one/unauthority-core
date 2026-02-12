@@ -6,7 +6,7 @@ echo "╚═══════════════════════�
 echo ""
 
 # Check if already running
-if pgrep -f "uat-node" > /dev/null; then
+if pgrep -f "los-node" > /dev/null; then
     echo "⚠️  Backend nodes already running. Stop them first with ./stop_network.sh"
     exit 1
 fi

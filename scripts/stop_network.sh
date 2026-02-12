@@ -30,7 +30,7 @@ if [ -f node_data/pids.txt ]; then
     echo -e "${GREEN}✅ All nodes stopped successfully${NC}"
 else
     echo "   No PIDs file found. Attempting to kill by name..."
-    pkill -f "uat-node" && echo -e "   ${GREEN}✓${NC} Killed uat-node processes" || echo -e "   ${YELLOW}⚠${NC}  No processes found"
+    pkill -f "los-node" && echo -e "   ${GREEN}✓${NC} Killed los-node processes" || echo -e "   ${YELLOW}⚠${NC}  No processes found"
     echo ""
     echo -e "${GREEN}✅ Cleanup complete${NC}"
 fi

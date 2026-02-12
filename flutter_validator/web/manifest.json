@@ -1,11 +1,11 @@
 {
-    "name": "UAT Validator Node",
-    "short_name": "UAT Validator Node",
+    "name": "LOS Validator Node",
+    "short_name": "LOS Validator Node",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#0175C2",
     "theme_color": "#0175C2",
-    "description": "Unauthority (UAT) Validator Node - Monitor and manage blockchain validators",
+    "description": "Unauthority (LOS) Validator Node - Monitor and manage blockchain validators",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
     "icons": [

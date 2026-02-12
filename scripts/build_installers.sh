@@ -4,7 +4,7 @@
 
 set -e
 
-echo "🏗️  UAT Frontend Installer Builder"
+echo "🏗️  LOS Frontend Installer Builder"
 echo "=================================="
 
 # Check prerequisites

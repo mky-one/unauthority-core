@@ -5,7 +5,7 @@ import 'package:ffi/ffi.dart';
 
 /// Dilithium5 Post-Quantum cryptography service via native Rust FFI.
 ///
-/// Provides real CRYSTALS-Dilithium5 operations matching the uat-crypto backend:
+/// Provides real CRYSTALS-Dilithium5 operations matching the los-crypto backend:
 /// - Keypair generation (NIST Level 5, 2592-byte PK, 4864-byte SK)
 /// - Message signing (detached signatures)
 /// - Signature verification

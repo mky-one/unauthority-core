@@ -192,9 +192,9 @@ SUPPLY_1=$(curl -s http://localhost:3030/supply | grep -o '"remaining_supply_cil
 SUPPLY_2=$(curl -s http://localhost:3031/supply | grep -o '"remaining_supply_cil":[0-9]*' | cut -d':' -f2)
 SUPPLY_3=$(curl -s http://localhost:3032/supply | grep -o '"remaining_supply_cil":[0-9]*' | cut -d':' -f2)
 
-echo "   Node 1: $SUPPLY_1 VOI"
-echo "   Node 2: $SUPPLY_2 VOI"
-echo "   Node 3: $SUPPLY_3 VOI"
+echo "   Node 1: $SUPPLY_1 CIL"
+echo "   Node 2: $SUPPLY_2 CIL"
+echo "   Node 3: $SUPPLY_3 CIL"
 
 if [ "$SUPPLY_1" = "$SUPPLY_2" ] && [ "$SUPPLY_2" = "$SUPPLY_3" ]; then
     test_pass "All nodes report same supply"

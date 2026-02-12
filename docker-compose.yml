@@ -9,7 +9,7 @@ services:
     container_name: los-validator-1
     hostname: validator-1
     networks:
-      uat-network:
+      los-network:
         ipv4_address: 172.20.0.11
     ports:
       - "8080:8080"   # REST API
@@ -50,7 +50,7 @@ services:
     container_name: los-validator-2
     hostname: validator-2
     networks:
-      uat-network:
+      los-network:
         ipv4_address: 172.20.0.12
     ports:
       - "8081:8080"
@@ -94,7 +94,7 @@ services:
     container_name: los-validator-3
     hostname: validator-3
     networks:
-      uat-network:
+      los-network:
         ipv4_address: 172.20.0.13
     ports:
       - "8082:8080"
@@ -141,7 +141,7 @@ services:
     container_name: los-validator-4
     hostname: validator-4
     networks:
-      uat-network:
+      los-network:
         ipv4_address: 172.20.0.14
     ports:
       - "8083:8080"
@@ -186,10 +186,10 @@ services:
   # Prometheus (Monitoring)
   prometheus:
     image: prom/prometheus:latest
-    container_name: uat-prometheus
+    container_name: los-prometheus
     hostname: prometheus
     networks:
-      uat-network:
+      los-network:
         ipv4_address: 172.20.0.20
     ports:
       - "9094:9090"
@@ -212,15 +212,15 @@ services:
   # Grafana (Visualization)
   grafana:
     image: grafana/grafana:latest
-    container_name: uat-grafana
+    container_name: los-grafana
     hostname: grafana
     networks:
-      uat-network:
+      los-network:
         ipv4_address: 172.20.0.21
     ports:
       - "3000:3000"
     volumes:
-      - ./docs/grafana-dashboard.json:/etc/grafana/provisioning/dashboards/uat-dashboard.json:ro
+      - ./docs/grafana-dashboard.json:/etc/grafana/provisioning/dashboards/los-dashboard.json:ro
       - grafana-data:/var/lib/grafana
     environment:
       - GF_SECURITY_ADMIN_USER=admin
@@ -232,7 +232,7 @@ services:
     restart: unless-stopped
 
 networks:
-  uat-network:
+  los-network:
     driver: bridge
     ipam:
       config:

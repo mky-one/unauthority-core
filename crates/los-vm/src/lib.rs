@@ -800,7 +800,7 @@ mod tests {
         let json = serde_json::to_string(&result).unwrap();
         let deserialized: ContractResult = serde_json::from_str(&json).unwrap();
 
-        assert_eq!(deserialized.success, true);
+        assert!(deserialized.success);
         assert_eq!(deserialized.output, "success");
     }
 

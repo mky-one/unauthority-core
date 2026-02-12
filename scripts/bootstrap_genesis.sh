@@ -58,9 +58,9 @@ DEV_SUPPLY=$(jq -r '.constants.dev_supply_cil' "${GENESIS_DIR}/genesis_config.js
 PUBLIC_SUPPLY=$(jq -r '.constants.public_supply_cil' "${GENESIS_DIR}/genesis_config.json")
 TOTAL_SUPPLY=$(jq -r '.constants.total_supply_cil' "${GENESIS_DIR}/genesis_config.json")
 
-echo "   • Dev Supply:    ${DEV_SUPPLY} VOI"
-echo "   • Public Supply: ${PUBLIC_SUPPLY} VOI"
-echo "   • Total Supply:  ${TOTAL_SUPPLY} VOI"
+echo "   • Dev Supply:    ${DEV_SUPPLY} CIL"
+echo "   • Public Supply: ${PUBLIC_SUPPLY} CIL"
+echo "   • Total Supply:  ${TOTAL_SUPPLY} CIL"
 
 # Verify sum
 CALCULATED_TOTAL=$((DEV_SUPPLY + PUBLIC_SUPPLY))

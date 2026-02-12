@@ -25,7 +25,7 @@ class BlockConstructionService {
   final WalletService _wallet;
 
   /// Testnet CHAIN_ID = 2. Mainnet = 1.
-  /// Must match uat_core::CHAIN_ID in the backend.
+  /// Must match los_core::CHAIN_ID in the backend.
   static const int chainIdTestnet = 2;
   static const int chainIdMainnet = 1;
 

@@ -135,7 +135,7 @@ vote_timeout_seconds = 5
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 [gas]
-# Base gas price (in VOI - smallest unit)
+# Base gas price (in CIL - smallest unit)
 base_price_cil = 1000
 
 # Maximum gas per transaction
@@ -152,7 +152,7 @@ spam_threshold_tx_per_sec = 10
 spam_scaling_factor = 2
 
 # Burn limit per block (prevents PoB abuse per block)
-burn_limit_per_block_void = 1000000000
+burn_limit_per_block_cil = 1000000000
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # DATABASE & STORAGE

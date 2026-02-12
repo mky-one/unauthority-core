@@ -489,8 +489,8 @@ mod tests {
         }
 
         // First max_tx should be base fee
-        for i in 0..max_tx as usize {
-            assert_eq!(fees[i], base, "tx {} should be base fee", i + 1);
+        for (i, fee) in fees.iter().enumerate().take(max_tx as usize) {
+            assert_eq!(*fee, base, "tx {} should be base fee", i + 1);
         }
 
         // After threshold: exponential scaling

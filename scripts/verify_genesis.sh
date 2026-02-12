@@ -64,31 +64,31 @@ echo ""
 
 # Get dev supply (sum of all dev account balances)
 DEV_SUPPLY=$(jq '[.dev_accounts[].balance_cil] | add' "$GENESIS_CONFIG" 2>/dev/null || echo "0")
-echo "   Dev Supply:        $DEV_SUPPLY VOI"
+echo "   Dev Supply:        $DEV_SUPPLY CIL"
 
 # Get bootstrap supply (sum of all bootstrap node stakes)
 BOOTSTRAP_SUPPLY=$(jq '[.bootstrap_nodes[].stake_cil] | add' "$GENESIS_CONFIG" 2>/dev/null || echo "0")
-echo "   Bootstrap Supply:  $BOOTSTRAP_SUPPLY VOI"
+echo "   Bootstrap Supply:  $BOOTSTRAP_SUPPLY CIL"
 
 # Total dev allocation
 TOTAL_ALLOCATED=$((DEV_SUPPLY + BOOTSTRAP_SUPPLY))
-echo "   Total Allocated:   $TOTAL_ALLOCATED VOI"
+echo "   Total Allocated:   $TOTAL_ALLOCATED CIL"
 echo ""
 
 # Expected supply
 # Expected supply: 677,823 LOS = 673,823 (treasury) + 4,000 (bootstrap)
 EXPECTED_SUPPLY=67782300000000000  # 677,823 LOS * 100,000,000,000 CIL
 
-echo "   Expected Supply:   $EXPECTED_SUPPLY VOI"
-echo "   Difference:        $((TOTAL_ALLOCATED - EXPECTED_SUPPLY)) VOI"
+echo "   Expected Supply:   $EXPECTED_SUPPLY CIL"
+echo "   Difference:        $((TOTAL_ALLOCATED - EXPECTED_SUPPLY)) CIL"
 echo ""
 
 if [ "$TOTAL_ALLOCATED" -eq "$EXPECTED_SUPPLY" ]; then
     echo "   ✅ PASS: Supply verification MATCH"
 else
     echo "   ❌ FAIL: Supply mismatch!"
-    echo "   Expected: $EXPECTED_SUPPLY VOI"
-    echo "   Got:      $TOTAL_ALLOCATED VOI"
+    echo "   Expected: $EXPECTED_SUPPLY CIL"
+    echo "   Got:      $TOTAL_ALLOCATED CIL"
     exit 1
 fi
 echo ""
@@ -98,14 +98,14 @@ echo "🔍 WALLET BALANCE DETAILS:"
 echo ""
 
 echo "   Dev Wallets #1-7 (191,942 LOS each):"
-EXPECTED_DEV_BALANCE=19194200000000  # 191,942 LOS in VOI
+EXPECTED_DEV_BALANCE=19194200000000  # 191,942 LOS in CIL
 
 for i in $(seq 0 6); do
     BALANCE=$(jq ".dev_accounts[$i].balance_cil" "$GENESIS_CONFIG" 2>/dev/null || echo "0")
     ADDR=$(jq -r ".dev_accounts[$i].address" "$GENESIS_CONFIG" 2>/dev/null | cut -c1-16)...
     
     if [ "$BALANCE" -eq "$EXPECTED_DEV_BALANCE" ]; then
-        echo "      ✅ Dev #$((i+1)): $ADDR ($BALANCE VOI)"
+        echo "      ✅ Dev #$((i+1)): $ADDR ($BALANCE CIL)"
     else
         echo "      ❌ Dev #$((i+1)): MISMATCH (got $BALANCE, expected $EXPECTED_DEV_BALANCE)"
         exit 1
@@ -114,12 +114,12 @@ done
 echo ""
 
 echo "   Dev Wallet #8 (188,942 LOS - reduced for bootstrap):"
-EXPECTED_DEV8_BALANCE=18894200000000  # 188,942 LOS in VOI (reduced from 191,942)
+EXPECTED_DEV8_BALANCE=18894200000000  # 188,942 LOS in CIL (reduced from 191,942)
 DEV8_BALANCE=$(jq ".dev_accounts[7].balance_cil" "$GENESIS_CONFIG" 2>/dev/null || echo "0")
 ADDR=$(jq -r ".dev_accounts[7].address" "$GENESIS_CONFIG" 2>/dev/null | cut -c1-16)...
 
 if [ "$DEV8_BALANCE" -eq "$EXPECTED_DEV8_BALANCE" ]; then
-    echo "      ✅ Dev #8: $ADDR ($DEV8_BALANCE VOI)"
+    echo "      ✅ Dev #8: $ADDR ($DEV8_BALANCE CIL)"
 else
     echo "      ❌ Dev #8: MISMATCH (got $DEV8_BALANCE, expected $EXPECTED_DEV8_BALANCE)"
     exit 1
@@ -127,14 +127,14 @@ fi
 echo ""
 
 echo "   Bootstrap Validator Nodes #1-3 (1,000 LOS each):"
-EXPECTED_BOOTSTRAP_BALANCE=100000000000  # 1,000 LOS in VOI
+EXPECTED_BOOTSTRAP_BALANCE=100000000000  # 1,000 LOS in CIL
 
 for i in $(seq 0 2); do
     BALANCE=$(jq ".bootstrap_nodes[$i].stake_cil" "$GENESIS_CONFIG" 2>/dev/null || echo "0")
     ADDR=$(jq -r ".bootstrap_nodes[$i].address" "$GENESIS_CONFIG" 2>/dev/null | cut -c1-16)...
     
     if [ "$BALANCE" -eq "$EXPECTED_BOOTSTRAP_BALANCE" ]; then
-        echo "      ✅ Validator #$((i+1)): $ADDR ($BALANCE VOI)"
+        echo "      ✅ Validator #$((i+1)): $ADDR ($BALANCE CIL)"
     else
         echo "      ❌ Validator #$((i+1)): MISMATCH (got $BALANCE, expected $EXPECTED_BOOTSTRAP_BALANCE)"
         exit 1
@@ -146,7 +146,7 @@ echo ""
 echo "📋 SUMMARY TABLE:"
 echo ""
 echo "   ┌────────────────────────────┬──────────┬────────────────────────┐"
-echo "   │ Category                   │ Count    │ Balance (VOI)          │"
+echo "   │ Category                   │ Count    │ Balance (CIL)          │"
 echo "   ├────────────────────────────┼──────────┼────────────────────────┤"
 
 DEV_1_7_TOTAL=$((7 * EXPECTED_DEV_BALANCE))
@@ -160,7 +160,7 @@ echo "   └──────────────────────�
 echo ""
 
 # Step 6: Conversion to LOS
-echo "🔄 SUPPLY IN LOS (1 LOS = 100,000,000 VOI):"
+echo "🔄 SUPPLY IN LOS (1 LOS = 100,000,000 CIL):"
 echo ""
 
 DEV_1_7_LOS=$((DEV_1_7_TOTAL / 100000000))

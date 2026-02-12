@@ -145,7 +145,7 @@ echo ""
 echo -n "   Node 1 (3030): "
 if curl -s http://localhost:3030/supply > /dev/null 2>&1; then
     SUPPLY_1=$(curl -s http://localhost:3030/supply | grep -o '"remaining_supply_cil":[0-9]*' | cut -d':' -f2)
-    echo -e "${GREEN}ONLINE${NC} (Supply: $SUPPLY_1 VOI)"
+    echo -e "${GREEN}ONLINE${NC} (Supply: $SUPPLY_1 CIL)"
 else
     echo -e "${RED}OFFLINE${NC}"
 fi
@@ -154,7 +154,7 @@ fi
 echo -n "   Node 2 (3031): "
 if curl -s http://localhost:3031/supply > /dev/null 2>&1; then
     SUPPLY_2=$(curl -s http://localhost:3031/supply | grep -o '"remaining_supply_cil":[0-9]*' | cut -d':' -f2)
-    echo -e "${GREEN}ONLINE${NC} (Supply: $SUPPLY_2 VOI)"
+    echo -e "${GREEN}ONLINE${NC} (Supply: $SUPPLY_2 CIL)"
 else
     echo -e "${RED}OFFLINE${NC}"
 fi
@@ -163,7 +163,7 @@ fi
 echo -n "   Node 3 (3032): "
 if curl -s http://localhost:3032/supply > /dev/null 2>&1; then
     SUPPLY_3=$(curl -s http://localhost:3032/supply | grep -o '"remaining_supply_cil":[0-9]*' | cut -d':' -f2)
-    echo -e "${GREEN}ONLINE${NC} (Supply: $SUPPLY_3 VOI)"
+    echo -e "${GREEN}ONLINE${NC} (Supply: $SUPPLY_3 CIL)"
 else
     echo -e "${RED}OFFLINE${NC}"
 fi

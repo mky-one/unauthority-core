@@ -65,7 +65,7 @@ echo "   • Validator ID: $LOS_NODE_ID"
 echo "   • Address: ${LOS_VALIDATOR_ADDRESS:0:30}..."
 echo "   • Sentry Port: $LOS_SENTRY_PORT"
 echo "   • Signer Port: $LOS_SIGNER_PORT"
-echo "   • Stake: $LOS_STAKE_CIL VOI"
+echo "   • Stake: $LOS_STAKE_CIL CIL"
 echo ""
 
 # Check if private key exists

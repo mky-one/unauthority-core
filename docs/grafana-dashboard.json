@@ -1,7 +1,7 @@
 {
   "dashboard": {
     "title": "Unauthority (LOS) Node Monitoring",
-    "tags": ["blockchain", "uat", "unauthority"],
+    "tags": ["blockchain", "los", "unauthority"],
     "timezone": "browser",
     "panels": [
       {

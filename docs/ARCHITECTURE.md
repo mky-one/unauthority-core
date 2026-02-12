@@ -223,7 +223,7 @@ Voting power: √(stake) — quadratic, not linear
 │      └────┬─────┘               │
 │           │                     │
 │    GossipSub topic:             │
-│    "uat-blocks"                 │
+│    "los-blocks"                 │
 │                                 │
 │    Transport: Noise Protocol    │
 │    Mux: Yamux                   │

@@ -238,23 +238,23 @@ elif [ "$TARGET_PLATFORM" = "linux" ]; then
     STAGING="$RELEASE_DIR/staging"
 
     rm -rf "$STAGING" "$ARCHIVE_PATH"
-    mkdir -p "$STAGING/uat-wallet"
+    mkdir -p "$STAGING/los-wallet"
 
     # Copy bundle
-    cp -R "$BUNDLE_PATH"/* "$STAGING/uat-wallet/"
+    cp -R "$BUNDLE_PATH"/* "$STAGING/los-wallet/"
 
     # Create launcher script
-    cat > "$STAGING/uat-wallet/run.sh" << 'LAUNCHER'
+    cat > "$STAGING/los-wallet/run.sh" << 'LAUNCHER'
 #!/bin/bash
 # LOS Wallet Launcher
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 export LD_LIBRARY_PATH="${SCRIPT_DIR}/lib:${LD_LIBRARY_PATH}"
 exec "${SCRIPT_DIR}/flutter_wallet" "$@"
 LAUNCHER
-    chmod +x "$STAGING/uat-wallet/run.sh"
+    chmod +x "$STAGING/los-wallet/run.sh"
 
     # Create README
-    cat > "$STAGING/uat-wallet/README.txt" << 'LREADME'
+    cat > "$STAGING/los-wallet/README.txt" << 'LREADME'
 ═══════════════════════════════════════════════
   LOS WALLET - TESTNET RELEASE (Linux)
   Unauthority Blockchain v1.0
@@ -262,7 +262,7 @@ LAUNCHER
 
 INSTALLATION:
   1. Extract this archive: tar xzf LOS-Wallet-*.tar.gz
-  2. Run: ./uat-wallet/run.sh
+  2. Run: ./los-wallet/run.sh
 
 The wallet automatically handles Tor and crypto setup.
 LREADME
@@ -270,7 +270,7 @@ LREADME
     # Create archive
     echo "   📦 Creating $ARCHIVE_NAME..."
     cd "$STAGING"
-    tar czf "$ARCHIVE_PATH" uat-wallet/
+    tar czf "$ARCHIVE_PATH" los-wallet/
     cd "$WALLET_DIR"
 
     # Cleanup
@@ -312,7 +312,7 @@ if [ "$TARGET_PLATFORM" = "macos" ]; then
     echo "    4. Wallet auto-configures everything"
 elif [ "$TARGET_PLATFORM" = "linux" ]; then
     echo "    1. Extract: tar xzf LOS-Wallet-*.tar.gz"
-    echo "    2. Run: ./uat-wallet/run.sh"
+    echo "    2. Run: ./los-wallet/run.sh"
     echo "    3. Wallet auto-configures everything"
 fi
 echo ""

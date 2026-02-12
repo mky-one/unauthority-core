@@ -371,14 +371,22 @@ async fn test_database_persistence() {
         let ledger: Ledger = serde_json::from_str(&data).expect("Failed to deserialize ledger");
         let account_count = ledger.accounts.len();
 
-        assert_eq!(account_count, 1000, "Should recover all 1000 accounts from disk");
+        assert_eq!(
+            account_count, 1000,
+            "Should recover all 1000 accounts from disk"
+        );
 
         // Verify specific accounts survived
         for (addr, expected_balance) in &expected_accounts {
-            let account = ledger.accounts.get(addr)
+            let account = ledger
+                .accounts
+                .get(addr)
                 .unwrap_or_else(|| panic!("Account {} not found after recovery", addr));
-            assert_eq!(account.balance, *expected_balance,
-                "Balance mismatch for account {}", addr);
+            assert_eq!(
+                account.balance, *expected_balance,
+                "Balance mismatch for account {}",
+                addr
+            );
         }
 
         println!("  ✅ Loaded {} accounts from disk", account_count);

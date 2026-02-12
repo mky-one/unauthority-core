@@ -65,10 +65,7 @@ async fn stake(
         || resp_data["status"].as_str() == Some("registered")
     {
         println!();
-        print_success(&format!(
-            "Validator registered with {} LOS stake!",
-            amount
-        ));
+        print_success(&format!("Validator registered with {} LOS stake!", amount));
         println!("  {} {}", "Address:".bold(), address.green());
         println!(
             "  {} {}",
@@ -76,9 +73,7 @@ async fn stake(
             "Active validator".green().bold()
         );
     } else {
-        let msg = resp_data["msg"]
-            .as_str()
-            .unwrap_or("Unknown error");
+        let msg = resp_data["msg"].as_str().unwrap_or("Unknown error");
         print_error(&format!("Staking failed: {}", msg));
     }
 
@@ -128,9 +123,7 @@ async fn unstake(
             "Stake will be returned after cooldown period.".dimmed()
         );
     } else {
-        let msg = resp_data["msg"]
-            .as_str()
-            .unwrap_or("Unknown error");
+        let msg = resp_data["msg"].as_str().unwrap_or("Unknown error");
         print_error(&format!("Unstaking failed: {}", msg));
     }
 

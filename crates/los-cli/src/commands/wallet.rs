@@ -1,9 +1,9 @@
 use crate::{print_error, print_info, print_success, WalletCommands};
 use colored::*;
-use serde::{Deserialize, Serialize};
-use std::path::Path;
 use los_core::CIL_PER_LOS;
 use los_crypto::generate_encrypted_keypair;
+use serde::{Deserialize, Serialize};
+use std::path::Path;
 
 #[allow(dead_code)]
 #[derive(Serialize, Deserialize)]

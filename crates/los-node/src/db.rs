@@ -1,10 +1,10 @@
 // Database Module - sled Embedded Database
 // Provides ACID-compliant atomic operations for blockchain state
 
+use los_core::{AccountState, Block, Ledger};
 use sled::{Db, Tree};
 use std::path::Path;
 use std::sync::Arc;
-use los_core::{AccountState, Block, Ledger};
 
 const DB_PATH: &str = "los_database";
 const TREE_BLOCKS: &str = "blocks";

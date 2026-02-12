@@ -1,8 +1,8 @@
 use crate::commands::common::load_wallet_keypair;
 use crate::{print_error, print_info, print_success, TxCommands};
 use colored::*;
-use std::path::Path;
 use los_core::{Block, BlockType, CIL_PER_LOS, MIN_POW_DIFFICULTY_BITS};
+use std::path::Path;
 
 pub async fn handle(
     action: TxCommands,
@@ -76,10 +76,7 @@ async fn send_tx(
         return Ok(());
     }
     let account_data: serde_json::Value = account_resp.json().await?;
-    let previous = account_data["head"]
-        .as_str()
-        .unwrap_or("0")
-        .to_string();
+    let previous = account_data["head"].as_str().unwrap_or("0").to_string();
     // Use string-based balance to avoid f64 precision loss (C-02 fix)
     let balance_cil: u128 = account_data["balance_cil_str"]
         .as_str()
@@ -147,12 +144,19 @@ async fn send_tx(
     let resp = client.post(&send_url).json(&payload).send().await?;
     let resp_data: serde_json::Value = resp.json().await?;
 
-    if resp_data["status"].as_str() == Some("ok") || resp_data["status"].as_str() == Some("confirmed") {
+    if resp_data["status"].as_str() == Some("ok")
+        || resp_data["status"].as_str() == Some("confirmed")
+    {
         let block_hash = resp_data["hash"].as_str().unwrap_or("unknown");
         println!();
         print_success("Transaction sent successfully!");
         println!("  {} {}", "Block Hash:".bold(), block_hash.green());
-        println!("  {} {} → {}", "Transfer:".bold(), sender_addr.dimmed(), to.green());
+        println!(
+            "  {} {} → {}",
+            "Transfer:".bold(),
+            sender_addr.dimmed(),
+            to.green()
+        );
         println!("  {} {} LOS", "Amount:".bold(), amount.to_string().cyan());
     } else {
         let msg = resp_data["msg"].as_str().unwrap_or("Unknown error");

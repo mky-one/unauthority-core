@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 use sha3::{Digest, Keccak256};
-use std::collections::{HashSet, HashMap};
+use std::collections::{HashMap, HashSet};
 
 /// Maximum allowed timestamp drift from current time (5 minutes)
 pub const MAX_TIMESTAMP_DRIFT_SECS: u64 = 300;
@@ -349,9 +349,12 @@ impl Ledger {
                 // SECURITY: On mainnet build, nobody can bypass anti-whale via link prefix.
                 // System-generated blocks (REWARD:, FEE_REWARD:) are always exempt since amounts
                 // are algorithmically determined by the epoch reward/fee distribution logic.
-                let is_system_mint = block.link.starts_with("REWARD:") || block.link.starts_with("FEE_REWARD:");
+                let is_system_mint =
+                    block.link.starts_with("REWARD:") || block.link.starts_with("FEE_REWARD:");
                 let is_faucet = if is_testnet_build() {
-                    block.link.starts_with("FAUCET:") || block.link.starts_with("TESTNET:") || block.link.starts_with("Src:")
+                    block.link.starts_with("FAUCET:")
+                        || block.link.starts_with("TESTNET:")
+                        || block.link.starts_with("Src:")
                 } else {
                     false // Mainnet: NO exemptions for user-initiated mints
                 };

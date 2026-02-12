@@ -1,10 +1,4 @@
 use base64::Engine as _;
-use rate_limiter::{filters::rate_limit, RateLimiter};
-use std::collections::{HashMap, HashSet};
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex, MutexGuard};
-use tokio::io::{self, AsyncBufReadExt, BufReader};
-use tokio::sync::mpsc;
 use los_consensus::abft::ABFTConsensus; // aBFT engine for consensus stats & safety validation
 use los_consensus::checkpoint::{CheckpointManager, FinalityCheckpoint, CHECKPOINT_INTERVAL}; // Finality checkpoints
 use los_consensus::slashing::SlashingManager; // Slashing enforcement
@@ -12,10 +6,16 @@ use los_consensus::voting::calculate_voting_power; // Quadratic voting: Power = 
 use los_core::anti_whale::{AntiWhaleConfig, AntiWhaleEngine}; // NEW: Anti-whale mechanisms
 use los_core::oracle_consensus::OracleConsensus; // NEW: Oracle consensus
 use los_core::validator_rewards::ValidatorRewardPool;
-use los_core::{AccountState, Block, BlockType, Ledger, MIN_VALIDATOR_STAKE_CIL, CIL_PER_LOS};
-use los_network::{NetworkEvent, LosNode};
+use los_core::{AccountState, Block, BlockType, Ledger, CIL_PER_LOS, MIN_VALIDATOR_STAKE_CIL};
+use los_network::{LosNode, NetworkEvent};
 #[cfg(feature = "vm")]
 use los_vm::{ContractCall, WasmEngine};
+use rate_limiter::{filters::rate_limit, RateLimiter};
+use std::collections::{HashMap, HashSet};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex, MutexGuard};
+use tokio::io::{self, AsyncBufReadExt, BufReader};
+use tokio::sync::mpsc;
 use zeroize::Zeroizing;
 
 /// Safe mutex lock that recovers from poisoned state instead of panicking.
@@ -358,7 +358,9 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
 
         // C-04 FIX: Populate validator set with real addresses for leader selection
         let l = safe_lock(&ledger);
-        let mut validators: Vec<String> = l.accounts.iter()
+        let mut validators: Vec<String> = l
+            .accounts
+            .iter()
             .filter(|(_, a)| a.balance >= MIN_VALIDATOR_STAKE_CIL && a.is_validator)
             .map(|(addr, _)| addr.clone())
             .collect();
@@ -377,11 +379,15 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
 
     // 1. GET /bal/:address
     let l_bal = ledger.clone();
-    let balance_route = warp::path!("bal" / String)
-        .and(with_state(l_bal))
-        .map(|addr: String, l: Arc<Mutex<Ledger>>| {
+    let balance_route = warp::path!("bal" / String).and(with_state(l_bal)).map(
+        |addr: String, l: Arc<Mutex<Ledger>>| {
             let l_guard = safe_lock(&l);
-            let full_addr = l_guard.accounts.keys().find(|k| get_short_addr(k) == addr || **k == addr).cloned().unwrap_or(addr);
+            let full_addr = l_guard
+                .accounts
+                .keys()
+                .find(|k| get_short_addr(k) == addr || **k == addr)
+                .cloned()
+                .unwrap_or(addr);
             let acct = l_guard.accounts.get(&full_addr);
             let bal = acct.map(|a| a.balance).unwrap_or(0);
             let head = acct.map(|a| a.head.as_str()).unwrap_or("0");
@@ -394,7 +400,8 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
                 "head": head,
                 "block_count": block_count
             }))
-        });
+        },
+    );
 
     // 2. GET /supply
     let l_sup = ledger.clone();
@@ -468,43 +475,59 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
     let ab_peer = address_book.clone();
     let ve_peer = validator_endpoints.clone();
     let l_peer = ledger.clone();
-    let peers_route = warp::path("peers").and(with_state((ab_peer, ve_peer, l_peer))).map(
-        |(ab, ve, l): (Arc<Mutex<HashMap<String, String>>>, Arc<Mutex<HashMap<String, String>>>, Arc<Mutex<Ledger>>)| {
-            let ab_guard = safe_lock(&ab);
-            let ve_guard = safe_lock(&ve);
-            let l_guard = safe_lock(&l);
+    let peers_route = warp::path("peers")
+        .and(with_state((ab_peer, ve_peer, l_peer)))
+        .map(
+            |(ab, ve, l): (
+                Arc<Mutex<HashMap<String, String>>>,
+                Arc<Mutex<HashMap<String, String>>>,
+                Arc<Mutex<Ledger>>,
+            )| {
+                let ab_guard = safe_lock(&ab);
+                let ve_guard = safe_lock(&ve);
+                let l_guard = safe_lock(&l);
 
-            // Build enriched peer list
-            let peers: Vec<serde_json::Value> = ab_guard.iter().map(|(short, full)| {
-                let is_validator = l_guard.accounts.get(full).map(|a| a.is_validator).unwrap_or(false);
-                let onion = ve_guard.get(full).cloned();
-                let mut entry = serde_json::json!({
-                    "short_address": short,
-                    "address": full,
-                    "is_validator": is_validator,
-                });
-                if let Some(o) = onion {
-                    entry["onion_address"] = serde_json::json!(o);
-                }
-                entry
-            }).collect();
+                // Build enriched peer list
+                let peers: Vec<serde_json::Value> = ab_guard
+                    .iter()
+                    .map(|(short, full)| {
+                        let is_validator = l_guard
+                            .accounts
+                            .get(full)
+                            .map(|a| a.is_validator)
+                            .unwrap_or(false);
+                        let onion = ve_guard.get(full).cloned();
+                        let mut entry = serde_json::json!({
+                            "short_address": short,
+                            "address": full,
+                            "is_validator": is_validator,
+                        });
+                        if let Some(o) = onion {
+                            entry["onion_address"] = serde_json::json!(o);
+                        }
+                        entry
+                    })
+                    .collect();
 
-            // Collect all known validator endpoints for discovery
-            let validator_endpoints: Vec<serde_json::Value> = ve_guard.iter().map(|(addr, onion)| {
-                serde_json::json!({
-                    "address": addr,
-                    "onion_address": onion,
-                })
-            }).collect();
+                // Collect all known validator endpoints for discovery
+                let validator_endpoints: Vec<serde_json::Value> = ve_guard
+                    .iter()
+                    .map(|(addr, onion)| {
+                        serde_json::json!({
+                            "address": addr,
+                            "onion_address": onion,
+                        })
+                    })
+                    .collect();
 
-            warp::reply::json(&serde_json::json!({
-                "peers": peers,
-                "peer_count": peers.len(),
-                "validator_endpoints": validator_endpoints,
-                "validator_endpoint_count": validator_endpoints.len(),
-            }))
-        },
-    );
+                warp::reply::json(&serde_json::json!({
+                    "peers": peers,
+                    "peer_count": peers.len(),
+                    "validator_endpoints": validator_endpoints,
+                    "validator_endpoint_count": validator_endpoints.len(),
+                }))
+            },
+        );
 
     // 5. POST /send (WEIGHTED INITIAL POWER + ANTI-WHALE DYNAMIC FEES)
     let l_send = ledger.clone();
@@ -1299,55 +1322,54 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
             .and(warp::post())
             .and(warp::body::bytes())
             .and(with_state(wasm_deploy))
-            .then(
-                |body: bytes::Bytes, engine: Arc<WasmEngine>| async move {
-                    // FIX: Parse JSON manually to return proper 400 instead of 500
-                    let req: DeployContractRequest = match serde_json::from_slice(&body) {
-                        Ok(r) => r,
-                        Err(e) => {
-                            return warp::reply::json(&serde_json::json!({
-                                "status": "error",
-                                "code": 400,
-                                "msg": format!("Invalid request body: {}", e)
-                            }))
-                        }
-                    };
-                    // Decode base64 WASM bytecode
-                    let bytecode = match base64::engine::general_purpose::STANDARD.decode(&req.bytecode) {
-                        Ok(bytes) => bytes,
-                        Err(_) => {
-                            return warp::reply::json(&serde_json::json!({
-                                "status": "error",
-                                "msg": "Invalid base64 bytecode"
-                            }))
-                        }
-                    };
-
-                    // Deploy to UVM (permissionless)
-                    let block_number = std::time::SystemTime::now()
-                        .duration_since(std::time::UNIX_EPOCH)
-                        .unwrap_or_default()
-                        .as_secs();
-
-                    match engine.deploy_contract(
-                        req.owner.clone(),
-                        bytecode,
-                        req.initial_state.unwrap_or_default(),
-                        block_number,
-                    ) {
-                        Ok(contract_addr) => warp::reply::json(&serde_json::json!({
-                            "status": "success",
-                            "contract_address": contract_addr,
-                            "owner": req.owner,
-                            "deployed_at_block": block_number
-                        })),
-                        Err(e) => warp::reply::json(&serde_json::json!({
+            .then(|body: bytes::Bytes, engine: Arc<WasmEngine>| async move {
+                // FIX: Parse JSON manually to return proper 400 instead of 500
+                let req: DeployContractRequest = match serde_json::from_slice(&body) {
+                    Ok(r) => r,
+                    Err(e) => {
+                        return warp::reply::json(&serde_json::json!({
                             "status": "error",
-                            "msg": e
-                        })),
+                            "code": 400,
+                            "msg": format!("Invalid request body: {}", e)
+                        }))
                     }
-                },
-            );
+                };
+                // Decode base64 WASM bytecode
+                let bytecode = match base64::engine::general_purpose::STANDARD.decode(&req.bytecode)
+                {
+                    Ok(bytes) => bytes,
+                    Err(_) => {
+                        return warp::reply::json(&serde_json::json!({
+                            "status": "error",
+                            "msg": "Invalid base64 bytecode"
+                        }))
+                    }
+                };
+
+                // Deploy to UVM (permissionless)
+                let block_number = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_secs();
+
+                match engine.deploy_contract(
+                    req.owner.clone(),
+                    bytecode,
+                    req.initial_state.unwrap_or_default(),
+                    block_number,
+                ) {
+                    Ok(contract_addr) => warp::reply::json(&serde_json::json!({
+                        "status": "success",
+                        "contract_address": contract_addr,
+                        "owner": req.owner,
+                        "deployed_at_block": block_number
+                    })),
+                    Err(e) => warp::reply::json(&serde_json::json!({
+                        "status": "error",
+                        "msg": e
+                    })),
+                }
+            });
 
         // 8. POST /call-contract
         let wasm_call = wasm_engine.clone();
@@ -1355,38 +1377,36 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
             .and(warp::post())
             .and(warp::body::bytes())
             .and(with_state(wasm_call))
-            .then(
-                |body: bytes::Bytes, engine: Arc<WasmEngine>| async move {
-                    // FIX: Parse JSON manually to return proper 400 instead of 500
-                    let req: CallContractRequest = match serde_json::from_slice(&body) {
-                        Ok(r) => r,
-                        Err(e) => {
-                            return warp::reply::json(&serde_json::json!({
-                                "status": "error",
-                                "code": 400,
-                                "msg": format!("Invalid request body: {}", e)
-                            }))
-                        }
-                    };
-                    let call = ContractCall {
-                        contract: req.contract_address,
-                        function: req.function,
-                        args: req.args,
-                        gas_limit: req.gas_limit.unwrap_or(1000000),
-                    };
-
-                    match engine.call_contract(call) {
-                        Ok(result) => warp::reply::json(&serde_json::json!({
-                            "status": "success",
-                            "result": result
-                        })),
-                        Err(e) => warp::reply::json(&serde_json::json!({
+            .then(|body: bytes::Bytes, engine: Arc<WasmEngine>| async move {
+                // FIX: Parse JSON manually to return proper 400 instead of 500
+                let req: CallContractRequest = match serde_json::from_slice(&body) {
+                    Ok(r) => r,
+                    Err(e) => {
+                        return warp::reply::json(&serde_json::json!({
                             "status": "error",
-                            "msg": e
-                        })),
+                            "code": 400,
+                            "msg": format!("Invalid request body: {}", e)
+                        }))
                     }
-                },
-            );
+                };
+                let call = ContractCall {
+                    contract: req.contract_address,
+                    function: req.function,
+                    args: req.args,
+                    gas_limit: req.gas_limit.unwrap_or(1000000),
+                };
+
+                match engine.call_contract(call) {
+                    Ok(result) => warp::reply::json(&serde_json::json!({
+                        "status": "success",
+                        "result": result
+                    })),
+                    Err(e) => warp::reply::json(&serde_json::json!({
+                        "status": "error",
+                        "msg": e
+                    })),
+                }
+            });
 
         // 9. GET /contract/:address
         let wasm_get = wasm_engine.clone();
@@ -1584,10 +1604,14 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
                             // - connected: appeared in P2P address book → online
                             // - is_genesis: infrastructure bootstrap nodes → assumed active
                             // - in_reward_pool: verified registration (Dilithium5 proof) → active
-                            let active = has_min_stake && acc.is_validator && (connected || is_genesis || in_reward_pool);
+                            let active = has_min_stake
+                                && acc.is_validator
+                                && (connected || is_genesis || in_reward_pool);
 
                             // Real uptime from heartbeat data (not hardcoded)
-                            let uptime_pct = rp_guard.validators.get(addr.as_str())
+                            let uptime_pct = rp_guard
+                                .validators
+                                .get(addr.as_str())
                                 .map(|vs| vs.uptime_pct() as f64)
                                 .unwrap_or(if is_self { 100.0 } else { 0.0 });
 
@@ -1827,7 +1851,7 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
                 solve_pow(&mut faucet_block);
                 faucet_block.signature = match try_sign_hex(faucet_block.signing_hash().as_bytes(), &node_sk) {
                     Ok(sig) => sig,
-                    Err(e) => { 
+                    Err(e) => {
                         // Cannot use `return Err(...)` — would exit the .then() handler.
                         // Instead, set a dummy signature and let process_block reject it,
                         // or short-circuit via the faucet_result.
@@ -2712,25 +2736,34 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
     let network_peers_route = warp::path!("network" / "peers")
         .and(with_state((ve_discovery, ab_discovery, l_discovery)))
         .map(
-            move |(ve, ab, l): (Arc<Mutex<HashMap<String, String>>>, Arc<Mutex<HashMap<String, String>>>, Arc<Mutex<Ledger>>)| {
+            move |(ve, ab, l): (
+                Arc<Mutex<HashMap<String, String>>>,
+                Arc<Mutex<HashMap<String, String>>>,
+                Arc<Mutex<Ledger>>,
+            )| {
                 let ve_guard = safe_lock(&ve);
                 let ab_guard = safe_lock(&ab);
                 let l_guard = safe_lock(&l);
 
                 // All known validator onion endpoints
-                let endpoints: Vec<serde_json::Value> = ve_guard.iter().map(|(addr, onion)| {
-                    let stake = l_guard.accounts.get(addr)
-                        .map(|a| a.balance / CIL_PER_LOS)
-                        .unwrap_or(0);
-                    let in_peers = ab_guard.values().any(|v| v.contains(addr.as_str()));
-                    let is_self = addr == &my_addr_discovery;
-                    serde_json::json!({
-                        "address": addr,
-                        "onion_address": onion,
-                        "stake_los": stake,
-                        "reachable": is_self || in_peers,
+                let endpoints: Vec<serde_json::Value> = ve_guard
+                    .iter()
+                    .map(|(addr, onion)| {
+                        let stake = l_guard
+                            .accounts
+                            .get(addr)
+                            .map(|a| a.balance / CIL_PER_LOS)
+                            .unwrap_or(0);
+                        let in_peers = ab_guard.values().any(|v| v.contains(addr.as_str()));
+                        let is_self = addr == &my_addr_discovery;
+                        serde_json::json!({
+                            "address": addr,
+                            "onion_address": onion,
+                            "stake_los": stake,
+                            "reachable": is_self || in_peers,
+                        })
                     })
-                }).collect();
+                    .collect();
 
                 warp::reply::json(&serde_json::json!({
                     "version": 1,
@@ -3014,7 +3047,10 @@ async fn get_crypto_prices() -> (f64, f64) {
 
     // COMPILE-TIME GUARD: On mainnet feature, assert that fallback prices are unreachable
     #[cfg(feature = "mainnet")]
-    debug_assert!(is_production_level, "MAINNET: is_production_level must be true — oracle fallback prices are unreachable");
+    debug_assert!(
+        is_production_level,
+        "MAINNET: is_production_level must be true — oracle fallback prices are unreachable"
+    );
 
     let final_eth = if eth_prices.is_empty() {
         if is_production_level {
@@ -3947,7 +3983,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             .unwrap_or(0);
         let is_bootstrap = bootstrap_validators.contains(&my_address);
         reward_pool_state.register_validator(&my_address, is_bootstrap, my_stake);
-        println!("📡 Registered node address {} in reward pool", &my_address[..12.min(my_address.len())]);
+        println!(
+            "📡 Registered node address {} in reward pool",
+            &my_address[..12.min(my_address.len())]
+        );
     }
 
     // Fast-forward through any missed epochs (e.g., after node restart from old genesis)
@@ -3957,7 +3996,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .as_secs();
     let skipped = reward_pool_state.catch_up_epochs(now_secs);
     if skipped > 0 {
-        println!("⏩ Skipped {} missed epochs (fast-forward to current time)", skipped);
+        println!(
+            "⏩ Skipped {} missed epochs (fast-forward to current time)",
+            skipped
+        );
     }
 
     // Set expected heartbeats using the correct interval for testnet/mainnet
@@ -4076,16 +4118,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             Arc::new(Mutex::new(cm))
         }
         Err(e) => {
-            eprintln!(
-                "⚠️ Failed to open checkpoint DB: {} — trying fallback",
-                e
-            );
+            eprintln!("⚠️ Failed to open checkpoint DB: {} — trying fallback", e);
             // Create a fallback checkpoint manager with temp path
             let fallback_path = format!("node_data/{}/checkpoints_fallback", node_id);
             match CheckpointManager::new(&fallback_path) {
                 Ok(cm) => Arc::new(Mutex::new(cm)),
                 Err(e2) => {
-                    eprintln!("FATAL: Both checkpoint DBs failed: {} — node cannot start safely", e2);
+                    eprintln!(
+                        "FATAL: Both checkpoint DBs failed: {} — node cannot start safely",
+                        e2
+                    );
                     std::process::exit(1);
                 }
             }
@@ -4132,13 +4174,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 };
 
                 solve_pow(&mut init_block);
-                init_block.signature = match try_sign_hex(init_block.signing_hash().as_bytes(), &secret_key) {
-                    Ok(sig) => sig,
-                    Err(e) => {
-                        eprintln!("FATAL: Cannot sign init block: {} — node cannot start safely", e);
-                        std::process::exit(1);
-                    }
-                };
+                init_block.signature =
+                    match try_sign_hex(init_block.signing_hash().as_bytes(), &secret_key) {
+                        Ok(sig) => sig,
+                        Err(e) => {
+                            eprintln!(
+                                "FATAL: Cannot sign init block: {} — node cannot start safely",
+                                e
+                            );
+                            std::process::exit(1);
+                        }
+                    };
 
                 match l.process_block(&init_block) {
                     Ok(_) => {
@@ -4377,8 +4423,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             use std::io::Write;
             let _ = std::io::stdout().flush();
         }
-        if let Err(e) =
-            grpc_server::start_grpc_server(grpc_ledger, grpc_addr, grpc_tx, grpc_port, grpc_ab, grpc_bv, grpc_rest_port).await
+        if let Err(e) = grpc_server::start_grpc_server(
+            grpc_ledger,
+            grpc_addr,
+            grpc_tx,
+            grpc_port,
+            grpc_ab,
+            grpc_bv,
+            grpc_rest_port,
+        )
+        .await
         {
             eprintln!("❌ gRPC Server error: {}", e);
         }
@@ -4464,184 +4518,91 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
             // All pool + ledger work inside a scope block so MutexGuards drop before .await
             let (gossip_queue, fee_gossip_queue) = {
-            let mut pool = safe_lock(&reward_pool_bg);
+                let mut pool = safe_lock(&reward_pool_bg);
 
-            // Record heartbeat for this node (proving liveness)
-            pool.record_heartbeat(&reward_my_addr);
+                // Record heartbeat for this node (proving liveness)
+                pool.record_heartbeat(&reward_my_addr);
 
-            // Record heartbeats for connected peers (proving network liveness)
-            {
-                let ab = safe_lock(&reward_address_book);
-                for peer_addr in ab.values() {
-                    pool.record_heartbeat(peer_addr);
-                }
-            }
-
-            // Record heartbeats for ALL bootstrap/genesis validators
-            // They run critical infrastructure and are assumed always active
-            for bv_addr in &reward_bootstrap_addrs {
-                pool.record_heartbeat(bv_addr);
-            }
-
-            // Check if the current epoch has ended
-            let mut gossip_queue: Vec<String> = Vec::new();
-            let mut fee_gossip_queue: Vec<String> = Vec::new();
-            if pool.is_epoch_complete(now) {
-                // LEADER ELECTION: Only one node per epoch creates reward blocks
-                // to prevent all nodes independently minting (causing ledger forks).
-                // Leader = node with lexicographically smallest address among online peers.
-                let is_leader = {
+                // Record heartbeats for connected peers (proving network liveness)
+                {
                     let ab = safe_lock(&reward_address_book);
-                    let mut online: Vec<&str> = vec![reward_my_addr.as_str()];
-                    for addr in ab.values() {
-                        online.push(addr.as_str());
+                    for peer_addr in ab.values() {
+                        pool.record_heartbeat(peer_addr);
                     }
-                    online.sort();
-                    online.first().map_or(false, |a| *a == reward_my_addr.as_str())
-                };
-
-                // Set expected heartbeats for CURRENT (completing) epoch before eligibility check
-                pool.set_expected_heartbeats(heartbeat_secs);
-
-                // Distribute rewards for the completed epoch
-                // (this calls advance_epoch() internally which resets counters)
-                let rewards = pool.distribute_epoch_rewards();
-
-                // Set expected heartbeats for the NEW epoch (after advance_epoch reset them)
-                pool.set_expected_heartbeats(heartbeat_secs);
-
-                if !rewards.is_empty() && is_leader {
-                    println!("👑 This node is the epoch leader — creating reward blocks");
-                    // SI-01 FIX: Credit rewards via proper Mint blocks for full audit trail.
-                    // Each reward creates a block in the ledger with link=REWARD:epoch:N,
-                    // deducting from remaining_supply to maintain supply integrity.
-                    {
-                    let mut l = safe_lock(&reward_ledger);
-                    let mut total_credited: u128 = 0;
-                    let completed_epoch = pool.current_epoch.saturating_sub(1);
-                    let now_ts = std::time::SystemTime::now()
-                        .duration_since(std::time::UNIX_EPOCH)
-                        .unwrap_or_default()
-                        .as_secs();
-
-                    for (addr, reward_cil) in &rewards {
-                        // Check remaining supply before minting
-                        if l.distribution.remaining_supply < *reward_cil {
-                            eprintln!("⚠️ Reward skipped for {}: insufficient remaining supply", get_short_addr(addr));
-                            continue;
-                        }
-
-                        let state = l.accounts.get(addr).cloned().unwrap_or(AccountState {
-                            head: "0".to_string(), balance: 0, block_count: 0, is_validator: false,
-                        });
-
-                        let mut reward_blk = Block {
-                            block_type: BlockType::Mint,
-                            account: addr.clone(),
-                            previous: state.head.clone(),
-                            link: format!("REWARD:EPOCH:{}", completed_epoch),
-                            amount: *reward_cil,
-                            fee: 0,
-                            timestamp: now_ts,
-                            public_key: hex::encode(&reward_pk),
-                            signature: String::new(),
-                            work: 0,
-                        };
-
-                        // PoW FIRST (work field is part of signing_hash)
-                        compute_pow_inline(&mut reward_blk, 0);
-
-                        // Sign AFTER PoW (signing_hash includes work)
-                        let signing_hash = reward_blk.signing_hash();
-                        reward_blk.signature = match try_sign_hex(signing_hash.as_bytes(), &reward_sk) {
-                            Ok(sig) => sig,
-                            Err(e) => {
-                                eprintln!("❌ Failed to sign reward block for {}: {}", get_short_addr(addr), e);
-                                continue;
-                            }
-                        };
-
-                        match l.process_block(&reward_blk) {
-                            Ok(hash) => {
-                                total_credited += reward_cil;
-                                // Queue gossip (sent after lock is released)
-                                gossip_queue.push(serde_json::to_string(&reward_blk).unwrap_or_default());
-                                println!("💰 Reward Mint: {} → {} LOS (block: {})",
-                                    get_short_addr(addr),
-                                    reward_cil / CIL_PER_LOS,
-                                    &hash[..12]
-                                );
-                            }
-                            Err(e) => {
-                                eprintln!("❌ Reward block failed for {}: {}", get_short_addr(addr), e);
-                            }
-                        }
-                    }
-                    if total_credited > 0 {
-                        SAVE_DIRTY.store(true, Ordering::Relaxed);
-                        println!(
-                            "🏆 Epoch {} rewards: {} LOS distributed to {} validators",
-                            completed_epoch,
-                            total_credited / CIL_PER_LOS,
-                            rewards.len()
-                        );
-                    }
-                    } // l dropped
-                } else if !is_leader {
-                    println!(
-                        "🏆 Epoch {} complete: not leader, waiting for reward gossip",
-                        pool.current_epoch.saturating_sub(1)
-                    );
-                } else {
-                    println!(
-                        "🏆 Epoch {} complete: no eligible validators for rewards",
-                        pool.current_epoch.saturating_sub(1)
-                    );
                 }
 
-                // FEE DISTRIBUTION: Only leader creates fee reward blocks
-                if is_leader {
-                    let mut l = safe_lock(&reward_ledger);
-                    let fees_to_distribute = l.accumulated_fees_cil;
-                    if fees_to_distribute > 0 {
-                        // Collect eligible validators and their weights
-                        let eligible: Vec<(String, u128)> = l.accounts.iter()
-                            .filter(|(_, s)| s.is_validator && s.balance >= MIN_VALIDATOR_STAKE_CIL)
-                            .map(|(addr, s)| {
-                                let weight = calculate_voting_power(s.balance);
-                                (addr.clone(), weight)
-                            })
-                            .collect();
+                // Record heartbeats for ALL bootstrap/genesis validators
+                // They run critical infrastructure and are assumed always active
+                for bv_addr in &reward_bootstrap_addrs {
+                    pool.record_heartbeat(bv_addr);
+                }
 
-                        let total_weight: u128 = eligible.iter().map(|(_, w)| *w).sum();
+                // Check if the current epoch has ended
+                let mut gossip_queue: Vec<String> = Vec::new();
+                let mut fee_gossip_queue: Vec<String> = Vec::new();
+                if pool.is_epoch_complete(now) {
+                    // LEADER ELECTION: Only one node per epoch creates reward blocks
+                    // to prevent all nodes independently minting (causing ledger forks).
+                    // Leader = node with lexicographically smallest address among online peers.
+                    let is_leader = {
+                        let ab = safe_lock(&reward_address_book);
+                        let mut online: Vec<&str> = vec![reward_my_addr.as_str()];
+                        for addr in ab.values() {
+                            online.push(addr.as_str());
+                        }
+                        online.sort();
+                        online
+                            .first()
+                            .map_or(false, |a| *a == reward_my_addr.as_str())
+                    };
 
-                        if total_weight > 0 && !eligible.is_empty() {
+                    // Set expected heartbeats for CURRENT (completing) epoch before eligibility check
+                    pool.set_expected_heartbeats(heartbeat_secs);
+
+                    // Distribute rewards for the completed epoch
+                    // (this calls advance_epoch() internally which resets counters)
+                    let rewards = pool.distribute_epoch_rewards();
+
+                    // Set expected heartbeats for the NEW epoch (after advance_epoch reset them)
+                    pool.set_expected_heartbeats(heartbeat_secs);
+
+                    if !rewards.is_empty() && is_leader {
+                        println!("👑 This node is the epoch leader — creating reward blocks");
+                        // SI-01 FIX: Credit rewards via proper Mint blocks for full audit trail.
+                        // Each reward creates a block in the ledger with link=REWARD:epoch:N,
+                        // deducting from remaining_supply to maintain supply integrity.
+                        {
+                            let mut l = safe_lock(&reward_ledger);
+                            let mut total_credited: u128 = 0;
                             let completed_epoch = pool.current_epoch.saturating_sub(1);
                             let now_ts = std::time::SystemTime::now()
                                 .duration_since(std::time::UNIX_EPOCH)
                                 .unwrap_or_default()
                                 .as_secs();
-                            let mut total_fee_credited: u128 = 0;
 
-                            for (addr, weight) in &eligible {
-                                // Proportional fee share: fee_i = total_fees × (weight_i / total_weight)
-                                let fee_share = fees_to_distribute
-                                    .checked_mul(*weight)
-                                    .unwrap_or(0)
-                                    / total_weight;
-
-                                if fee_share == 0 { continue; }
+                            for (addr, reward_cil) in &rewards {
+                                // Check remaining supply before minting
+                                if l.distribution.remaining_supply < *reward_cil {
+                                    eprintln!(
+                                        "⚠️ Reward skipped for {}: insufficient remaining supply",
+                                        get_short_addr(addr)
+                                    );
+                                    continue;
+                                }
 
                                 let state = l.accounts.get(addr).cloned().unwrap_or(AccountState {
-                                    head: "0".to_string(), balance: 0, block_count: 0, is_validator: false,
+                                    head: "0".to_string(),
+                                    balance: 0,
+                                    block_count: 0,
+                                    is_validator: false,
                                 });
 
-                                let mut fee_blk = Block {
+                                let mut reward_blk = Block {
                                     block_type: BlockType::Mint,
                                     account: addr.clone(),
                                     previous: state.head.clone(),
-                                    link: format!("FEE_REWARD:EPOCH:{}", completed_epoch),
-                                    amount: fee_share,
+                                    link: format!("REWARD:EPOCH:{}", completed_epoch),
+                                    amount: *reward_cil,
                                     fee: 0,
                                     timestamp: now_ts,
                                     public_key: hex::encode(&reward_pk),
@@ -4650,61 +4611,196 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 };
 
                                 // PoW FIRST (work field is part of signing_hash)
-                                compute_pow_inline(&mut fee_blk, 0);
+                                compute_pow_inline(&mut reward_blk, 0);
 
                                 // Sign AFTER PoW (signing_hash includes work)
-                                let signing_hash = fee_blk.signing_hash();
-                                fee_blk.signature = match try_sign_hex(signing_hash.as_bytes(), &reward_sk) {
-                                    Ok(sig) => sig,
-                                    Err(e) => {
-                                        eprintln!("❌ Fee reward sign failed for {}: {}", get_short_addr(addr), e);
-                                        continue;
-                                    }
-                                };
+                                let signing_hash = reward_blk.signing_hash();
+                                reward_blk.signature =
+                                    match try_sign_hex(signing_hash.as_bytes(), &reward_sk) {
+                                        Ok(sig) => sig,
+                                        Err(e) => {
+                                            eprintln!(
+                                                "❌ Failed to sign reward block for {}: {}",
+                                                get_short_addr(addr),
+                                                e
+                                            );
+                                            continue;
+                                        }
+                                    };
 
-                                // Fee rewards do NOT deduct from remaining_supply because
-                                // fees were already taken from senders. We must credit the
-                                // validator's balance directly without touching supply.
-                                // Use process_block which handles Mint → state.balance += amount
-                                // and remaining_supply -= amount. We compensate by adding back.
-                                let supply_before = l.distribution.remaining_supply;
-                                match l.process_block(&fee_blk) {
+                                match l.process_block(&reward_blk) {
                                     Ok(hash) => {
-                                        // Restore supply: fee rewards are redistribution, not new minting
-                                        l.distribution.remaining_supply = supply_before;
-                                        total_fee_credited += fee_share;
-                                        // Queue gossip (sent after lock release)
-                                        fee_gossip_queue.push(serde_json::to_string(&fee_blk).unwrap_or_default());
-                                        println!("💸 Fee Reward: {} → {} CIL (block: {})",
+                                        total_credited += reward_cil;
+                                        // Queue gossip (sent after lock is released)
+                                        gossip_queue.push(
+                                            serde_json::to_string(&reward_blk).unwrap_or_default(),
+                                        );
+                                        println!(
+                                            "💰 Reward Mint: {} → {} LOS (block: {})",
                                             get_short_addr(addr),
-                                            fee_share,
+                                            reward_cil / CIL_PER_LOS,
                                             &hash[..12]
                                         );
                                     }
                                     Err(e) => {
-                                        eprintln!("❌ Fee reward block failed for {}: {}", get_short_addr(addr), e);
+                                        eprintln!(
+                                            "❌ Reward block failed for {}: {}",
+                                            get_short_addr(addr),
+                                            e
+                                        );
                                     }
                                 }
                             }
-
-                            if total_fee_credited > 0 {
-                                // Drain the accumulated fees (only the amount we actually distributed)
-                                l.accumulated_fees_cil = l.accumulated_fees_cil.saturating_sub(total_fee_credited);
+                            if total_credited > 0 {
                                 SAVE_DIRTY.store(true, Ordering::Relaxed);
                                 println!(
+                                    "🏆 Epoch {} rewards: {} LOS distributed to {} validators",
+                                    completed_epoch,
+                                    total_credited / CIL_PER_LOS,
+                                    rewards.len()
+                                );
+                            }
+                        } // l dropped
+                    } else if !is_leader {
+                        println!(
+                            "🏆 Epoch {} complete: not leader, waiting for reward gossip",
+                            pool.current_epoch.saturating_sub(1)
+                        );
+                    } else {
+                        println!(
+                            "🏆 Epoch {} complete: no eligible validators for rewards",
+                            pool.current_epoch.saturating_sub(1)
+                        );
+                    }
+
+                    // FEE DISTRIBUTION: Only leader creates fee reward blocks
+                    if is_leader {
+                        let mut l = safe_lock(&reward_ledger);
+                        let fees_to_distribute = l.accumulated_fees_cil;
+                        if fees_to_distribute > 0 {
+                            // Collect eligible validators and their weights
+                            let eligible: Vec<(String, u128)> = l
+                                .accounts
+                                .iter()
+                                .filter(|(_, s)| {
+                                    s.is_validator && s.balance >= MIN_VALIDATOR_STAKE_CIL
+                                })
+                                .map(|(addr, s)| {
+                                    let weight = calculate_voting_power(s.balance);
+                                    (addr.clone(), weight)
+                                })
+                                .collect();
+
+                            let total_weight: u128 = eligible.iter().map(|(_, w)| *w).sum();
+
+                            if total_weight > 0 && !eligible.is_empty() {
+                                let completed_epoch = pool.current_epoch.saturating_sub(1);
+                                let now_ts = std::time::SystemTime::now()
+                                    .duration_since(std::time::UNIX_EPOCH)
+                                    .unwrap_or_default()
+                                    .as_secs();
+                                let mut total_fee_credited: u128 = 0;
+
+                                for (addr, weight) in &eligible {
+                                    // Proportional fee share: fee_i = total_fees × (weight_i / total_weight)
+                                    let fee_share =
+                                        fees_to_distribute.checked_mul(*weight).unwrap_or(0)
+                                            / total_weight;
+
+                                    if fee_share == 0 {
+                                        continue;
+                                    }
+
+                                    let state =
+                                        l.accounts.get(addr).cloned().unwrap_or(AccountState {
+                                            head: "0".to_string(),
+                                            balance: 0,
+                                            block_count: 0,
+                                            is_validator: false,
+                                        });
+
+                                    let mut fee_blk = Block {
+                                        block_type: BlockType::Mint,
+                                        account: addr.clone(),
+                                        previous: state.head.clone(),
+                                        link: format!("FEE_REWARD:EPOCH:{}", completed_epoch),
+                                        amount: fee_share,
+                                        fee: 0,
+                                        timestamp: now_ts,
+                                        public_key: hex::encode(&reward_pk),
+                                        signature: String::new(),
+                                        work: 0,
+                                    };
+
+                                    // PoW FIRST (work field is part of signing_hash)
+                                    compute_pow_inline(&mut fee_blk, 0);
+
+                                    // Sign AFTER PoW (signing_hash includes work)
+                                    let signing_hash = fee_blk.signing_hash();
+                                    fee_blk.signature =
+                                        match try_sign_hex(signing_hash.as_bytes(), &reward_sk) {
+                                            Ok(sig) => sig,
+                                            Err(e) => {
+                                                eprintln!(
+                                                    "❌ Fee reward sign failed for {}: {}",
+                                                    get_short_addr(addr),
+                                                    e
+                                                );
+                                                continue;
+                                            }
+                                        };
+
+                                    // Fee rewards do NOT deduct from remaining_supply because
+                                    // fees were already taken from senders. We must credit the
+                                    // validator's balance directly without touching supply.
+                                    // Use process_block which handles Mint → state.balance += amount
+                                    // and remaining_supply -= amount. We compensate by adding back.
+                                    let supply_before = l.distribution.remaining_supply;
+                                    match l.process_block(&fee_blk) {
+                                        Ok(hash) => {
+                                            // Restore supply: fee rewards are redistribution, not new minting
+                                            l.distribution.remaining_supply = supply_before;
+                                            total_fee_credited += fee_share;
+                                            // Queue gossip (sent after lock release)
+                                            fee_gossip_queue.push(
+                                                serde_json::to_string(&fee_blk).unwrap_or_default(),
+                                            );
+                                            println!(
+                                                "💸 Fee Reward: {} → {} CIL (block: {})",
+                                                get_short_addr(addr),
+                                                fee_share,
+                                                &hash[..12]
+                                            );
+                                        }
+                                        Err(e) => {
+                                            eprintln!(
+                                                "❌ Fee reward block failed for {}: {}",
+                                                get_short_addr(addr),
+                                                e
+                                            );
+                                        }
+                                    }
+                                }
+
+                                if total_fee_credited > 0 {
+                                    // Drain the accumulated fees (only the amount we actually distributed)
+                                    l.accumulated_fees_cil =
+                                        l.accumulated_fees_cil.saturating_sub(total_fee_credited);
+                                    SAVE_DIRTY.store(true, Ordering::Relaxed);
+                                    println!(
                                     "💸 Epoch {} fee distribution: {} CIL ({} LOS) to {} validators",
                                     completed_epoch,
                                     total_fee_credited,
                                     total_fee_credited / CIL_PER_LOS,
                                     eligible.len()
                                 );
+                                }
                             }
                         }
-                    }
-                } // end of is_leader (fee distribution) — l dropped
-            } // end of is_epoch_complete
+                    } // end of is_leader (fee distribution) — l dropped
+                } // end of is_epoch_complete
 
-            (gossip_queue, fee_gossip_queue)
+                (gossip_queue, fee_gossip_queue)
             }; // pool dropped — scope block ends
 
             // Send all queued gossip messages (reward + fee blocks) after all locks released
@@ -4743,7 +4839,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             // Include timestamp nonce to prevent GossipSub message deduplication.
             // GossipSub deduplicates by hashing message.data — identical content
             // gets suppressed. Adding epoch_ms ensures each broadcast is unique.
-            let ts = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_millis();
+            let ts = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_millis();
             let _ = tx_boot
                 .send(format!("ID:{}:{}:{}:{}", my_addr_boot, s, b, ts))
                 .await;
@@ -4754,10 +4853,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         {
             let (s, b) = {
                 let l = safe_lock(&ledger_boot);
-                (l.distribution.remaining_supply, l.distribution.total_burned_usd)
+                (
+                    l.distribution.remaining_supply,
+                    l.distribution.total_burned_usd,
+                )
             };
-            let ts = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_millis();
-            let _ = tx_boot.send(format!("ID:{}:{}:{}:{}", my_addr_boot, s, b, ts)).await;
+            let ts = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_millis();
+            let _ = tx_boot
+                .send(format!("ID:{}:{}:{}:{}", my_addr_boot, s, b, ts))
+                .await;
         }
 
         // After bootstrapping, request state sync from peers (pull-based)
@@ -4787,7 +4894,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     l.blocks.len(),
                 )
             };
-            let ts = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_millis();
+            let ts = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_millis();
             let _ = tx_boot
                 .send(format!("ID:{}:{}:{}:{}", my_addr_boot, s, b, ts))
                 .await;
@@ -4816,18 +4926,24 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     tokio::spawn(async move {
         // Wait for initial bootstrapping to complete
         tokio::time::sleep(Duration::from_secs(30)).await;
-        let pex_interval_secs = if los_core::is_testnet_build() { 60 } else { 300 };
+        let pex_interval_secs = if los_core::is_testnet_build() {
+            60
+        } else {
+            300
+        };
         let mut interval = tokio::time::interval(Duration::from_secs(pex_interval_secs));
         loop {
             interval.tick().await;
             let endpoints: Vec<serde_json::Value> = {
                 let ve = safe_lock(&pex_ve);
-                ve.iter().map(|(addr, onion)| {
-                    serde_json::json!({
-                        "address": addr,
-                        "onion_address": onion,
+                ve.iter()
+                    .map(|(addr, onion)| {
+                        serde_json::json!({
+                            "address": addr,
+                            "onion_address": onion,
+                        })
                     })
-                }).collect()
+                    .collect()
             };
             if !endpoints.is_empty() {
                 let msg = serde_json::json!({

@@ -23,21 +23,17 @@
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use los_core::{
-    Block, BlockType, Ledger,
-    CIL_PER_LOS, BASE_FEE_CIL, MIN_VALIDATOR_STAKE_CIL,
-    VALIDATOR_REWARD_POOL_CIL, REWARD_RATE_INITIAL_CIL,
-    REWARD_HALVING_INTERVAL_EPOCHS,
-};
-use los_core::validator_rewards::{ValidatorRewardPool, isqrt};
-use los_core::anti_whale::AntiWhaleEngine;
-use los_crypto::{generate_keypair, sign_message, public_key_to_address, validate_address};
 use los_consensus::abft::{ABFTConsensus, Block as ConsensusBlock};
-use los_consensus::voting::calculate_voting_power;
 use los_consensus::checkpoint::FinalityCheckpoint;
-use los_consensus::slashing::{
-    DOUBLE_SIGNING_SLASH_BPS, DOWNTIME_SLASH_BPS, MIN_UPTIME_BPS,
+use los_consensus::slashing::{DOUBLE_SIGNING_SLASH_BPS, DOWNTIME_SLASH_BPS, MIN_UPTIME_BPS};
+use los_consensus::voting::calculate_voting_power;
+use los_core::anti_whale::AntiWhaleEngine;
+use los_core::validator_rewards::{isqrt, ValidatorRewardPool};
+use los_core::{
+    Block, BlockType, Ledger, BASE_FEE_CIL, CIL_PER_LOS, MIN_VALIDATOR_STAKE_CIL,
+    REWARD_HALVING_INTERVAL_EPOCHS, REWARD_RATE_INITIAL_CIL, VALIDATOR_REWARD_POOL_CIL,
 };
+use los_crypto::{generate_keypair, public_key_to_address, sign_message, validate_address};
 
 // ============================================================================
 // HELPERS
@@ -77,8 +73,8 @@ fn mine_and_sign(block: &mut Block, secret_key: &[u8]) {
         if block.verify_pow() {
             // Sign the final signing_hash
             let msg = block.signing_hash();
-            let sig = sign_message(msg.as_bytes(), secret_key)
-                .expect("Dilithium5 signing must succeed");
+            let sig =
+                sign_message(msg.as_bytes(), secret_key).expect("Dilithium5 signing must succeed");
             block.signature = hex::encode(&sig);
             return;
         }
@@ -199,9 +195,15 @@ async fn test_peer_discovery_and_failover() {
     peers.sort_by_key(|p| p.1);
 
     // Validate ranking
-    assert_eq!(peers[0].0, "mno345lmn.onion:9734", "Best peer must be lowest latency");
+    assert_eq!(
+        peers[0].0, "mno345lmn.onion:9734",
+        "Best peer must be lowest latency"
+    );
     assert_eq!(peers[0].1, 45);
-    println!("  ✅ Peer ranking: best = {} ({}ms)", peers[0].0, peers[0].1);
+    println!(
+        "  ✅ Peer ranking: best = {} ({}ms)",
+        peers[0].0, peers[0].1
+    );
 
     // Failover: skip peers with latency > threshold
     let threshold_ms = 200;
@@ -300,7 +302,12 @@ async fn test_zero_trust_sync() {
     for (i, node) in nodes.iter().enumerate() {
         let mut ledger = node.ledger.lock().unwrap();
         let result = ledger.process_block(&send_block);
-        assert!(result.is_ok(), "Send failed on node {}: {:?}", i, result.err());
+        assert!(
+            result.is_ok(),
+            "Send failed on node {}: {:?}",
+            i,
+            result.err()
+        );
         send_hashes.push(result.unwrap());
     }
 
@@ -325,7 +332,12 @@ async fn test_zero_trust_sync() {
     for (i, node) in nodes.iter().enumerate() {
         let mut ledger = node.ledger.lock().unwrap();
         let result = ledger.process_block(&receive_block);
-        assert!(result.is_ok(), "Receive failed on node {}: {:?}", i, result.err());
+        assert!(
+            result.is_ok(),
+            "Receive failed on node {}: {:?}",
+            i,
+            result.err()
+        );
         recv_hashes.push(result.unwrap());
     }
 
@@ -388,7 +400,10 @@ async fn test_financial_precision() {
         1_000 * CIL_PER_LOS,
         "Min stake = 1000 LOS"
     );
-    println!("  ✅ Constants verified: CIL_PER_LOS={}, BASE_FEE={}", CIL_PER_LOS, BASE_FEE_CIL);
+    println!(
+        "  ✅ Constants verified: CIL_PER_LOS={}, BASE_FEE={}",
+        CIL_PER_LOS, BASE_FEE_CIL
+    );
 
     // 2. Total supply must be exactly representable
     let total_supply_cil: u128 = 21_936_236 * CIL_PER_LOS;
@@ -446,7 +461,9 @@ async fn test_financial_precision() {
             &node.secret_key,
             base_ts + i as u64 + 1,
         );
-        prev = ledger.process_block(&send).expect(&format!("Send {} failed", i));
+        prev = ledger
+            .process_block(&send)
+            .expect(&format!("Send {} failed", i));
         send_hashes.push(prev.clone());
     }
 
@@ -502,7 +519,9 @@ async fn test_financial_precision() {
         &receiver.secret_key,
         base_ts + 20,
     );
-    ledger.process_block(&recv1).expect("First receive must succeed");
+    ledger
+        .process_block(&recv1)
+        .expect("First receive must succeed");
 
     // Second receive of same send must fail
     let recv_dup = make_receive_block(
@@ -580,8 +599,7 @@ async fn test_node_recovery() {
         "Recovery: block count mismatch"
     );
     assert_eq!(
-        recovered.accumulated_fees_cil,
-        pre_crash_fees,
+        recovered.accumulated_fees_cil, pre_crash_fees,
         "Recovery: fee accumulation mismatch"
     );
     println!(
@@ -601,7 +619,11 @@ async fn test_node_recovery() {
         ts + 2,
     );
     let result = recovered.process_block(&recv);
-    assert!(result.is_ok(), "Post-recovery receive failed: {:?}", result.err());
+    assert!(
+        result.is_ok(),
+        "Post-recovery receive failed: {:?}",
+        result.err()
+    );
     println!("  ✅ Post-recovery block processing works");
 
     // Verify block counts
@@ -706,7 +728,10 @@ async fn test_proof_of_burn_distribution() {
 
         // Safety limit for test speed (full exhaustion = 20400 mints, too slow even in release)
         if mint_count > 100 {
-            println!("  ⚠️ Supply exhaustion test: limited to {} mints for speed", mint_count);
+            println!(
+                "  ⚠️ Supply exhaustion test: limited to {} mints for speed",
+                mint_count
+            );
             break;
         }
     }
@@ -799,7 +824,11 @@ async fn test_validator_rewards_epoch() {
         "Initial rate must be {} CIL",
         REWARD_RATE_INITIAL_CIL
     );
-    println!("  ✅ Initial rate: {} CIL/epoch ({} LOS)", rate, rate / CIL_PER_LOS);
+    println!(
+        "  ✅ Initial rate: {} CIL/epoch ({} LOS)",
+        rate,
+        rate / CIL_PER_LOS
+    );
 
     // 3. Distribute epoch rewards
     let rewards = pool.distribute_epoch_rewards();
@@ -812,7 +841,10 @@ async fn test_validator_rewards_epoch() {
         total_distributed,
         rate
     );
-    println!("  ✅ Distributed {} CIL across 4 validators", total_distributed);
+    println!(
+        "  ✅ Distributed {} CIL across 4 validators",
+        total_distributed
+    );
 
     // 4. Reward proportional to √stake
     // Higher stake → higher reward (monotonic via √stake weighting)
@@ -847,7 +879,10 @@ async fn test_validator_rewards_epoch() {
         500_000 * CIL_PER_LOS,
         "Reward pool = 500K LOS"
     );
-    println!("  ✅ Reward pool finite: {} LOS", VALIDATOR_REWARD_POOL_CIL / CIL_PER_LOS);
+    println!(
+        "  ✅ Reward pool finite: {} LOS",
+        VALIDATOR_REWARD_POOL_CIL / CIL_PER_LOS
+    );
     println!("\n  📊 Validator rewards: ALL INTEGER MATH");
 }
 
@@ -921,7 +956,14 @@ async fn test_abft_consensus_3_phase() {
     // With n=4: f=1, 3f+1 = 4 ≤ n → safe
     assert!(3 * f + 1 <= n, "3f+1 must be <= n for BFT safety");
     assert!(quorum > 2 * f, "quorum > 2f for Byzantine safety");
-    println!("  ✅ Byzantine safety: f={}, n={}, 3f+1={} <= n, quorum={} > 2f={}", f, n, 3*f+1, quorum, 2*f);
+    println!(
+        "  ✅ Byzantine safety: f={}, n={}, 3f+1={} <= n, quorum={} > 2f={}",
+        f,
+        n,
+        3 * f + 1,
+        quorum,
+        2 * f
+    );
 
     println!("\n  📊 aBFT consensus: 3-phase protocol verified");
 }
@@ -937,12 +979,15 @@ async fn test_quadratic_voting_and_antiwhale() {
 
     // 1. Quadratic voting: √stake weighting
     let stakes_cil = [
-        1_000 * CIL_PER_LOS,     // 1000 LOS
-        10_000 * CIL_PER_LOS,    // 10000 LOS (10x more stake)
-        100_000 * CIL_PER_LOS,   // 100K LOS (100x)
+        1_000 * CIL_PER_LOS,   // 1000 LOS
+        10_000 * CIL_PER_LOS,  // 10000 LOS (10x more stake)
+        100_000 * CIL_PER_LOS, // 100K LOS (100x)
     ];
 
-    let powers: Vec<u128> = stakes_cil.iter().map(|s| calculate_voting_power(*s)).collect();
+    let powers: Vec<u128> = stakes_cil
+        .iter()
+        .map(|s| calculate_voting_power(*s))
+        .collect();
     println!("  Voting powers:");
     for (i, (stake, power)) in stakes_cil.iter().zip(powers.iter()).enumerate() {
         println!(
@@ -962,7 +1007,10 @@ async fn test_quadratic_voting_and_antiwhale() {
             "10x stake should yield ~3x power, got ratio {}",
             ratio_10x
         );
-        println!("  ✅ 10x more stake → {}% power (expected ~316%)", ratio_10x);
+        println!(
+            "  ✅ 10x more stake → {}% power (expected ~316%)",
+            ratio_10x
+        );
 
         // 100x stake should give ~10x power (√100 = 10)
         let ratio_100x = (powers[2] * 100) / powers[0];
@@ -971,12 +1019,18 @@ async fn test_quadratic_voting_and_antiwhale() {
             "100x stake should yield ~10x power, got ratio {}",
             ratio_100x
         );
-        println!("  ✅ 100x more stake → {}% power (expected ~1000%)", ratio_100x);
+        println!(
+            "  ✅ 100x more stake → {}% power (expected ~1000%)",
+            ratio_100x
+        );
     }
 
     // 2. Below minimum stake → zero power
     let below_min = calculate_voting_power(999 * CIL_PER_LOS);
-    assert_eq!(below_min, 0, "Below 1000 LOS stake must have 0 voting power");
+    assert_eq!(
+        below_min, 0,
+        "Below 1000 LOS stake must have 0 voting power"
+    );
     println!("  ✅ Sub-minimum stake (999 LOS): power = 0");
 
     // 3. Anti-whale fee scaling
@@ -1021,11 +1075,11 @@ async fn test_finality_checkpoint() {
     println!("================================\n");
 
     let checkpoint = FinalityCheckpoint::new(
-        1000,                            // height
-        "abc123def456".to_string(),      // block hash
-        4,                               // validator count
-        "state_root_hash".to_string(),   // state root
-        3,                               // signature count (3/4 = 75% > 67%)
+        1000,                          // height
+        "abc123def456".to_string(),    // block hash
+        4,                             // validator count
+        "state_root_hash".to_string(), // state root
+        3,                             // signature count (3/4 = 75% > 67%)
     );
 
     // Checkpoint ID must be deterministic
@@ -1071,7 +1125,10 @@ async fn test_slashing_constants() {
     assert_eq!(DOWNTIME_SLASH_BPS, 100, "Downtime = 1% slash");
     assert_eq!(MIN_UPTIME_BPS, 9500, "Min uptime = 95%");
 
-    println!("  ✅ DOUBLE_SIGNING_SLASH_BPS: {} (100%)", DOUBLE_SIGNING_SLASH_BPS);
+    println!(
+        "  ✅ DOUBLE_SIGNING_SLASH_BPS: {} (100%)",
+        DOUBLE_SIGNING_SLASH_BPS
+    );
     println!("  ✅ DOWNTIME_SLASH_BPS: {} (1%)", DOWNTIME_SLASH_BPS);
     println!("  ✅ MIN_UPTIME_BPS: {} (95%)", MIN_UPTIME_BPS);
 
@@ -1079,16 +1136,25 @@ async fn test_slashing_constants() {
     let stake_cil = 1_000 * CIL_PER_LOS;
     let slash_amount = (stake_cil as u128 * DOUBLE_SIGNING_SLASH_BPS as u128) / 10_000;
     assert_eq!(slash_amount, stake_cil, "100% slash = full stake");
-    println!("  ✅ Double-sign: {} LOS slashed (100%)", slash_amount / CIL_PER_LOS);
+    println!(
+        "  ✅ Double-sign: {} LOS slashed (100%)",
+        slash_amount / CIL_PER_LOS
+    );
 
     // 1% downtime slash
     let downtime_slash = (stake_cil as u128 * DOWNTIME_SLASH_BPS as u128) / 10_000;
     assert_eq!(downtime_slash, 10 * CIL_PER_LOS, "1% of 1000 = 10 LOS");
-    println!("  ✅ Downtime: {} LOS slashed (1%)", downtime_slash / CIL_PER_LOS);
+    println!(
+        "  ✅ Downtime: {} LOS slashed (1%)",
+        downtime_slash / CIL_PER_LOS
+    );
 
     // Integer math: no remainder loss for these exact values
     let remainder = (stake_cil as u128 * DOWNTIME_SLASH_BPS as u128) % 10_000;
-    assert_eq!(remainder, 0, "Slash calculation must be exact (no remainder)");
+    assert_eq!(
+        remainder, 0,
+        "Slash calculation must be exact (no remainder)"
+    );
     println!("  ✅ Slash math: zero remainder (integer exact)");
 
     println!("\n  📊 Slashing constants: verified");
@@ -1130,7 +1196,10 @@ async fn test_chain_id_replay_protection() {
         block1.verify_signature(),
         "Original signature must be valid"
     );
-    println!("  ✅ Block signed on chain_id={}: valid", los_core::CHAIN_ID);
+    println!(
+        "  ✅ Block signed on chain_id={}: valid",
+        los_core::CHAIN_ID
+    );
 
     // Tamper: change the account slightly (simulates different chain — hash changes)
     let mut tampered = block1.clone();
@@ -1202,7 +1271,11 @@ async fn test_throughput_benchmark() {
         blocks.push(send);
     }
     let mine_elapsed = mine_start.elapsed();
-    println!("  Mining done in {:?} ({:.0} blocks/sec)", mine_elapsed, num_sends as f64 / mine_elapsed.as_secs_f64());
+    println!(
+        "  Mining done in {:?} ({:.0} blocks/sec)",
+        mine_elapsed,
+        num_sends as f64 / mine_elapsed.as_secs_f64()
+    );
 
     // Now measure pure process_block throughput (no mining overhead)
     // Reuse the same mint block so chain hashes match
@@ -1253,9 +1326,19 @@ async fn test_genesis_allocation() {
 
     assert_eq!(public_los, 21_258_413, "Public allocation");
     println!("  Total:      {} LOS", total_supply_los);
-    println!("  Dev:        {} LOS (~{}.{}%)", dev_treasury_los, dev_treasury_los * 100 / total_supply_los, (dev_treasury_los * 10_000 / total_supply_los) % 100);
+    println!(
+        "  Dev:        {} LOS (~{}.{}%)",
+        dev_treasury_los,
+        dev_treasury_los * 100 / total_supply_los,
+        (dev_treasury_los * 10_000 / total_supply_los) % 100
+    );
     println!("  Bootstrap:  {} LOS", bootstrap_los);
-    println!("  Public:     {} LOS (~{}.{}%)", public_los, public_los * 100 / total_supply_los, (public_los * 10_000 / total_supply_los) % 100);
+    println!(
+        "  Public:     {} LOS (~{}.{}%)",
+        public_los,
+        public_los * 100 / total_supply_los,
+        (public_los * 10_000 / total_supply_los) % 100
+    );
 
     // Dev < 3.1%
     let dev_pct_bps = dev_treasury_los * 10_000 / total_supply_los;
@@ -1277,7 +1360,11 @@ async fn test_genesis_allocation() {
         total_cil,
         "Allocations must sum to total supply"
     );
-    println!("  ✅ Allocations sum exactly: {} == {} CIL", dev_cil + public_cil + bootstrap_cil, total_cil);
+    println!(
+        "  ✅ Allocations sum exactly: {} == {} CIL",
+        dev_cil + public_cil + bootstrap_cil,
+        total_cil
+    );
 
     println!("\n  📊 Genesis allocation: verified");
 }

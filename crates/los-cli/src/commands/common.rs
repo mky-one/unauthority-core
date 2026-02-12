@@ -11,9 +11,12 @@ pub fn load_wallet_keypair(
         .join("wallets")
         .join(format!("{}.json", wallet_name));
     if !wallet_file.exists() {
-        return Err(
-            format!("Wallet '{}' not found at {}", wallet_name, wallet_file.display()).into(),
-        );
+        return Err(format!(
+            "Wallet '{}' not found at {}",
+            wallet_name,
+            wallet_file.display()
+        )
+        .into());
     }
 
     let data = std::fs::read_to_string(&wallet_file)?;

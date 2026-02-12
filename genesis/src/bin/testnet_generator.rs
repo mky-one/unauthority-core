@@ -59,11 +59,23 @@ fn main() {
     println!("\n6 Wallets: 2 Dev Treasury + 4 Bootstrap Validators\n");
 
     // Supply validation assertions
-    assert_eq!(TOTAL_SUPPLY_LOS, 21_936_236, "TOTAL_SUPPLY must be 21,936,236 LOS");
+    assert_eq!(
+        TOTAL_SUPPLY_LOS, 21_936_236,
+        "TOTAL_SUPPLY must be 21,936,236 LOS"
+    );
     assert_eq!(CIL_PER_LOS, 100_000_000_000, "CIL_PER_LOS must be 10^11");
-    assert_eq!(DEV_TREASURY_TOTAL_LOS, 673_823, "Dev treasury must be 673,823 LOS");
-    assert_eq!(DEV_SUPPLY_TOTAL_LOS, 677_823, "Dev supply total must be 677,823 LOS");
-    assert_eq!(PUBLIC_SUPPLY_LOS, 21_258_413, "Public supply must be 21,258,413 LOS");
+    assert_eq!(
+        DEV_TREASURY_TOTAL_LOS, 673_823,
+        "Dev treasury must be 673,823 LOS"
+    );
+    assert_eq!(
+        DEV_SUPPLY_TOTAL_LOS, 677_823,
+        "Dev supply total must be 677,823 LOS"
+    );
+    assert_eq!(
+        PUBLIC_SUPPLY_LOS, 21_258_413,
+        "Public supply must be 21,258,413 LOS"
+    );
 
     let dev_balances_los: [u128; 2] = [DEV_TREASURY_1_LOS, DEV_TREASURY_2_LOS];
     let mut wallet_entries: Vec<String> = Vec::new();

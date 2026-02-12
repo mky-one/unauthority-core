@@ -4,9 +4,9 @@ use std::sync::atomic::{AtomicUsize, Ordering as AtomicOrdering};
 use std::sync::{Arc, Mutex};
 use wasmer::{imports, CompilerConfig, Instance, Module, Store, Value};
 use wasmer_compiler_cranelift::Cranelift;
-use wasmer_middlewares::Metering;
 use wasmer_middlewares::metering::get_remaining_points;
 use wasmer_middlewares::metering::MeteringPoints;
+use wasmer_middlewares::Metering;
 
 /// Global counter for leaked WASM timeout threads.
 /// Once MAX_LEAKED_THREADS is reached, new WASM executions are rejected

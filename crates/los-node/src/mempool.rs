@@ -7,10 +7,10 @@
 // - Transaction expiration
 // - Duplicate detection
 
+use los_core::Block;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap};
 use std::time::{SystemTime, UNIX_EPOCH};
-use los_core::Block;
 
 /// Maximum transactions in mempool
 const MAX_MEMPOOL_SIZE: usize = 10_000;

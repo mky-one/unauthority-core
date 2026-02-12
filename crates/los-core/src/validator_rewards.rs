@@ -13,9 +13,9 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 use crate::{
-    MIN_VALIDATOR_STAKE_CIL, REWARD_HALVING_INTERVAL_EPOCHS,
-    REWARD_MIN_UPTIME_PCT, REWARD_PROBATION_EPOCHS, REWARD_RATE_INITIAL_CIL,
-    VALIDATOR_REWARD_POOL_CIL, CIL_PER_LOS, effective_reward_epoch_secs,
+    effective_reward_epoch_secs, CIL_PER_LOS, MIN_VALIDATOR_STAKE_CIL,
+    REWARD_HALVING_INTERVAL_EPOCHS, REWARD_MIN_UPTIME_PCT, REWARD_PROBATION_EPOCHS,
+    REWARD_RATE_INITIAL_CIL, VALIDATOR_REWARD_POOL_CIL,
 };
 
 /// Per-validator reward tracking state.
@@ -614,10 +614,7 @@ mod tests {
 
         // Remaining seconds
         assert_eq!(pool.epoch_remaining_secs(GENESIS_TS), epoch_dur);
-        assert_eq!(
-            pool.epoch_remaining_secs(GENESIS_TS + 10),
-            epoch_dur - 10
-        );
+        assert_eq!(pool.epoch_remaining_secs(GENESIS_TS + 10), epoch_dur - 10);
         assert_eq!(pool.epoch_remaining_secs(GENESIS_TS + epoch_dur), 0);
     }
 

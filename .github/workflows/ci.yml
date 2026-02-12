@@ -45,7 +45,7 @@ jobs:
           key: ${{ runner.os }}-target-${{ hashFiles('**/Cargo.lock') }}
 
       - name: Run tests
-        run: cargo test --workspace --all-features --verbose --exclude uat-vm
+        run: cargo test --workspace --all-features --verbose --exclude los-vm
 
       - name: Run doc tests
         run: cargo test --doc --workspace
@@ -133,12 +133,12 @@ jobs:
           key: ${{ runner.os }}-release-${{ hashFiles('**/Cargo.lock') }}
 
       - name: Build release binary
-        run: cargo build --release --workspace --exclude uat-vm --exclude los-node && cargo build --release -p los-node --no-default-features
+        run: cargo build --release --workspace --exclude los-vm --exclude los-node && cargo build --release -p los-node --no-default-features
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: uat-binaries
+          name: los-binaries
           path: |
             target/release/los-node
             target/release/los-cli
@@ -194,4 +194,4 @@ jobs:
           key: ${{ runner.os }}-vm-${{ hashFiles('**/Cargo.lock') }}
 
       - name: Run VM tests
-        run: cargo test -p uat-vm --verbose
+        run: cargo test -p los-vm --verbose

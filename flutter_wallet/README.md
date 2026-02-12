@@ -1,13 +1,13 @@
-# UAT Wallet
+# LOS Wallet
 
-Desktop wallet for the **Unauthority (UAT)** blockchain. Send, receive, and burn-to-mint UAT tokens with post-quantum security.
+Desktop wallet for the **Unauthority (LOS)** blockchain. Send, receive, and burn-to-mint LOS tokens with post-quantum security.
 
 ## Features
 
 - **Create / Import Wallet** — generate new keys or recover from 24-word BIP39 seed phrase
-- **Send & Receive UAT** — instant transactions with < 3 second finality
-- **Proof-of-Burn** — burn BTC/ETH to mint UAT tokens
-- **Faucet** — claim 100 testnet UAT (1 hour cooldown)
+- **Send & Receive LOS** — instant transactions with < 3 second finality
+- **Proof-of-Burn** — burn BTC/ETH to mint LOS tokens
+- **Faucet** — claim 100 testnet LOS (1 hour cooldown)
 - **Address Book** — save frequently used addresses
 - **Transaction History** — view all past transactions
 - **QR Code** — share your address via QR
@@ -22,12 +22,12 @@ Pre-built releases for macOS, Windows, and Linux:
 
 | Platform | File |
 |----------|------|
-| macOS | `UAT-Wallet-*-macos.dmg` |
-| Windows | `UAT-Wallet-*-windows-x64.zip` |
-| Linux | `UAT-Wallet-*-linux-x64.tar.gz` |
+| macOS | `LOS-Wallet-*-macos.dmg` |
+| Windows | `LOS-Wallet-*-windows-x64.zip` |
+| Linux | `LOS-Wallet-*-linux-x64.tar.gz` |
 
 > **macOS:** Apple blocks unsigned apps. After install, run:
-> `xattr -cr /Applications/UAT\ Wallet.app`
+> `xattr -cr /Applications/LOS\ Wallet.app`
 > Or: System Settings → Privacy & Security → Open Anyway
 
 ## Build from Source
@@ -41,7 +41,7 @@ Pre-built releases for macOS, Windows, and Linux:
 
 ```bash
 # 1. Build the Dilithium5 native library
-cd native/uat_crypto_ffi
+cd native/los_crypto_ffi
 cargo build --release
 cd ../..
 
@@ -54,7 +54,7 @@ flutter build linux --release    # Linux
 flutter build windows --release  # Windows
 ```
 
-The native library (`libuat_crypto_ffi.dylib` / `.so` / `.dll`) must be placed alongside the built app. See the GitHub Actions workflow for platform-specific bundling steps.
+The native library (`liblos_crypto_ffi.dylib` / `.so` / `.dll`) must be placed alongside the built app. See the GitHub Actions workflow for platform-specific bundling steps.
 
 ## Connect to Testnet
 
@@ -81,7 +81,7 @@ flutter_wallet/
 │   ├── services/              # API, wallet, Dilithium5, Tor services
 │   └── widgets/               # Reusable UI components
 ├── native/
-│   └── uat_crypto_ffi/        # Rust FFI crate for Dilithium5
+│   └── los_crypto_ffi/        # Rust FFI crate for Dilithium5
 ├── assets/                    # Icons, images
 └── test/                      # Widget tests
 ```

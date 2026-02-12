@@ -19,11 +19,15 @@ class _WalletSetupScreenState extends State<WalletSetupScreen> {
   int _mode = 0;
 
   Future<void> _generateWallet() async {
+    debugPrint(
+        '💰 [WalletSetupScreen._generateWallet] Generating new wallet...');
     setState(() => _isLoading = true);
 
     try {
       final walletService = context.read<WalletService>();
       final wallet = await walletService.generateWallet();
+      debugPrint(
+          '💰 [WalletSetupScreen._generateWallet] SUCCESS address=${wallet['address']}');
 
       if (!mounted) return;
 
@@ -76,23 +80,27 @@ class _WalletSetupScreenState extends State<WalletSetupScreen> {
         ),
       );
     } catch (e) {
+      debugPrint('💰 [WalletSetupScreen._generateWallet] ERROR: $e');
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
       );
     } finally {
-      setState(() => _isLoading = false);
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 
   Future<void> _importWallet() async {
     if (!_formKey.currentState!.validate()) return;
 
+    debugPrint(
+        '💰 [WalletSetupScreen._importWallet] Importing wallet from mnemonic...');
     setState(() => _isLoading = true);
 
     try {
       final walletService = context.read<WalletService>();
       await walletService.importWallet(_mnemonicController.text.trim());
+      debugPrint('💰 [WalletSetupScreen._importWallet] SUCCESS');
 
       if (!mounted) return;
 
@@ -101,12 +109,13 @@ class _WalletSetupScreenState extends State<WalletSetupScreen> {
         MaterialPageRoute(builder: (_) => const HomeScreen()),
       );
     } catch (e) {
+      debugPrint('💰 [WalletSetupScreen._importWallet] ERROR: $e');
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
       );
     } finally {
-      setState(() => _isLoading = false);
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 
@@ -114,11 +123,14 @@ class _WalletSetupScreenState extends State<WalletSetupScreen> {
   Future<void> _importByAddress() async {
     if (!_formKey.currentState!.validate()) return;
 
+    debugPrint(
+        '💰 [WalletSetupScreen._importByAddress] Importing by address...');
     setState(() => _isLoading = true);
 
     try {
       final walletService = context.read<WalletService>();
       await walletService.importByAddress(_addressController.text.trim());
+      debugPrint('💰 [WalletSetupScreen._importByAddress] SUCCESS');
 
       if (!mounted) return;
 
@@ -127,12 +139,13 @@ class _WalletSetupScreenState extends State<WalletSetupScreen> {
         MaterialPageRoute(builder: (_) => const HomeScreen()),
       );
     } catch (e) {
+      debugPrint('💰 [WalletSetupScreen._importByAddress] ERROR: $e');
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
       );
     } finally {
-      setState(() => _isLoading = false);
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 
@@ -140,7 +153,7 @@ class _WalletSetupScreenState extends State<WalletSetupScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('UAT Wallet Setup'),
+        title: const Text('LOS Wallet Setup'),
         centerTitle: true,
         leading: _mode != 0
             ? IconButton(
@@ -174,7 +187,7 @@ class _WalletSetupScreenState extends State<WalletSetupScreen> {
         ),
         const SizedBox(height: 24),
         Text(
-          'Welcome to UAT Wallet',
+          'Welcome to LOS Wallet',
           style: Theme.of(context).textTheme.headlineMedium,
           textAlign: TextAlign.center,
         ),
@@ -295,17 +308,17 @@ class _WalletSetupScreenState extends State<WalletSetupScreen> {
           child: TextFormField(
             controller: _addressController,
             decoration: const InputDecoration(
-              labelText: 'UAT Address',
-              hintText: 'UAT...',
+              labelText: 'LOS Address',
+              hintText: 'LOS...',
               border: OutlineInputBorder(),
               prefixIcon: Icon(Icons.account_circle),
             ),
             validator: (value) {
               if (value == null || value.trim().isEmpty) {
-                return 'Please enter UAT address';
+                return 'Please enter LOS address';
               }
-              if (!value.trim().startsWith('UAT')) {
-                return 'Address must start with UAT';
+              if (!value.trim().startsWith('LOS')) {
+                return 'Address must start with LOS';
               }
               if (value.trim().length < 40) {
                 return 'Address too short';

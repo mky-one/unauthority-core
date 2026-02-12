@@ -24,14 +24,14 @@ echo -e "${CYAN}╚════════════════════�
 echo ""
 
 # Check binary
-if [ ! -f "$PROJECT_ROOT/target/release/uat-node" ]; then
+if [ ! -f "$PROJECT_ROOT/target/release/los-node" ]; then
     echo -e "${RED}❌ Binary not found. Build first:${NC} cargo build --release"
     exit 1
 fi
 
 # Kill existing
 echo -e "${YELLOW}🧹 Cleaning existing processes...${NC}"
-pkill -9 uat-node 2>/dev/null || true
+pkill -9 los-node 2>/dev/null || true
 sleep 1
 echo -e "${GREEN}   ✓ Clean${NC}"
 echo ""
@@ -42,7 +42,7 @@ mkdir -p node_data/{validator-1,validator-2,validator-3}
 # Start Node 1
 echo -e "${BLUE}[1/3] Starting Node 1 (port 3030)...${NC}"
 cd "$PROJECT_ROOT"
-nohup env UAT_NODE_ID="validator-1" ./target/release/uat-node 3030 > node_data/validator-1/node.log 2>&1 & disown
+nohup env LOS_NODE_ID="validator-1" ./target/release/los-node 3030 > node_data/validator-1/node.log 2>&1 & disown
 PID1=$!
 echo "   PID: $PID1"
 echo ""
@@ -51,7 +51,7 @@ sleep 2
 
 # Start Node 2
 echo -e "${BLUE}[2/3] Starting Node 2 (port 3031)...${NC}"
-nohup env UAT_NODE_ID="validator-2" ./target/release/uat-node 3031 > node_data/validator-2/node.log 2>&1 & disown
+nohup env LOS_NODE_ID="validator-2" ./target/release/los-node 3031 > node_data/validator-2/node.log 2>&1 & disown
 PID2=$!
 echo "   PID: $PID2"
 echo ""
@@ -60,7 +60,7 @@ sleep 2
 
 # Start Node 3
 echo -e "${BLUE}[3/3] Starting Node 3 (port 3032)...${NC}"
-nohup env UAT_NODE_ID="validator-3" ./target/release/uat-node 3032 > node_data/validator-3/node.log 2>&1 & disown
+nohup env LOS_NODE_ID="validator-3" ./target/release/los-node 3032 > node_data/validator-3/node.log 2>&1 & disown
 PID3=$!
 echo "   PID: $PID3"
 echo ""
@@ -81,7 +81,7 @@ echo -e "${GREEN}║  ✅ BACKEND STARTED IN DAEMON MODE                        
 echo -e "${GREEN}╚════════════════════════════════════════════════════════════════╝${NC}"
 echo ""
 
-RUNNING=$(ps aux | grep uat-node | grep -v grep | wc -l | tr -d ' ')
+RUNNING=$(ps aux | grep los-node | grep -v grep | wc -l | tr -d ' ')
 echo -e "${CYAN}📊 Status:${NC} $RUNNING nodes running"
 echo ""
 echo -e "${BLUE}🔗 API Endpoints:${NC}"

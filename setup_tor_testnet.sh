@@ -8,11 +8,11 @@ set -e
 
 # ── Configuration ─────────────────────────────────────────────────────────
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-TOR_DATA="$HOME/.uat-testnet-tor"
+TOR_DATA="$HOME/.los-testnet-tor"
 TOR_SOCKS_PORT=9052
 VALIDATOR_REST_PORTS=(3030 3031 3032 3033)
 VALIDATOR_P2P_PORTS=(4001 4002 4003 4004)
-NODE_BIN="$SCRIPT_DIR/target/release/uat-node"
+NODE_BIN="$SCRIPT_DIR/target/release/los-node"
 
 echo "╔════════════════════════════════════════════════════════════════╗"
 echo "║     🧅 UNAUTHORITY TOR TESTNET LAUNCHER                      ║"
@@ -155,14 +155,14 @@ echo "   ✅ $TORRC"
 echo ""
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# 5. BUILD UAT-NODE (if needed)
+# 5. BUILD LOS-NODE (if needed)
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-echo "🔨 Step 5: Checking uat-node binary..."
+echo "🔨 Step 5: Checking los-node binary..."
 
 if [ ! -f "$NODE_BIN" ]; then
     echo "   Building release binary (this may take a few minutes)..."
     cd "$SCRIPT_DIR"
-    cargo build --release -p uat-node
+    cargo build --release -p los-node
     echo ""
 fi
 
@@ -284,13 +284,15 @@ for i in 0 1 2 3; do
     echo "     P2P:  localhost:$P2P_PORT  → $MY_ONION:4001"
 
     # Export environment for this validator
-    UAT_NODE_ID="validator-$N" \
-    UAT_TOR_SOCKS5="127.0.0.1:$TOR_SOCKS_PORT" \
-    UAT_ONION_ADDRESS="$MY_ONION" \
-    UAT_P2P_PORT="$P2P_PORT" \
-    UAT_BOOTSTRAP_NODES="$BOOTSTRAP" \
-    UAT_TESTNET_LEVEL="functional" \
-    nohup "$NODE_BIN" "$REST_PORT" \
+    # Nodes bind to 127.0.0.1 ONLY — Tor hidden services handle external access
+    LOS_NODE_ID="validator-$N" \
+    LOS_TOR_SOCKS5="127.0.0.1:$TOR_SOCKS_PORT" \
+    LOS_ONION_ADDRESS="$MY_ONION" \
+    LOS_P2P_PORT="$P2P_PORT" \
+    LOS_BOOTSTRAP_NODES="$BOOTSTRAP" \
+    LOS_TESTNET_LEVEL="consensus" \
+    RUST_BACKTRACE=1 \
+    nohup "$NODE_BIN" --port "$REST_PORT" --data-dir "node_data/validator-$N" \
         > "node_data/validator-$N/logs/node.log" 2>&1 &
 
     echo $! > "node_data/validator-$N/pid.txt"

@@ -1,6 +1,6 @@
 # Validator Guide
 
-How to run a UAT validator node — from setup to monitoring.
+How to run a LOS validator node — from setup to monitoring.
 
 **Version:** v1.0.6-testnet
 
@@ -14,7 +14,7 @@ How to run a UAT validator node — from setup to monitoring.
 | RAM | 2 GB |
 | Disk | 10 GB SSD |
 | Network | Tor hidden service (no public IP needed) |
-| Stake | 1,000 UAT minimum |
+| Stake | 1,000 LOS minimum |
 | Rust | 1.75+ |
 | Protobuf | 3.x+ (`protoc`) |
 
@@ -25,10 +25,10 @@ How to run a UAT validator node — from setup to monitoring.
 ```bash
 git clone https://github.com/unauthoritymky-6236/unauthority-core.git
 cd unauthority-core
-cargo build --release --bin uat-node
+cargo build --release --bin los-node
 ```
 
-Binary: `target/release/uat-node`
+Binary: `target/release/los-node`
 
 ---
 
@@ -37,7 +37,7 @@ Binary: `target/release/uat-node`
 The fastest way to start — testnet with auto-generated wallet:
 
 ```bash
-./target/release/uat-node --dev
+./target/release/los-node --dev
 ```
 
 This starts a validator on `127.0.0.1:3030` (REST API) and `127.0.0.1:4001` (P2P).
@@ -45,7 +45,7 @@ This starts a validator on `127.0.0.1:3030` (REST API) and `127.0.0.1:4001` (P2P
 Dev mode automatically:
 - Generates a Dilithium5 keypair
 - Loads testnet genesis (12 wallets, 4 bootstrap validators)
-- Awards the node 1,000 UAT initial balance
+- Awards the node 1,000 LOS initial balance
 - Enables faucet at `/faucet`
 - Connects to bootstrap validators via Tor (if available)
 
@@ -55,7 +55,7 @@ Dev mode automatically:
 
 ```
 USAGE:
-    uat-node [OPTIONS]
+    los-node [OPTIONS]
 
 OPTIONS:
     --dev                    Run in testnet dev mode
@@ -74,12 +74,12 @@ OPTIONS:
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `UAT_BIND_ALL` | `0` | Set to `1` to bind `0.0.0.0` instead of `127.0.0.1` |
-| `UAT_WALLET_PASSWORD` | — | Encrypt wallet at rest (required on mainnet, min 12 chars) |
-| `UAT_NODE_ID` | — | Unique node identifier for multi-validator setups |
-| `UAT_VALIDATOR_ADDRESS` | — | Override validator address |
-| `UAT_PRIVKEY_PATH` | — | Path to encrypted private key file |
-| `UAT_STAKE_VOID` | — | Override stake amount |
+| `LOS_BIND_ALL` | `0` | Set to `1` to bind `0.0.0.0` instead of `127.0.0.1` |
+| `LOS_WALLET_PASSWORD` | — | Encrypt wallet at rest (required on mainnet, min 12 chars) |
+| `LOS_NODE_ID` | — | Unique node identifier for multi-validator setups |
+| `LOS_VALIDATOR_ADDRESS` | — | Override validator address |
+| `LOS_PRIVKEY_PATH` | — | Path to encrypted private key file |
+| `LOS_STAKE_CIL` | — | Override stake amount |
 | `RUST_LOG` | `info` | Log level filter |
 
 ---
@@ -189,7 +189,7 @@ Available at `:9090` for Grafana dashboards. A pre-built dashboard is at `docs/g
 curl http://127.0.0.1:3030/validators
 
 # Specific validator slashing profile
-curl http://127.0.0.1:3030/slashing/UATYourAddress...
+curl http://127.0.0.1:3030/slashing/LOSYourAddress...
 
 # Consensus parameters
 curl http://127.0.0.1:3030/consensus
@@ -212,9 +212,9 @@ Slash proposals require multi-validator confirmation — a single validator cann
 
 ## 10. Staking
 
-Minimum stake: **1,000 UAT** (= 100,000,000,000,000 VOID).
+Minimum stake: **1,000 LOS** (= 100,000,000,000,000 CIL).
 
-Staking is implicit — any account with balance ≥ 1,000 UAT and running a validator node is considered an active validator.
+Staking is implicit — any account with balance ≥ 1,000 LOS and running a validator node is considered an active validator.
 
 Quadratic voting: your voting power = √(your_stake), not your_stake. This gives smaller validators proportionally more influence.
 
@@ -222,15 +222,15 @@ Quadratic voting: your voting power = √(your_stake), not your_stake. This give
 
 ## 11. Validator Rewards
 
-Validators earn UAT rewards for maintaining uptime. The reward system is epoch-based with quadratic fairness.
+Validators earn LOS rewards for maintaining uptime. The reward system is epoch-based with quadratic fairness.
 
 ### How It Works
 
 | Parameter | Value |
 |-----------|-------|
-| **Reward Pool** | 2,193,623 UAT (10% of total supply, reserved at genesis) |
+| **Reward Pool** | 2,193,623 LOS (10% of total supply, reserved at genesis) |
 | **Epoch Duration** | 24 hours (86,400 seconds) |
-| **Initial Rate** | 50 UAT per epoch (distributed among all qualifying validators) |
+| **Initial Rate** | 50 LOS per epoch (distributed among all qualifying validators) |
 | **Halving** | Every 365 epochs (~1 year), reward rate halves |
 | **Min Uptime** | 95% heartbeats required to qualify |
 | **Probation** | First 3 epochs after registration (no rewards) |
@@ -240,7 +240,7 @@ Validators earn UAT rewards for maintaining uptime. The reward system is epoch-b
 
 At the end of each epoch:
 1. Validators with < 95% uptime are excluded
-2. Each qualifying validator's share = √(stake_in_void)
+2. Each qualifying validator's share = √(stake_in_cil)
 3. Rewards distributed proportionally to √stake shares
 4. Rewards credited directly to validator account balances
 
@@ -270,7 +270,7 @@ When running interactively, the node provides a console:
 > bal                    # Show this node's balance
 > whoami                 # Show this node's address
 > history                # Show transaction history
-> send <address> <amount> # Send UAT to address
+> send <address> <amount> # Send LOS to address
 > burn <amount>          # Proof-of-Burn
 > supply                 # Show supply stats
 > peers                  # Show connected peers
@@ -290,14 +290,14 @@ See [DOCKER_DEPLOYMENT.md](DOCKER_DEPLOYMENT.md) for running validators via Dock
 
 ### Wallet Backup
 
-The node's private key is stored in `node_data/wallet.json` (encrypted with `age` if `UAT_WALLET_PASSWORD` is set).
+The node's private key is stored in `node_data/wallet.json` (encrypted with `age` if `LOS_WALLET_PASSWORD` is set).
 
 ```bash
 # Backup wallet
 cp node_data/wallet.json /secure/backup/
 
 # The wallet file contains the Dilithium5 keypair
-# If encrypted, you need UAT_WALLET_PASSWORD to decrypt
+# If encrypted, you need LOS_WALLET_PASSWORD to decrypt
 ```
 
 ### Ledger State

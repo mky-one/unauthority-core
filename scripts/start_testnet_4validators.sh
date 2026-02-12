@@ -6,7 +6,7 @@ set -e
 
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 GENESIS_WALLETS="$PROJECT_ROOT/testnet-genesis/testnet_wallets.json"
-NODE_BINARY="$PROJECT_ROOT/target/release/uat-node"
+NODE_BINARY="$PROJECT_ROOT/target/release/los-node"
 
 # Colors
 RED='\033[0;31m'
@@ -16,16 +16,16 @@ BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
 echo -e "${BLUE}╔════════════════════════════════════════════════════════════════╗${NC}"
-echo -e "${BLUE}║          UAT TESTNET - 4 Validators (BFT Ready)               ║${NC}"
+echo -e "${BLUE}║          LOS TESTNET - 4 Validators (BFT Ready)               ║${NC}"
 echo -e "${BLUE}╚════════════════════════════════════════════════════════════════╝${NC}"
 echo ""
 
 # Check if node binary exists
 if [ ! -f "$NODE_BINARY" ]; then
     echo -e "${RED}❌ Node binary not found!${NC}"
-    echo -e "${YELLOW}Building uat-node...${NC}"
+    echo -e "${YELLOW}Building los-node...${NC}"
     cd "$PROJECT_ROOT"
-    cargo build --release -p uat-node
+    cargo build --release -p los-node
     echo -e "${GREEN}✅ Build complete${NC}"
 fi
 

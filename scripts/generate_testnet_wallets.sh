@@ -66,18 +66,18 @@ WALLET_ROLES=(
 )
 
 WALLET_BALANCES=(
-  "2000000.00000000"  # Treasury 1: 2M UAT
-  "2000000.00000000"  # Treasury 2: 2M UAT
-  "2000000.00000000"  # Treasury 3: 2M UAT
-  "2000000.00000000"  # Treasury 4: 2M UAT
-  "2000000.00000000"  # Treasury 5: 2M UAT
-  "2000000.00000000"  # Treasury 6: 2M UAT
-  "2000000.00000000"  # Treasury 7: 2M UAT
-  "1936000.00000000"  # Treasury 8: 1.936M UAT (reduced to fund 4 validators)
-  "1000.00000000"     # Validator A: 1,000 UAT (minimum stake)
-  "1000.00000000"     # Validator B: 1,000 UAT (minimum stake)
-  "1000.00000000"     # Validator C: 1,000 UAT (minimum stake)
-  "1000.00000000"     # Validator D: 1,000 UAT (minimum stake) - NEW!
+  "2000000.00000000"  # Treasury 1: 2M LOS
+  "2000000.00000000"  # Treasury 2: 2M LOS
+  "2000000.00000000"  # Treasury 3: 2M LOS
+  "2000000.00000000"  # Treasury 4: 2M LOS
+  "2000000.00000000"  # Treasury 5: 2M LOS
+  "2000000.00000000"  # Treasury 6: 2M LOS
+  "2000000.00000000"  # Treasury 7: 2M LOS
+  "1936000.00000000"  # Treasury 8: 1.936M LOS (reduced to fund 4 validators)
+  "1000.00000000"     # Validator A: 1,000 LOS (minimum stake)
+  "1000.00000000"     # Validator B: 1,000 LOS (minimum stake)
+  "1000.00000000"     # Validator C: 1,000 LOS (minimum stake)
+  "1000.00000000"     # Validator D: 1,000 LOS (minimum stake) - NEW!
 )
 
 WALLET_DESCRIPTIONS=(
@@ -136,15 +136,15 @@ def generate_wallet_from_seed(seed_phrase, label, role, balance, description, in
     private_key_hex = bytes_to_hex(private_key_bytes)
     public_key_hex = bytes_to_hex(verify_key.encode())
     
-    # Generate UAT address (UAT + Base58(PublicKey))
+    # Generate LOS address (LOS + Base58(PublicKey))
     import base58
-    address = "UAT" + base58.b58encode(verify_key.encode()).decode('utf-8')
+    address = "LOS" + base58.b58encode(verify_key.encode()).decode('utf-8')
     
     return {
         "index": index,
         "label": label,
         "role": role,
-        "genesis_balance_uat": balance,
+        "genesis_balance_los": balance,
         "description": description,
         "address": address,
         "public_key": public_key_hex,
@@ -173,7 +173,7 @@ for i in range(len(seed_phrases)):
 output_data = {
     "network": "TESTNET",
     "security_warning": "⚠️ PUBLICLY KNOWN WALLETS - NEVER USE IN PRODUCTION",
-    "total_supply_uat": f"{total_supply:.8f}",
+    "total_supply_los": f"{total_supply:.8f}",
     "total_wallets": len(wallets),
     "treasury_wallets": sum(1 for w in wallets if w["role"] == "treasury"),
     "validator_wallets": sum(1 for w in wallets if w["role"] == "validator"),
@@ -188,7 +188,7 @@ with open(output_file, 'w') as f:
 print(f"✅ Generated {len(wallets)} wallets", file=sys.stderr)
 print(f"   Treasury: {output_data['treasury_wallets']}", file=sys.stderr)
 print(f"   Validators: {output_data['validator_wallets']}", file=sys.stderr)
-print(f"   Total Supply: {total_supply:,.0f} UAT", file=sys.stderr)
+print(f"   Total Supply: {total_supply:,.0f} LOS", file=sys.stderr)
 bft_status = 'YES (4 validators)' if output_data['validator_wallets'] >= 4 else 'NO (need 4+ validators)'
 print(f"   BFT Safe: {bft_status}", file=sys.stderr)
 PYTHON_SCRIPT
@@ -222,7 +222,7 @@ def generate_wallet_from_seed(seed_phrase):
     public_key_hex = bytes_to_hex(verify_key.encode())
     
     import base58
-    address = "UAT" + base58.b58encode(verify_key.encode()).decode('utf-8')
+    address = "LOS" + base58.b58encode(verify_key.encode()).decode('utf-8')
     
     return {
         "seed_phrase": seed_phrase,
@@ -295,21 +295,21 @@ These pre-generated wallets allow developers to:
 - Seed Phrase: `world world world world world world world world world world world world`
 - Use: Frontend wallet testing
 
-### Validator Node Wallets (1,000 UAT stake each)
+### Validator Node Wallets (1,000 LOS stake each)
 
 **TESTNET_VALIDATOR_NODE_A:**
 - Seed Phrase: `node node node node node node node node node node node alpha`
-- Stake: 1,000 UAT
+- Stake: 1,000 LOS
 - Use: Bootstrap validator #1
 
 **TESTNET_VALIDATOR_NODE_B:**
 - Seed Phrase: `node node node node node node node node node node node bravo`
-- Stake: 1,000 UAT
+- Stake: 1,000 LOS
 - Use: Bootstrap validator #2
 
 **TESTNET_VALIDATOR_NODE_C:**
 - Seed Phrase: `node node node node node node node node node node node charlie`
-- Stake: 1,000 UAT
+- Stake: 1,000 LOS
 - Use: Bootstrap validator #3
 
 ## How to Use
@@ -361,18 +361,18 @@ These wallets are hardcoded into testnet genesis block:
 
 | Wallet | Address | Initial Balance |
 |--------|---------|-----------------|
-| TREASURY_1 | UAT... | 2,000,000 UAT |
-| TREASURY_2 | UAT... | 2,000,000 UAT |
-| TREASURY_3 | UAT... | 2,000,000 UAT |
-| TREASURY_4 | UAT... | 2,000,000 UAT |
-| TREASURY_5 | UAT... | 2,000,000 UAT |
-| TREASURY_6 | UAT... | 2,000,000 UAT |
-| TREASURY_7 | UAT... | 2,000,000 UAT |
-| TREASURY_8 | UAT... | 1,397,000 UAT |
-| NODE_A | UAT... | 1,000 UAT (staked) |
-| NODE_B | UAT... | 1,000 UAT (staked) |
-| NODE_C | UAT... | 1,000 UAT (staked) |
-| **TOTAL** | | **21,936,236 UAT** |
+| TREASURY_1 | LOS... | 2,000,000 LOS |
+| TREASURY_2 | LOS... | 2,000,000 LOS |
+| TREASURY_3 | LOS... | 2,000,000 LOS |
+| TREASURY_4 | LOS... | 2,000,000 LOS |
+| TREASURY_5 | LOS... | 2,000,000 LOS |
+| TREASURY_6 | LOS... | 2,000,000 LOS |
+| TREASURY_7 | LOS... | 2,000,000 LOS |
+| TREASURY_8 | LOS... | 1,397,000 LOS |
+| NODE_A | LOS... | 1,000 LOS (staked) |
+| NODE_B | LOS... | 1,000 LOS (staked) |
+| NODE_C | LOS... | 1,000 LOS (staked) |
+| **TOTAL** | | **21,936,236 LOS** |
 
 ## Development Commands
 
@@ -401,7 +401,7 @@ A: NO! These are publicly known and will be compromised immediately.
 **Q: What if someone drains testnet funds from these wallets?**
 A: That's expected! Testnet can be reset anytime. Just re-deploy testnet.
 
-**Q: How do I get more testnet UAT?**
+**Q: How do I get more testnet LOS?**
 A: Use the faucet in Unauthority Wallet (testnet mode) or send from treasury wallets.
 
 **Q: Can I generate my own testnet wallet?**
@@ -418,7 +418,7 @@ echo "✅ Genesis wallets generated successfully!"
 echo ""
 echo "📊 Summary:"
 echo "   Total Wallets: 12 (8 Treasury + 4 Validators)"
-echo "   Total Supply: 15,940,000 UAT"
+echo "   Total Supply: 15,940,000 LOS"
 echo "   BFT Status: ✅ Safe (4 validators for Byzantine Fault Tolerance)"
 echo ""
 echo "📁 Files created:"

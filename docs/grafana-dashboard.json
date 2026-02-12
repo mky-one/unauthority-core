@@ -1,6 +1,6 @@
 {
   "dashboard": {
-    "title": "Unauthority (UAT) Node Monitoring",
+    "title": "Unauthority (LOS) Node Monitoring",
     "tags": ["blockchain", "uat", "unauthority"],
     "timezone": "browser",
     "panels": [
@@ -10,15 +10,15 @@
         "type": "stat",
         "targets": [
           {
-            "expr": "uat_blocks_total",
+            "expr": "los_blocks_total",
             "legendFormat": "Total Blocks"
           },
           {
-            "expr": "uat_accounts_total",
+            "expr": "los_accounts_total",
             "legendFormat": "Total Accounts"
           },
           {
-            "expr": "uat_transactions_total",
+            "expr": "los_transactions_total",
             "legendFormat": "Transactions"
           }
         ],
@@ -30,15 +30,15 @@
         "type": "piechart",
         "targets": [
           {
-            "expr": "uat_send_blocks_total",
+            "expr": "los_send_blocks_total",
             "legendFormat": "Send Blocks"
           },
           {
-            "expr": "uat_receive_blocks_total",
+            "expr": "los_receive_blocks_total",
             "legendFormat": "Receive Blocks"
           },
           {
-            "expr": "uat_mint_blocks_total",
+            "expr": "los_mint_blocks_total",
             "legendFormat": "Mint Blocks (PoB)"
           }
         ],
@@ -50,15 +50,15 @@
         "type": "graph",
         "targets": [
           {
-            "expr": "uat_db_size_bytes / 1048576",
+            "expr": "los_db_size_bytes / 1048576",
             "legendFormat": "DB Size (MB)"
           },
           {
-            "expr": "uat_db_blocks_count",
+            "expr": "los_db_blocks_count",
             "legendFormat": "Blocks Stored"
           },
           {
-            "expr": "uat_db_accounts_count",
+            "expr": "los_db_accounts_count",
             "legendFormat": "Accounts Stored"
           }
         ],
@@ -70,11 +70,11 @@
         "type": "graph",
         "targets": [
           {
-            "expr": "histogram_quantile(0.95, uat_db_save_duration_seconds)",
+            "expr": "histogram_quantile(0.95, los_db_save_duration_seconds)",
             "legendFormat": "Save Latency (P95)"
           },
           {
-            "expr": "histogram_quantile(0.95, uat_db_load_duration_seconds)",
+            "expr": "histogram_quantile(0.95, los_db_load_duration_seconds)",
             "legendFormat": "Load Latency (P95)"
           }
         ],
@@ -87,15 +87,15 @@
         "type": "graph",
         "targets": [
           {
-            "expr": "rate(uat_consensus_rounds_total[5m])",
+            "expr": "rate(los_consensus_rounds_total[5m])",
             "legendFormat": "Consensus Rounds/sec"
           },
           {
-            "expr": "histogram_quantile(0.95, uat_consensus_latency_seconds)",
+            "expr": "histogram_quantile(0.95, los_consensus_latency_seconds)",
             "legendFormat": "Finality Latency (P95)"
           },
           {
-            "expr": "uat_active_validators",
+            "expr": "los_active_validators",
             "legendFormat": "Active Validators"
           }
         ],
@@ -107,11 +107,11 @@
         "type": "graph",
         "targets": [
           {
-            "expr": "uat_oracle_btc_price_usd / 1000000",
+            "expr": "los_oracle_btc_price_usd / 1000000",
             "legendFormat": "BTC Price (IDR, millions)"
           },
           {
-            "expr": "uat_oracle_eth_price_usd / 1000000",
+            "expr": "los_oracle_eth_price_usd / 1000000",
             "legendFormat": "ETH Price (IDR, millions)"
           }
         ],
@@ -123,15 +123,15 @@
         "type": "graph",
         "targets": [
           {
-            "expr": "uat_pob_remaining_supply / 100000000",
-            "legendFormat": "Remaining Supply (UAT)"
+            "expr": "los_pob_remaining_supply / 100000000",
+            "legendFormat": "Remaining Supply (LOS)"
           },
           {
-            "expr": "rate(uat_pob_minted_uat[1h]) * 3600",
-            "legendFormat": "UAT Minted/hour"
+            "expr": "rate(los_pob_minted_los[1h]) * 3600",
+            "legendFormat": "LOS Minted/hour"
           },
           {
-            "expr": "rate(uat_pob_burns_total[5m]) * 300",
+            "expr": "rate(los_pob_burns_total[5m]) * 300",
             "legendFormat": "Burn Events/5min"
           }
         ],
@@ -143,15 +143,15 @@
         "type": "graph",
         "targets": [
           {
-            "expr": "uat_connected_peers",
+            "expr": "los_connected_peers",
             "legendFormat": "Connected Peers"
           },
           {
-            "expr": "rate(uat_p2p_messages_received_total[1m]) * 60",
+            "expr": "rate(los_p2p_messages_received_total[1m]) * 60",
             "legendFormat": "Messages Received/min"
           },
           {
-            "expr": "rate(uat_p2p_messages_sent_total[1m]) * 60",
+            "expr": "rate(los_p2p_messages_sent_total[1m]) * 60",
             "legendFormat": "Messages Sent/min"
           }
         ],
@@ -163,15 +163,15 @@
         "type": "graph",
         "targets": [
           {
-            "expr": "rate(uat_api_requests_total[5m]) * 300",
+            "expr": "rate(los_api_requests_total[5m]) * 300",
             "legendFormat": "REST API Requests/5min"
           },
           {
-            "expr": "rate(uat_api_errors_total[5m]) * 300",
+            "expr": "rate(los_api_errors_total[5m]) * 300",
             "legendFormat": "API Errors/5min"
           },
           {
-            "expr": "histogram_quantile(0.95, uat_api_request_duration_seconds)",
+            "expr": "histogram_quantile(0.95, los_api_request_duration_seconds)",
             "legendFormat": "Request Latency (P95)"
           }
         ],
@@ -183,15 +183,15 @@
         "type": "graph",
         "targets": [
           {
-            "expr": "rate(uat_rate_limit_rejections_total[5m]) * 300",
+            "expr": "rate(los_rate_limit_rejections_total[5m]) * 300",
             "legendFormat": "Rate Limit Rejections/5min"
           },
           {
-            "expr": "uat_rate_limit_active_ips",
+            "expr": "los_rate_limit_active_ips",
             "legendFormat": "Tracked IPs"
           },
           {
-            "expr": "rate(uat_slashing_events_total[1h]) * 3600",
+            "expr": "rate(los_slashing_events_total[1h]) * 3600",
             "legendFormat": "Slashing Events/hour"
           }
         ],
@@ -203,15 +203,15 @@
         "type": "graph",
         "targets": [
           {
-            "expr": "uat_contracts_deployed_total",
+            "expr": "los_contracts_deployed_total",
             "legendFormat": "Total Contracts"
           },
           {
-            "expr": "rate(uat_contract_executions_total[5m]) * 300",
+            "expr": "rate(los_contract_executions_total[5m]) * 300",
             "legendFormat": "Executions/5min"
           },
           {
-            "expr": "rate(uat_contract_gas_used_total[5m]) * 300",
+            "expr": "rate(los_contract_gas_used_total[5m]) * 300",
             "legendFormat": "Gas Used/5min"
           }
         ],
@@ -223,11 +223,11 @@
         "type": "graph",
         "targets": [
           {
-            "expr": "rate(uat_grpc_requests_total[5m]) * 300",
+            "expr": "rate(los_grpc_requests_total[5m]) * 300",
             "legendFormat": "gRPC Requests/5min"
           },
           {
-            "expr": "rate(uat_grpc_errors_total[5m]) * 300",
+            "expr": "rate(los_grpc_errors_total[5m]) * 300",
             "legendFormat": "gRPC Errors/5min"
           }
         ],

@@ -1,4 +1,4 @@
-# Unauthority (UAT) — The Sovereign Machine
+# Unauthority (LOS) — The Sovereign Machine
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Rust](https://img.shields.io/badge/Rust-1.75+-orange.svg)](https://www.rust-lang.org/)
@@ -15,27 +15,27 @@ A truly decentralized, permissionless blockchain with zero admin keys, instant f
 
 Pre-built desktop apps for all platforms. No Tor Browser or command-line needed.
 
-### UAT Wallet (send, receive, burn-to-mint)
+### LOS Wallet (send, receive, burn-to-mint)
 
 | Platform | Download | Install |
 |----------|----------|---------|
-| macOS | [UAT-Wallet-macos.dmg](https://github.com/unauthoritymky-6236/unauthority-core/releases/tag/wallet-v1.0.6-testnet) | Open DMG → drag to Applications |
-| Windows | [UAT-Wallet-windows-x64.zip](https://github.com/unauthoritymky-6236/unauthority-core/releases/tag/wallet-v1.0.6-testnet) | Extract → run `flutter_wallet.exe` |
-| Linux | [UAT-Wallet-linux-x64.tar.gz](https://github.com/unauthoritymky-6236/unauthority-core/releases/tag/wallet-v1.0.6-testnet) | Extract → run `./run.sh` |
+| macOS | [LOS-Wallet-macos.dmg](https://github.com/unauthoritymky-6236/unauthority-core/releases/tag/wallet-v1.0.6-testnet) | Open DMG → drag to Applications |
+| Windows | [LOS-Wallet-windows-x64.zip](https://github.com/unauthoritymky-6236/unauthority-core/releases/tag/wallet-v1.0.6-testnet) | Extract → run `flutter_wallet.exe` |
+| Linux | [LOS-Wallet-linux-x64.tar.gz](https://github.com/unauthoritymky-6236/unauthority-core/releases/tag/wallet-v1.0.6-testnet) | Extract → run `./run.sh` |
 
-### UAT Validator Dashboard (monitor node, manage keys)
+### LOS Validator Dashboard (monitor node, manage keys)
 
 | Platform | Download | Install |
 |----------|----------|---------|
-| macOS | [UAT-Validator-macos.dmg](https://github.com/unauthoritymky-6236/unauthority-core/releases/tag/validator-v1.0.6-testnet) | Open DMG → drag to Applications |
-| Windows | [UAT-Validator-windows-x64.zip](https://github.com/unauthoritymky-6236/unauthority-core/releases/tag/validator-v1.0.6-testnet) | Extract → run `flutter_validator.exe` |
-| Linux | [UAT-Validator-linux-x64.tar.gz](https://github.com/unauthoritymky-6236/unauthority-core/releases/tag/validator-v1.0.6-testnet) | Extract → run `./run.sh` |
+| macOS | [LOS-Validator-macos.dmg](https://github.com/unauthoritymky-6236/unauthority-core/releases/tag/validator-v1.0.6-testnet) | Open DMG → drag to Applications |
+| Windows | [LOS-Validator-windows-x64.zip](https://github.com/unauthoritymky-6236/unauthority-core/releases/tag/validator-v1.0.6-testnet) | Extract → run `flutter_validator.exe` |
+| Linux | [LOS-Validator-linux-x64.tar.gz](https://github.com/unauthoritymky-6236/unauthority-core/releases/tag/validator-v1.0.6-testnet) | Extract → run `./run.sh` |
 
 Both apps include **built-in Tor** connectivity and **CRYSTALS-Dilithium5** post-quantum cryptography. No external dependencies required.
 
 > **macOS users:** Apple will block the app on first launch ("cannot verify"). Fix:
 > ```bash
-> xattr -cr /Applications/UAT\ Wallet.app
+> xattr -cr /Applications/LOS\ Wallet.app
 > xattr -cr /Applications/flutter_validator.app
 > ```
 > Or: **System Settings → Privacy & Security → Open Anyway**
@@ -50,8 +50,8 @@ Unauthority is a Layer-1 blockchain built from scratch in Rust. It is designed t
 
 | Property | Detail |
 |----------|--------|
-| **Total Supply** | 21,936,236 UAT (fixed forever, no inflation) |
-| **Smallest Unit** | 1 VOID (1 UAT = 100,000,000,000 VOID) |
+| **Total Supply** | 21,936,236 LOS (fixed forever, no inflation) |
+| **Smallest Unit** | 1 CIL (1 LOS = 100,000,000,000 CIL) |
 | **Consensus** | aBFT — Asynchronous Byzantine Fault Tolerance |
 | **Finality** | < 3 seconds |
 | **Cryptography** | CRYSTALS-Dilithium5 (post-quantum secure) |
@@ -64,7 +64,7 @@ Unauthority is a Layer-1 blockchain built from scratch in Rust. It is designed t
 
 - **Quadratic Voting** — voting power = √(stake), not linear
 - **Dynamic Fee Scaling** — fees increase x2/x4/x8 for spam bursts
-- **Burn Limits** — max 10 UAT minted per block via Proof-of-Burn
+- **Burn Limits** — max 10 LOS minted per block via Proof-of-Burn
 - **Reward Fairness** — validator rewards use √stake, preventing whale dominance
 
 ---
@@ -73,19 +73,19 @@ Unauthority is a Layer-1 blockchain built from scratch in Rust. It is designed t
 
 ### For Users (Wallet)
 
-1. Download the **UAT Wallet** from the table above
+1. Download the **LOS Wallet** from the table above
 2. Install and open
 3. Click **"Create New Wallet"** — save your 24-word seed phrase securely
-4. Go to **Faucet** tab → click **"Request UAT"** (5,000 UAT per claim, testnet only)
+4. Go to **Faucet** tab → click **"Request LOS"** (5,000 LOS per claim, testnet only)
 5. Go to **Send** tab → enter a recipient address and amount → send
 
 The wallet connects to the testnet automatically via Tor.
 
 ### For Validators
 
-1. Download the **UAT Validator Dashboard** from the table above
+1. Download the **LOS Validator Dashboard** from the table above
 2. To run your own node, see [Validator Guide](docs/VALIDATOR_GUIDE.md)
-3. Minimum stake: 1,000 UAT
+3. Minimum stake: 1,000 LOS
 
 ### Build from Source
 
@@ -94,7 +94,7 @@ git clone https://github.com/unauthoritymky-6236/unauthority-core.git
 cd unauthority-core
 
 # Build the Rust node
-cargo build --release --bin uat-node
+cargo build --release --bin los-node
 
 # Build the Flutter wallet
 cd flutter_wallet && flutter pub get && flutter build macos --release
@@ -109,13 +109,13 @@ Replace `macos` with `linux` or `windows` as needed.
 
 ## REST API
 
-Every UAT node exposes these endpoints. Default port: `3030`.
+Every LOS node exposes these endpoints. Default port: `3030`.
 
 | Endpoint | Method | Description |
 |----------|--------|-------------|
 | `/node-info` | GET | Chain metadata, supply, height, validators |
 | `/health` | GET | Node health status |
-| `/bal/{address}` | GET | Balance in UAT and VOID |
+| `/bal/{address}` | GET | Balance in LOS and CIL |
 | `/balance/{address}` | GET | Balance (alias) |
 | `/account/{address}` | GET | Account details + recent transactions |
 | `/history/{address}` | GET | Full transaction history |
@@ -135,7 +135,7 @@ Every UAT node exposes these endpoints. Default port: `3030`.
 | `/slashing/{address}` | GET | Slashing profile for a validator |
 | `/reward-info` | GET | Validator reward pool status, epoch info, per-validator stats |
 | `/fee-estimate` | GET | Dynamic fee estimate for transactions |
-| `/faucet` | POST | Claim testnet tokens (5,000 UAT, 1hr cooldown) |
+| `/faucet` | POST | Claim testnet tokens (5,000 LOS, 1hr cooldown) |
 | `/send` | POST | Submit signed transaction |
 | `/burn` | POST | Submit Proof-of-Burn mint |
 | `/deploy-contract` | POST | Deploy WASM smart contract |
@@ -150,13 +150,13 @@ Full API documentation: [docs/API_REFERENCE.md](docs/API_REFERENCE.md)
 ```
 unauthority-core/
 ├── crates/
-│   ├── uat-core/          # Blockchain core — ledger, accounts, supply math, validator rewards
-│   ├── uat-crypto/        # Post-quantum crypto — Dilithium5, address derivation
-│   ├── uat-consensus/     # aBFT consensus — voting, slashing, checkpoints
-│   ├── uat-network/       # P2P networking — fee scaling, Tor transport
-│   ├── uat-vm/            # Smart contract engine — WASM/wasmer runtime
-│   ├── uat-node/          # Full node binary — REST API + gRPC server
-│   └── uat-cli/           # Command-line interface
+│   ├── los-core/          # Blockchain core — ledger, accounts, supply math, validator rewards
+│   ├── los-crypto/        # Post-quantum crypto — Dilithium5, address derivation
+│   ├── los-consensus/     # aBFT consensus — voting, slashing, checkpoints
+│   ├── los-network/       # P2P networking — fee scaling, Tor transport
+│   ├── los-vm/            # Smart contract engine — WASM/wasmer runtime
+│   ├── los-node/          # Full node binary — REST API + gRPC server
+│   └── los-cli/           # Command-line interface
 ├── flutter_wallet/        # Desktop wallet app (Flutter + Dilithium5 FFI)
 ├── flutter_validator/     # Desktop validator dashboard (Flutter + Dilithium5 FFI)
 ├── genesis/               # Genesis block generator
@@ -172,15 +172,15 @@ Both Flutter apps use native Rust FFI to call Dilithium5 functions compiled per 
 
 ## Genesis Allocation
 
-| Component | UAT | Percentage |
+| Component | LOS | Percentage |
 |-----------|-----|-----------|
 | **Public Distribution** (Proof-of-Burn) | 20,400,700 | 93% |
 | **Dev Treasury** (8 wallets) | 1,535,536 | 7% |
 | **Total** | **21,936,236** | **100%** |
 
-A **Validator Reward Pool** of 2,193,623 UAT (~10% of total supply) is reserved within the public distribution for epoch-based validator incentives. This pool uses a halving schedule and does not increase total supply.
+A **Validator Reward Pool** of 2,193,623 LOS (~10% of total supply) is reserved within the public distribution for epoch-based validator incentives. This pool uses a halving schedule and does not increase total supply.
 
-Bootstrap validators (4 nodes × 1,000 UAT each) are funded from Treasury Wallet #8.
+Bootstrap validators (4 nodes × 1,000 LOS each) are funded from Treasury Wallet #8.
 
 ---
 
@@ -200,12 +200,12 @@ Bootstrap validators (4 nodes × 1,000 UAT each) are funded from Treasury Wallet
 
 ```bash
 cargo test --workspace              # All 240 tests
-cargo test -p uat-core              # Core crate (69 tests, incl. reward system)
-cargo test -p uat-consensus         # Consensus (43 tests)
-cargo test -p uat-crypto            # Cryptography (30 tests)
-cargo test -p uat-network           # Network (57 tests)
-cargo test -p uat-vm                # Smart contracts / WASM (20 tests)
-cargo test -p uat-node              # Node integration (13 tests)
+cargo test -p los-core              # Core crate (69 tests, incl. reward system)
+cargo test -p los-consensus         # Consensus (43 tests)
+cargo test -p los-crypto            # Cryptography (30 tests)
+cargo test -p los-network           # Network (57 tests)
+cargo test -p los-vm                # Smart contracts / WASM (20 tests)
+cargo test -p los-node              # Node integration (13 tests)
 ```
 
 CI runs automatically on every push: format check, clippy, full test suite, security audit, release build, integration tests, and VM tests.
@@ -221,7 +221,7 @@ CI runs automatically on every push: format check, clippy, full test suite, secu
 | [INSTALLATION.md](docs/INSTALLATION.md) | Build from source on all platforms |
 | [VALIDATOR_GUIDE.md](docs/VALIDATOR_GUIDE.md) | Run a validator node |
 | [API_REFERENCE.md](docs/API_REFERENCE.md) | REST & gRPC API docs (27 endpoints) |
-| [CLI_REFERENCE.md](docs/CLI_REFERENCE.md) | `uat-cli` command reference |
+| [CLI_REFERENCE.md](docs/CLI_REFERENCE.md) | `los-cli` command reference |
 | [ARCHITECTURE.md](docs/ARCHITECTURE.md) | Technical architecture & diagrams |
 | [DOCKER_DEPLOYMENT.md](docs/DOCKER_DEPLOYMENT.md) | Docker Compose deployment |
 | [TOR_SETUP.md](docs/TOR_SETUP.md) | Tor hidden service setup |

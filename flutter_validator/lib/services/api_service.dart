@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
@@ -9,8 +10,44 @@ import '../constants/blockchain.dart';
 import 'tor_service.dart';
 import 'network_config.dart';
 import 'peer_discovery_service.dart';
+import 'wallet_service.dart';
 
 enum NetworkEnvironment { testnet, mainnet }
+
+/// Tracks per-node health metrics for latency-based selection and cooldown.
+class _NodeHealth {
+  /// Last measured round-trip time in milliseconds. null = never probed.
+  int? latencyMs;
+
+  /// Timestamp of last successful response from this node.
+  DateTime? lastSuccess;
+
+  /// Timestamp of last failure. Used for cooldown logic.
+  DateTime? lastFailure;
+
+  /// Consecutive failure count. Reset on success.
+  int consecutiveFailures = 0;
+
+  /// Whether this node is currently in cooldown (recently failed).
+  bool get isInCooldown {
+    if (lastFailure == null || consecutiveFailures == 0) return false;
+    // Exponential backoff: 10s × 2^(failures-1), capped at 5 minutes
+    final cooldownMs =
+        (10000 * (1 << (consecutiveFailures - 1).clamp(0, 5))).clamp(0, 300000);
+    return DateTime.now().difference(lastFailure!).inMilliseconds < cooldownMs;
+  }
+
+  void recordSuccess(int rttMs) {
+    latencyMs = rttMs;
+    lastSuccess = DateTime.now();
+    consecutiveFailures = 0;
+  }
+
+  void recordFailure() {
+    lastFailure = DateTime.now();
+    consecutiveFailures++;
+  }
+}
 
 class ApiService {
   // Bootstrap node addresses are loaded from assets/network_config.json
@@ -20,28 +57,43 @@ class ApiService {
   /// Default timeout for API calls
   static const Duration _defaultTimeout = Duration(seconds: 30);
 
-  /// Longer timeout for Tor connections (15s is enough — Tor circuits complete in 5-10s)
-  static const Duration _torTimeout = Duration(seconds: 15);
+  /// Longer timeout for Tor connections (45s — .onion routing can be slow on first circuit)
+  static const Duration _torTimeout = Duration(seconds: 45);
+
+  /// Timeout for latency probes (short — just checking reachability)
+  static const Duration _probeTimeout = Duration(seconds: 15);
+
+  /// Tor-specific probe timeout (Tor circuits need more time)
+  static const Duration _torProbeTimeout = Duration(seconds: 30);
 
   /// Max retry attempts across bootstrap nodes before giving up
   static const int _maxRetries = 4;
+
+  /// Interval between periodic peer re-discovery runs
+  static const Duration _rediscoveryInterval = Duration(minutes: 5);
+
+  /// Interval between background latency probes
+  static const Duration _latencyProbeInterval = Duration(minutes: 3);
 
   late String baseUrl;
   http.Client _client = http.Client();
   NetworkEnvironment environment;
   final TorService _torService;
 
-  /// All available bootstrap URLs for round-robin failover
+  /// All available bootstrap URLs for failover
   List<String> _bootstrapUrls = [];
 
   /// Index of the currently active bootstrap node
   int _currentNodeIndex = 0;
 
+  /// Per-node health tracking: URL → _NodeHealth
+  final Map<String, _NodeHealth> _nodeHealthMap = {};
+
   /// Track client initialization so callers can await readiness
   late Future<void> _clientReady;
 
-  /// Whether we've already run peer discovery after first successful connection
-  bool _peerDiscoveryDone = false;
+  /// Whether we've completed the initial peer discovery + latency probe
+  bool _initialDiscoveryDone = false;
 
   /// Whether this instance has been disposed (client closed).
   /// Prevents fire-and-forget tasks from using a closed client.
@@ -51,11 +103,27 @@ class ApiService {
   /// When false, failover skips .onion URLs entirely — they'll never work.
   bool _hasTor = false;
 
+  /// Periodic timers for background maintenance
+  Timer? _rediscoveryTimer;
+  Timer? _latencyProbeTimer;
+
+  /// Callback for external health monitor integration (e.g. NetworkStatusService).
+  /// When set, this is called whenever a proactive failover occurs.
+  void Function(String newBaseUrl)? onNodeSwitched;
+
+  /// The local validator's own .onion address.
+  /// When set, this node is EXCLUDED from the peer list to prevent
+  /// self-connection (spec: "flutter_validator MUST NOT use its own
+  /// local onion address for API consumption").
+  String? _excludedOnionUrl;
+
   ApiService({
     String? customUrl,
     this.environment = NetworkEnvironment.testnet,
     TorService? torService,
+    String? excludeOwnOnion,
   }) : _torService = torService ?? TorService() {
+    _excludedOnionUrl = excludeOwnOnion;
     _loadBootstrapUrls(environment);
     if (customUrl != null) {
       baseUrl = customUrl;
@@ -65,34 +133,53 @@ class ApiService {
           : _getBaseUrl(environment);
     }
     _clientReady = _initializeClient();
-    debugPrint('🔗 UAT Validator ApiService initialized with baseUrl: $baseUrl '
+    debugPrint('🔗 LOS Validator ApiService initialized with baseUrl: $baseUrl '
         '(${_bootstrapUrls.length} bootstrap nodes available)');
   }
 
   /// Await Tor/HTTP client initialization before first request.
   Future<void> ensureReady() => _clientReady;
 
+  /// Set the excluded onion URL at runtime (e.g., after hidden service is generated).
+  /// Removes it from the bootstrap list if already present.
+  void setExcludedOnion(String onionUrl) {
+    _excludedOnionUrl = onionUrl;
+    _bootstrapUrls.remove(onionUrl);
+    if (baseUrl == onionUrl) {
+      _switchToNextNode();
+    }
+    debugPrint('🔗 Excluded own onion from peer list: $onionUrl');
+  }
+
   /// Load all bootstrap URLs for the given environment.
-  /// Includes saved peers from local storage (Bitcoin's peers.dat equivalent)
-  /// BEFORE the hardcoded bootstrap nodes, so the app can survive
-  /// even if all 4 bootstrap nodes go offline.
+  /// Filters out the validator's own .onion address if excluded.
+  /// SECURITY FIX M-06: On mainnet, only .onion URLs are permitted.
   void _loadBootstrapUrls(NetworkEnvironment env) {
     final nodes = env == NetworkEnvironment.testnet
         ? NetworkConfig.testnetNodes
         : NetworkConfig.mainnetNodes;
-    _bootstrapUrls = nodes.map((n) => n.restUrl).toList();
+    _bootstrapUrls = nodes
+        .map((n) => n.restUrl)
+        .where((url) => url != _excludedOnionUrl)
+        .where((url) {
+      // SECURITY: Mainnet requires .onion-only connections (Tor network)
+      if (env == NetworkEnvironment.mainnet && !url.contains('.onion')) {
+        debugPrint('🚫 Rejected non-.onion URL for mainnet: $url');
+        return false;
+      }
+      return true;
+    }).toList();
     _currentNodeIndex = 0;
   }
 
-  /// Async initialization: load saved peers and prepend to bootstrap list.
-  /// Called during ensureReady() — before the first actual API request.
+  /// Async initialization: load saved peers, prepend to bootstrap list,
+  /// then run initial latency probes to select the best node.
   Future<void> _loadSavedPeers() async {
     final savedPeers = await PeerDiscoveryService.loadSavedPeers();
     if (savedPeers.isNotEmpty) {
-      // Prepend saved peers BEFORE bootstrap nodes (tried first)
-      // Deduplicate: don't add if already in bootstrap list
-      final newPeers =
-          savedPeers.where((p) => !_bootstrapUrls.contains(p)).toList();
+      final newPeers = savedPeers
+          .where((p) => !_bootstrapUrls.contains(p) && p != _excludedOnionUrl)
+          .toList();
       if (newPeers.isNotEmpty) {
         _bootstrapUrls = [...newPeers, ..._bootstrapUrls];
         debugPrint('🔗 PeerDiscovery: added ${newPeers.length} saved peer(s) '
@@ -110,49 +197,184 @@ class ApiService {
     }
   }
 
-  /// Switch to the next bootstrap node in round-robin fashion.
-  /// Returns true if switched to a different node, false if only 1 node available.
-  /// Skips .onion URLs when Tor is not available (_hasTor == false).
+  // ══════════════════════════════════════════════════════════════════
+  //  LATENCY-BASED PEER SELECTION
+  // ══════════════════════════════════════════════════════════════════
+
+  /// Probe all known peers for latency, then select the fastest responsive one.
+  /// Called on startup and periodically in the background.
+  Future<void> probeAndSelectBestNode() async {
+    if (_disposed || _bootstrapUrls.isEmpty) return;
+    debugPrint(
+        '📡 [Probe] Starting latency probe across ${_bootstrapUrls.length} node(s)...');
+
+    final results = <String, int>{};
+
+    // Probe all nodes in parallel
+    final futures = _bootstrapUrls.map((url) async {
+      // Skip nodes in cooldown
+      final health = _nodeHealthMap[url];
+      if (health != null && health.isInCooldown) {
+        debugPrint(
+            '📡 [Probe] $url — skipped (cooldown, ${health.consecutiveFailures} failures)');
+        return;
+      }
+      try {
+        final timeout =
+            url.contains('.onion') ? _torProbeTimeout : _probeTimeout;
+        final sw = Stopwatch()..start();
+        final response =
+            await _client.get(Uri.parse('$url/health')).timeout(timeout);
+        sw.stop();
+
+        if (response.statusCode == 200) {
+          results[url] = sw.elapsedMilliseconds;
+          _getHealth(url).recordSuccess(sw.elapsedMilliseconds);
+          debugPrint('📡 [Probe] $url — ${sw.elapsedMilliseconds}ms ✓');
+        } else {
+          _getHealth(url).recordFailure();
+          debugPrint('📡 [Probe] $url — HTTP ${response.statusCode} ✗');
+        }
+      } catch (e) {
+        _getHealth(url).recordFailure();
+        debugPrint('📡 [Probe] $url — unreachable ($e) ✗');
+      }
+    });
+
+    await Future.wait(futures);
+
+    if (results.isEmpty) {
+      debugPrint(
+          '📡 [Probe] No responsive nodes found — keeping current: $baseUrl');
+      return;
+    }
+
+    // Sort by latency ascending, pick the fastest
+    final sorted = results.entries.toList()
+      ..sort((a, b) => a.value.compareTo(b.value));
+
+    final bestUrl = sorted.first.key;
+    final bestLatency = sorted.first.value;
+
+    if (bestUrl != baseUrl) {
+      final oldUrl = baseUrl;
+      baseUrl = bestUrl;
+      _currentNodeIndex =
+          _bootstrapUrls.indexOf(bestUrl).clamp(0, _bootstrapUrls.length - 1);
+      debugPrint(
+          '🏆 [Probe] Best node: $bestUrl (${bestLatency}ms) — switched from $oldUrl');
+      onNodeSwitched?.call(baseUrl);
+    } else {
+      debugPrint(
+          '🏆 [Probe] Best node unchanged: $baseUrl (${bestLatency}ms) — '
+          '${sorted.length}/${_bootstrapUrls.length} responsive');
+    }
+  }
+
+  /// Get or create health tracker for a URL.
+  _NodeHealth _getHealth(String url) {
+    return _nodeHealthMap.putIfAbsent(url, () => _NodeHealth());
+  }
+
+  // ══════════════════════════════════════════════════════════════════
+  //  FAILOVER
+  // ══════════════════════════════════════════════════════════════════
+
+  /// Switch to the next available node, skipping nodes in cooldown
+  /// and .onion URLs when Tor is unavailable.
   bool _switchToNextNode() {
     if (_bootstrapUrls.length <= 1) return false;
     final startIndex = _currentNodeIndex;
     do {
       _currentNodeIndex = (_currentNodeIndex + 1) % _bootstrapUrls.length;
       final candidate = _bootstrapUrls[_currentNodeIndex];
-      // Skip .onion URLs if we don't have a Tor client
       if (!_hasTor && candidate.contains('.onion')) continue;
+      if (_getHealth(candidate).isInCooldown) continue;
       if (candidate != baseUrl) {
         baseUrl = candidate;
         debugPrint(
             '🔄 Failover: switched to node ${_currentNodeIndex + 1}/${_bootstrapUrls.length}: $baseUrl');
+        onNodeSwitched?.call(baseUrl);
+        return true;
+      }
+    } while (_currentNodeIndex != startIndex);
+    // All nodes in cooldown — reset cooldowns and try round-robin
+    if (_allNodesInCooldown()) {
+      debugPrint(
+          '⚠️ All nodes in cooldown — resetting cooldowns for fresh retry');
+      for (final h in _nodeHealthMap.values) {
+        h.consecutiveFailures = 0;
+      }
+      return _switchToNextNodeNoCooldown();
+    }
+    return false;
+  }
+
+  bool _allNodesInCooldown() {
+    for (final url in _bootstrapUrls) {
+      if (!_hasTor && url.contains('.onion')) continue;
+      if (!_getHealth(url).isInCooldown) return false;
+    }
+    return true;
+  }
+
+  bool _switchToNextNodeNoCooldown() {
+    if (_bootstrapUrls.length <= 1) return false;
+    final startIndex = _currentNodeIndex;
+    do {
+      _currentNodeIndex = (_currentNodeIndex + 1) % _bootstrapUrls.length;
+      final candidate = _bootstrapUrls[_currentNodeIndex];
+      if (!_hasTor && candidate.contains('.onion')) continue;
+      if (candidate != baseUrl) {
+        baseUrl = candidate;
+        onNodeSwitched?.call(baseUrl);
         return true;
       }
     } while (_currentNodeIndex != startIndex);
     return false;
   }
 
-  /// Execute an HTTP request with round-robin failover across all bootstrap nodes.
-  /// If the current node fails (timeout, connection error), tries the next one.
+  /// Execute an HTTP request with intelligent failover.
+  /// Handles: timeouts, connection errors, AND HTTP 5xx server errors.
   Future<http.Response> _requestWithFailover(
     Future<http.Response> Function(String url) requestFn,
     String endpoint,
   ) async {
     await ensureReady();
     int attempts = 0;
+    final maxAttempts = _bootstrapUrls.length.clamp(1, _maxRetries);
 
-    while (attempts < _bootstrapUrls.length.clamp(1, _maxRetries)) {
+    while (attempts < maxAttempts) {
       try {
+        final sw = Stopwatch()..start();
         final response = await requestFn(baseUrl).timeout(_timeout);
-        // On first successful connection, trigger background peer discovery
-        if (!_peerDiscoveryDone) {
-          _peerDiscoveryDone = true;
-          // Fire-and-forget — don't block the current request
-          Future.microtask(() => discoverAndSavePeers());
+        sw.stop();
+
+        // Record successful RTT for this node
+        _getHealth(baseUrl).recordSuccess(sw.elapsedMilliseconds);
+
+        // HTTP 5xx = server error → treat as node failure, try next
+        if (response.statusCode >= 500) {
+          debugPrint(
+              '⚠️ Node ${_currentNodeIndex + 1} returned HTTP ${response.statusCode} for $endpoint');
+          _getHealth(baseUrl).recordFailure();
+          final isLastAttempt = attempts >= maxAttempts - 1;
+          if (isLastAttempt) return response;
+          _switchToNextNode();
+          attempts++;
+          continue;
         }
+
+        // Trigger initial discovery + latency probes (once)
+        if (!_initialDiscoveryDone) {
+          _initialDiscoveryDone = true;
+          Future.microtask(() => _runInitialDiscovery());
+        }
+
         return response;
       } on Exception catch (e) {
-        final isLastAttempt = attempts >= _bootstrapUrls.length - 1 ||
-            attempts >= _maxRetries - 1;
+        _getHealth(baseUrl).recordFailure();
+        final isLastAttempt = attempts >= maxAttempts - 1;
         debugPrint('⚠️ Node ${_currentNodeIndex + 1} failed for $endpoint: $e');
 
         if (isLastAttempt) {
@@ -166,8 +388,53 @@ class ApiService {
         debugPrint('🔄 Retrying $endpoint on node ${_currentNodeIndex + 1}...');
       }
     }
-    // Should not reach here, but satisfy the compiler
     throw Exception('All bootstrap nodes unreachable for $endpoint');
+  }
+
+  /// Runs once after first successful API response:
+  /// 1. Discover peers from network
+  /// 2. Probe all nodes for latency
+  /// 3. Select the best (fastest) node
+  /// 4. Start periodic background timers
+  Future<void> _runInitialDiscovery() async {
+    if (_disposed) return;
+    try {
+      await discoverAndSavePeers();
+      await probeAndSelectBestNode();
+    } catch (e) {
+      debugPrint('⚠️ Initial discovery/probe failed (non-critical): $e');
+    }
+    _startBackgroundTimers();
+  }
+
+  /// Start recurring background tasks:
+  /// - Re-discover peers every 5 minutes
+  /// - Re-probe latency every 3 minutes
+  void _startBackgroundTimers() {
+    _rediscoveryTimer?.cancel();
+    _latencyProbeTimer?.cancel();
+
+    _rediscoveryTimer = Timer.periodic(_rediscoveryInterval, (_) {
+      if (!_disposed) discoverAndSavePeers();
+    });
+
+    _latencyProbeTimer = Timer.periodic(_latencyProbeInterval, (_) {
+      if (!_disposed) probeAndSelectBestNode();
+    });
+
+    debugPrint('⏰ Background timers started: '
+        'discovery every ${_rediscoveryInterval.inMinutes}m, '
+        'latency probe every ${_latencyProbeInterval.inMinutes}m');
+  }
+
+  /// Called by NetworkStatusService when health check detects degradation.
+  /// Proactively switches to a better node before the user's next request fails.
+  void onHealthDegraded() {
+    if (_disposed) return;
+    debugPrint('🔌 Health degraded — proactively switching node...');
+    _getHealth(baseUrl).recordFailure();
+    _switchToNextNode();
+    Future.microtask(() => probeAndSelectBestNode());
   }
 
   /// Get appropriate timeout based on whether using Tor
@@ -200,7 +467,8 @@ class ApiService {
         ? _torService.activeSocksPort
         : 9150; // Last resort: Tor Browser
     if (!started) {
-      debugPrint('⚠️ TorService.start() failed, trying Tor Browser on port $socksPort');
+      debugPrint(
+          '⚠️ TorService.start() failed, trying Tor Browser on port $socksPort');
     }
 
     SocksTCPClient.assignToHttpClient(
@@ -218,6 +486,13 @@ class ApiService {
   // Switch network environment
   void switchEnvironment(NetworkEnvironment newEnv) {
     environment = newEnv;
+    // SECURITY FIX F2: Sync mainnet mode to WalletService so Ed25519
+    // fallback crypto is refused on mainnet.
+    WalletService.mainnetMode = (newEnv == NetworkEnvironment.mainnet);
+    _nodeHealthMap.clear();
+    _initialDiscoveryDone = false;
+    _rediscoveryTimer?.cancel();
+    _latencyProbeTimer?.cancel();
     _loadBootstrapUrls(newEnv);
     baseUrl =
         _bootstrapUrls.isNotEmpty ? _bootstrapUrls.first : _getBaseUrl(newEnv);
@@ -228,13 +503,17 @@ class ApiService {
 
   // Node Info
   Future<Map<String, dynamic>> getNodeInfo() async {
+    debugPrint('🌐 [ApiService.getNodeInfo] Fetching node info...');
     try {
       final response = await _requestWithFailover(
         (url) => _client.get(Uri.parse('$url/node-info')),
         '/node-info',
       );
       if (response.statusCode == 200) {
-        return json.decode(response.body);
+        final data = json.decode(response.body);
+        debugPrint(
+            '🌐 [ApiService.getNodeInfo] Success: block_height=${data['block_height']}');
+        return data;
       }
       throw Exception('Failed to get node info: ${response.statusCode}');
     } catch (e) {
@@ -245,12 +524,15 @@ class ApiService {
 
   /// Fetch node-info from a specific URL (used by NodeControlScreen for local node).
   Future<Map<String, dynamic>?> getNodeInfoFromUrl(String url) async {
+    debugPrint('🌐 [ApiService.getNodeInfoFromUrl] url: $url');
     try {
       final response = await http
           .get(Uri.parse('$url/node-info'))
           .timeout(const Duration(seconds: 5));
       if (response.statusCode == 200) {
-        return json.decode(response.body);
+        final data = json.decode(response.body);
+        debugPrint('🌐 [ApiService.getNodeInfoFromUrl] Success');
+        return data;
       }
     } catch (e) {
       debugPrint('⚠️ getNodeInfoFromUrl($url) error: $e');
@@ -260,13 +542,16 @@ class ApiService {
 
   // Health Check
   Future<Map<String, dynamic>> getHealth() async {
+    debugPrint('🌐 [ApiService.getHealth] Fetching health...');
     try {
       final response = await _requestWithFailover(
         (url) => _client.get(Uri.parse('$url/health')),
         '/health',
       );
       if (response.statusCode == 200) {
-        return json.decode(response.body);
+        final data = json.decode(response.body);
+        debugPrint('🌐 [ApiService.getHealth] Success');
+        return data;
       }
       throw Exception('Failed to get health: ${response.statusCode}');
     } catch (e) {
@@ -284,9 +569,10 @@ class ApiService {
   }
 
   // Get Balance
-  // Backend: GET /balance/:address → {balance, balance_uat: string, balance_voi: u128-int}
-  // Backend: GET /bal/:address     → {balance_uat: string, balance_void: u128-int}
+  // Backend: GET /balance/:address → {balance, balance_los: string, balance_cil: u128-int}
+  // Backend: GET /bal/:address     → {balance_los: string, balance_cil: u128-int}
   Future<Account> getBalance(String address) async {
+    debugPrint('🌐 [ApiService.getBalance] address: $address');
     try {
       final response = await _requestWithFailover(
         (url) => _client.get(Uri.parse('$url/balance/$address')),
@@ -294,23 +580,23 @@ class ApiService {
       );
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
-        // FIX C12-01: Backend /balance/:address sends "balance_voi" (no 'd'),
-        // while /bal/:address sends "balance_void". Check both field names.
-        // balance_voi / balance_void is the canonical VOID amount (u128).
-        // balance_uat / balance are formatted UAT strings ("1000.00000000000").
+        // FIX C12-01: Backend /balance/:address sends "balance_cil" (no 'd'),
+        // while /bal/:address sends "balance_cil". Check both field names.
+        // balance_cil / balance_cil is the canonical CIL amount (u128).
+        // balance_los / balance are formatted LOS strings ("1000.00000000000").
         int balanceVoid;
-        if (data['balance_voi'] != null) {
-          balanceVoid = _safeInt(data['balance_voi']);
-        } else if (data['balance_void'] != null) {
-          balanceVoid = _safeInt(data['balance_void']);
-        } else if (data['balance_uat'] != null) {
-          final val = data['balance_uat'];
+        if (data['balance_cil'] != null) {
+          balanceVoid = _safeInt(data['balance_cil']);
+        } else if (data['balance_cil'] != null) {
+          balanceVoid = _safeInt(data['balance_cil']);
+        } else if (data['balance_los'] != null) {
+          final val = data['balance_los'];
           if (val is int) {
             balanceVoid = val;
           } else if (val is String) {
-            // FIX C12-03: balance_uat is a formatted decimal string like "1000.00000000000"
-            // int.tryParse fails on decimal strings. Use uatStringToVoid for proper conversion.
-            balanceVoid = BlockchainConstants.uatStringToVoid(val);
+            // FIX C12-03: balance_los is a formatted decimal string like "1000.00000000000"
+            // int.tryParse fails on decimal strings. Use losStringToCil for proper conversion.
+            balanceVoid = BlockchainConstants.losStringToCil(val);
           } else {
             balanceVoid = 0;
           }
@@ -319,19 +605,22 @@ class ApiService {
           if (val is int) {
             balanceVoid = val;
           } else if (val is String) {
-            balanceVoid = BlockchainConstants.uatStringToVoid(val);
+            balanceVoid = BlockchainConstants.losStringToCil(val);
           } else {
             balanceVoid = 0;
           }
         } else {
           balanceVoid = 0;
         }
-        return Account(
+        final account = Account(
           address: address,
           balance: balanceVoid,
-          voidBalance: 0,
+          cilBalance: 0,
           history: [],
         );
+        debugPrint(
+            '🌐 [ApiService.getBalance] Success: balance=$balanceVoid CILD');
+        return account;
       }
       throw Exception('Failed to get balance: ${response.statusCode}');
     } catch (e) {
@@ -342,6 +631,7 @@ class ApiService {
 
   // Get Account (with history)
   Future<Account> getAccount(String address) async {
+    debugPrint('🌐 [ApiService.getAccount] address: $address');
     try {
       final response = await _requestWithFailover(
         (url) => _client.get(Uri.parse('$url/account/$address')),
@@ -349,6 +639,7 @@ class ApiService {
       );
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
+        debugPrint('🌐 [ApiService.getAccount] Success');
         return Account.fromJson(data);
       }
       throw Exception('Failed to get account: ${response.statusCode}');
@@ -360,6 +651,7 @@ class ApiService {
 
   // Request Faucet
   Future<Map<String, dynamic>> requestFaucet(String address) async {
+    debugPrint('🌐 [ApiService.requestFaucet] address: $address');
     try {
       final response = await _requestWithFailover(
         (url) => _client.post(
@@ -377,6 +669,7 @@ class ApiService {
         throw Exception(data['msg'] ?? 'Faucet request failed');
       }
 
+      debugPrint('🌐 [ApiService.requestFaucet] Success');
       return data;
     } catch (e) {
       debugPrint('❌ requestFaucet error: $e');
@@ -385,7 +678,7 @@ class ApiService {
   }
 
   // Send Transaction
-  // Backend POST /send requires: {from, target, amount (UAT int), signature, public_key}
+  // Backend POST /send requires: {from, target, amount (LOS int), signature, public_key}
   Future<Map<String, dynamic>> sendTransaction({
     required String from,
     required String to,
@@ -393,6 +686,8 @@ class ApiService {
     required String signature,
     required String publicKey,
   }) async {
+    debugPrint(
+        '🌐 [ApiService.sendTransaction] from: $from, to: $to, amount: $amount');
     try {
       final response = await _requestWithFailover(
         (url) => _client.post(
@@ -416,6 +711,8 @@ class ApiService {
         throw Exception(data['msg'] ?? 'Transaction failed');
       }
 
+      debugPrint(
+          '🌐 [ApiService.sendTransaction] Success: txid=${data['txid'] ?? data['tx_id'] ?? 'N/A'}');
       return data;
     } catch (e) {
       debugPrint('❌ sendTransaction error: $e');
@@ -425,7 +722,7 @@ class ApiService {
 
   // Proof-of-Burn
   Future<Map<String, dynamic>> submitBurn({
-    required String uatAddress,
+    required String losAddress,
     required String btcTxid,
     required String ethTxid,
     required int amount,
@@ -436,7 +733,7 @@ class ApiService {
           Uri.parse('$url/burn'),
           headers: {'Content-Type': 'application/json'},
           body: json.encode({
-            'uat_address': uatAddress,
+            'los_address': losAddress,
             'btc_txid': btcTxid,
             'eth_txid': ethTxid,
             'amount': amount,
@@ -462,6 +759,7 @@ class ApiService {
   // Get Validators
   // FIX C-01: Backend wraps in {"validators": [...]}, not bare array
   Future<List<ValidatorInfo>> getValidators() async {
+    debugPrint('🛡️ [ApiService.getValidators] Fetching validators...');
     try {
       final response = await _requestWithFailover(
         (url) => _client.get(Uri.parse('$url/validators')),
@@ -473,7 +771,10 @@ class ApiService {
         final List<dynamic> data = decoded is List
             ? decoded
             : (decoded['validators'] as List<dynamic>?) ?? [];
-        return data.map((v) => ValidatorInfo.fromJson(v)).toList();
+        final validators = data.map((v) => ValidatorInfo.fromJson(v)).toList();
+        debugPrint(
+            '🛡️ [ApiService.getValidators] Success: ${validators.length} validators');
+        return validators;
       }
       throw Exception('Failed to get validators: ${response.statusCode}');
     } catch (e) {
@@ -485,11 +786,14 @@ class ApiService {
   /// Check if an address is an active genesis bootstrap validator.
   /// Returns true if the address is found in /validators with is_genesis=true and is_active=true.
   Future<bool> isActiveGenesisValidator(String address) async {
+    debugPrint('🛡️ [ApiService.isActiveGenesisValidator] address: $address');
     try {
       final validators = await getValidators();
-      return validators.any(
+      final result = validators.any(
         (v) => v.address == address && v.isGenesis && v.isActive,
       );
+      debugPrint('🛡️ [ApiService.isActiveGenesisValidator] Result: $result');
+      return result;
     } catch (e) {
       debugPrint('⚠️ isActiveGenesisValidator check failed: $e');
       return false;
@@ -498,6 +802,7 @@ class ApiService {
 
   // Get Latest Block
   Future<BlockInfo> getLatestBlock() async {
+    debugPrint('🌐 [ApiService.getLatestBlock] Fetching latest block...');
     try {
       final response = await _requestWithFailover(
         (url) => _client.get(Uri.parse('$url/block')),
@@ -505,6 +810,8 @@ class ApiService {
       );
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
+        debugPrint(
+            '🌐 [ApiService.getLatestBlock] Success: height=${data['height']}');
         return BlockInfo.fromJson(data);
       }
       throw Exception('Failed to get latest block: ${response.statusCode}');
@@ -516,6 +823,7 @@ class ApiService {
 
   // Get Recent Blocks
   Future<List<BlockInfo>> getRecentBlocks() async {
+    debugPrint('🌐 [ApiService.getRecentBlocks] Fetching recent blocks...');
     try {
       final response = await _requestWithFailover(
         (url) => _client.get(Uri.parse('$url/blocks/recent')),
@@ -527,7 +835,10 @@ class ApiService {
         final List<dynamic> data = decoded is List
             ? decoded
             : (decoded['blocks'] as List<dynamic>?) ?? [];
-        return data.map((b) => BlockInfo.fromJson(b)).toList();
+        final blocks = data.map((b) => BlockInfo.fromJson(b)).toList();
+        debugPrint(
+            '🌐 [ApiService.getRecentBlocks] Success: ${blocks.length} blocks');
+        return blocks;
       }
       throw Exception('Failed to get recent blocks: ${response.statusCode}');
     } catch (e) {
@@ -539,6 +850,7 @@ class ApiService {
   // Get Peers
   // Backend returns {"peers": [{"address":..., "is_validator":..., ...}], "peer_count": N, ...}
   Future<List<String>> getPeers() async {
+    debugPrint('📡 [ApiService.getPeers] Fetching peers...');
     try {
       final response = await _requestWithFailover(
         (url) => _client.get(Uri.parse('$url/peers')),
@@ -549,11 +861,14 @@ class ApiService {
         if (decoded is Map) {
           // New format: {"peers": [{"address": "...", ...}], "peer_count": N}
           if (decoded.containsKey('peers') && decoded['peers'] is List) {
-            return (decoded['peers'] as List)
+            final peers = (decoded['peers'] as List)
                 .map((p) =>
                     p is Map ? (p['address'] ?? '').toString() : p.toString())
                 .where((s) => s.isNotEmpty)
                 .toList();
+            debugPrint(
+                '📡 [ApiService.getPeers] Success: ${peers.length} peers');
+            return peers;
           }
           // Legacy fallback: flat HashMap<String, String>
           return decoded.keys.cast<String>().toList();
@@ -569,7 +884,7 @@ class ApiService {
     }
   }
 
-  /// Register this node as an active validator on the local uat-node.
+  /// Register this node as an active validator on the local los-node.
   /// Requires Dilithium5 signature proof of key ownership.
   /// The node will broadcast the registration to all peers via gossipsub.
   Future<Map<String, dynamic>> registerValidator({
@@ -578,6 +893,7 @@ class ApiService {
     required String signature,
     required int timestamp,
   }) async {
+    debugPrint('🛡️ [ApiService.registerValidator] address: $address');
     try {
       final response = await _requestWithFailover(
         (url) => _client.post(
@@ -599,6 +915,7 @@ class ApiService {
         throw Exception(data['msg'] ?? 'Validator registration failed');
       }
 
+      debugPrint('🛡️ [ApiService.registerValidator] Success');
       return data;
     } catch (e) {
       debugPrint('❌ registerValidator error: $e');
@@ -614,6 +931,12 @@ class ApiService {
     if (_currentNodeIndex < nodes.length) {
       return nodes[_currentNodeIndex].name;
     }
+    // Discovered peer — show short onion address
+    if (_currentNodeIndex < _bootstrapUrls.length) {
+      final url = _bootstrapUrls[_currentNodeIndex];
+      final onion = url.replaceAll('http://', '');
+      return onion.length > 16 ? '${onion.substring(0, 12)}...' : onion;
+    }
     return 'unknown';
   }
 
@@ -623,13 +946,16 @@ class ApiService {
 
   /// Fetch validator reward pool status from GET /reward-info.
   Future<Map<String, dynamic>> getRewardInfo() async {
+    debugPrint('🌐 [ApiService.getRewardInfo] Fetching reward info...');
     try {
       final response = await _requestWithFailover(
         (url) => _client.get(Uri.parse('$url/reward-info')),
         '/reward-info',
       );
       if (response.statusCode == 200) {
-        return json.decode(response.body);
+        final data = json.decode(response.body);
+        debugPrint('🌐 [ApiService.getRewardInfo] Success');
+        return data;
       }
       throw Exception('Failed to get reward info: ${response.statusCode}');
     } catch (e) {
@@ -639,10 +965,10 @@ class ApiService {
   }
 
   /// Discover new validator endpoints from the network and save locally.
-  /// Call this periodically (e.g., every dashboard refresh) to build up
-  /// the local peer database. Once saved, these peers persist across restarts.
+  /// Called periodically (every 5 minutes) to maintain an up-to-date peer table.
+  /// Filters out the validator's own onion address if set.
   Future<void> discoverAndSavePeers() async {
-    if (_disposed) return; // Client already closed — skip silently
+    if (_disposed) return;
     try {
       final response = await _requestWithFailover(
         (url) => _client.get(Uri.parse('$url/network/peers')),
@@ -656,11 +982,12 @@ class ApiService {
             [];
         if (endpoints.isNotEmpty) {
           await PeerDiscoveryService.savePeers(endpoints);
-          // Also add newly discovered peers to current session's URL list
           for (final ep in endpoints) {
             final onion = ep['onion_address']?.toString() ?? '';
             if (onion.isNotEmpty && onion.endsWith('.onion')) {
               final url = 'http://$onion';
+              // Exclude own onion (validator self-connection prevention)
+              if (url == _excludedOnionUrl) continue;
               if (!_bootstrapUrls.contains(url)) {
                 _bootstrapUrls.add(url);
               }
@@ -671,14 +998,31 @@ class ApiService {
         }
       }
     } catch (e) {
-      // Non-critical — silently fail, will retry on next refresh
       debugPrint('⚠️ Peer discovery failed (non-critical): $e');
     }
   }
 
-  /// Release HTTP client resources. Called by Provider.dispose.
+  /// Expose current node health for UI display
+  Map<String, Map<String, dynamic>> get nodeHealthSummary {
+    final summary = <String, Map<String, dynamic>>{};
+    for (final url in _bootstrapUrls) {
+      final h = _nodeHealthMap[url];
+      summary[url] = {
+        'latency_ms': h?.latencyMs,
+        'consecutive_failures': h?.consecutiveFailures ?? 0,
+        'in_cooldown': h?.isInCooldown ?? false,
+        'is_current': url == baseUrl,
+      };
+    }
+    return summary;
+  }
+
+  /// Release HTTP client resources and cancel background timers.
   void dispose() {
+    debugPrint('🌐 [ApiService.dispose] Disposed');
     _disposed = true;
+    _rediscoveryTimer?.cancel();
+    _latencyProbeTimer?.cancel();
     _client.close();
   }
 }

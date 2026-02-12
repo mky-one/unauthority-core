@@ -1,4 +1,4 @@
-// UAT Wallet Widget Tests
+// LOS Wallet Widget Tests
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -6,13 +6,13 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_wallet/main.dart';
 
 void main() {
-  testWidgets('UAT Wallet splash screen renders correctly',
+  testWidgets('LOS Wallet splash screen renders correctly',
       (WidgetTester tester) async {
     // Build our app and trigger a frame.
     await tester.pumpWidget(const MyApp());
 
     // Verify splash screen shows wallet branding
-    expect(find.text('UAT WALLET'), findsOneWidget);
+    expect(find.text('LOS WALLET'), findsOneWidget);
     expect(find.text('Unauthority Blockchain'), findsOneWidget);
 
     // Verify loading indicator is shown
@@ -28,6 +28,6 @@ void main() {
 
     final materialApp = tester.widget<MaterialApp>(find.byType(MaterialApp));
     expect(materialApp.debugShowCheckedModeBanner, false);
-    expect(materialApp.title, 'UAT Wallet');
+    expect(materialApp.title, 'LOS Wallet');
   });
 }

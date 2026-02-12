@@ -133,15 +133,15 @@ jobs:
           key: ${{ runner.os }}-release-${{ hashFiles('**/Cargo.lock') }}
 
       - name: Build release binary
-        run: cargo build --release --workspace --exclude uat-vm --exclude uat-node && cargo build --release -p uat-node --no-default-features
+        run: cargo build --release --workspace --exclude uat-vm --exclude los-node && cargo build --release -p los-node --no-default-features
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
           name: uat-binaries
           path: |
-            target/release/uat-node
-            target/release/uat-cli
+            target/release/los-node
+            target/release/los-cli
             target/release/genesis_generator
 
   integration-test:

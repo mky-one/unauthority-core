@@ -40,7 +40,7 @@ class MyApp extends StatelessWidget {
         ),
       ],
       child: MaterialApp(
-        title: 'UAT Wallet',
+        title: 'LOS Wallet',
         debugShowCheckedModeBanner: false,
         theme: ThemeData(
           colorScheme: ColorScheme.fromSeed(
@@ -115,7 +115,7 @@ class _SplashScreenState extends State<SplashScreen> {
             ),
             const SizedBox(height: 24),
             const Text(
-              'UAT WALLET',
+              'LOS WALLET',
               style: TextStyle(
                 fontSize: 32,
                 fontWeight: FontWeight.bold,

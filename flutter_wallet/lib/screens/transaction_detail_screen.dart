@@ -70,7 +70,7 @@ class TransactionDetailScreen extends StatelessWidget {
                   ),
                   const SizedBox(height: 8),
                   Text(
-                    '${BlockchainConstants.formatUat(transaction.amountUAT)} UAT',
+                    '${BlockchainConstants.formatLos(transaction.amountLOS)} LOS',
                     style: const TextStyle(
                       fontSize: 32,
                       fontWeight: FontWeight.bold,
@@ -108,8 +108,8 @@ class TransactionDetailScreen extends StatelessWidget {
                 _DetailRow(
                   label: 'Amount',
                   value:
-                      '${BlockchainConstants.formatUat(transaction.amountUAT)} UAT',
-                  subtitle: '${_formatNumber(transaction.amount)} VOID',
+                      '${BlockchainConstants.formatLos(transaction.amountLOS)} LOS',
+                  subtitle: '${_formatNumber(transaction.amount)} CILD',
                   icon: Icons.attach_money,
                 ),
                 // Fee: only shown when backend returns actual fee (fee > 0)
@@ -118,8 +118,8 @@ class TransactionDetailScreen extends StatelessWidget {
                   _DetailRow(
                     label: 'Fee',
                     value:
-                        '${BlockchainConstants.formatUat(transaction.feeUAT)} UAT',
-                    subtitle: '${_formatNumber(transaction.fee)} VOID',
+                        '${BlockchainConstants.formatLos(transaction.feeLOS)} LOS',
+                    subtitle: '${_formatNumber(transaction.fee)} CILD',
                     icon: Icons.local_gas_station,
                   ),
                 ],

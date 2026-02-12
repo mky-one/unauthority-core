@@ -2,8 +2,8 @@ import '../constants/blockchain.dart';
 
 class Account {
   final String address;
-  final int balance; // In VOID (smallest unit)
-  final int voidBalance; // Staked/locked VOID
+  final int balance; // In CIL (smallest unit)
+  final int cilBalance; // Staked/locked CIL
   final List<Transaction> history;
   final String? headBlock; // Latest block hash (frontier) — from /account/:addr
   final int blockCount; // Number of blocks in this account's chain
@@ -11,7 +11,7 @@ class Account {
   Account({
     required this.address,
     required this.balance,
-    required this.voidBalance,
+    required this.cilBalance,
     required this.history,
     this.headBlock,
     this.blockCount = 0,
@@ -23,25 +23,25 @@ class Account {
     if (value is int) return value;
     if (value is double) return value.toInt();
     if (value is String) {
-      // Try direct int parse first, then UAT string → VOID conversion
-      return int.tryParse(value) ?? BlockchainConstants.uatStringToVoid(value);
+      // Try direct int parse first, then LOS string → CIL conversion
+      return int.tryParse(value) ?? BlockchainConstants.losStringToCil(value);
     }
     return 0;
   }
 
   factory Account.fromJson(Map<String, dynamic> json) {
     // FIX M-01: Use containsKey instead of != 0 so real zero balances
-    // are not skipped. A zero balance from balance_voi is still valid data.
-    final int parsedBalance = json.containsKey('balance_voi')
-        ? _parseIntField(json['balance_voi'])
-        : json.containsKey('balance_void')
-            ? _parseIntField(json['balance_void'])
+    // are not skipped. A zero balance from balance_cil is still valid data.
+    final int parsedBalance = json.containsKey('balance_cil')
+        ? _parseIntField(json['balance_cil'])
+        : json.containsKey('balance_cil')
+            ? _parseIntField(json['balance_cil'])
             : _parseIntField(json['balance']);
 
     return Account(
       address: json['address'] ?? '',
       balance: parsedBalance,
-      voidBalance: _parseIntField(json['void_balance']),
+      cilBalance: _parseIntField(json['cil_balance']),
       headBlock: json['head_block'],
       blockCount: json['block_count'] ?? 0,
       history: (json['transactions'] as List?)
@@ -54,23 +54,23 @@ class Account {
     );
   }
 
-  /// Balance in UAT (1 UAT = 10^11 VOID)
-  double get balanceUAT => BlockchainConstants.voidToUat(balance);
+  /// Balance in LOS (1 LOS = 10^11 CIL)
+  double get balanceLOS => BlockchainConstants.cilToLos(balance);
 
-  /// Void balance in UAT
-  double get voidBalanceUAT => BlockchainConstants.voidToUat(voidBalance);
+  /// Void balance in LOS
+  double get cilBalanceLOS => BlockchainConstants.cilToLos(cilBalance);
 }
 
 class Transaction {
   final String txid;
   final String from;
   final String to;
-  final int amount; // In VOID (smallest unit) for internal consistency
+  final int amount; // In CIL (smallest unit) for internal consistency
   final int timestamp;
   final String type;
   final String? memo;
   final String? signature;
-  final int fee; // Fee in VOID
+  final int fee; // Fee in CIL
 
   Transaction({
     required this.txid,
@@ -85,23 +85,23 @@ class Transaction {
   });
 
   /// Parse amount from backend which may be:
-  /// - int (from /account endpoint: UAT integer, needs ×VOID_PER_UAT)
+  /// - int (from /account endpoint: LOS integer, needs ×CIL_PER_LOS)
   /// - double (rare but possible)
-  /// - String like "10.00000000000" (from /history endpoint: formatted UAT)
-  /// Returns value in VOID for internal consistency.
+  /// - String like "10.00000000000" (from /history endpoint: formatted LOS)
+  /// Returns value in CIL for internal consistency.
   static int _parseAmount(dynamic value) {
     if (value == null) return 0;
     if (value is int) {
-      // /account endpoint returns amount as UAT integer (block.amount / VOID_PER_UAT)
-      // Convert to VOID for consistent internal representation
-      return value * BlockchainConstants.voidPerUat;
+      // /account endpoint returns amount as LOS integer (block.amount / CIL_PER_LOS)
+      // Convert to CIL for consistent internal representation
+      return value * BlockchainConstants.cilPerLos;
     }
     if (value is double) {
-      return (value * BlockchainConstants.voidPerUat).toInt();
+      return (value * BlockchainConstants.cilPerLos).toInt();
     }
     if (value is String) {
-      // /history endpoint returns "10.00000000000" (formatted UAT string)
-      return BlockchainConstants.uatStringToVoid(value);
+      // /history endpoint returns "10.00000000000" (formatted LOS string)
+      return BlockchainConstants.losStringToCil(value);
     }
     return 0;
   }
@@ -124,11 +124,11 @@ class Transaction {
     );
   }
 
-  /// Amount in UAT (1 UAT = 10^11 VOID)
-  double get amountUAT => BlockchainConstants.voidToUat(amount);
+  /// Amount in LOS (1 LOS = 10^11 CIL)
+  double get amountLOS => BlockchainConstants.cilToLos(amount);
 
-  /// Fee in UAT (1 UAT = 10^11 VOID)
-  double get feeUAT => BlockchainConstants.voidToUat(fee);
+  /// Fee in LOS (1 LOS = 10^11 CIL)
+  double get feeLOS => BlockchainConstants.cilToLos(fee);
 }
 
 class BlockInfo {
@@ -173,6 +173,6 @@ class ValidatorInfo {
     );
   }
 
-  /// Stake in UAT — backend already sends stake as UAT integer
-  double get stakeUAT => stake.toDouble();
+  /// Stake in LOS — backend already sends stake as LOS integer
+  double get stakeLOS => stake.toDouble();
 }

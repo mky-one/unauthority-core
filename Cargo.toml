@@ -3,13 +3,12 @@ resolver = "2"
 
 members = [
     "genesis",
-    "crates/uat-core",
-    "crates/uat-crypto", 
-    "crates/uat-network", 
-    "crates/uat-node",
-    "crates/uat-consensus",
-    "crates/uat-vm", "crates/uat-cli",
-    # "crates/uat-p2p",
+    "crates/los-core",
+    "crates/los-crypto", 
+    "crates/los-network", 
+    "crates/los-node",
+    "crates/los-consensus",
+    "crates/los-vm", "crates/los-cli",
 ]
 
 # Integration tests package
@@ -23,10 +22,15 @@ name = "integration_test"
 path = "tests/integration_test.rs"
 harness = true
 
+[[bin]]
+name = "test-register-validator"
+path = "tests/test_register_validator.rs"
+
 [dependencies]
-uat-core = { path = "crates/uat-core" }
-uat-crypto = { path = "crates/uat-crypto" }
-uat-network = { path = "crates/uat-network" }
+los-core = { path = "crates/los-core" }
+los-crypto = { path = "crates/los-crypto" }
+los-consensus = { path = "crates/los-consensus" }
+los-network = { path = "crates/los-network" }
 tokio = { version = "1", features = ["full"] }
 serde_json = "1.0"
 hex = "0.4"

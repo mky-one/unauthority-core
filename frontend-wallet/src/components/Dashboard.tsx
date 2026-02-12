@@ -18,9 +18,9 @@ export default function Dashboard({ nodeOnline, oraclePrices }: Props) {
   const [claiming, setClaiming] = useState(false);
   const [claimSuccess, setClaimSuccess] = useState(false);
 
-  // Balance is already in UAT (not VOI), so use directly
-  const usdValue = balance * 0.01; // 1 UAT = $0.01
-  console.log('Balance (UAT):', balance, 'USD Value:', usdValue, 'Oracle Prices:', oraclePrices);
+  // Balance is already in LOS (not CIL), so use directly
+  const usdValue = balance * 0.01; // 1 LOS = $0.01
+  console.log('Balance (LOS):', balance, 'USD Value:', usdValue, 'Oracle Prices:', oraclePrices);
 
   useEffect(() => {
     if (nodeOnline) {
@@ -53,7 +53,7 @@ export default function Dashboard({ nodeOnline, oraclePrices }: Props) {
         setTimeout(() => setClaimSuccess(false), 3000);
         // Refresh balance after successful claim
         await fetchBalance(wallet.address);
-        alert('✅ Faucet claimed successfully! +100,000 UAT');
+        alert('✅ Faucet claimed successfully! +100,000 LOS');
       } else {
         alert(`❌ Faucet claim failed: ${result.msg || 'Unknown error'}`);
       }
@@ -70,11 +70,11 @@ export default function Dashboard({ nodeOnline, oraclePrices }: Props) {
   return (
     <div className="max-w-6xl mx-auto p-6">
       {/* Balance Card */}
-      <div className="bg-gradient-to-br from-uat-blue to-uat-cyan rounded-2xl p-8 mb-6 text-white shadow-xl">
+      <div className="bg-gradient-to-br from-los-blue to-los-cyan rounded-2xl p-8 mb-6 text-white shadow-xl">
         <div className="flex items-center justify-between mb-4">
           <div>
             <p className="text-sm opacity-90">Total Balance</p>
-            <h2 className="text-5xl font-bold mt-2">{formatBalance(balance)} UAT</h2>
+            <h2 className="text-5xl font-bold mt-2">{formatBalance(balance)} LOS</h2>
             <p className="text-sm opacity-75 mt-2">≈ ${(parseFloat(formatBalance(balance)) * 0.01).toFixed(2)} USD</p>
           </div>
           <div className="flex space-x-2">
@@ -96,7 +96,7 @@ export default function Dashboard({ nodeOnline, oraclePrices }: Props) {
                     ? 'bg-gray-500/30 cursor-wait' 
                     : 'bg-white/20 hover:bg-white/30'
                 }`}
-                title={claimSuccess ? 'Claimed!' : claiming ? 'Claiming...' : 'Claim 100,000 UAT (Testnet Only)'}
+                title={claimSuccess ? 'Claimed!' : claiming ? 'Claiming...' : 'Claim 100,000 LOS (Testnet Only)'}
               >
                 {claimSuccess ? <span className="text-2xl">✓</span> : <Gift className="w-6 h-6" />}
               </button>
@@ -105,16 +105,16 @@ export default function Dashboard({ nodeOnline, oraclePrices }: Props) {
         </div>
         {claimSuccess && (
           <div className="bg-green-500/20 border border-green-500/40 rounded-lg p-3 text-sm">
-            🎉 Successfully claimed 100,000 UAT from faucet!
+            🎉 Successfully claimed 100,000 LOS from faucet!
           </div>
         )}
       </div>
 
       {/* Wallet Info */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
-        <div className="bg-uat-gray border border-gray-700 rounded-xl p-6">
+        <div className="bg-los-gray border border-gray-700 rounded-xl p-6">
           <h3 className="text-lg font-semibold mb-4">Wallet Address</h3>
-          <div className="flex items-center justify-between bg-uat-dark rounded-lg p-3">
+          <div className="flex items-center justify-between bg-los-dark rounded-lg p-3">
             <code className="text-sm text-gray-300 font-mono truncate flex-1">{wallet.address}</code>
             <button
               onClick={() => copyToClipboard(wallet.address)}
@@ -125,9 +125,9 @@ export default function Dashboard({ nodeOnline, oraclePrices }: Props) {
           </div>
         </div>
 
-        <div className="bg-uat-gray border border-gray-700 rounded-xl p-6">
+        <div className="bg-los-gray border border-gray-700 rounded-xl p-6">
           <h3 className="text-lg font-semibold mb-4">Public Key</h3>
-          <div className="flex items-center justify-between bg-uat-dark rounded-lg p-3">
+          <div className="flex items-center justify-between bg-los-dark rounded-lg p-3">
             <code className="text-sm text-gray-300 font-mono truncate flex-1">{wallet.publicKey}</code>
             <button
               onClick={() => copyToClipboard(wallet.publicKey)}
@@ -140,7 +140,7 @@ export default function Dashboard({ nodeOnline, oraclePrices }: Props) {
       </div>
 
       {/* Private Key (Sensitive) */}
-      <div className="bg-uat-gray border border-red-500/30 rounded-xl p-6 mb-6">
+      <div className="bg-los-gray border border-red-500/30 rounded-xl p-6 mb-6">
         <div className="flex items-center justify-between mb-4">
           <h3 className="text-lg font-semibold text-red-400">Private Key</h3>
           <button
@@ -151,7 +151,7 @@ export default function Dashboard({ nodeOnline, oraclePrices }: Props) {
             <span>{showPrivateKey ? 'Hide' : 'Show'}</span>
           </button>
         </div>
-        <div className="flex items-center justify-between bg-uat-dark rounded-lg p-3">
+        <div className="flex items-center justify-between bg-los-dark rounded-lg p-3">
           {showPrivateKey ? (
             <code className="text-sm text-gray-300 font-mono truncate flex-1">{wallet.privateKey}</code>
           ) : (
@@ -172,17 +172,17 @@ export default function Dashboard({ nodeOnline, oraclePrices }: Props) {
       {/* Network Stats */}
       {nodeInfo && (
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          <div className="bg-uat-gray border border-gray-700 rounded-xl p-6">
+          <div className="bg-los-gray border border-gray-700 rounded-xl p-6">
             <p className="text-sm text-gray-400 mb-1">Total Supply</p>
-            <p className="text-2xl font-bold">{(nodeInfo.total_supply || 21936236).toLocaleString()} UAT</p>
+            <p className="text-2xl font-bold">{(nodeInfo.total_supply || 21936236).toLocaleString()} LOS</p>
           </div>
           
-          <div className="bg-uat-gray border border-gray-700 rounded-xl p-6">
+          <div className="bg-los-gray border border-gray-700 rounded-xl p-6">
             <p className="text-sm text-gray-400 mb-1">Circulating Supply</p>
-            <p className="text-2xl font-bold">{(nodeInfo.circulating_supply || 0).toLocaleString()} UAT</p>
+            <p className="text-2xl font-bold">{(nodeInfo.circulating_supply || 0).toLocaleString()} LOS</p>
           </div>
           
-          <div className="bg-uat-gray border border-gray-700 rounded-xl p-6">
+          <div className="bg-los-gray border border-gray-700 rounded-xl p-6">
             <p className="text-sm text-gray-400 mb-1">Total Burned (BTC/ETH)</p>
             <p className="text-2xl font-bold">{nodeInfo.total_burned_usd ? `$${(nodeInfo.total_burned_usd / 100).toLocaleString()}` : '$0'}</p>
           </div>
@@ -192,7 +192,7 @@ export default function Dashboard({ nodeOnline, oraclePrices }: Props) {
       {!nodeOnline && (
         <div className="mt-6 bg-red-500/10 border border-red-500/30 rounded-xl p-4 text-center">
           <p className="text-red-400">⚠️ Node offline - Start your Unauthority node to see live data</p>
-          <code className="text-xs text-gray-400 mt-2 block">./target/release/uat-node 3030</code>
+          <code className="text-xs text-gray-400 mt-2 block">./target/release/los-node 3030</code>
         </div>
       )}
     </div>

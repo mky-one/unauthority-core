@@ -5,7 +5,7 @@
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-TOR_DATA="$HOME/.uat-testnet-tor"
+TOR_DATA="$HOME/.los-testnet-tor"
 
 echo "╔════════════════════════════════════════════════════════════════╗"
 echo "║     🛑 STOPPING UNAUTHORITY TOR TESTNET                      ║"

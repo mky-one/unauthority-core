@@ -52,25 +52,25 @@ fi
 
 # 2. Stop old processes
 echo -e "${BLUE}[2/5] Cleaning up old processes...${NC}"
-pkill -f "uat-node" 2>/dev/null || true
+pkill -f "los-node" 2>/dev/null || true
 pkill -f "ngrok" 2>/dev/null || true
 sleep 2
 echo -e "${GREEN}    ✓ Clean${NC}"
 
 # 3. Build if needed
 echo -e "${BLUE}[3/5] Checking backend build...${NC}"
-if [ ! -f "target/release/uat-node" ]; then
+if [ ! -f "target/release/los-node" ]; then
     echo -e "${YELLOW}    Building (this may take a minute)...${NC}"
     cargo build --release 2>&1 | tail -3
 fi
 echo -e "${GREEN}    ✓ Backend ready${NC}"
 
 # 4. Start node
-echo -e "${BLUE}[4/5] Starting UAT node...${NC}"
+echo -e "${BLUE}[4/5] Starting LOS node...${NC}"
 mkdir -p node_data/validator-1
 mkdir -p logs
 
-nohup ./target/release/uat-node \
+nohup ./target/release/los-node \
     --port 3030 \
     --api-port 3030 \
     --ws-port 9030 \
@@ -129,13 +129,13 @@ echo ""
 echo -e "${CYAN}📋 SHARE THIS WITH YOUR FRIENDS:${NC}"
 echo ""
 echo "   ┌──────────────────────────────────────────────────────────────────┐"
-echo "   │  🎮 JOIN MY UAT TESTNET!                                         │"
+echo "   │  🎮 JOIN MY LOS TESTNET!                                         │"
 echo "   │                                                                  │"
 echo "   │  Endpoint: $PUBLIC_URL"
 echo "   │                                                                  │"
 echo "   │  1. Download wallet from GitHub releases                         │"
 echo "   │  2. Settings → API Endpoint → paste URL above                    │"
-echo "   │  3. Create wallet → Request faucet (100 UAT)                     │"
+echo "   │  3. Create wallet → Request faucet (100 LOS)                     │"
 echo "   │  4. Send transactions to each other!                             │"
 echo "   └──────────────────────────────────────────────────────────────────┘"
 echo ""
@@ -163,7 +163,7 @@ cat > TESTNET_INFO.txt << EOF
 3. Enter: $PUBLIC_URL
 4. Save & Connect
 5. Create wallet
-6. Request faucet (100 UAT)
+6. Request faucet (100 LOS)
 7. Start testing!
 
 🧪 TEST COMMANDS:

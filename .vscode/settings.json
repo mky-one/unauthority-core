@@ -18,5 +18,15 @@
   "[typescriptreact]": {
     "editor.defaultFormatter": "esbenp.prettier-vscode"
   },
-  "rust-analyzer.checkOnSave.command": "clippy"
+  "rust-analyzer.checkOnSave.command": "clippy",
+
+  // Exclude Flutter platform-specific C/C++ files from analysis.
+  // These only compile on their target OS (Linux needs GTK, Windows needs Win SDK).
+  // On macOS they produce false-positive clang errors.
+  "files.exclude": {
+    "**/flutter_validator/linux": true,
+    "**/flutter_validator/windows": true,
+    "**/flutter_wallet/linux": true,
+    "**/flutter_wallet/windows": true
+  }
 }

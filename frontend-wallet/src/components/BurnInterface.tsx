@@ -41,8 +41,8 @@ export default function BurnInterface({ nodeOnline, oraclePrices }: Props) {
         amount: 0.01, // Default amount for now
         txid: txid.trim(),
         proof: txid.trim(), // Using txid as proof for now
-        uat_address: wallet.address,
-        recipient_address: wallet.address // Send minted UAT to user's wallet
+        los_address: wallet.address,
+        recipient_address: wallet.address // Send minted LOS to user's wallet
       });
       setResult(response);
     } catch (error: any) {
@@ -52,26 +52,26 @@ export default function BurnInterface({ nodeOnline, oraclePrices }: Props) {
     }
   };
 
-  const estimateUAT = (amount: number): number => {
+  const estimateLOS = (amount: number): number => {
     if (!oraclePrices) return 0;
     
     const price = coinType === 'btc' ? oraclePrices.btc : oraclePrices.eth;
     const usdValue = amount * price;
     
-    // 1 UAT = $0.01 USD
+    // 1 LOS = $0.01 USD
     return usdValue / 0.01;
   };
 
   return (
     <div className="max-w-4xl mx-auto p-6">
-      <div className="bg-uat-gray border border-gray-700 rounded-2xl p-8">
+      <div className="bg-los-gray border border-gray-700 rounded-2xl p-8">
         <div className="flex items-center space-x-3 mb-6">
           <div className="w-12 h-12 bg-gradient-to-br from-orange-500 to-red-600 rounded-xl flex items-center justify-center">
             <Flame className="w-6 h-6 text-white" />
           </div>
           <div>
-            <h2 className="text-2xl font-bold">Burn to Mint UAT</h2>
-            <p className="text-sm text-gray-400">Burn BTC or ETH to receive UAT tokens</p>
+            <h2 className="text-2xl font-bold">Burn to Mint LOS</h2>
+            <p className="text-sm text-gray-400">Burn BTC or ETH to receive LOS tokens</p>
           </div>
         </div>
 
@@ -82,7 +82,7 @@ export default function BurnInterface({ nodeOnline, oraclePrices }: Props) {
             className={`flex-1 py-4 rounded-xl font-semibold transition-all flex items-center justify-center space-x-2 ${
               coinType === 'btc'
                 ? 'bg-gradient-to-r from-orange-500 to-yellow-600 text-white shadow-lg'
-                : 'bg-uat-dark border border-gray-600 text-gray-400 hover:text-white'
+                : 'bg-los-dark border border-gray-600 text-gray-400 hover:text-white'
             }`}
           >
             <Bitcoin className="w-5 h-5" />
@@ -94,7 +94,7 @@ export default function BurnInterface({ nodeOnline, oraclePrices }: Props) {
             className={`flex-1 py-4 rounded-xl font-semibold transition-all flex items-center justify-center space-x-2 ${
               coinType === 'eth'
                 ? 'bg-gradient-to-r from-purple-500 to-blue-600 text-white shadow-lg'
-                : 'bg-uat-dark border border-gray-600 text-gray-400 hover:text-white'
+                : 'bg-los-dark border border-gray-600 text-gray-400 hover:text-white'
             }`}
           >
             <span className="text-xl">Ξ</span>
@@ -104,9 +104,9 @@ export default function BurnInterface({ nodeOnline, oraclePrices }: Props) {
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
           {/* Step 1: Send Coins */}
-          <div className="bg-uat-dark border border-gray-600 rounded-xl p-6">
+          <div className="bg-los-dark border border-gray-600 rounded-xl p-6">
             <h3 className="font-semibold mb-3 flex items-center space-x-2">
-              <span className="w-6 h-6 bg-uat-blue rounded-full flex items-center justify-center text-sm">1</span>
+              <span className="w-6 h-6 bg-los-blue rounded-full flex items-center justify-center text-sm">1</span>
               <span>Send {coinType.toUpperCase()} to Burn Address</span>
             </h3>
             
@@ -119,7 +119,7 @@ export default function BurnInterface({ nodeOnline, oraclePrices }: Props) {
               />
             </div>
 
-            <div className="bg-uat-gray rounded-lg p-3">
+            <div className="bg-los-gray rounded-lg p-3">
               <p className="text-xs text-gray-400 mb-1">Burn Address:</p>
               <code className="text-xs font-mono break-all">
                 {coinType === 'btc' ? BTC_BURN_ADDRESS : ETH_BURN_ADDRESS}
@@ -129,15 +129,15 @@ export default function BurnInterface({ nodeOnline, oraclePrices }: Props) {
             {oraclePrices && (
               <div className="mt-4 text-xs text-gray-400">
                 <p>Current Price: ${(coinType === 'btc' ? oraclePrices.btc : oraclePrices.eth).toLocaleString()}</p>
-                <p className="mt-1">Example: 0.01 {coinType.toUpperCase()} = {estimateUAT(0.01).toLocaleString()} UAT</p>
+                <p className="mt-1">Example: 0.01 {coinType.toUpperCase()} = {estimateLOS(0.01).toLocaleString()} LOS</p>
               </div>
             )}
           </div>
 
           {/* Step 2: Submit TXID */}
-          <div className="bg-uat-dark border border-gray-600 rounded-xl p-6">
+          <div className="bg-los-dark border border-gray-600 rounded-xl p-6">
             <h3 className="font-semibold mb-3 flex items-center space-x-2">
-              <span className="w-6 h-6 bg-uat-blue rounded-full flex items-center justify-center text-sm">2</span>
+              <span className="w-6 h-6 bg-los-blue rounded-full flex items-center justify-center text-sm">2</span>
               <span>Submit Transaction ID</span>
             </h3>
 
@@ -148,7 +148,7 @@ export default function BurnInterface({ nodeOnline, oraclePrices }: Props) {
                 value={txid}
                 onChange={(e) => setTxid(e.target.value)}
                 placeholder={coinType === 'btc' ? '2096b844178ecc776e050be...' : '0x459ccd6fe488b0f826aef19...'}
-                className="w-full bg-uat-gray border border-gray-600 rounded-lg px-4 py-3 text-sm font-mono focus:ring-2 focus:ring-uat-blue focus:border-transparent"
+                className="w-full bg-los-gray border border-gray-600 rounded-lg px-4 py-3 text-sm font-mono focus:ring-2 focus:ring-los-blue focus:border-transparent"
                 disabled={!nodeOnline}
               />
             </div>
@@ -159,7 +159,7 @@ export default function BurnInterface({ nodeOnline, oraclePrices }: Props) {
               className={`w-full py-3 rounded-xl font-semibold transition-all ${
                 loading || !nodeOnline
                   ? 'bg-gray-700 text-gray-500 cursor-not-allowed'
-                  : 'bg-gradient-to-r from-uat-blue to-uat-cyan text-white hover:shadow-lg'
+                  : 'bg-gradient-to-r from-los-blue to-los-cyan text-white hover:shadow-lg'
               }`}
             >
               {loading ? 'Verifying...' : 'Submit Burn Transaction'}
@@ -168,7 +168,7 @@ export default function BurnInterface({ nodeOnline, oraclePrices }: Props) {
             <div className="mt-4 text-xs text-gray-400 space-y-1">
               <p>• Wait for blockchain confirmations (6+ for BTC, 12+ for ETH)</p>
               <p>• Validators will verify your burn automatically</p>
-              <p>• UAT will be minted to your wallet address</p>
+              <p>• LOS will be minted to your wallet address</p>
             </div>
           </div>
         </div>
@@ -209,8 +209,8 @@ export default function BurnInterface({ nodeOnline, oraclePrices }: Props) {
             <li>Send BTC/ETH to the burn address (coins are destroyed permanently)</li>
             <li>Submit your transaction ID to the network</li>
             <li>Validators verify the burn on Bitcoin/Ethereum blockchain</li>
-            <li>UAT tokens are minted based on oracle price consensus</li>
-            <li>Bonding curve ensures fair distribution (early burns get more UAT)</li>
+            <li>LOS tokens are minted based on oracle price consensus</li>
+            <li>Bonding curve ensures fair distribution (early burns get more LOS)</li>
           </ol>
         </div>
       </div>

@@ -1,8 +1,8 @@
 # Unauthority Public Wallet
 
-**Burn BTC/ETH to Mint UAT - 100% Local, 100% Private**
+**Burn BTC/ETH to Mint LOS - 100% Local, 100% Private**
 
-Electron Desktop App for the Unauthority blockchain. Create wallets, burn Bitcoin/Ethereum to receive UAT tokens, and manage your crypto assets without any server or hosting.
+Electron Desktop App for the Unauthority blockchain. Create wallets, burn Bitcoin/Ethereum to receive LOS tokens, and manage your crypto assets without any server or hosting.
 
 ## 🚀 Features
 
@@ -10,13 +10,13 @@ Electron Desktop App for the Unauthority blockchain. Create wallets, burn Bitcoi
 - **Create New Wallet**: Generate HD wallet with 12-word seed phrase (BIP39/BIP44)
 - **Import Wallet**: From seed phrase or private key
 - **Secure Storage**: Private keys never leave your device
-- **UAT Address Format**: Human-readable "UAT..." addresses
+- **LOS Address Format**: Human-readable "LOS..." addresses
 
 ### 🔥 Proof-of-Burn Distribution
 - **Burn BTC or ETH**: Send to burn address, submit TXID
 - **QR Code Generation**: Easy mobile wallet scanning
 - **Oracle Price Consensus**: Fair USD-based valuation
-- **Bonding Curve**: Early participants get more UAT (scarcity model)
+- **Bonding Curve**: Early participants get more LOS (scarcity model)
 - **Validator Verification**: Decentralized TXID verification
 
 ### 💸 Send & Receive
@@ -26,7 +26,7 @@ Electron Desktop App for the Unauthority blockchain. Create wallets, burn Bitcoi
 - **Transaction History**: Full audit trail
 
 ### 📊 Dashboard
-- **Live Balance**: VOI and UAT format
+- **Live Balance**: CIL and LOS format
 - **Network Stats**: Total supply, remaining supply, burned amount
 - **Oracle Prices**: Real-time BTC/ETH prices
 - **Node Status**: Connection indicator
@@ -80,7 +80,7 @@ API Endpoint: http://localhost:3030
 ```bash
 cd /path/to/unauthority-core
 cargo build --release
-./target/release/uat-node 3030
+./target/release/los-node 3030
 ```
 
 ## 📖 Usage Guide
@@ -95,7 +95,7 @@ cargo build --release
 
 **⚠️ CRITICAL:** Loss of seed phrase = permanent loss of funds!
 
-### 2. Burn BTC/ETH to Get UAT
+### 2. Burn BTC/ETH to Get LOS
 
 1. Go to **"Burn to Mint"** tab
 2. Select BTC or ETH
@@ -103,23 +103,23 @@ cargo build --release
 4. Wait for blockchain confirmations (6+ for BTC, 12+ for ETH)
 5. **Step 2:** Submit your transaction ID (TXID)
 6. Validators verify burn automatically
-7. UAT minted to your wallet
+7. LOS minted to your wallet
 
 **Burn Addresses:**
 - BTC: `1BitcoinEaterAddressDontSendf59kuE` *(example, check latest)*
 - ETH: `0x000000000000000000000000000000000000dEaD`
 
 **Pricing:**
-- 1 UAT = $0.01 USD (starting price)
+- 1 LOS = $0.01 USD (starting price)
 - Oracle consensus: CoinGecko, CryptoCompare, Kraken
-- Bonding curve: Early burns get more UAT per dollar
+- Bonding curve: Early burns get more LOS per dollar
 
-### 3. Send UAT
+### 3. Send LOS
 
 1. Go to **"Send"** tab
-2. Enter recipient UAT address
+2. Enter recipient LOS address
 3. Enter amount
-4. Click "Send UAT"
+4. Click "Send LOS"
 5. Transaction finalizes in <3 seconds
 
 ### 4. View History
@@ -165,16 +165,16 @@ cargo build --release
 ```
 BIP39 Mnemonic (12 words)
   └─> BIP32 Seed
-      └─> m/44'/236'/0'/0/0 (UAT coin type: 236)
+      └─> m/44'/236'/0'/0/0 (LOS coin type: 236)
           └─> Private Key + Public Key
-              └─> UAT Address = "UAT" + base58check(pubkey_hash)
+              └─> LOS Address = "LOS" + base58check(pubkey_hash)
 ```
 
 ### API Endpoints Used
 - `GET /balance/:address` - Get account balance
 - `GET /node-info` - Network stats, oracle prices
 - `POST /burn` - Submit burn transaction
-- `POST /send` - Send UAT transfer
+- `POST /send` - Send LOS transfer
 - `GET /history/:address` - Transaction history
 
 ## 📦 Project Structure
@@ -206,7 +206,7 @@ frontend-wallet/
 ### "Node Offline" Error
 **Solution:** Start Unauthority node first
 ```bash
-./target/release/uat-node 3030
+./target/release/los-node 3030
 ```
 
 ### "Invalid Seed Phrase"

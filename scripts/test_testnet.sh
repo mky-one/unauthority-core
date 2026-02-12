@@ -21,16 +21,16 @@ NC='\033[0m' # No Color
 # Step 1: Cleanup
 echo "📦 STEP 1: Cleaning Environment"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-pkill -9 -f 'uat-node' 2>/dev/null || true
+pkill -9 -f 'los-node' 2>/dev/null || true
 sleep 2
-rm -rf uat_database
+rm -rf los_database
 echo -e "${GREEN}✅ Environment cleaned${NC}"
 echo ""
 
 # Step 2: Start Node
 echo "🚀 STEP 2: Starting Node A (Port 3030)"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-nohup target/release/uat-node 3030 > /tmp/uat_node.log 2>&1 &
+nohup target/release/los-node 3030 > /tmp/los_node.log 2>&1 &
 NODE_PID=$!
 echo "Node PID: $NODE_PID"
 echo -e "${YELLOW}⏳ Waiting 10 seconds for startup...${NC}"
@@ -41,7 +41,7 @@ if ps -p $NODE_PID > /dev/null 2>&1; then
     echo -e "${GREEN}✅ Node is running${NC}"
 else
     echo -e "${RED}❌ Node failed to start! Checking logs:${NC}"
-    tail -30 /tmp/uat_node.log
+    tail -30 /tmp/los_node.log
     exit 1
 fi
 echo ""
@@ -112,7 +112,7 @@ echo ""
 echo "📊 STEP 5: Node Logs (Oracle Verification Activity)"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo ""
-tail -40 /tmp/uat_node.log | grep -E "Oracle|Burn|VOTE|mint|UAT" || echo "No oracle activity in logs"
+tail -40 /tmp/los_node.log | grep "LOS"" || echo "No oracle activity in logs"
 echo ""
 
 # Step 6: Summary
@@ -124,7 +124,7 @@ echo -e "${GREEN}✅ Node PID: $NODE_PID (still running)${NC}"
 echo -e "${GREEN}✅ REST API: http://localhost:3030${NC}"
 echo -e "${GREEN}✅ gRPC API: 0.0.0.0:50051${NC}"
 echo ""
-echo "📁 Full logs available at: /tmp/uat_node.log"
+echo "📁 Full logs available at: /tmp/los_node.log"
 echo ""
 echo "🛑 To stop node: kill $NODE_PID"
 echo ""

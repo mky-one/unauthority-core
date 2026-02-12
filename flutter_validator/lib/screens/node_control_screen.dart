@@ -37,6 +37,8 @@ class _NodeControlScreenState extends State<NodeControlScreen>
   }
 
   Future<void> _loadWalletInfo() async {
+    debugPrint(
+        '🖥️ [NodeControlScreen._loadWalletInfo] Loading wallet info...');
     final walletService = context.read<WalletService>();
     final wallet = await walletService.getCurrentWallet();
     final monitorMode = await walletService.isMonitorMode();
@@ -45,6 +47,8 @@ class _NodeControlScreenState extends State<NodeControlScreen>
         _walletAddress = wallet['address'];
         _isMonitorMode = monitorMode;
       });
+      debugPrint(
+          '🖥️ [NodeControlScreen._loadWalletInfo] Address: ${wallet['address']}, monitorMode: $monitorMode');
       _refreshBalance();
       // Auto-register as validator on the bootstrap node if not already registered.
       // This ensures the network knows about this validator even if the setup wizard
@@ -57,6 +61,9 @@ class _NodeControlScreenState extends State<NodeControlScreen>
   /// Uses the same Dilithium5 signed proof of ownership — fully mainnet-ready.
   Future<void> _ensureValidatorRegistered(
       WalletService walletService, Map<String, String> wallet) async {
+    // Capture context-dependent services before any async gap
+    final apiService = context.read<ApiService>();
+    final nodeService = context.read<NodeProcessService>();
     try {
       final isAddressOnly = await walletService.isAddressOnlyImport();
       if (isAddressOnly) return; // Can't sign without keys
@@ -66,7 +73,6 @@ class _NodeControlScreenState extends State<NodeControlScreen>
       if (address == null || publicKey == null) return;
 
       // Check if already registered on bootstrap node
-      final apiService = context.read<ApiService>();
       final validators = await apiService.getValidators();
       final alreadyRegistered = validators.any((v) => v.address == address);
       if (alreadyRegistered) {
@@ -90,7 +96,6 @@ class _NodeControlScreenState extends State<NodeControlScreen>
       debugPrint('✅ Auto-registered on bootstrap: ${result['msg']}');
 
       // Also register on local node if running
-      final nodeService = context.read<NodeProcessService>();
       if (nodeService.isRunning) {
         final localApi = ApiService(
           customUrl: 'http://127.0.0.1:${nodeService.apiPort}',
@@ -116,11 +121,14 @@ class _NodeControlScreenState extends State<NodeControlScreen>
   }
 
   Future<void> _refreshBalance() async {
+    debugPrint('💰 [NodeControlScreen._refreshBalance] Refreshing balance...');
     if (_walletAddress == null) return;
     try {
       final apiService = context.read<ApiService>();
       final account = await apiService.getBalance(_walletAddress!);
-      if (mounted) setState(() => _balance = account.balanceUAT);
+      if (mounted) setState(() => _balance = account.balanceLOS);
+      debugPrint(
+          '💰 [NodeControlScreen._refreshBalance] Balance: ${account.balanceLOS} LOS');
     } catch (e) {
       debugPrint('Balance refresh error: $e');
     }
@@ -139,7 +147,7 @@ class _NodeControlScreenState extends State<NodeControlScreen>
         title: const Row(children: [
           Icon(Icons.verified_user, size: 24),
           SizedBox(width: 8),
-          Text('UAT Validator'),
+          Text('LOS Validator'),
         ]),
         actions: [
           if (_isMonitorMode)
@@ -283,7 +291,7 @@ class _NodeControlScreenState extends State<NodeControlScreen>
                   _infoRow(
                       'Balance',
                       _balance != null
-                          ? '${BlockchainConstants.formatUat(_balance!)} UAT'
+                          ? '${BlockchainConstants.formatLos(_balance!)} LOS'
                           : 'Loading...'),
                   // Show connected bootstrap node's .onion host
                   Builder(builder: (ctx) {
@@ -325,7 +333,7 @@ class _NodeControlScreenState extends State<NodeControlScreen>
                     'Your wallet belongs to a genesis bootstrap validator that is already '
                     'running as a CLI node.\n\n'
                     'To prevent equivocation (double-signing), this app will NOT:\n'
-                    '• Spawn a new uat-node process\n'
+                    '• Spawn a new los-node process\n'
                     '• Create a new Tor hidden service\n'
                     '• Restart or interfere with the running bootstrap node\n\n'
                     'You can safely view the Dashboard tab to monitor network health, '
@@ -510,6 +518,7 @@ class _NodeControlScreenState extends State<NodeControlScreen>
   }
 
   Future<void> _startNode(NodeProcessService node) async {
+    debugPrint('🖥️ [NodeControlScreen._startNode] Starting node...');
     if (_isMonitorMode) return; // Monitor mode — CLI manages the node
     final torService = context.read<TorService>();
     String? onion = torService.onionAddress;
@@ -521,15 +530,21 @@ class _NodeControlScreenState extends State<NodeControlScreen>
       );
     }
 
-    await node.start(port: node.apiPort, onionAddress: onion);
+    final started = await node.start(port: node.apiPort, onionAddress: onion);
+    debugPrint(
+        '🖥️ [NodeControlScreen._startNode] ${started ? 'Success' : 'Failed'}');
   }
 
   Future<void> _stopNode(NodeProcessService node) async {
+    debugPrint('🖥️ [NodeControlScreen._stopNode] Stopping node...');
     await node.stop();
+    debugPrint('🖥️ [NodeControlScreen._stopNode] Node stopped');
   }
 
   Future<void> _restartNode(NodeProcessService node) async {
+    debugPrint('🖥️ [NodeControlScreen._restartNode] Restarting node...');
     await node.restart();
+    debugPrint('🖥️ [NodeControlScreen._restartNode] Node restarted');
   }
 
   // ================================================================
@@ -556,7 +571,7 @@ class _NodeControlScreenState extends State<NodeControlScreen>
               SizedBox(width: 8),
               Expanded(
                   child: Text(
-                      'To send, receive, or burn UAT, use the UAT Wallet app. '
+                      'To send, receive, or burn LOS, use the LOS Wallet app. '
                       'This validator controls your node and monitors network health.',
                       style: TextStyle(fontSize: 12, color: Colors.blue))),
             ]),
@@ -619,7 +634,7 @@ class _NodeControlScreenState extends State<NodeControlScreen>
             Row(children: [
               Text(
                   _balance != null
-                      ? '${BlockchainConstants.formatUat(_balance!)} UAT'
+                      ? '${BlockchainConstants.formatLos(_balance!)} LOS'
                       : 'Loading...',
                   style: const TextStyle(
                       fontSize: 20, fontWeight: FontWeight.bold)),
@@ -645,7 +660,7 @@ class _NodeControlScreenState extends State<NodeControlScreen>
                     const SizedBox(width: 6),
                     Text(
                         _balance! >= 1000
-                            ? 'Active Validator (Stake >= 1,000 UAT)'
+                            ? 'Active Validator (Stake >= 1,000 LOS)'
                             : 'Insufficient Stake',
                         style: TextStyle(
                             fontSize: 12,
@@ -740,6 +755,8 @@ class _NodeControlScreenState extends State<NodeControlScreen>
   }
 
   void _confirmLogout() {
+    debugPrint(
+        '⚙️ [NodeControlScreen._confirmLogout] Showing logout dialog...');
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -755,14 +772,31 @@ class _NodeControlScreenState extends State<NodeControlScreen>
                 'You can re-register anytime with the same seed phrase.'),
         actions: [
           TextButton(
-              onPressed: () => Navigator.pop(ctx), child: const Text('CANCEL')),
+              onPressed: () {
+                debugPrint('⚙️ [NodeControlScreen._confirmLogout] Cancelled');
+                Navigator.pop(ctx);
+              },
+              child: const Text('CANCEL')),
           TextButton(
               onPressed: () async {
+                debugPrint('⚙️ [NodeControlScreen._confirmLogout] Confirmed');
                 Navigator.pop(ctx);
+
+                // Capture context-dependent services before async gap
+                final walletService = context.read<WalletService>();
+                NodeProcessService? nodeRef;
+                TorService? torRef;
+                if (!_isMonitorMode) {
+                  try {
+                    nodeRef = context.read<NodeProcessService>();
+                  } catch (_) {}
+                  try {
+                    torRef = context.read<TorService>();
+                  } catch (_) {}
+                }
 
                 // 1. Delete wallet FIRST (most important)
                 try {
-                  final walletService = context.read<WalletService>();
                   await walletService.deleteWallet();
                 } catch (e) {
                   debugPrint('⚠️ deleteWallet error: $e');
@@ -777,14 +811,10 @@ class _NodeControlScreenState extends State<NodeControlScreen>
                 // 3. Stop node & Tor in background (fire-and-forget)
                 //    Skip for monitor mode — CLI node is not managed by this app
                 if (!_isMonitorMode) {
-                  try {
-                    final node = context.read<NodeProcessService>();
-                    if (node.isRunning) unawaited(node.stop());
-                  } catch (_) {}
-                  try {
-                    final tor = context.read<TorService>();
-                    unawaited(tor.stop());
-                  } catch (_) {}
+                  if (nodeRef != null && nodeRef.isRunning) {
+                    unawaited(nodeRef.stop());
+                  }
+                  if (torRef != null) unawaited(torRef.stop());
                 }
               },
               child: Text(_isMonitorMode ? 'DISCONNECT' : 'UNREGISTER',

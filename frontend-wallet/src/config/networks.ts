@@ -1,4 +1,4 @@
-// Network Configuration for UAT Wallet
+// Network Configuration for LOS Wallet
 // Supports both Testnet and Mainnet in one app
 
 export interface Network {
@@ -14,8 +14,8 @@ export interface Network {
 export const NETWORKS: Record<string, Network> = {
   testnet: {
     id: 'testnet',
-    name: 'UAT Testnet',
-    chainId: 'uat-testnet',
+    name: 'LOS Testnet',
+    chainId: 'los-testnet',
     rpcUrl: 'http://ll22j45prmu3oymratallztx74peen4gsxudzbgf5qvybezobitvywyd.onion',
     explorerUrl: 'http://ll22j45prmu3oymratallztx74peen4gsxudzbgf5qvybezobitvywyd.onion/explorer',
     faucetEnabled: true,
@@ -23,10 +23,10 @@ export const NETWORKS: Record<string, Network> = {
   },
   mainnet: {
     id: 'mainnet',
-    name: 'UAT Mainnet',
-    chainId: 'uat-mainnet',
-    rpcUrl: 'http://uat-mainnet-pending.onion',
-    explorerUrl: 'http://uat-mainnet-pending.onion/explorer',
+    name: 'LOS Mainnet',
+    chainId: 'los-mainnet',
+    rpcUrl: 'http://los-mainnet-pending.onion',
+    explorerUrl: 'http://los-mainnet-pending.onion/explorer',
     faucetEnabled: false,
     description: 'Mainnet via Tor hidden service (coming Q2 2026)'
   }
@@ -36,14 +36,14 @@ export const DEFAULT_NETWORK = 'testnet';
 
 // Get network from localStorage or default
 export function getCurrentNetwork(): Network {
-  const savedNetwork = localStorage.getItem('uat_network');
+  const savedNetwork = localStorage.getItem('los_network');
   return NETWORKS[savedNetwork || DEFAULT_NETWORK] || NETWORKS.testnet;
 }
 
 // Save network preference
 export function setCurrentNetwork(networkId: string): void {
   if (NETWORKS[networkId]) {
-    localStorage.setItem('uat_network', networkId);
+    localStorage.setItem('los_network', networkId);
   }
 }
 

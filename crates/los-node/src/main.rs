@@ -255,7 +255,7 @@ impl EndpointRateLimiter {
 // MAINNET SAFETY: A signing failure (corrupted key) no longer crashes the node.
 fn try_sign_hex(msg: &[u8], sk: &[u8]) -> Result<String, String> {
     los_crypto::sign_message(msg, sk)
-        .map(|sig| hex::encode(sig))
+        .map(hex::encode)
         .map_err(|e| format!("Signing failed (key corrupted?): {:?}", e))
 }
 
@@ -2709,7 +2709,7 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
                 "timestamp": timestamp,
                 "onion_address": onion_addr,
             });
-            let _ = tx.send(format!("VALIDATOR_REG:{}", reg_msg.to_string())).await;
+            let _ = tx.send(format!("VALIDATOR_REG:{}", reg_msg)).await;
 
             println!("✅ New validator registered: {} (stake: {} LOS)", get_short_addr(&address), balance / CIL_PER_LOS);
 
@@ -3409,6 +3409,7 @@ fn solve_pow(block: &mut los_core::Block) {
 
 /// PERF: Async PoW solver — offloads CPU-intensive mining to a blocking thread
 /// so it doesn't stall tokio worker threads during concurrent API handling.
+#[allow(dead_code)]
 async fn solve_pow_async(mut block: los_core::Block) -> los_core::Block {
     tokio::task::spawn_blocking(move || {
         solve_pow(&mut block);
@@ -4553,7 +4554,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         online.sort();
                         online
                             .first()
-                            .map_or(false, |a| *a == reward_my_addr.as_str())
+                            .is_some_and(|a| *a == reward_my_addr.as_str())
                     };
 
                     // Set expected heartbeats for CURRENT (completing) epoch before eligibility check
@@ -4907,7 +4908,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             // a node that misses a gossip block will have a permanently stale
             // view of that account's chain. The sync mechanism fills in gaps
             // by comparing full state with peers.
-            if sync_counter % 2 == 0 {
+            if sync_counter.is_multiple_of(2) {
                 let _ = tx_boot
                     .send(format!("SYNC_REQUEST:{}:{}", my_addr_boot, block_count))
                     .await;
@@ -6310,11 +6311,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     }
                                 }
                             }
-                        } else if data.starts_with("VALIDATOR_REG:") {
+                        } else if let Some(json_str) = data.strip_prefix("VALIDATOR_REG:") {
                             // Handle validator registration broadcast from peers.
                             // Validates the same proof of ownership (Dilithium5 signature)
                             // before accepting the registration — no trust assumptions.
-                            let json_str = &data["VALIDATOR_REG:".len()..];
                             match serde_json::from_str::<serde_json::Value>(json_str) {
                                 Ok(reg) => {
                                     let addr = reg["address"].as_str().unwrap_or_default().to_string();
@@ -6413,9 +6413,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     println!("⚠️ VALIDATOR_REG: invalid JSON from peer: {}", e);
                                 }
                             }
-                        } else if data.starts_with("PEER_LIST:") {
+                        } else if let Some(json_str) = data.strip_prefix("PEER_LIST:") {
                             // Handle Peer Exchange (PEX) — merge validator endpoints from peers
-                            let json_str = &data["PEER_LIST:".len()..];
                             if let Ok(peer_list) = serde_json::from_str::<serde_json::Value>(json_str) {
                                 if let Some(endpoints) = peer_list["endpoints"].as_array() {
                                     let mut ve = safe_lock(&ve_event);

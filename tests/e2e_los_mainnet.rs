@@ -114,28 +114,26 @@ fn make_mint_block(
 
 /// Create a Send block (fee ≥ BASE_FEE_CIL).
 fn make_send_block(
-    sender_addr: &str,
-    sender_pk_hex: &str,
+    sender: &SimNode,
     previous: &str,
     receiver_addr: &str,
     amount_cil: u128,
     fee_cil: u128,
-    secret_key: &[u8],
     timestamp: u64,
 ) -> Block {
     let mut block = Block {
-        account: sender_addr.to_string(),
+        account: sender.address.clone(),
         previous: previous.to_string(),
         block_type: BlockType::Send,
         amount: amount_cil,
         link: receiver_addr.to_string(),
         signature: String::new(),
-        public_key: sender_pk_hex.to_string(),
+        public_key: sender.pubkey_hex.clone(),
         work: 0,
         timestamp,
         fee: fee_cil,
     };
-    mine_and_sign(&mut block, secret_key);
+    mine_and_sign(&mut block, &sender.secret_key);
     block
 }
 
@@ -288,13 +286,11 @@ async fn test_zero_trust_sync() {
     let ts = now_secs();
 
     let send_block = make_send_block(
-        &nodes[0].address,
-        &nodes[0].pubkey_hex,
+        &nodes[0],
         &mint_hashes[0],
         &nodes[1].address,
         send_amount,
         fee,
-        &nodes[0].secret_key,
         ts,
     );
 
@@ -452,18 +448,16 @@ async fn test_financial_precision() {
 
     for i in 0..3 {
         let send = make_send_block(
-            &node.address,
-            &node.pubkey_hex,
+            &node,
             &prev,
             &receiver.address,
             amounts[i],
             fees[i],
-            &node.secret_key,
             base_ts + i as u64 + 1,
         );
         prev = ledger
             .process_block(&send)
-            .expect(&format!("Send {} failed", i));
+            .unwrap_or_else(|_| panic!("Send {} failed", i));
         send_hashes.push(prev.clone());
     }
 
@@ -489,13 +483,11 @@ async fn test_financial_precision() {
 
     // 6. Insufficient balance must fail
     let overdraft = make_send_block(
-        &node.address,
-        &node.pubkey_hex,
+        &node,
         &prev,
         &receiver.address,
         actual_balance, // try to send everything (no room for fee)
         BASE_FEE_CIL,
-        &node.secret_key,
         base_ts + 10,
     );
     let result = ledger.process_block(&overdraft);
@@ -567,13 +559,11 @@ async fn test_node_recovery() {
     let receiver = SimNode::new();
     let ts = now_secs();
     let send = make_send_block(
-        &node.address,
-        &node.pubkey_hex,
+        &node,
         &mint_hash,
         &receiver.address,
         50 * CIL_PER_LOS,
         BASE_FEE_CIL,
-        &node.secret_key,
         ts + 1,
     );
     let send_hash = ledger.process_block(&send).expect("Send failed");
@@ -933,8 +923,8 @@ async fn test_abft_consensus_3_phase() {
 
     // Phase 2: Other validators process Prepare
     let mut prepare_count = 0;
-    for i in 1..n {
-        if engines[i].prepare(pre_prepare.clone()).is_ok() {
+    for engine in engines.iter_mut().take(n).skip(1) {
+        if engine.prepare(pre_prepare.clone()).is_ok() {
             prepare_count += 1;
         }
     }
@@ -954,7 +944,7 @@ async fn test_abft_consensus_3_phase() {
     // Verify consensus properties
     // BFT safety: can tolerate f < n/3 faulty nodes
     // With n=4: f=1, 3f+1 = 4 ≤ n → safe
-    assert!(3 * f + 1 <= n, "3f+1 must be <= n for BFT safety");
+    assert!(3 * f < n, "3f+1 must be <= n for BFT safety");
     assert!(quorum > 2 * f, "quorum > 2f for Byzantine safety");
     println!(
         "  ✅ Byzantine safety: f={}, n={}, 3f+1={} <= n, quorum={} > 2f={}",
@@ -1134,7 +1124,7 @@ async fn test_slashing_constants() {
 
     // Slash calculation: 100% of 1000 LOS stake
     let stake_cil = 1_000 * CIL_PER_LOS;
-    let slash_amount = (stake_cil as u128 * DOUBLE_SIGNING_SLASH_BPS as u128) / 10_000;
+    let slash_amount = (stake_cil * DOUBLE_SIGNING_SLASH_BPS as u128) / 10_000;
     assert_eq!(slash_amount, stake_cil, "100% slash = full stake");
     println!(
         "  ✅ Double-sign: {} LOS slashed (100%)",
@@ -1142,7 +1132,7 @@ async fn test_slashing_constants() {
     );
 
     // 1% downtime slash
-    let downtime_slash = (stake_cil as u128 * DOWNTIME_SLASH_BPS as u128) / 10_000;
+    let downtime_slash = (stake_cil * DOWNTIME_SLASH_BPS as u128) / 10_000;
     assert_eq!(downtime_slash, 10 * CIL_PER_LOS, "1% of 1000 = 10 LOS");
     println!(
         "  ✅ Downtime: {} LOS slashed (1%)",
@@ -1150,7 +1140,7 @@ async fn test_slashing_constants() {
     );
 
     // Integer math: no remainder loss for these exact values
-    let remainder = (stake_cil as u128 * DOWNTIME_SLASH_BPS as u128) % 10_000;
+    let remainder = (stake_cil * DOWNTIME_SLASH_BPS as u128) % 10_000;
     assert_eq!(
         remainder, 0,
         "Slash calculation must be exact (no remainder)"
@@ -1258,14 +1248,12 @@ async fn test_throughput_benchmark() {
     let mut blocks = Vec::new();
     for i in 0..num_sends {
         let send = make_send_block(
-            &node.address,
-            &node.pubkey_hex,
+            &node,
             &prev_hash,
             &receiver.address,
             send_amount,
             BASE_FEE_CIL,
-            &node.secret_key,
-            base_ts + i as u64 + 1,
+            base_ts + i + 1,
         );
         prev_hash = send.calculate_hash();
         blocks.push(send);

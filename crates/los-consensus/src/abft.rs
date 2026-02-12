@@ -276,10 +276,7 @@ impl ABFTConsensus {
         self.sequence += 1;
         let block_hash = block.calculate_hash();
 
-        let message = self.create_message(
-            ConsensusMessageType::PrePrepare,
-            block_hash.clone(),
-        );
+        let message = self.create_message(ConsensusMessageType::PrePrepare, block_hash.clone());
 
         self.pre_prepare_messages
             .insert(self.sequence, message.clone());

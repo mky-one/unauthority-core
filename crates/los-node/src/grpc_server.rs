@@ -1,3 +1,5 @@
+use los_consensus::voting::calculate_voting_power;
+use los_core::{Ledger, CIL_PER_LOS, MIN_VALIDATOR_STAKE_CIL};
 /// Unauthority gRPC Server Implementation
 ///
 /// Provides 8 core gRPC services for external integration:
@@ -13,8 +15,6 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use tokio::sync::mpsc;
 use tonic::{transport::Server, Request, Response, Status};
-use los_consensus::voting::calculate_voting_power;
-use los_core::{Ledger, MIN_VALIDATOR_STAKE_CIL, CIL_PER_LOS};
 
 // Include generated protobuf code
 pub mod proto {
@@ -331,10 +331,9 @@ impl LosNode for LosGrpcService {
         let client = &self.http_client;
         match client.post(&rest_url).json(&payload).send().await {
             Ok(resp) => {
-                let body: serde_json::Value = resp
-                    .json()
-                    .await
-                    .map_err(|e| Status::internal(format!("Failed to parse REST response: {}", e)))?;
+                let body: serde_json::Value = resp.json().await.map_err(|e| {
+                    Status::internal(format!("Failed to parse REST response: {}", e))
+                })?;
 
                 let success = body["status"].as_str() == Some("ok")
                     || body["status"].as_str() == Some("confirmed")
@@ -346,7 +345,11 @@ impl LosNode for LosGrpcService {
                     .to_string();
                 let message = body["msg"]
                     .as_str()
-                    .unwrap_or(if success { "Transaction submitted" } else { "Transaction failed" })
+                    .unwrap_or(if success {
+                        "Transaction submitted"
+                    } else {
+                        "Transaction failed"
+                    })
                     .to_string();
 
                 Ok(Response::new(SendTransactionResponse {
@@ -395,14 +398,17 @@ impl LosNode for LosGrpcService {
             version: env!("CARGO_PKG_VERSION").to_string(),
             // FIX C11-M4: Use .min() saturation instead of hard-coding 0
             // u128 total supply overflows u64 — cap at u64::MAX for legacy field
-            total_supply_cil: (21_936_236u128 * los_core::CIL_PER_LOS).min(u64::MAX as u128)
-                as u64,
+            total_supply_cil: (21_936_236u128 * los_core::CIL_PER_LOS).min(u64::MAX as u128) as u64,
             remaining_supply_cil: (ledger.distribution.remaining_supply).min(u64::MAX as u128)
                 as u64,
             total_burned_usd: (ledger.distribution.total_burned_usd).min(u64::MAX as u128) as u64,
             eth_price_usd: eth_price,
             btc_price_usd: btc_price,
-            peer_count: self.address_book.lock().map(|ab| ab.len() as u32).unwrap_or(0),
+            peer_count: self
+                .address_book
+                .lock()
+                .map(|ab| ab.len() as u32)
+                .unwrap_or(0),
             latest_block_height: latest_height,
             is_validator,
         };
@@ -534,7 +540,14 @@ pub async fn start_grpc_server(
     };
     let addr = bind_addr.parse()?;
 
-    let service = LosGrpcService::new(ledger, my_address.clone(), tx_sender, address_book, bootstrap_validators, rest_api_port);
+    let service = LosGrpcService::new(
+        ledger,
+        my_address.clone(),
+        tx_sender,
+        address_book,
+        bootstrap_validators,
+        rest_api_port,
+    );
 
     println!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
     println!("🚀 gRPC Server STARTED");
@@ -555,8 +568,8 @@ pub async fn start_grpc_server(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::collections::HashMap;
     use los_core::AccountState;
+    use std::collections::HashMap;
 
     #[tokio::test]
     async fn test_grpc_get_balance() {

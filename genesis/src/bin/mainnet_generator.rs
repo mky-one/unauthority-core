@@ -19,7 +19,6 @@
 /// After running, the output files are:
 ///   - mainnet-genesis/mainnet_wallets.json (FULL - contains private keys)
 ///   - mainnet-genesis/mainnet_public.json   (PUBLIC ONLY - safe to share)
-
 use bip39::{Language, Mnemonic};
 use rand::rngs::OsRng;
 use rand::RngCore;
@@ -54,11 +53,23 @@ fn main() {
     eprintln!();
 
     // ===== SUPPLY VALIDATION =====
-    assert_eq!(TOTAL_SUPPLY_LOS, 21_936_236, "TOTAL_SUPPLY must be 21,936,236 LOS");
+    assert_eq!(
+        TOTAL_SUPPLY_LOS, 21_936_236,
+        "TOTAL_SUPPLY must be 21,936,236 LOS"
+    );
     assert_eq!(CIL_PER_LOS, 100_000_000_000, "CIL_PER_LOS must be 10^11");
-    assert_eq!(DEV_TREASURY_TOTAL_LOS, 673_823, "Dev treasury must be 673,823 LOS");
-    assert_eq!(DEV_SUPPLY_TOTAL_LOS, 677_823, "Dev supply total must be 677,823 LOS");
-    assert_eq!(PUBLIC_SUPPLY_LOS, 21_258_413, "Public supply must be 21,258,413 LOS");
+    assert_eq!(
+        DEV_TREASURY_TOTAL_LOS, 673_823,
+        "Dev treasury must be 673,823 LOS"
+    );
+    assert_eq!(
+        DEV_SUPPLY_TOTAL_LOS, 677_823,
+        "Dev supply total must be 677,823 LOS"
+    );
+    assert_eq!(
+        PUBLIC_SUPPLY_LOS, 21_258_413,
+        "Public supply must be 21,258,413 LOS"
+    );
 
     let dev_balances_los: [u128; 2] = [DEV_TREASURY_1_LOS, DEV_TREASURY_2_LOS];
 
@@ -100,8 +111,14 @@ fn main() {
         println!("Dev Treasury #{}:", wallet_num);
         println!("  Address:      {}", address);
         println!("  Balance:      {} LOS ({} CIL)", balance_los, balance_cil);
-        println!("  Seed Phrase:  {} ... (FIRST 4 WORDS SHOWN)",
-            &seed_phrase.split_whitespace().take(4).collect::<Vec<_>>().join(" "));
+        println!(
+            "  Seed Phrase:  {} ... (FIRST 4 WORDS SHOWN)",
+            &seed_phrase
+                .split_whitespace()
+                .take(4)
+                .collect::<Vec<_>>()
+                .join(" ")
+        );
         println!("  Public Key:   {}...\n", &pk_hex[..64]);
 
         // Full entry (with private key + seed phrase)
@@ -143,9 +160,18 @@ fn main() {
 
         println!("Bootstrap Validator #{}:", validator_num);
         println!("  Address:      {}", address);
-        println!("  Balance:      {} LOS ({} CIL)", BOOTSTRAP_NODE_STAKE_LOS, balance_cil);
-        println!("  Seed Phrase:  {} ... (FIRST 4 WORDS SHOWN)",
-            &seed_phrase.split_whitespace().take(4).collect::<Vec<_>>().join(" "));
+        println!(
+            "  Balance:      {} LOS ({} CIL)",
+            BOOTSTRAP_NODE_STAKE_LOS, balance_cil
+        );
+        println!(
+            "  Seed Phrase:  {} ... (FIRST 4 WORDS SHOWN)",
+            &seed_phrase
+                .split_whitespace()
+                .take(4)
+                .collect::<Vec<_>>()
+                .join(" ")
+        );
         println!("  Public Key:   {}...\n", &pk_hex[..64]);
 
         wallet_entries_full.push(format!(
@@ -165,7 +191,11 @@ fn main() {
     println!("===========================================================");
     println!("MAINNET ALLOCATION SUMMARY");
     println!("===========================================================");
-    println!("Total Supply:     {} LOS ({} CIL)", TOTAL_SUPPLY_LOS, TOTAL_SUPPLY_LOS * CIL_PER_LOS);
+    println!(
+        "Total Supply:     {} LOS ({} CIL)",
+        TOTAL_SUPPLY_LOS,
+        TOTAL_SUPPLY_LOS * CIL_PER_LOS
+    );
     println!(
         "Dev Treasury:     {} LOS (Treasury 1: {} + Treasury 2: {})",
         DEV_TREASURY_TOTAL_LOS, DEV_TREASURY_1_LOS, DEV_TREASURY_2_LOS
@@ -217,9 +247,15 @@ fn main() {
     println!("  PUBLIC ONLY:    {}", public_path);
     println!();
     eprintln!("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
-    eprintln!("!!  BACK UP {} TO ENCRYPTED OFFLINE STORAGE NOW!  !!", full_path);
+    eprintln!(
+        "!!  BACK UP {} TO ENCRYPTED OFFLINE STORAGE NOW!  !!",
+        full_path
+    );
     eprintln!("!!  DELETE IT FROM THIS MACHINE AFTER BACKUP.             !!");
-    eprintln!("!!  The public file ({}) is safe to share.  !!", public_path);
+    eprintln!(
+        "!!  The public file ({}) is safe to share.  !!",
+        public_path
+    );
     eprintln!("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
     eprintln!();
 }

@@ -102,22 +102,36 @@ fn main() {
     println!("═══════════════════════════════════════════════════════════");
     println!("DEV TREASURY WALLETS");
     println!("═══════════════════════════════════════════════════════════\n");
-    for wallet in wallets.iter().filter(|w| matches!(w.wallet_type, WalletType::DevTreasury(_))) {
+    for wallet in wallets
+        .iter()
+        .filter(|w| matches!(w.wallet_type, WalletType::DevTreasury(_)))
+    {
         print_wallet(wallet);
     }
 
     println!("═══════════════════════════════════════════════════════════");
     println!("BOOTSTRAP VALIDATOR NODES");
     println!("═══════════════════════════════════════════════════════════\n");
-    for wallet in wallets.iter().filter(|w| matches!(w.wallet_type, WalletType::BootstrapNode(_))) {
+    for wallet in wallets
+        .iter()
+        .filter(|w| matches!(w.wallet_type, WalletType::BootstrapNode(_)))
+    {
         print_wallet(wallet);
     }
 
     println!("═══════════════════════════════════════════════════════════");
     println!("SUPPLY VERIFICATION");
     println!("═══════════════════════════════════════════════════════════");
-    println!("Target:    {} CIL ({} LOS)", DEV_SUPPLY_TOTAL_CIL, DEV_SUPPLY_TOTAL_CIL / CIL_PER_LOS);
-    println!("Allocated: {} CIL ({} LOS)", total_allocated_cil, total_allocated_cil / CIL_PER_LOS);
+    println!(
+        "Target:    {} CIL ({} LOS)",
+        DEV_SUPPLY_TOTAL_CIL,
+        DEV_SUPPLY_TOTAL_CIL / CIL_PER_LOS
+    );
+    println!(
+        "Allocated: {} CIL ({} LOS)",
+        total_allocated_cil,
+        total_allocated_cil / CIL_PER_LOS
+    );
 
     if total_allocated_cil == DEV_SUPPLY_TOTAL_CIL {
         println!("Status: ✅ MATCH\n");
@@ -153,7 +167,10 @@ fn generate_keys(label: &str) -> (String, String, String) {
     let keypair = los_crypto::generate_keypair_from_seed(&bip39_seed);
     let private_key = hex::encode(&keypair.secret_key);
     let public_key = hex::encode(&keypair.public_key);
-    println!("✓ Generated deterministic Dilithium5 keypair for: {}", label);
+    println!(
+        "✓ Generated deterministic Dilithium5 keypair for: {}",
+        label
+    );
     (seed_phrase, private_key, public_key)
 }
 
@@ -180,36 +197,54 @@ fn print_wallet(w: &DevWallet) {
         println!("│ {:<56} │", chunk.join(" "));
     }
     println!("├─────────────────────────────────────────────────────────┤");
-    println!("│ Private Key: {}...{} │", &w.private_key[0..24], &w.private_key[w.private_key.len()-24..]);
-    println!("│ Public Key:  {}...{} │", &w.public_key[0..24], &w.public_key[w.public_key.len()-24..]);
+    println!(
+        "│ Private Key: {}...{} │",
+        &w.private_key[0..24],
+        &w.private_key[w.private_key.len() - 24..]
+    );
+    println!(
+        "│ Public Key:  {}...{} │",
+        &w.public_key[0..24],
+        &w.public_key[w.public_key.len() - 24..]
+    );
     println!("└─────────────────────────────────────────────────────────┘");
     println!();
 }
 
 fn generate_config(wallets: &[DevWallet]) {
-    let bootstrap: Vec<_> = wallets.iter()
+    let bootstrap: Vec<_> = wallets
+        .iter()
         .filter(|w| matches!(w.wallet_type, WalletType::BootstrapNode(_)))
-        .map(|w| format!(
-            r#"    {{
+        .map(|w| {
+            format!(
+                r#"    {{
       "address": "{}",
       "stake_cil": {},
       "seed_phrase": "{}",
       "private_key": "{}",
       "public_key": "{}"
-    }}"#, w.address, w.balance_cil, w.seed_phrase, w.private_key, w.public_key
-        )).collect();
+    }}"#,
+                w.address, w.balance_cil, w.seed_phrase, w.private_key, w.public_key
+            )
+        })
+        .collect();
 
-    let dev: Vec<_> = wallets.iter()
+    let dev: Vec<_> = wallets
+        .iter()
         .filter(|w| matches!(w.wallet_type, WalletType::DevTreasury(_)))
-        .map(|w| format!(
-            r#"    {{
+        .map(|w| {
+            format!(
+                r#"    {{
       "address": "{}",
       "balance_cil": {},
       "seed_phrase": "{}",
       "private_key": "{}",
       "public_key": "{}"
-    }}"#, w.address, w.balance_cil, w.seed_phrase, w.private_key, w.public_key
-        )).collect();
+    }}"#,
+                w.address, w.balance_cil, w.seed_phrase, w.private_key, w.public_key
+            )
+        })
+        .collect();
 
     let config = format!(
         r#"{{
@@ -236,5 +271,6 @@ fn generate_config(wallets: &[DevWallet]) {
     );
 
     let mut file = File::create("genesis_config.json").expect("Failed to create config");
-    file.write_all(config.as_bytes()).expect("Failed to write config");
+    file.write_all(config.as_bytes())
+        .expect("Failed to write config");
 }

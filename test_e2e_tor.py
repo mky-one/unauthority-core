@@ -266,7 +266,7 @@ def test_phase2_genesis():
     
     unique_vals = set(v for v in balances.values() if v is not None)
     if len(unique_vals) == 1:
-        ok("Dev1 balance consistent", f"All nodes: {unique_vals.pop()} void")
+        ok("Dev1 balance consistent", f"All nodes: {unique_vals.pop()} CIL")
     elif len(unique_vals) == 0:
         fail("Dev1 balance consistent", "No node returned balance")
     else:
@@ -909,7 +909,7 @@ def test_phase9_rewards():
     # Test 9.3: Check if rewards have been distributed
     print("\n▶ 9.3 Reward distribution check")
     if reward_info and pool:
-        distributed = pool.get("total_distributed_uat", pool.get("distributed", 0))
+        distributed = pool.get("total_distributed_los", pool.get("distributed", 0))
         ok("Rewards distributed", f"{distributed} LOS so far")
     
     # Test 9.4: Slashing status

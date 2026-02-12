@@ -145,7 +145,7 @@ All key material implements `Zeroize` on `Drop` — private keys are overwritten
 
 LOS uses **libp2p** with the following configuration:
 
-- **Protocol**: GossipSub on topic `"uat-blocks"`
+- **Protocol**: GossipSub on topic `"los-blocks"`
 - **Encryption**: Noise Protocol Framework
 - **Multiplexing**: Yamux
 - **Discovery**: mDNS (disabled under Tor to prevent DNS leaks)
@@ -287,7 +287,7 @@ Contract deployment validates WASM magic bytes (`\0asm`), computes a blake3 addr
 
 Defined in `genesis_config.json`:
 
-- Network ID: 1 (`uat-mainnet`)
+- Network ID: 1 (`los-mainnet`)
 - Total supply: 2,193,623,600,000,000,000 CIL (= 21,936,236 LOS)
 - Dev supply: 153,553,600,000,000,000 CIL (= 1,535,536 LOS, 7%)
 - 8 dev treasury wallets + 4 bootstrap validators (1,000 LOS each)
@@ -296,7 +296,7 @@ Defined in `genesis_config.json`:
 
 Defined in `testnet-genesis/testnet_wallets.json`:
 
-- Network ID: 2 (`uat-testnet`)
+- Network ID: 2 (`los-testnet`)
 - Identical allocation structure to mainnet
 - All wallets have BIP39 seed phrases and deterministic Dilithium5 keypairs
 - Faucet available: 5,000 LOS per claim, 1-hour cooldown

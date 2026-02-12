@@ -27,7 +27,7 @@ sleep 5
 # Check if node API is responding
 if curl -s http://localhost:3030/supply > /dev/null 2>&1; then
     SUPPLY=$(curl -s http://localhost:3030/supply)
-    echo -e "${GREEN}✅ Node API responding (Supply: $SUPPLY VOI)${NC}"
+    echo -e "${GREEN}✅ Node API responding (Supply: $SUPPLY CIL)${NC}"
 else
     echo -e "${YELLOW}⚠️  Node API not responding yet (check /tmp/los_node.log)${NC}"
     echo "   You can still use the wallet, but node connection will be offline."

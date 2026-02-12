@@ -210,7 +210,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                         _account!.cilBalance > 0) ...[
                                       const SizedBox(height: 8),
                                       Text(
-                                        'Void: ${BlockchainConstants.formatLos(_account!.cilBalanceLOS)} LOS',
+                                        'CIL: ${BlockchainConstants.formatLos(_account!.cilBalanceLOS)} LOS',
                                         style: const TextStyle(
                                             fontSize: 14, color: Colors.orange),
                                       ),

@@ -168,22 +168,22 @@ route:
   group_wait: 10s
   group_interval: 10s
   repeat_interval: 12h
-  receiver: 'uat-team'
+  receiver: 'los-team'
   routes:
     - match:
         severity: critical
-      receiver: 'uat-critical'
+      receiver: 'los-critical'
       continue: true
     - match:
         severity: warning
-      receiver: 'uat-warnings'
+      receiver: 'los-warnings'
 
 receivers:
-  - name: 'uat-critical'
+  - name: 'los-critical'
     # Slack webhook for critical alerts
     slack_configs:
       - api_url: 'YOUR_SLACK_WEBHOOK_URL'
-        channel: '#uat-alerts-critical'
+        channel: '#los-alerts-critical'
         title: '🚨 CRITICAL: {{ .GroupLabels.alertname }}'
         text: '{{ range .Alerts }}{{ .Annotations.description }}\n{{ end }}'
     
@@ -202,16 +202,16 @@ receivers:
         headers:
           subject: 'LOS CRITICAL: {{ .GroupLabels.alertname }}'
 
-  - name: 'uat-warnings'
+  - name: 'los-warnings'
     slack_configs:
       - api_url: 'YOUR_SLACK_WEBHOOK_URL'
-        channel: '#uat-alerts'
+        channel: '#los-alerts'
         title: '⚠️ Warning: {{ .GroupLabels.alertname }}'
 
-  - name: 'uat-team'
+  - name: 'los-team'
     slack_configs:
       - api_url: 'YOUR_SLACK_WEBHOOK_URL'
-        channel: '#uat-monitoring'
+        channel: '#los-monitoring'
         title: 'LOS Info: {{ .GroupLabels.alertname }}'
 
 inhibit_rules:

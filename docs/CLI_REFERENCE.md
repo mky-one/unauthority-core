@@ -20,7 +20,7 @@ cargo build --release --bin los-cli
 | Flag | Env Variable | Default | Description |
 |------|-------------|---------|-------------|
 | `--rpc <URL>` | `LOS_RPC_URL` | `http://localhost:3030` | Node RPC endpoint |
-| `--config-dir <DIR>` | — | `~/.uat` | Configuration directory |
+| `--config-dir <DIR>` | — | `~/.los` | Configuration directory |
 
 ---
 

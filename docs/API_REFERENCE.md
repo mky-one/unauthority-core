@@ -45,7 +45,7 @@ Node metadata.
 
 ```json
 {
-  "chain_id": "uat-testnet",
+  "chain_id": "los-testnet",
   "version": "1.0.6",
   "total_supply": 21936236,
   "circulating_supply": 677823,
@@ -197,8 +197,8 @@ Supply statistics.
 {
   "total_supply_los": 21936236,
   "total_supply_cil": 2193623600000000000,
-  "circulating_supply_uat": 677823,
-  "burned_supply_uat": 0,
+  "circulating_supply_los": 677823,
+  "burned_supply_los": 0,
   "public_supply_remaining_los": 21258413
 }
 ```
@@ -451,7 +451,7 @@ The node also exposes a gRPC service on port `REST_PORT + 20000` (default: 23030
 
 **Proto file:** `los.proto`
 
-### Service: `UatNode`
+### Service: `LosNode`
 
 | RPC | Request | Response | Description |
 |-----|---------|----------|-------------|

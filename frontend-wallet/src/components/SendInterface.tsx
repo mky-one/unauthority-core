@@ -51,7 +51,7 @@ export default function SendInterface({ nodeOnline }: Props) {
       const previous = accountJson.head || '0';
       
       // Convert LOS to CIL for block amount
-      const amountVoi = Math.floor(amountNum * 100_000_000);
+      const amountCil = Math.floor(amountNum * 100_000_000);
       
       // Sign transaction client-side
       const signature = await signTransaction(
@@ -59,7 +59,7 @@ export default function SendInterface({ nodeOnline }: Props) {
         wallet!.address,
         previous,
         'Send',
-        amountVoi,
+        amountCil,
         recipient.trim()
       );
       

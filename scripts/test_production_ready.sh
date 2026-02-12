@@ -146,7 +146,7 @@ S2=$(curl -s http://localhost:3031/supply | jq -r '.remaining_supply_cil' 2>/dev
 S3=$(curl -s http://localhost:3032/supply | jq -r '.remaining_supply_cil' 2>/dev/null || echo "0")
 
 if [ "$S1" = "$S2" ] && [ "$S2" = "$S3" ] && [ "$S1" != "0" ]; then
-    test_pass "All nodes report identical supply: $S1 VOI"
+    test_pass "All nodes report identical supply: $S1 CIL"
 else
     test_fail "Supply mismatch detected (N1:$S1, N2:$S2, N3:$S3)"
 fi

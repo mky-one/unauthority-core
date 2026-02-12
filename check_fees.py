@@ -28,7 +28,7 @@ ri = fetch(f"{NODES['V1']}/reward-info")
 epoch = ri.get("epoch", {})
 pool = ri.get("pool", {})
 print(f"Current epoch: {epoch.get('current_epoch')}")
-print(f"Pool: distributed={pool.get('total_distributed_uat')} LOS, remaining={pool.get('remaining_los')} LOS")
+print(f"Pool: distributed={pool.get('total_distributed_los')} LOS, remaining={pool.get('remaining_los')} LOS")
 
 # Check all validator histories for FEE_REWARD entries
 print("\n=== FEE_REWARD blocks across all validators ===")

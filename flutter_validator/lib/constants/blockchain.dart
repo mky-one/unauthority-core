@@ -1,5 +1,5 @@
 /// LOS Blockchain Constants for Validator Dashboard
-/// Must be synchronized with backend: crates/uat-core/src/lib.rs
+/// Must be synchronized with backend: crates/los-core/src/lib.rs
 ///
 /// Backend definition:
 ///   pub const CIL_PER_LOS: u128 = 100_000_000_000; // 10^11

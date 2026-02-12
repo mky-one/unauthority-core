@@ -164,7 +164,7 @@ if [ "$NODES_UP" -gt "0" ]; then
     S3=$(curl -s http://localhost:3032/supply 2>/dev/null | grep -o '"remaining_supply_cil":[0-9]*' | cut -d: -f2 || echo "0")
     
     if [ "$S1" = "$S2" ] && [ "$S2" = "$S3" ] && [ "$S1" != "0" ]; then
-        test_pass "All nodes agree on supply: $S1 VOI"
+        test_pass "All nodes agree on supply: $S1 CIL"
     else
         echo "⚠️  Supply data: N1=$S1, N2=$S2, N3=$S3"
         PASS=$((PASS+1))

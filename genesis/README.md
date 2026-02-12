@@ -266,7 +266,7 @@ export LOS_VALIDATOR_PRIVKEY_PATH="/secure/validator-1.key"
 
 ```bash
 # Run on secure/isolated machine
-./uat-signer \
+./los-signer \
   --config validator.toml \
   --psk /etc/los-validator/signer.psk \
   --privkey "$LOS_VALIDATOR_PRIVKEY_PATH"

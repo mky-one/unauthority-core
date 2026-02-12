@@ -133,7 +133,7 @@ class WalletService {
         );
       }
 
-      // Ed25519 + BLAKE2b fallback (TESTNET ONLY — matches uat-crypto address format)
+      // Ed25519 + BLAKE2b fallback (TESTNET ONLY — matches los-crypto address format)
       final seed = bip39.mnemonicToSeed(mnemonic);
       try {
         address = await _deriveAddressEd25519(seed);
@@ -530,7 +530,7 @@ class WalletService {
 
   // ══════════════════════════════════════════════════════════════════════
   // ADDRESS DERIVATION — Ed25519 + BLAKE2b-160 + Base58Check
-  // Matches uat-crypto::public_key_to_address() EXACTLY
+  // Matches los-crypto::public_key_to_address() EXACTLY
   // ══════════════════════════════════════════════════════════════════════
 
   /// Base58 alphabet (Bitcoin-style)
@@ -565,7 +565,7 @@ class WalletService {
     return result.toString();
   }
 
-  /// Derive LOS address from Ed25519 public key (uat-crypto compatible).
+  /// Derive LOS address from Ed25519 public key (los-crypto compatible).
   static String _deriveAddressFromPublicKey(Uint8List publicKey) {
     const versionByte = 0x4A;
     final blake2b = Blake2bDigest(digestSize: 64);

@@ -129,7 +129,7 @@ class WalletService {
         );
       }
 
-      // Ed25519 + BLAKE2b fallback (TESTNET ONLY — matches uat-crypto address format)
+      // Ed25519 + BLAKE2b fallback (TESTNET ONLY — matches los-crypto address format)
       final seed = bip39.mnemonicToSeed(mnemonic);
       try {
         address = await _deriveAddressEd25519(seed);
@@ -407,7 +407,7 @@ class WalletService {
 
   // ══════════════════════════════════════════════════════════════════════
   // ADDRESS DERIVATION — Ed25519 + BLAKE2b-160 + Base58Check
-  // Matches uat-crypto::public_key_to_address() EXACTLY
+  // Matches los-crypto::public_key_to_address() EXACTLY
   // ══════════════════════════════════════════════════════════════════════
 
   /// Base58 alphabet (Bitcoin-style)
@@ -448,9 +448,9 @@ class WalletService {
     return result.toString();
   }
 
-  /// Derive LOS address from Ed25519 public key (uat-crypto compatible).
+  /// Derive LOS address from Ed25519 public key (los-crypto compatible).
   ///
-  /// Algorithm (IDENTICAL to Rust uat-crypto::public_key_to_address):
+  /// Algorithm (IDENTICAL to Rust los-crypto::public_key_to_address):
   /// 1. BLAKE2b-512(pubkey) → first 20 bytes
   /// 2. Prepend VERSION_BYTE 0x4A
   /// 3. Checksum = SHA256(SHA256(payload))[0:4]
@@ -487,7 +487,7 @@ class WalletService {
 
   /// Derive Ed25519 keypair from BIP39 seed and return LOS address.
   /// Uses seed[0:32] as Ed25519 private seed → public key → BLAKE2b address.
-  /// This matches uat-crypto's address format for Ed25519 keys.
+  /// This matches los-crypto's address format for Ed25519 keys.
   Future<String> _deriveAddressEd25519(List<int> seed) async {
     debugPrint(
         '💰 [WalletService._deriveAddressEd25519] Deriving Ed25519 address...');

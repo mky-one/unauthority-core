@@ -45,9 +45,9 @@ if [ -z "$VALIDATOR_1_ADDR" ] || [ "$VALIDATOR_1_ADDR" == "null" ]; then
     exit 1
 fi
 
-echo "   ✓ Validator-1: ${VALIDATOR_1_ADDR:0:30}... (${VALIDATOR_1_STAKE} VOI)"
-echo "   ✓ Validator-2: ${VALIDATOR_2_ADDR:0:30}... (${VALIDATOR_2_STAKE} VOI)"
-echo "   ✓ Validator-3: ${VALIDATOR_3_ADDR:0:30}... (${VALIDATOR_3_STAKE} VOI)"
+echo "   ✓ Validator-1: ${VALIDATOR_1_ADDR:0:30}... (${VALIDATOR_1_STAKE} CIL)"
+echo "   ✓ Validator-2: ${VALIDATOR_2_ADDR:0:30}... (${VALIDATOR_2_STAKE} CIL)"
+echo "   ✓ Validator-3: ${VALIDATOR_3_ADDR:0:30}... (${VALIDATOR_3_STAKE} CIL)"
 echo ""
 
 # Step 3: Create node directories
@@ -187,7 +187,7 @@ echo ""
 echo "📊 VALIDATOR SUMMARY:"
 echo "   • 3 Validators configured"
 echo "   • Each with unique address from genesis"
-echo "   • Each with 1,000 LOS stake (100,000,000,000 VOI)"
+echo "   • Each with 1,000 LOS stake (100,000,000,000 CIL)"
 echo "   • Sentry architecture enabled"
 echo "   • Private keys saved to private_key.hex (600 permissions)"
 echo ""

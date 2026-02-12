@@ -88,7 +88,7 @@ fn main() {
     // ===== DEV TREASURY WALLETS =====
     println!("--- DEV TREASURY WALLETS ---\n");
 
-    for i in 0..DEV_TREASURY_COUNT {
+    for (i, &balance_los) in dev_balances_los.iter().enumerate().take(DEV_TREASURY_COUNT) {
         let wallet_num = i + 1;
 
         // Generate 32 bytes of entropy from OsRng (256-bit = 24-word mnemonic)
@@ -105,7 +105,6 @@ fn main() {
         let sk_hex = hex::encode(&kp.secret_key);
         let address = los_crypto::public_key_to_address(&kp.public_key);
 
-        let balance_los = dev_balances_los[i];
         let balance_cil = balance_los * CIL_PER_LOS;
 
         println!("Dev Treasury #{}:", wallet_num);

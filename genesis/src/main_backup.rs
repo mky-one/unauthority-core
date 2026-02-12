@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::fs;
 
-// Constants (matching uat-core/src/lib.rs)
+// Constants (matching los-core/src/lib.rs)
 const CIL_PER_LOS: u128 = 100_000_000_000; // 100 billion CIL per LOS
 const TOTAL_SUPPLY_LOS: u128 = 21_936_236;
 const DEV_ALLOCATION_PERCENT: f64 = 0.07; // 7%

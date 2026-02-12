@@ -57,7 +57,7 @@ class Account {
   /// Balance in LOS (1 LOS = 10^11 CIL)
   double get balanceLOS => BlockchainConstants.cilToLos(balance);
 
-  /// Void balance in LOS
+  /// CIL balance in LOS
   double get cilBalanceLOS => BlockchainConstants.cilToLos(cilBalance);
 }
 

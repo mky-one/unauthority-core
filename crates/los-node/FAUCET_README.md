@@ -99,7 +99,7 @@ Global Limit:
   "total_requests": 1247,
   "successful_drips": 1198,
   "rejected_requests": 49,
-  "total_distributed_voi": 119800000000000,
+  "total_distributed_cil": 119800000000000,
   "total_distributed_los": 1198000,
   "drip_amount_los": 100,
   "ip_cooldown_seconds": 3600,
@@ -221,7 +221,7 @@ faucet.set_drip_amount(50 * 100_000_000);
 los_faucet_total_requests        # Total faucet requests
 los_faucet_successful_drips      # Successful token distributions
 los_faucet_rejected_requests     # Rejected requests (rate limited)
-los_faucet_total_distributed_voi # Total CIL distributed
+los_faucet_total_distributed_cil # Total CIL distributed
 los_faucet_enabled               # Faucet enabled status (0 or 1)
 ```
 

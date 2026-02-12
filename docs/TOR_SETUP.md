@@ -1,6 +1,6 @@
 # Tor Setup Guide
 
-Configure Tor hidden services for UAT validator nodes. All network traffic routes through Tor — no public IP addresses are exposed.
+Configure Tor hidden services for LOS validator nodes. All network traffic routes through Tor — no public IP addresses are exposed.
 
 **Version:** v1.0.6-testnet
 
@@ -8,7 +8,7 @@ Configure Tor hidden services for UAT validator nodes. All network traffic route
 
 ## Overview
 
-UAT validators run as Tor hidden services (`.onion` addresses). This provides:
+LOS validators run as Tor hidden services (`.onion` addresses). This provides:
 
 - **No public IP** — validators are reachable only via .onion
 - **Censorship resistance** — Tor circuits bypass network blocks
@@ -73,8 +73,8 @@ tor --version
 ### 2. Create Hidden Service Directory
 
 ```bash
-mkdir -p /var/lib/tor/uat-validator-1
-chmod 700 /var/lib/tor/uat-validator-1
+mkdir -p /var/lib/tor/los-validator-1
+chmod 700 /var/lib/tor/los-validator-1
 ```
 
 ### 3. Configure torrc
@@ -82,8 +82,8 @@ chmod 700 /var/lib/tor/uat-validator-1
 Add to `/etc/tor/torrc` (or custom torrc):
 
 ```
-# UAT Validator 1
-HiddenServiceDir /var/lib/tor/uat-validator-1
+# LOS Validator 1
+HiddenServiceDir /var/lib/tor/los-validator-1
 HiddenServicePort 80 127.0.0.1:3030    # REST API
 HiddenServicePort 4001 127.0.0.1:4001  # P2P
 ```
@@ -92,22 +92,22 @@ For multiple validators:
 
 ```
 # Validator 1
-HiddenServiceDir /var/lib/tor/uat-validator-1
+HiddenServiceDir /var/lib/tor/los-validator-1
 HiddenServicePort 80 127.0.0.1:3030
 HiddenServicePort 4001 127.0.0.1:4001
 
 # Validator 2
-HiddenServiceDir /var/lib/tor/uat-validator-2
+HiddenServiceDir /var/lib/tor/los-validator-2
 HiddenServicePort 80 127.0.0.1:3031
 HiddenServicePort 4001 127.0.0.1:4002
 
 # Validator 3
-HiddenServiceDir /var/lib/tor/uat-validator-3
+HiddenServiceDir /var/lib/tor/los-validator-3
 HiddenServicePort 80 127.0.0.1:3032
 HiddenServicePort 4001 127.0.0.1:4003
 
 # Validator 4
-HiddenServiceDir /var/lib/tor/uat-validator-4
+HiddenServiceDir /var/lib/tor/los-validator-4
 HiddenServicePort 80 127.0.0.1:3033
 HiddenServicePort 4001 127.0.0.1:4004
 
@@ -124,14 +124,14 @@ tor -f /path/to/torrc &
 ### 5. Get Your .onion Address
 
 ```bash
-cat /var/lib/tor/uat-validator-1/hostname
+cat /var/lib/tor/los-validator-1/hostname
 # abc123...xyz.onion
 ```
 
 ### 6. Start Node with Tor
 
 ```bash
-./target/release/uat-node \
+./target/release/los-node \
   --dev \
   --port 3030 \
   --p2p-port 4001 \
@@ -187,7 +187,7 @@ These addresses are defined in `testnet-tor-info.json`.
 
 | Practice | Description |
 |----------|-------------|
-| Bind `127.0.0.1` | UAT node binds localhost by default — never expose to `0.0.0.0` in production |
+| Bind `127.0.0.1` | LOS node binds localhost by default — never expose to `0.0.0.0` in production |
 | mDNS disabled | Auto-disabled when Tor is detected to prevent DNS leaks |
 | Hidden service keys | Store in `chmod 700` directories — these ARE your node identity |
 | Separate SOCKS ports | Use dedicated SOCKS port (9052) — don't share with browser (9150) |

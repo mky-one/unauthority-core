@@ -56,7 +56,7 @@ echo ""
 FIRST_BOOTSTRAP=$(cat genesis_config.json | python3 -c "import json,sys; data=json.load(sys.stdin); print(data['bootstrap_nodes'][0]['address'])")
 FIRST_SEED=$(cat genesis_config.json | python3 -c "import json,sys; data=json.load(sys.stdin); print(data['bootstrap_nodes'][0]['seed_phrase'])")
 echo "Address: $FIRST_BOOTSTRAP"
-echo "Balance: 1000 UAT"
+echo "Balance: 1000 LOS"
 echo "Seed Phrase: $FIRST_SEED"
 echo ""
 
@@ -89,7 +89,7 @@ echo "   - Set password"
 echo "   - Start validator"
 echo ""
 echo "4. Verify Node Activation:"
-echo "   - Check dashboard shows 1000 UAT balance"
+echo "   - Check dashboard shows 1000 LOS balance"
 echo "   - Node should become active validator"
 echo "   - P2P connections established"
 echo ""

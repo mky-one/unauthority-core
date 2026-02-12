@@ -99,6 +99,8 @@ class TorService {
     required int localPort,
     int onionPort = 80,
   }) async {
+    debugPrint(
+        '🧅 [TorService.startWithHiddenService] localPort: $localPort, onionPort: $onionPort');
     if (_isRunning && _onionAddress != null) {
       debugPrint('🔵 Tor hidden service already active: $_onionAddress');
       return _onionAddress;
@@ -132,7 +134,8 @@ class TorService {
         }
       }
       if (!found) {
-        debugPrint('❌ No free SocksPort available (${_socksPort}..${_socksPort + 20})');
+        debugPrint(
+            '❌ No free SocksPort available ($_socksPort..${_socksPort + 20})');
         return null;
       }
     }
@@ -174,14 +177,14 @@ class TorService {
     // Create torrc with hidden service config
     final torrcPath = path.join(_torDataDir!, 'torrc');
     final config = '''
-# UAT Validator — Hidden Service Tor Configuration
+# LOS Validator — Hidden Service Tor Configuration
 # Generated automatically — do not edit manually
 
 DataDirectory $_torDataDir
 SocksPort $_socksPort
 Log notice stdout
 
-# Hidden Service: Route .onion traffic to local uat-node API
+# Hidden Service: Route .onion traffic to local los-node API
 HiddenServiceDir $_hiddenServiceDir
 HiddenServicePort $onionPort 127.0.0.1:$localPort
 
@@ -678,7 +681,7 @@ ExitPolicy reject *:*
     final torrc = File(torrcPath);
 
     final config = '''
-# UAT Wallet — Auto-managed Tor Configuration
+# LOS Wallet — Auto-managed Tor Configuration
 # Generated automatically — do not edit manually
 
 DataDirectory $_torDataDir
@@ -710,11 +713,11 @@ UseBridges 0
 
   /// Detect existing Tor SOCKS proxies
   Future<Map<String, dynamic>> detectExistingTor() async {
-    // Check UAT bundled Tor (port 9250)
+    // Check LOS bundled Tor (port 9250)
     if (await _isPortOpen('localhost', 9250)) {
       return {
         'found': true,
-        'type': 'UAT Bundled Tor',
+        'type': 'LOS Bundled Tor',
         'proxy': 'localhost:9250'
       };
     }
@@ -724,11 +727,11 @@ UseBridges 0
       return {'found': true, 'type': 'Tor Browser', 'proxy': 'localhost:9150'};
     }
 
-    // Check UAT testnet Tor (port 9052)
+    // Check LOS testnet Tor (port 9052)
     if (await _isPortOpen('localhost', 9052)) {
       return {
         'found': true,
-        'type': 'UAT Testnet Tor',
+        'type': 'LOS Testnet Tor',
         'proxy': 'localhost:9052'
       };
     }

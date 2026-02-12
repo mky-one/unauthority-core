@@ -63,7 +63,7 @@ class EarningsTrackerCard extends StatelessWidget {
                   ),
                   const SizedBox(height: 8),
                   Text(
-                    '${NumberFormat('#,##0.000000').format(earnings.totalEarningsUAT)} UAT',
+                    '${NumberFormat('#,##0.000000').format(earnings.totalEarningsLOS)} LOS',
                     style: const TextStyle(
                       fontSize: 32,
                       fontWeight: FontWeight.bold,
@@ -86,7 +86,7 @@ class EarningsTrackerCard extends StatelessWidget {
                 Expanded(
                   child: _buildTimeCard(
                     '24 Hours',
-                    earnings.last24HoursUAT,
+                    earnings.last24HoursLOS,
                     Icons.today,
                   ),
                 ),
@@ -94,7 +94,7 @@ class EarningsTrackerCard extends StatelessWidget {
                 Expanded(
                   child: _buildTimeCard(
                     '7 Days',
-                    earnings.last7DaysUAT,
+                    earnings.last7DaysLOS,
                     Icons.date_range,
                   ),
                 ),
@@ -102,7 +102,7 @@ class EarningsTrackerCard extends StatelessWidget {
                 Expanded(
                   child: _buildTimeCard(
                     '30 Days',
-                    earnings.last30DaysUAT,
+                    earnings.last30DaysLOS,
                     Icons.calendar_month,
                   ),
                 ),
@@ -148,7 +148,7 @@ class EarningsTrackerCard extends StatelessWidget {
               color: Colors.green.shade400,
             ),
           ),
-          const Text('UAT', style: TextStyle(fontSize: 10, color: Colors.grey)),
+          const Text('LOS', style: TextStyle(fontSize: 10, color: Colors.grey)),
         ],
       ),
     );

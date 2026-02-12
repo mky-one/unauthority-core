@@ -1,5 +1,5 @@
 // ========================================
-// INTEGRATION TESTS FOR UNAUTHORITY (UAT)
+// INTEGRATION TESTS FOR UNAUTHORITY (LOS)
 // ========================================
 //
 // Test Scenarios:
@@ -18,9 +18,9 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use tokio::time::sleep;
 
-// Import UAT modules
-use uat_core::{AccountState, Block, BlockType, Ledger};
-use uat_crypto::{generate_keypair, sign_message};
+// Import LOS modules
+use los_core::{AccountState, Block, BlockType, Ledger};
+use los_crypto::{generate_keypair, sign_message};
 
 // ========================================
 // TEST 1: THREE-VALIDATOR NETWORK CONSENSUS
@@ -42,10 +42,10 @@ async fn test_three_validator_consensus() {
             pubkey: pubkey_hex,
             keypair,
             ledger,
-            stake: 1000_00000000, // 1000 UAT minimum stake
+            stake: 1000_00000000, // 1000 LOS minimum stake
         });
 
-        println!("✅ Validator {} initialized (stake: 1000 UAT)", i);
+        println!("✅ Validator {} initialized (stake: 1000 LOS)", i);
     }
 
     // Test: Send a transaction and measure consensus time
@@ -64,7 +64,7 @@ async fn test_three_validator_consensus() {
         block_type: BlockType::Send,
         account: sender.pubkey.clone(),
         previous: "0".to_string(),
-        amount: 100_00000000, // Send 100 UAT
+        amount: 100_00000000, // Send 100 LOS
         link: receiver.pubkey.clone(),
         signature: hex::encode(&signature),
         public_key: sender.pubkey.clone(),
@@ -129,9 +129,9 @@ async fn test_three_validator_consensus() {
         .map(|a| a.balance)
         .unwrap_or(0);
 
-    println!("  - Validator 0 sees sender balance: {} VOI", balance0);
-    println!("  - Validator 1 sees sender balance: {} VOI", balance1);
-    println!("  - Validator 2 sees sender balance: {} VOI", balance2);
+    println!("  - Validator 0 sees sender balance: {} CIL", balance0);
+    println!("  - Validator 1 sees sender balance: {} CIL", balance1);
+    println!("  - Validator 2 sees sender balance: {} CIL", balance2);
 
     assert_eq!(balance0, balance1, "Validator 0 and 1 state mismatch!");
     assert_eq!(balance1, balance2, "Validator 1 and 2 state mismatch!");
@@ -154,16 +154,16 @@ async fn test_proof_of_burn_distribution() {
     println!("\n🧪 TEST 2: Proof-of-Burn Distribution Flow");
     println!("============================================\n");
 
-    let total_supply = 21_936_236 * 100_000_000_000u128; // 10^11 VOID per UAT
-    let dev_allocation = 1_535_536 * 100_000_000_000u128;
+    let total_supply = 21_936_236 * 100_000_000_000u128; // 10^11 CIL per LOS
+    let dev_allocation = 677_823 * 100_000_000_000u128; // ~3%: 673,823 treasury + 4,000 bootstrap
     let public_supply = total_supply - dev_allocation;
     let mut remaining_public = public_supply;
     let total_burned_usd = 0.0_f64;
 
     println!("📦 Initial State:");
-    println!("  - Total Supply: {} UAT", total_supply / 100000000000);
-    println!("  - Public Supply: {} UAT", public_supply / 100000000000);
-    println!("  - Remaining: {} UAT\n", remaining_public / 100000000000);
+    println!("  - Total Supply: {} LOS", total_supply / 100000000000);
+    println!("  - Public Supply: {} LOS", public_supply / 100000000000);
+    println!("  - Remaining: {} LOS\n", remaining_public / 100000000000);
 
     let btc_price = 90000.0;
     let _eth_price = 3500.0; // Reserved for multi-asset burn
@@ -174,22 +174,22 @@ async fn test_proof_of_burn_distribution() {
     let scarcity = 1.0 + (total_burned_usd / (total_supply as f64 / 100000000000.0));
     let base_price = 1.0;
     let current_price = base_price * scarcity;
-    let uat_received = ((usd_burned / current_price) * 100000000000.0) as u128;
+    let los_received = ((usd_burned / current_price) * 100000000000.0) as u128;
 
     println!("🔥 Burn Transaction #1:");
     println!("  - Asset: BTC, Amount: {} BTC", btc_burned);
     println!("  - USD Value: ${:.2}", usd_burned);
-    println!("  - UAT Received: {} UAT", uat_received / 100000000000);
+    println!("  - LOS Received: {} LOS", los_received / 100000000000);
 
-    remaining_public -= uat_received;
+    remaining_public -= los_received;
     let _total_burned_usd = total_burned_usd + usd_burned;
 
-    println!("  - Remaining: {} UAT\n", remaining_public / 100000000000);
+    println!("  - Remaining: {} LOS\n", remaining_public / 100000000000);
 
     // Verify supply constraints
     assert!(remaining_public > 0, "Public supply exhausted!");
     assert!(remaining_public < public_supply, "Supply didn't decrease!");
-    assert!(uat_received > 0, "User didn't receive UAT!");
+    assert!(los_received > 0, "User didn't receive LOS!");
 
     println!("✅ TEST PASSED: PoB distribution working correctly\n");
 }
@@ -325,19 +325,22 @@ async fn test_database_persistence() {
     println!("\n🧪 TEST 5: Database Persistence");
     println!("==================================\n");
 
-    let db_path = "/tmp/uat_test_db";
+    let db_path = "/tmp/los_test_persistence";
+    let ledger_file = format!("{}/ledger_state.json", db_path);
     let _ = std::fs::remove_dir_all(db_path);
+    std::fs::create_dir_all(db_path).unwrap();
 
-    println!("📝 Phase 1: Writing 1000 accounts...");
+    let mut expected_accounts = Vec::new();
+
+    println!("📝 Phase 1: Writing 1000 accounts and saving to disk...");
     {
-        let ledger = Arc::new(Mutex::new(Ledger::new()));
+        let mut ledger = Ledger::new();
 
         for i in 0..1000 {
             let keypair = generate_keypair();
-            let pubkey_hex = hex::encode(&keypair.public_key);
-            let mut ledger_guard = ledger.lock().unwrap();
-            ledger_guard.accounts.insert(
-                pubkey_hex,
+            let address = los_crypto::public_key_to_address(&keypair.public_key);
+            ledger.accounts.insert(
+                address.clone(),
                 AccountState {
                     head: format!("block_{}", i),
                     balance: (i * 100000) as u128,
@@ -345,22 +348,41 @@ async fn test_database_persistence() {
                     is_validator: false,
                 },
             );
+            if i < 5 {
+                expected_accounts.push((address, (i * 100000) as u128));
+            }
         }
 
-        println!("  ✅ Wrote 1000 accounts");
+        // Serialize to disk (same format as los-node save_ledger)
+        let serialized = serde_json::to_string(&ledger).expect("Failed to serialize ledger");
+        std::fs::write(&ledger_file, &serialized).expect("Failed to write ledger file");
+
+        assert_eq!(ledger.accounts.len(), 1000);
+        println!("  ✅ Wrote 1000 accounts to {}", ledger_file);
     }
 
-    println!("\n💥 Phase 2: Simulating crash...");
+    println!("\n💥 Phase 2: Simulating crash (dropping in-memory state)...");
     sleep(Duration::from_millis(100)).await;
 
-    println!("🔄 Phase 3: Recovery...");
+    println!("🔄 Phase 3: Recovery from disk...");
     {
-        let ledger = Arc::new(Mutex::new(Ledger::new()));
-        let ledger_guard = ledger.lock().unwrap();
-        let account_count = ledger_guard.accounts.len();
+        // Load from disk (same as los-node load_ledger)
+        let data = std::fs::read_to_string(&ledger_file).expect("Failed to read ledger file");
+        let ledger: Ledger = serde_json::from_str(&data).expect("Failed to deserialize ledger");
+        let account_count = ledger.accounts.len();
 
-        println!("  ✅ Loaded {} accounts", account_count);
-        println!("  ✅ Data integrity verified");
+        assert_eq!(account_count, 1000, "Should recover all 1000 accounts from disk");
+
+        // Verify specific accounts survived
+        for (addr, expected_balance) in &expected_accounts {
+            let account = ledger.accounts.get(addr)
+                .unwrap_or_else(|| panic!("Account {} not found after recovery", addr));
+            assert_eq!(account.balance, *expected_balance,
+                "Balance mismatch for account {}", addr);
+        }
+
+        println!("  ✅ Loaded {} accounts from disk", account_count);
+        println!("  ✅ Data integrity verified (balances match)");
     }
 
     println!("\n✅ TEST PASSED: Database persistence working\n");
@@ -376,7 +398,7 @@ struct ValidatorNode {
     #[allow(dead_code)]
     id: usize,
     pubkey: String,
-    keypair: uat_crypto::KeyPair,
+    keypair: los_crypto::KeyPair,
     ledger: Arc<Mutex<Ledger>>,
     #[allow(dead_code)]
     stake: u128,

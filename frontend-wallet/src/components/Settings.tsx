@@ -17,7 +17,7 @@ const NETWORK_PRESETS: NetworkPreset[] = [
   {
     name: 'Remote Testnet',
     url: 'http://fhljoiopyz2eflttc7o5qwfj6l6skhtlkjpn4r6yw4atqpy2azydnnqd.onion',
-    description: 'UAT Testnet via Tor (default)',
+    description: 'LOS Testnet via Tor (default)',
   },
   {
     name: 'Local Testnet',
@@ -66,7 +66,7 @@ export default function Settings() {
         const data = await response.json();
         setTestResult({
           success: true,
-          message: `Connected! Chain: ${data.chain_name || 'UAT'}`,
+          message: `Connected! Chain: ${data.chain_name || 'LOS'}`,
         });
       } else {
         setTestResult({
@@ -92,7 +92,7 @@ export default function Settings() {
 
   return (
     <div className="max-w-3xl mx-auto p-6">
-      <div className="bg-uat-gray border border-gray-700 rounded-2xl p-8">
+      <div className="bg-los-gray border border-gray-700 rounded-2xl p-8">
         {/* Header */}
         <div className="flex items-center space-x-3 mb-8">
           <div className="w-12 h-12 bg-gradient-to-br from-purple-500 to-pink-500 rounded-xl flex items-center justify-center">
@@ -236,7 +236,7 @@ export default function Settings() {
       </div>
 
       {/* Additional Settings (Future) */}
-      <div className="mt-6 bg-uat-gray border border-gray-700 rounded-2xl p-6">
+      <div className="mt-6 bg-los-gray border border-gray-700 rounded-2xl p-6">
         <h3 className="text-lg font-semibold mb-4">App Info</h3>
         <div className="space-y-2 text-sm text-gray-400">
           <div className="flex justify-between">
@@ -249,7 +249,7 @@ export default function Settings() {
           </div>
           <div className="flex justify-between">
             <span>Chain:</span>
-            <span className="text-white">Unauthority (UAT)</span>
+            <span className="text-white">Unauthority (LOS)</span>
           </div>
         </div>
       </div>

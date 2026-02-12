@@ -9,7 +9,7 @@ fn main() {
 
     // Dev Wallet #1 from genesis
     let mnemonic_str = "riot draft insect furnace soldier faith recipe fabric auction public select diamond arrow topple naive wheel opinion kit thumb noble guitar addict monkey pipe";
-    let expected_address = "UATe8ef3d432398019ae91c6f374edd07f4a2c5bfcb";
+    let expected_address = "LOSe8ef3d432398019ae91c6f374edd07f4a2c5bfcb";
 
     println!("Testing: Dev Wallet #1");
     println!("─────────────────────────────────────────────────────────────");
@@ -50,7 +50,7 @@ fn main() {
     println!();
     
     // Derive address
-    let address = format!("UAT{}", bs58::encode(public_key.as_bytes()).into_string());
+    let address = format!("LOS{}", bs58::encode(public_key.as_bytes()).into_string());
     
     println!("\nExpected address: {}", expected_address);
     println!("Derived address:  {}", address);

@@ -1,11 +1,11 @@
 {
-    "name": "UAT Wallet",
-    "short_name": "UAT Wallet",
+    "name": "LOS Wallet",
+    "short_name": "LOS Wallet",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#0175C2",
     "theme_color": "#0175C2",
-    "description": "Unauthority (UAT) Wallet - Secure blockchain wallet with Tor privacy",
+    "description": "Unauthority (LOS) Wallet - Secure blockchain wallet with Tor privacy",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
     "icons": [

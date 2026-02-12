@@ -1,12 +1,12 @@
 # Unauthority Documentation
 
-All documentation for the Unauthority (UAT) blockchain — v1.0.6-testnet.
+All documentation for the Unauthority (LOS) blockchain — v1.0.6-testnet.
 
 ## User Guides
 
 | Document | Description |
 |----------|-------------|
-| [JOIN_TESTNET.md](JOIN_TESTNET.md) | Quick start — download wallet, get testnet UAT, send tokens |
+| [JOIN_TESTNET.md](JOIN_TESTNET.md) | Quick start — download wallet, get testnet LOS, send tokens |
 | [INSTALLATION.md](INSTALLATION.md) | Build from source on macOS/Linux/Windows |
 | [WALLET_GUIDE.md](WALLET_GUIDE.md) | Complete wallet features: create, send, receive, burn-to-mint |
 
@@ -24,14 +24,14 @@ All documentation for the Unauthority (UAT) blockchain — v1.0.6-testnet.
 |----------|-------------|
 | [ARCHITECTURE.md](ARCHITECTURE.md) | System design — crates, block-lattice, aBFT, crypto |
 | [API_REFERENCE.md](API_REFERENCE.md) | All 27 REST endpoints + 8 gRPC RPCs |
-| [CLI_REFERENCE.md](CLI_REFERENCE.md) | `uat-cli` command reference |
+| [CLI_REFERENCE.md](CLI_REFERENCE.md) | `los-cli` command reference |
 | [WHITEPAPER.md](WHITEPAPER.md) | Full technical whitepaper |
 
 ## Configuration Files
 
 | File | Purpose |
 |------|---------|
-| [`genesis_config.json`](../genesis_config.json) | Mainnet genesis allocation (21,936,236 UAT) |
+| [`genesis_config.json`](../genesis_config.json) | Mainnet genesis allocation (21,936,236 LOS) |
 | [`testnet-genesis/testnet_wallets.json`](../testnet-genesis/testnet_wallets.json) | Testnet wallets with BIP39 seeds |
 | [`validator.toml`](../validator.toml) | Validator node configuration template |
 | [`docker-compose.yml`](../docker-compose.yml) | 4-node Docker deployment |

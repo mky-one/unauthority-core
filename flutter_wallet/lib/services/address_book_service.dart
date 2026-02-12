@@ -6,11 +6,13 @@ import '../models/address_book_entry.dart';
 import '../utils/address_validator.dart';
 
 class AddressBookService {
-  static const String _storageKey = 'uat_address_book';
+  static const String _storageKey = 'los_address_book';
   final _uuid = const Uuid();
 
   // Load address book from storage
   Future<AddressBook> loadAddressBook() async {
+    debugPrint(
+        '📒 [AddressBookService.loadAddressBook] Loading address book...');
     try {
       final prefs = await SharedPreferences.getInstance();
       final jsonString = prefs.getString(_storageKey);
@@ -20,7 +22,10 @@ class AddressBookService {
       }
 
       final jsonData = json.decode(jsonString) as Map<String, dynamic>;
-      return AddressBook.fromJson(jsonData);
+      final addressBook = AddressBook.fromJson(jsonData);
+      debugPrint(
+          '📒 [AddressBookService.loadAddressBook] Loaded ${addressBook.entries.length} entries');
+      return addressBook;
     } catch (e) {
       debugPrint('Error loading address book: $e');
       return AddressBook.empty();
@@ -45,6 +50,7 @@ class AddressBookService {
     required String address,
     String? notes,
   }) async {
+    debugPrint('📒 [AddressBookService.addEntry] Adding contact: $name');
     // Validate address format
     final validationError = AddressValidator.getValidationError(address);
     if (validationError != null) {
@@ -77,6 +83,7 @@ class AddressBookService {
     final updatedBook = addressBook.addEntry(entry);
     await saveAddressBook(updatedBook);
 
+    debugPrint('📒 [AddressBookService.addEntry] Added contact: $name');
     return entry;
   }
 
@@ -87,6 +94,7 @@ class AddressBookService {
     String? address,
     String? notes,
   }) async {
+    debugPrint('📒 [AddressBookService.updateEntry] Updating entry: $entryId');
     final addressBook = await loadAddressBook();
     final existingEntry = addressBook.findById(entryId);
 
@@ -128,13 +136,16 @@ class AddressBookService {
     // Update and save
     final updatedBook = addressBook.updateEntry(updatedEntry);
     await saveAddressBook(updatedBook);
+    debugPrint('📒 [AddressBookService.updateEntry] Updated entry: $entryId');
   }
 
   // Delete entry
   Future<void> deleteEntry(String entryId) async {
+    debugPrint('📒 [AddressBookService.deleteEntry] Deleting entry: $entryId');
     final addressBook = await loadAddressBook();
     final updatedBook = addressBook.removeEntry(entryId);
     await saveAddressBook(updatedBook);
+    debugPrint('📒 [AddressBookService.deleteEntry] Deleted entry: $entryId');
   }
 
   // Get all entries
@@ -181,16 +192,24 @@ class AddressBookService {
 
   // Export address book as JSON string (for backup)
   Future<String> exportAsJson() async {
+    debugPrint(
+        '📒 [AddressBookService.exportAsJson] Exporting address book...');
     final addressBook = await loadAddressBook();
+    debugPrint(
+        '📒 [AddressBookService.exportAsJson] Exported ${addressBook.entries.length} entries');
     return json.encode(addressBook.toJson());
   }
 
   // Import address book from JSON string (for restore)
   Future<void> importFromJson(String jsonString) async {
+    debugPrint(
+        '📒 [AddressBookService.importFromJson] Importing address book from JSON...');
     try {
       final jsonData = json.decode(jsonString) as Map<String, dynamic>;
       final addressBook = AddressBook.fromJson(jsonData);
       await saveAddressBook(addressBook);
+      debugPrint(
+          '📒 [AddressBookService.importFromJson] Imported ${addressBook.entries.length} entries');
     } catch (e) {
       throw Exception('Invalid address book format: $e');
     }
@@ -198,6 +217,8 @@ class AddressBookService {
 
   // Clear all entries (with confirmation)
   Future<void> clearAll() async {
+    debugPrint('📒 [AddressBookService.clearAll] Clearing all entries...');
     await saveAddressBook(AddressBook.empty());
+    debugPrint('📒 [AddressBookService.clearAll] All entries cleared');
   }
 }

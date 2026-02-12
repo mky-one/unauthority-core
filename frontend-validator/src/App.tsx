@@ -92,12 +92,12 @@ function App() {
   ];
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-uat-dark via-slate-900 to-uat-gray">
+    <div className="min-h-screen bg-gradient-to-br from-los-dark via-slate-900 to-los-gray">
       {/* Header */}
-      <header className="bg-uat-gray/50 backdrop-blur border-b border-gray-700">
+      <header className="bg-los-gray/50 backdrop-blur border-b border-gray-700">
         <div className="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
           <div className="flex items-center space-x-3">
-            <div className="w-10 h-10 bg-gradient-to-br from-uat-blue to-uat-cyan rounded-lg flex items-center justify-center">
+            <div className="w-10 h-10 bg-gradient-to-br from-los-blue to-los-cyan rounded-lg flex items-center justify-center">
               <span className="text-white font-bold text-lg">U</span>
             </div>
             <div>
@@ -121,7 +121,7 @@ function App() {
             <button
               onClick={() => setSendModalOpen(true)}
               disabled={!ownAddress}
-              className="flex items-center space-x-2 bg-gradient-to-r from-uat-blue to-uat-cyan hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed text-white font-medium px-4 py-2 rounded-lg transition-opacity"
+              className="flex items-center space-x-2 bg-gradient-to-r from-los-blue to-los-cyan hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed text-white font-medium px-4 py-2 rounded-lg transition-opacity"
             >
               <Send className="w-4 h-4" />
               <span>Send</span>
@@ -156,7 +156,7 @@ function App() {
                 onClick={() => setActiveTab(tab.id)}
                 className={`flex items-center space-x-2 px-4 py-3 transition-colors ${
                   activeTab === tab.id
-                    ? 'border-b-2 border-uat-blue text-uat-blue'
+                    ? 'border-b-2 border-los-blue text-los-blue'
                     : 'text-gray-400 hover:text-gray-200'
                 }`}
               >

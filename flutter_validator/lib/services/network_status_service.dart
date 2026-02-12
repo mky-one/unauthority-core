@@ -1,4 +1,6 @@
-// Network Status Service - Monitors blockchain connection and sync status
+// Network Status Service - Monitors blockchain connection and sync status.
+// Wired to ApiService: when health degrades, proactively triggers failover
+// so the next user request goes to a healthy node.
 import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'api_service.dart';
@@ -21,11 +23,22 @@ class NetworkStatusService extends ChangeNotifier {
   DateTime? _lastSyncTime;
   String? _errorMessage;
   bool _hasConnectedOnce = false;
+  String _connectedNodeName = '';
+
+  /// Count of consecutive health check failures. Used to trigger proactive failover.
+  int _consecutiveHealthFailures = 0;
+
+  /// Threshold: after this many consecutive failures, trigger proactive failover.
+  static const int _failoverThreshold = 2;
 
   Timer? _statusCheckTimer;
 
   NetworkStatusService(this._apiService) {
     debugPrint('🔌 [NetworkStatus] Service created, starting status checks...');
+    _apiService.onNodeSwitched = (newUrl) {
+      _connectedNodeName = _apiService.connectedNodeName;
+      notifyListeners();
+    };
     _startStatusChecking();
   }
 
@@ -37,6 +50,7 @@ class NetworkStatusService extends ChangeNotifier {
   String get nodeVersion => _nodeVersion;
   DateTime? get lastSyncTime => _lastSyncTime;
   String? get errorMessage => _errorMessage;
+  String get connectedNodeName => _connectedNodeName;
 
   bool get isConnected => _status == ConnectionStatus.connected;
   bool get isDisconnected => _status == ConnectionStatus.disconnected;
@@ -57,10 +71,8 @@ class NetworkStatusService extends ChangeNotifier {
   }
 
   void _startStatusChecking() {
-    // Check immediately
     _checkNetworkStatus();
 
-    // Then check every 15 seconds
     _statusCheckTimer = Timer.periodic(
       const Duration(seconds: 15),
       (_) => _checkNetworkStatus(),
@@ -70,7 +82,6 @@ class NetworkStatusService extends ChangeNotifier {
   Future<void> _checkNetworkStatus() async {
     final previousStatus = _status;
     try {
-      // Only show 'connecting' on initial connection, not periodic re-checks
       if (!_hasConnectedOnce) {
         _status = ConnectionStatus.connecting;
         notifyListeners();
@@ -78,7 +89,6 @@ class NetworkStatusService extends ChangeNotifier {
 
       debugPrint('🔌 [NetworkStatus] Checking health...');
 
-      // Check health endpoint
       final health = await _apiService.getHealth();
       debugPrint('🔌 [NetworkStatus] Health response: ${health['status']}');
 
@@ -87,28 +97,30 @@ class NetworkStatusService extends ChangeNotifier {
         _hasConnectedOnce = true;
         _errorMessage = null;
         _lastSyncTime = DateTime.now();
+        _consecutiveHealthFailures = 0;
+        _connectedNodeName = _apiService.connectedNodeName;
 
-        // Extract network info
         if (health['chain'] != null) {
           _blockHeight = health['chain']['blocks'] ?? 0;
         }
 
-        // Get node info for more details
         try {
           final nodeInfo = await _apiService.getNodeInfo();
           _networkType = _extractNetworkType(nodeInfo['chain_id'] ?? 'unknown');
           _nodeVersion = nodeInfo['version'] ?? '0.0.0';
           _peerCount = nodeInfo['peer_count'] ?? 0;
           _blockHeight = nodeInfo['block_height'] ?? _blockHeight;
-          debugPrint('🔌 [NetworkStatus] Connected: v$_nodeVersion, '
-              'height=$_blockHeight, peers=$_peerCount, net=$_networkType');
+          debugPrint('🔌 [NetworkStatus] Connected to $_connectedNodeName: '
+              'v$_nodeVersion, height=$_blockHeight, peers=$_peerCount, net=$_networkType');
         } catch (e) {
           debugPrint('⚠️ [NetworkStatus] Node info failed: $e');
         }
       } else {
         _status = ConnectionStatus.error;
         _errorMessage = 'Node unhealthy';
+        _consecutiveHealthFailures++;
         debugPrint('🔌 [NetworkStatus] Node unhealthy: ${health['status']}');
+        _maybeFailover();
       }
 
       if (_status != previousStatus || !_hasConnectedOnce) {
@@ -117,10 +129,23 @@ class NetworkStatusService extends ChangeNotifier {
     } catch (e) {
       _status = ConnectionStatus.disconnected;
       _errorMessage = 'Connection failed';
+      _consecutiveHealthFailures++;
       debugPrint('🔌 [NetworkStatus] Connection failed: $e');
+
+      _maybeFailover();
+
       if (_status != previousStatus) {
         notifyListeners();
       }
+    }
+  }
+
+  void _maybeFailover() {
+    if (_consecutiveHealthFailures >= _failoverThreshold) {
+      debugPrint('🔌 [NetworkStatus] $_consecutiveHealthFailures consecutive '
+          'failures — triggering proactive failover');
+      _apiService.onHealthDegraded();
+      _consecutiveHealthFailures = 0;
     }
   }
 
@@ -134,7 +159,6 @@ class NetworkStatusService extends ChangeNotifier {
     }
   }
 
-  /// Manually trigger a status check
   Future<void> refresh() async {
     _hasConnectedOnce = false;
     await _checkNetworkStatus();

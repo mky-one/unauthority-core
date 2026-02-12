@@ -1,24 +1,24 @@
-// Address Validation Utilities for UAT Blockchain
+// Address Validation Utilities for LOS Blockchain
 //
-// UAT address formats:
-// - Testnet L1 (current): "UAT" + hex(SHA256(seed)[:20]) = 43 chars
-// - Mainnet (future): "UAT" + Base58(version_byte + BLAKE2b160(dilithium5_pubkey) + checksum)
+// LOS address formats:
+// - Testnet L1 (current): "LOS" + hex(SHA256(seed)[:20]) = 43 chars
+// - Mainnet (future): "LOS" + Base58(version_byte + BLAKE2b160(dilithium5_pubkey) + checksum)
 //
 // This validator accepts both formats for forward compatibility.
 
 import '../constants/blockchain.dart';
 
 class AddressValidator {
-  static const String _prefix = BlockchainConstants.addressPrefix; // "UAT"
+  static const String _prefix = BlockchainConstants.addressPrefix; // "LOS"
 
-  // Testnet L1: UAT + 40 hex chars = 43 total
+  // Testnet L1: LOS + 40 hex chars = 43 total
   static const int testnetLength = 43;
 
-  // Mainnet: UAT + Base58(1 + 20 + 4 bytes) ≈ 37-55 chars
+  // Mainnet: LOS + Base58(1 + 20 + 4 bytes) ≈ 37-55 chars
   static const int _minLength = 37;
   static const int _maxLength = 55;
 
-  /// Validate UAT address format
+  /// Validate LOS address format
   static bool isValidAddress(String address) {
     return getValidationError(address) == null;
   }
@@ -41,7 +41,7 @@ class AddressValidator {
       return 'Address too long (maximum $_maxLength characters)';
     }
 
-    // Extract address body (after "UAT" prefix)
+    // Extract address body (after "LOS" prefix)
     final body = address.substring(_prefix.length);
 
     // Check if it's testnet hex format (40 hex chars)

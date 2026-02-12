@@ -1,6 +1,6 @@
 # API Reference
 
-Complete reference for the UAT node REST API and gRPC service.
+Complete reference for the LOS node REST API and gRPC service.
 
 **Version:** v1.0.6-testnet  
 **Default REST port:** 3030  
@@ -48,10 +48,10 @@ Node metadata.
   "chain_id": "uat-testnet",
   "version": "1.0.6",
   "total_supply": 21936236,
-  "circulating_supply": 1535536,
+  "circulating_supply": 677823,
   "burned_supply": 0,
   "validators": [
-    { "address": "UAT...", "stake": 1000, "active": true }
+    { "address": "LOS...", "stake": 1000, "active": true }
   ],
   "peers": 3,
   "estimated_finality_ms": 3000
@@ -63,7 +63,7 @@ Node metadata.
 Returns this node's signing address.
 
 ```json
-{ "address": "UATBwXk9..." }
+{ "address": "LOSBwXk9..." }
 ```
 
 #### `GET /metrics`
@@ -80,9 +80,9 @@ Account balance.
 
 ```json
 {
-  "address": "UAT...",
-  "balance_void": 100000000000000,
-  "balance_uat": 1000
+  "address": "LOS...",
+  "balance_cil": 100000000000000,
+  "balance_los": 1000
 }
 ```
 
@@ -96,9 +96,9 @@ Account details with recent transaction history.
 
 ```json
 {
-  "address": "UAT...",
-  "balance_void": 100000000000000,
-  "balance_uat": 1000,
+  "address": "LOS...",
+  "balance_cil": 100000000000000,
+  "balance_los": 1000,
   "block_count": 5,
   "history": [ ... ]
 }
@@ -116,8 +116,8 @@ Submit a signed transaction. Accepts client-signed blocks or node-signed (dev mo
 
 ```json
 {
-  "from": "UAT...",
-  "to": "UAT...",
+  "from": "LOS...",
+  "to": "LOS...",
   "amount": 100,
   "previous": "abc123...",
   "signature": "hex...",
@@ -130,7 +130,7 @@ Submit a signed transaction. Accepts client-signed blocks or node-signed (dev mo
 
 ```json
 {
-  "to": "UAT...",
+  "to": "LOS...",
   "amount": 100
 }
 ```
@@ -156,7 +156,7 @@ Full transaction history for an address.
     "hash": "abc...",
     "amount": 100,
     "timestamp": 1770580908,
-    "link": "UAT..."
+    "link": "LOS..."
   }
 ]
 ```
@@ -195,11 +195,11 @@ Supply statistics.
 
 ```json
 {
-  "total_supply_uat": 21936236,
-  "total_supply_void": 2193623600000000000,
-  "circulating_supply_uat": 1535536,
+  "total_supply_los": 21936236,
+  "total_supply_cil": 2193623600000000000,
+  "circulating_supply_uat": 677823,
   "burned_supply_uat": 0,
-  "public_supply_remaining_uat": 20400700
+  "public_supply_remaining_los": 21258413
 }
 ```
 
@@ -209,7 +209,7 @@ Supply statistics.
 
 #### `POST /burn`
 
-Submit a Proof-of-Burn mint request. Burns ETH or BTC and mints proportional UAT.
+Submit a Proof-of-Burn mint request. Burns ETH or BTC and mints proportional LOS.
 
 **Request body:**
 
@@ -219,7 +219,7 @@ Submit a Proof-of-Burn mint request. Burns ETH or BTC and mints proportional UAT
   "burn_chain": "ETH",
   "burn_address": "0x000000000000000000000000000000000000dead",
   "burn_amount": "1.0",
-  "recipient": "UAT..."
+  "recipient": "LOS..."
 }
 ```
 
@@ -248,7 +248,7 @@ Claim testnet tokens.
 
 ```json
 {
-  "address": "UAT..."
+  "address": "LOS..."
 }
 ```
 
@@ -258,7 +258,7 @@ Claim testnet tokens.
 {
   "status": "ok",
   "amount": 5000,
-  "message": "5000 UAT sent to UAT..."
+  "message": "5000 LOS sent to LOS..."
 }
 ```
 
@@ -276,7 +276,7 @@ List bootstrap validators from genesis.
 {
   "validators": [
     {
-      "address": "UAT...",
+      "address": "LOS...",
       "stake": 1000,
       "active": true,
       "voting_power": 316227
@@ -285,7 +285,7 @@ List bootstrap validators from genesis.
 }
 ```
 
-Voting power = √(stake_in_void), demonstrating quadratic voting.
+Voting power = √(stake_in_cil), demonstrating quadratic voting.
 
 ---
 
@@ -323,32 +323,32 @@ Validator reward pool status, current epoch, and per-validator reward details.
 
 ```json
 {
-  "pool_remaining_void": 219362360000000000,
-  "pool_remaining_uat": "2193623.60000000000",
-  "total_distributed_void": 0,
+  "pool_remaining_cil": 219362360000000000,
+  "pool_remaining_los": "2193623.60000000000",
+  "total_distributed_cil": 0,
   "current_epoch": 0,
   "epoch_start": 1770580908,
   "epoch_duration_secs": 86400,
   "epoch_remaining_secs": 43200,
-  "current_rate_void_per_epoch": 5000000000000,
-  "current_rate_uat_per_epoch": "50.00000000000",
+  "current_rate_cil_per_epoch": 5000000000000,
+  "current_rate_los_per_epoch": "50.00000000000",
   "halving_interval_epochs": 365,
   "validators": [
     {
-      "address": "UAT...",
+      "address": "LOS...",
       "heartbeats": 720,
       "expected_heartbeats": 1440,
       "uptime_pct": 50.0,
       "qualified": false,
       "sqrt_stake": 316227766016,
       "is_genesis": true,
-      "cumulative_reward_void": 0
+      "cumulative_reward_cil": 0
     }
   ],
   "config": {
-    "pool_total_void": 219362360000000000,
+    "pool_total_cil": 219362360000000000,
     "epoch_secs": 86400,
-    "initial_rate_void": 5000000000000,
+    "initial_rate_cil": 5000000000000,
     "halving_interval_epochs": 365,
     "min_uptime_pct": 95,
     "probation_epochs": 3
@@ -364,8 +364,8 @@ Dynamic fee estimate based on current network activity and anti-whale parameters
 
 ```json
 {
-  "base_fee_void": 100000,
-  "recommended_fee_void": 100000,
+  "base_fee_cil": 100000,
+  "recommended_fee_cil": 100000,
   "spam_multiplier": 1,
   "network_load": "low"
 }
@@ -386,7 +386,7 @@ Deploy a WASM smart contract.
 ```json
 {
   "bytecode": "<base64-encoded WASM>",
-  "deployer": "UAT..."
+  "deployer": "LOS..."
 }
 ```
 
@@ -404,7 +404,7 @@ Execute a contract function.
 {
   "contract_address": "abc123...",
   "function": "transfer",
-  "args": ["UAT...", "1000"]
+  "args": ["LOS...", "1000"]
 }
 ```
 
@@ -449,13 +449,13 @@ Rate limited to prevent abuse.
 
 The node also exposes a gRPC service on port `REST_PORT + 20000` (default: 23030).
 
-**Proto file:** `uat.proto`
+**Proto file:** `los.proto`
 
 ### Service: `UatNode`
 
 | RPC | Request | Response | Description |
 |-----|---------|----------|-------------|
-| `GetBalance` | `address` | `balance_void`, `balance_uat` | Account balance |
+| `GetBalance` | `address` | `balance_cil`, `balance_los` | Account balance |
 | `GetAccount` | `address` | Account details | Full account info |
 | `GetBlock` | `hash` | Block | Block by hash |
 | `GetLatestBlock` | — | Block | Most recent block |
@@ -481,7 +481,7 @@ curl --socks5-hostname 127.0.0.1:9052 \
 
 # Balance check
 curl --socks5-hostname 127.0.0.1:9052 \
-  http://ll22j45prmu3oymratallztx74peen4gsxudzbgf5qvybezobitvywyd.onion/bal/UATYourAddress
+  http://ll22j45prmu3oymratallztx74peen4gsxudzbgf5qvybezobitvywyd.onion/bal/LOSYourAddress
 ```
 
 Tor SOCKS5 ports: `9052` (setup_tor_testnet.sh), `9150` (Tor Browser), `9050` (system Tor).

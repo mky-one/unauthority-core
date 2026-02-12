@@ -1,5 +1,5 @@
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# UNAUTHORITY (UAT) - VALIDATOR CONFIGURATION v1.0
+# UNAUTHORITY (LOS) - VALIDATOR CONFIGURATION v1.0
 # Sentry Node Architecture: Public Shield + Private Validator Separation
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
@@ -8,21 +8,21 @@
 node_id = "validator-1"
 
 # Wallet Address (from Genesis Bootstrap)
-# ⚠️ CRITICAL: Set via environment variable UAT_VALIDATOR_ADDRESS per node
+# ⚠️ CRITICAL: Set via environment variable LOS_VALIDATOR_ADDRESS per node
 # Each validator MUST have unique address from genesis_config.json bootstrap_nodes array
 # Validator-1 → bootstrap_nodes[0]
 # Validator-2 → bootstrap_nodes[1]
 # Validator-3 → bootstrap_nodes[2]
 # Validator-4 → bootstrap_nodes[3]
-address = "${UAT_VALIDATOR_ADDRESS:-UAT3ea85825b3e13862274365118cafed2939fa8947}"
+address = "${LOS_VALIDATOR_ADDRESS:-LOS3ea85825b3e13862274365118cafed2939fa8947}"
 
 # Private Key Path (stored securely in cold storage)
 # ⚠️ CRITICAL: Never commit this file with actual private key to git!
-# Use environment variables instead: export UAT_VALIDATOR_PRIVKEY_PATH=/path/to/key
-private_key_path = "${UAT_VALIDATOR_PRIVKEY_PATH}"
+# Use environment variables instead: export LOS_VALIDATOR_PRIVKEY_PATH=/path/to/key
+private_key_path = "${LOS_VALIDATOR_PRIVKEY_PATH}"
 
-# Initial Stake (minimum 1000 UAT = 100,000,000,000,000 VOID)
-stake_void = 100000000000000  # 1000 UAT
+# Initial Stake (minimum 1000 LOS = 100,000,000,000,000 CIL)
+stake_cil = 100000000000000  # 1000 LOS
 
 # Enable automatic reward claiming
 auto_claim_rewards = true
@@ -38,17 +38,17 @@ downtime_slash = 1              # 1% loss per epoch
 [sentry_public]
 # Public facing address (internet-accessible, exposed to P2P network)
 listen_addr = "0.0.0.0"
-# ⚠️ Set per validator via UAT_SENTRY_PORT env var
+# ⚠️ Set per validator via LOS_SENTRY_PORT env var
 # Validator-1 → 30333
 # Validator-2 → 30334
 # Validator-3 → 30335
 # Validator-4 → 30336
-listen_port = ${UAT_SENTRY_PORT:-30333}
+listen_port = ${LOS_SENTRY_PORT:-30333}
 
 # Public IP/DNS that peers use to connect
 # Can be a domain name or static IP
 external_addr = "validator-node-1.ua1.network"
-external_port = ${UAT_SENTRY_PORT:-30333}
+external_port = ${LOS_SENTRY_PORT:-30333}
 
 # Maximum connections from external peers
 max_inbound_connections = 64
@@ -67,12 +67,12 @@ ban_duration_minutes = 10
 # Private connection to Signer Node (NOT exposed to internet)
 # Typically runs on localhost or private VPN/Wireguard network
 listen_addr = "127.0.0.1"
-# ⚠️ Set per validator via UAT_SIGNER_PORT env var
+# ⚠️ Set per validator via LOS_SIGNER_PORT env var
 # Validator-1 → 30331
 # Validator-2 → 30332
 # Validator-3 → 30333
 # Validator-4 → 30334
-listen_port = ${UAT_SIGNER_PORT:-30331}
+listen_port = ${LOS_SIGNER_PORT:-30331}
 
 # Must be VPN/encrypted tunnel (Noise Protocol Framework)
 encryption_enabled = true
@@ -80,10 +80,10 @@ encryption_type = "noise_protocol"
 
 # Signer node connection (internal, not public)
 # Use private IP, localhost, or Wireguard IP
-signer_endpoint = "127.0.0.1:${UAT_SIGNER_PORT:-30331}"
+signer_endpoint = "127.0.0.1:${LOS_SIGNER_PORT:-30331}"
 
 # Authentication: both nodes must share pre-shared key
-psk_file_path = "/etc/uat-validator/signer.psk"
+psk_file_path = "/etc/los-validator/signer.psk"
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # NETWORK CONFIGURATION
@@ -136,7 +136,7 @@ vote_timeout_seconds = 5
 
 [gas]
 # Base gas price (in VOI - smallest unit)
-base_price_void = 1000
+base_price_cil = 1000
 
 # Maximum gas per transaction
 max_gas_per_tx = 10000000
@@ -201,7 +201,7 @@ metrics_path = "/metrics"
 #
 # 1. PRIVATE KEY SECURITY:
 #    - NEVER commit private key to Git
-#    - Use environment variable: export UAT_VALIDATOR_PRIVKEY_PATH=/path/to/key
+#    - Use environment variable: export LOS_VALIDATOR_PRIVKEY_PATH=/path/to/key
 #    - Store key in cold storage / HSM (Hardware Security Module)
 #    - Restrict file permissions: chmod 600
 #
@@ -212,7 +212,7 @@ metrics_path = "/metrics"
 #    - Use Noise Protocol Framework for all P2P encryption
 #
 # 3. PRE-SHARED KEY (PSK):
-#    - Generate: openssl rand -hex 32 > /etc/uat-validator/signer.psk
+#    - Generate: openssl rand -hex 32 > /etc/los-validator/signer.psk
 #    - Share securely with signer node
 #    - Rotate periodically
 #    - Restrict permissions: chmod 600

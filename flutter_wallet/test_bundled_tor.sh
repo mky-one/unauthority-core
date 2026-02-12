@@ -5,7 +5,7 @@
 set -e
 
 echo "╔════════════════════════════════════════════════════════════╗"
-echo "║          UAT WALLET - BUNDLED TOR TEST                     ║"
+echo "║          LOS WALLET - BUNDLED TOR TEST                     ║"
 echo "╚════════════════════════════════════════════════════════════╝"
 echo ""
 
@@ -97,7 +97,7 @@ echo "5️⃣  Testing .onion connectivity via bundled Tor..."
 if curl -x socks5h://localhost:9250 \
     http://ll22j45prmu3oymratallztx74peen4gsxudzbgf5qvybezobitvywyd.onion/health \
     --max-time 30 -s | grep -q "healthy"; then
-    echo "   ✅ Successfully connected to UAT testnet via bundled Tor!"
+    echo "   ✅ Successfully connected to LOS testnet via bundled Tor!"
 else
     echo "   ❌ Failed to connect to testnet"
     kill $TOR_PID 2>/dev/null || true

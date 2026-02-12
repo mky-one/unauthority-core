@@ -8,7 +8,7 @@ import nacl from 'tweetnacl';
 import { sha256 } from 'js-sha256';
 import base58 from 'base-x';
 
-const UAT_PREFIX = 'UAT';
+const LOS_PREFIX = 'LOS';
 const BS58 = base58('123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz');
 
 export interface Wallet {
@@ -75,8 +75,8 @@ function deriveFromSeed(seedPhrase: string): { publicKey: Uint8Array; secretKey:
 }
 
 /**
- * Create UAT address from public key
- * Format: "UAT" + Base58(version_byte + pubkey_hash + checksum)
+ * Create LOS address from public key
+ * Format: "LOS" + Base58(version_byte + pubkey_hash + checksum)
  * version_byte = 0x00
  * pubkey_hash = SHA256(public_key)
  * checksum = first_4_bytes(SHA256(SHA256(version + hash)))
@@ -88,7 +88,7 @@ function createAddress(publicKey: Uint8Array): string {
 
   // Create version + hash payload
   const withVersion = Buffer.alloc(hashBytes.length + 1);
-  withVersion[0] = 0x00; // Version byte for UAT
+  withVersion[0] = 0x00; // Version byte for LOS
   hashBytes.copy(withVersion, 1);
 
   // Compute checksum: SHA256(SHA256(version + hash))
@@ -99,9 +99,9 @@ function createAddress(publicKey: Uint8Array): string {
   // Combine: version + hash + checksum
   const fullAddress = Buffer.concat([withVersion, checksumBytes]);
 
-  // Base58 encode and add UAT prefix
+  // Base58 encode and add LOS prefix
   const base58Address = BS58.encode(fullAddress);
-  return UAT_PREFIX + base58Address;
+  return LOS_PREFIX + base58Address;
 }
 
 /**
@@ -182,31 +182,31 @@ export function importFromPrivateKey(privateKeyHex: string): Wallet {
 }
 
 /**
- * Format balance from VOI to UAT
- * 1 UAT = 100,000,000 VOI (same as Bitcoin satoshi model)
+ * Format balance from CIL to LOS
+ * 1 LOS = 100,000,000 CIL (same as Bitcoin satoshi model)
  */
-export function formatBalance(voidBalance: number): string {
-  const uat = voidBalance / 100_000_000;
-  return uat.toFixed(8).replace(/\.?0+$/, '');
+export function formatBalance(cilBalance: number): string {
+  const los = cilBalance / 100_000_000;
+  return los.toFixed(8).replace(/\.?0+$/, '');
 }
 
 /**
- * Convert UAT to VOI for API calls
+ * Convert LOS to CIL for API calls
  */
-export function uatToVoid(uat: number): number {
-  return Math.floor(uat * 100_000_000);
+export function losToCil(los: number): number {
+  return Math.floor(los * 100_000_000);
 }
 
 /**
- * Validate UAT address format
- * Must start with "UAT" and contain valid Base58 characters
+ * Validate LOS address format
+ * Must start with "LOS" and contain valid Base58 characters
  */
-export function isValidUATAddress(address: string): boolean {
-  if (!address.startsWith(UAT_PREFIX)) return false;
+export function isValidLOSAddress(address: string): boolean {
+  if (!address.startsWith(LOS_PREFIX)) return false;
   if (address.length < 20 || address.length > 100) return false;
 
   try {
-    const base58Part = address.slice(UAT_PREFIX.length);
+    const base58Part = address.slice(LOS_PREFIX.length);
     BS58.decode(base58Part);
     return true;
   } catch {

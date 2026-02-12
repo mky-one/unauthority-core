@@ -13,10 +13,10 @@ import 'package:shared_preferences/shared_preferences.dart';
 ///   2. App connects to a node → discoverPeers(apiResponse) → merge new peers
 ///   3. On next startup → saved peers tried BEFORE bootstrap nodes
 ///
-/// This is the UAT equivalent of Bitcoin's "peers.dat" — once you've
+/// This is the LOS equivalent of Bitcoin's "peers.dat" — once you've
 /// connected to the network once, you can find it again without bootstrap.
 class PeerDiscoveryService {
-  static const String _storageKey = 'uat_discovered_peers_v1';
+  static const String _storageKey = 'los_discovered_peers_v1';
   static const int _maxSavedPeers = 200;
 
   /// Load previously discovered validator endpoints from local storage.
@@ -52,7 +52,7 @@ class PeerDiscoveryService {
   /// Called after a successful GET /network/peers response.
   ///
   /// [endpoints] should be the "endpoints" array from the API response:
-  /// [{"address": "UAT...", "onion_address": "xyz.onion", "stake_uat": 1000, "reachable": true}, ...]
+  /// [{"address": "LOS...", "onion_address": "xyz.onion", "stake_los": 1000, "reachable": true}, ...]
   static Future<void> savePeers(List<Map<String, dynamic>> endpoints) async {
     try {
       if (endpoints.isEmpty) return;
@@ -76,7 +76,7 @@ class PeerDiscoveryService {
           merged[onion] = {
             'address': p['address'],
             'onion_address': onion,
-            'stake_uat': p['stake_uat'] ?? 0,
+            'stake_los': p['stake_los'] ?? 0,
             'last_seen': DateTime.now().millisecondsSinceEpoch,
           };
         }

@@ -31,7 +31,7 @@ export interface NodeInfo {
 export interface BurnRequest {
   coin_type: 'btc' | 'eth';
   txid: string;
-  recipient_address?: string; // Optional: address to receive minted UAT
+  recipient_address?: string; // Optional: address to receive minted LOS
 }
 
 export interface BurnResponse {
@@ -66,8 +66,8 @@ export interface Transaction {
 export async function getBalance(address: string): Promise<number> {
   try {
     const response = await api.get(`/balance/${address}`);
-    // Use balance_uat field (UAT) instead of balance (VOI)
-    return response.data.balance_uat || response.data.balance || 0;
+    // Use balance_los field (LOS) instead of balance (CIL)
+    return response.data.balance_los || response.data.balance || 0;
   } catch (error) {
     console.error('Failed to fetch balance:', error);
     return 0;
@@ -103,7 +103,7 @@ export async function submitBurn(request: BurnRequest): Promise<BurnResponse> {
 }
 
 /**
- * Send UAT to another address
+ * Send LOS to another address
  */
 export async function sendTransaction(request: SendRequest): Promise<any> {
   try {

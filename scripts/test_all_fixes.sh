@@ -71,10 +71,10 @@ fi
 
 # Test 4: Burn to User Wallet (CRITICAL FIX)
 echo ""
-echo -e "${YELLOW}[TEST 4]${NC} Burn Recipient Fix - UAT Mints to User Wallet"
+echo -e "${YELLOW}[TEST 4]${NC} Burn Recipient Fix - LOS Mints to User Wallet"
 echo "Testing burn transaction with recipient_address..."
 
-USER_WALLET="UATTest_User_Wallet_$(date +%s)"
+USER_WALLET="LOSTest_User_Wallet_$(date +%s)"
 BURN_TXID="deadbeef0123456789abcdef0123456789abcdef0123456789abcdef01234567"  # Must be 64 hex chars
 
 echo "  User Wallet: $USER_WALLET"
@@ -89,9 +89,9 @@ echo "  Response: $BURN_RESPONSE"
 if echo "$BURN_RESPONSE" | grep -q '"status":"success"'; then
     echo -e "${GREEN}✓${NC} Burn transaction succeeded"
     
-    # Extract minted UAT amount
-    UAT_MINTED=$(echo "$BURN_RESPONSE" | grep -o '"uat_minted":[0-9]*' | cut -d':' -f2)
-    echo "  UAT Minted: $UAT_MINTED"
+    # Extract minted LOS amount
+    LOS_MINTED=$(echo "$BURN_RESPONSE" | grep -o '"los_minted":[0-9]*' | cut -d':' -f2)
+    echo "  LOS Minted: $LOS_MINTED"
     
     # Verify recipient field matches user wallet
     RECIPIENT=$(echo "$BURN_RESPONSE" | grep -o '"recipient":"[^"]*"' | cut -d'"' -f4)
@@ -108,7 +108,7 @@ fi
 
 # Test 5: Verify Balance in User Wallet (NOT Validator)
 echo ""
-echo -e "${YELLOW}[TEST 5]${NC} Balance Verification - UAT in User Wallet"
+echo -e "${YELLOW}[TEST 5]${NC} Balance Verification - LOS in User Wallet"
 echo "Checking balance of user wallet..."
 
 sleep 1  # Allow state to settle
@@ -116,14 +116,14 @@ sleep 1  # Allow state to settle
 BALANCE_RESPONSE=$(curl -s http://localhost:3030/balance/$USER_WALLET)
 echo "  Response: $BALANCE_RESPONSE"
 
-if echo "$BALANCE_RESPONSE" | grep -q '"balance_uat":'; then
-    BALANCE=$(echo "$BALANCE_RESPONSE" | grep -o '"balance_uat":[0-9]*' | cut -d':' -f2)
-    echo "  User Balance: $BALANCE UAT"
+if echo "$BALANCE_RESPONSE" | grep -q '"balance_los":'; then
+    BALANCE=$(echo "$BALANCE_RESPONSE" | grep -o '"balance_los":[0-9]*' | cut -d':' -f2)
+    echo "  User Balance: $BALANCE LOS"
     
     if [ "$BALANCE" -gt 0 ]; then
-        echo -e "${GREEN}✓${NC} UAT successfully minted to USER wallet (not validator)"
+        echo -e "${GREEN}✓${NC} LOS successfully minted to USER wallet (not validator)"
     else
-        echo -e "${RED}✗${NC} Balance is 0, UAT not minted correctly"
+        echo -e "${RED}✗${NC} Balance is 0, LOS not minted correctly"
         exit 1
     fi
 else
@@ -131,10 +131,10 @@ else
     exit 1
 fi
 
-# Test 6: Verify Validator Wallet Does NOT Receive User's UAT
+# Test 6: Verify Validator Wallet Does NOT Receive User's LOS
 echo ""
 echo -e "${YELLOW}[TEST 6]${NC} Validator Wallet Isolation"
-echo "Verifying validator did NOT receive user's burned UAT..."
+echo "Verifying validator did NOT receive user's burned LOS..."
 
 # Get validator address from node info
 VALIDATOR_ADDR=$(curl -s http://localhost:3030/node-info | grep -o '"chain_id":"[^"]*"' | head -1)
@@ -144,10 +144,10 @@ echo -e "${GREEN}✓${NC} User balance isolated from validator (confirmed by Tes
 
 # Test 7: Faucet Endpoint (DEV_MODE)
 echo ""
-echo -e "${YELLOW}[TEST 7]${NC} Faucet Endpoint - Free 100k UAT"
+echo -e "${YELLOW}[TEST 7]${NC} Faucet Endpoint - Free 100k LOS"
 echo "Testing faucet claim..."
 
-FAUCET_WALLET="UATFaucet_Test_$(date +%s)"
+FAUCET_WALLET="LOSFaucet_Test_$(date +%s)"
 FAUCET_RESPONSE=$(curl -s -X POST http://localhost:3030/faucet \
   -H 'Content-Type: application/json' \
   -d "{\"address\":\"$FAUCET_WALLET\"}")
@@ -156,10 +156,10 @@ echo "  Response: $FAUCET_RESPONSE"
 
 if echo "$FAUCET_RESPONSE" | grep -q '"status":"success"'; then
     FAUCET_AMOUNT=$(echo "$FAUCET_RESPONSE" | grep -o '"amount":[0-9]*' | cut -d':' -f2)
-    echo -e "${GREEN}✓${NC} Faucet claim succeeded (Amount: $FAUCET_AMOUNT UAT)"
+    echo -e "${GREEN}✓${NC} Faucet claim succeeded (Amount: $FAUCET_AMOUNT LOS)"
     
     if [ "$FAUCET_AMOUNT" -eq 100000 ]; then
-        echo -e "${GREEN}✓${NC} Correct faucet amount (100,000 UAT)"
+        echo -e "${GREEN}✓${NC} Correct faucet amount (100,000 LOS)"
     else
         echo -e "${RED}✗${NC} Incorrect faucet amount. Expected: 100000, Got: $FAUCET_AMOUNT"
     fi
@@ -173,7 +173,7 @@ echo ""
 echo -e "${YELLOW}[TEST 8]${NC} Send Transaction Test"
 echo "Testing send functionality..."
 
-RECIPIENT="UATRecipient_$(date +%s)"
+RECIPIENT="LOSRecipient_$(date +%s)"
 SEND_RESPONSE=$(curl -s -X POST http://localhost:3030/send \
   -H 'Content-Type: application/json' \
   -d "{\"target\":\"$RECIPIENT\",\"amount\":1000}")
@@ -195,9 +195,9 @@ SUPPLY_A=$(curl -s http://localhost:3030/node-info | grep -o '"total_supply":[0-
 SUPPLY_B=$(curl -s http://localhost:3031/node-info | grep -o '"total_supply":[0-9]*' | cut -d':' -f2)
 SUPPLY_C=$(curl -s http://localhost:3032/node-info | grep -o '"total_supply":[0-9]*' | cut -d':' -f2)
 
-echo "  Node A: $SUPPLY_A UAT"
-echo "  Node B: $SUPPLY_B UAT"
-echo "  Node C: $SUPPLY_C UAT"
+echo "  Node A: $SUPPLY_A LOS"
+echo "  Node B: $SUPPLY_B LOS"
+echo "  Node C: $SUPPLY_C LOS"
 
 if [ "$SUPPLY_A" == "$SUPPLY_B" ] && [ "$SUPPLY_B" == "$SUPPLY_C" ]; then
     echo -e "${GREEN}✓${NC} All nodes show consistent state"
@@ -232,10 +232,10 @@ echo "Summary:"
 echo "  ✓ Multi-node database isolation working"
 echo "  ✓ Dynamic gRPC ports (REST+20000)"
 echo "  ✓ All 3 nodes online and synchronized"
-echo "  ✓ Burn UAT mints to USER wallet (not validator) 🎯"
+echo "  ✓ Burn LOS mints to USER wallet (not validator) 🎯"
 echo "  ✓ Balance verification successful"
 echo "  ✓ Validator wallet isolated"
-echo "  ✓ Faucet endpoint working (100k UAT)"
+echo "  ✓ Faucet endpoint working (100k LOS)"
 echo "  ✓ State consistency across nodes"
 echo "  ✓ Rate limiting active"
 echo ""
@@ -248,5 +248,5 @@ echo "  3. Community testing (1 week)"
 echo "  4. Mainnet launch (Week 2)"
 echo ""
 echo "View logs: tail -f node_a.log node_b.log node_c.log"
-echo "Stop nodes: pkill -9 uat-node"
+echo "Stop nodes: pkill -9 los-node"
 echo ""

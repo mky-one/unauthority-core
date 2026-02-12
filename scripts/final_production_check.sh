@@ -34,7 +34,7 @@ else
     test_fail "Genesis missing public keys!"
 fi
 
-BOOTSTRAP_COUNT=$(cat genesis_config.json | grep -c '"address".*UAT' | head -3 || echo "0")
+BOOTSTRAP_COUNT=$(cat genesis_config.json | grep "LOS"' | head -3 || echo "0")
 if [ "$BOOTSTRAP_COUNT" -ge "3" ]; then
     test_pass "Bootstrap nodes configured"
 else
@@ -114,7 +114,7 @@ echo ""
 echo "🚀 Test 5: Multi-Node Network"
 
 # Clean old data
-rm -rf node_data/validator-*/uat_database 2>/dev/null || true
+rm -rf node_data/validator-*/los_database 2>/dev/null || true
 
 # Start 3 nodes in background
 echo "Starting validator nodes..."
@@ -159,9 +159,9 @@ echo ""
 echo "🤝 Test 6: Supply Consensus"
 
 if [ "$NODES_UP" -gt "0" ]; then
-    S1=$(curl -s http://localhost:3030/supply 2>/dev/null | grep -o '"remaining_supply_void":[0-9]*' | cut -d: -f2 || echo "0")
-    S2=$(curl -s http://localhost:3031/supply 2>/dev/null | grep -o '"remaining_supply_void":[0-9]*' | cut -d: -f2 || echo "0")
-    S3=$(curl -s http://localhost:3032/supply 2>/dev/null | grep -o '"remaining_supply_void":[0-9]*' | cut -d: -f2 || echo "0")
+    S1=$(curl -s http://localhost:3030/supply 2>/dev/null | grep -o '"remaining_supply_cil":[0-9]*' | cut -d: -f2 || echo "0")
+    S2=$(curl -s http://localhost:3031/supply 2>/dev/null | grep -o '"remaining_supply_cil":[0-9]*' | cut -d: -f2 || echo "0")
+    S3=$(curl -s http://localhost:3032/supply 2>/dev/null | grep -o '"remaining_supply_cil":[0-9]*' | cut -d: -f2 || echo "0")
     
     if [ "$S1" = "$S2" ] && [ "$S2" = "$S3" ] && [ "$S1" != "0" ]; then
         test_pass "All nodes agree on supply: $S1 VOI"
@@ -181,13 +181,13 @@ fi
 echo ""
 echo "🔮 Test 7: Oracle Connector"
 
-if [ -f "crates/uat-vm/src/oracle_connector.rs" ]; then
+if [ -f "crates/los-vm/src/oracle_connector.rs" ]; then
     test_pass "Oracle connector module exists"
 else
     test_fail "Oracle connector missing"
 fi
 
-if grep -q "pub mod oracle_connector" crates/uat-vm/src/lib.rs; then
+if grep -q "pub mod oracle_connector" crates/los-vm/src/lib.rs; then
     test_pass "Oracle module integrated in lib.rs"
 else
     test_fail "Oracle module not integrated"
@@ -221,7 +221,7 @@ if [ $FAIL -eq 0 ]; then
     echo "╚════════════════════════════════════════════════════════════╝"
     echo ""
     echo "🚀 Ready to deploy:"
-    echo "   1. Backend binary: target/release/uat-node"
+    echo "   1. Backend binary: target/release/los-node"
     echo "   2. Genesis config: genesis/genesis_config.json"
     echo "   3. Public wallet: frontend-wallet/"
     echo "   4. Validator dashboard: frontend-validator/"

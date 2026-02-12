@@ -7,12 +7,12 @@ import '../models/account_profile.dart';
 import 'wallet_service.dart';
 
 class AccountManagementService {
-  static const String _storageKey = 'uat_accounts';
-  static const String _activeAccountKey = 'uat_active_account';
+  static const String _storageKey = 'los_accounts';
+  static const String _activeAccountKey = 'los_active_account';
 
   /// Prefix for seed phrase keys in SecureStorage.
-  /// Full key: "uat_account_seed_{accountId}"
-  static const String _seedKeyPrefix = 'uat_account_seed_';
+  /// Full key: "los_account_seed_{accountId}"
+  static const String _seedKeyPrefix = 'los_account_seed_';
 
   final _uuid = const Uuid();
 
@@ -61,6 +61,8 @@ class AccountManagementService {
   /// Account metadata is in SharedPreferences (no secrets).
   /// Seed phrases are loaded separately from FlutterSecureStorage.
   Future<AccountsList> loadAccounts() async {
+    debugPrint(
+        '👤 [AccountManagementService.loadAccounts] Loading accounts...');
     final prefs = await SharedPreferences.getInstance();
     final accountsJson = prefs.getString(_storageKey);
     final activeAccountId = prefs.getString(_activeAccountKey);
@@ -87,8 +89,11 @@ class AccountManagementService {
         );
       }
 
+      debugPrint(
+          '👤 [AccountManagementService.loadAccounts] Loaded ${accounts.length} accounts, active: $activeAccountId');
       return AccountsList(accounts: accounts, activeAccountId: activeAccountId);
     } catch (e) {
+      debugPrint('👤 [AccountManagementService.loadAccounts] Error: $e');
       debugPrint('Error loading accounts: $e');
       return AccountsList(accounts: [], activeAccountId: null);
     }
@@ -98,6 +103,8 @@ class AccountManagementService {
   /// Metadata (no secrets) → SharedPreferences.
   /// Seed phrases → FlutterSecureStorage keyed by account ID.
   Future<void> saveAccounts(AccountsList accountsList) async {
+    debugPrint(
+        '👤 [AccountManagementService.saveAccounts] Saving ${accountsList.accounts.length} accounts...');
     final prefs = await SharedPreferences.getInstance();
     // toJson() on AccountProfile now excludes seed_phrase
     final accountsJson = json.encode({
@@ -121,6 +128,8 @@ class AccountManagementService {
     } else {
       await prefs.remove(_activeAccountKey);
     }
+    debugPrint(
+        '👤 [AccountManagementService.saveAccounts] Saved ${accountsList.accounts.length} accounts');
   }
 
   /// Create new account
@@ -130,6 +139,8 @@ class AccountManagementService {
     required String seedPhrase,
     String? publicKey,
   }) async {
+    debugPrint(
+        '👤 [AccountManagementService.createAccount] Creating account: $name');
     final account = AccountProfile(
       id: _uuid.v4(),
       name: name,
@@ -149,6 +160,8 @@ class AccountManagementService {
       await saveAccounts(updatedList);
     }
 
+    debugPrint(
+        '👤 [AccountManagementService.createAccount] Created account ${account.id}: $address');
     return account;
   }
 
@@ -159,6 +172,8 @@ class AccountManagementService {
     required String seedPhrase,
     String? publicKey,
   }) async {
+    debugPrint(
+        '👤 [AccountManagementService.importAccount] Importing account: $name, $address');
     // Check if account already exists
     final accountsList = await loadAccounts();
     final existing = accountsList.accounts.where((a) => a.address == address);
@@ -167,12 +182,15 @@ class AccountManagementService {
       throw Exception('Account with this address already exists');
     }
 
-    return createAccount(
+    final result = await createAccount(
       name: name,
       address: address,
       seedPhrase: seedPhrase,
       publicKey: publicKey,
     );
+    debugPrint(
+        '👤 [AccountManagementService.importAccount] Imported account: $name, $address');
+    return result;
   }
 
   /// Add hardware wallet account
@@ -203,6 +221,8 @@ class AccountManagementService {
   /// WalletService storage so all signing/balance operations use the
   /// correct keypair.
   Future<void> switchAccount(String accountId) async {
+    debugPrint(
+        '👤 [AccountManagementService.switchAccount] Switching to account: $accountId');
     final accountsList = await loadAccounts();
 
     // Verify account exists
@@ -226,10 +246,14 @@ class AccountManagementService {
       final WalletService walletService = WalletService();
       await walletService.importByAddress(account.address);
     }
+    debugPrint(
+        '👤 [AccountManagementService.switchAccount] Switched to account: ${account.name}');
   }
 
   /// Rename account
   Future<void> renameAccount(String accountId, String newName) async {
+    debugPrint(
+        '👤 [AccountManagementService.renameAccount] Renaming account $accountId to $newName');
     final accountsList = await loadAccounts();
     final account = accountsList.accounts.firstWhere(
       (a) => a.id == accountId,
@@ -239,10 +263,14 @@ class AccountManagementService {
     final updatedAccount = account.copyWith(name: newName);
     final updatedList = accountsList.updateAccount(updatedAccount);
     await saveAccounts(updatedList);
+    debugPrint(
+        '👤 [AccountManagementService.renameAccount] Renamed account $accountId to $newName');
   }
 
   /// Delete account
   Future<void> deleteAccount(String accountId) async {
+    debugPrint(
+        '👤 [AccountManagementService.deleteAccount] Deleting account: $accountId');
     final accountsList = await loadAccounts();
 
     // Don't allow deleting the last account
@@ -264,6 +292,8 @@ class AccountManagementService {
     } else {
       await saveAccounts(updatedList);
     }
+    debugPrint(
+        '👤 [AccountManagementService.deleteAccount] Deleted account: $accountId');
   }
 
   /// Get active account

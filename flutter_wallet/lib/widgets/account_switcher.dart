@@ -29,6 +29,7 @@ class _AccountSwitcherState extends State<AccountSwitcher> {
   Future<void> _loadActiveAccount() async {
     try {
       final accountsList = await _accountService.loadAccounts();
+      if (!mounted) return;
       setState(() {
         _activeAccount = accountsList.activeAccount;
         _accounts = accountsList.accounts;
@@ -41,6 +42,7 @@ class _AccountSwitcherState extends State<AccountSwitcher> {
   Future<void> _switchAccount(AccountProfile account) async {
     try {
       await _accountService.switchAccount(account.id);
+      if (!mounted) return;
       setState(() => _activeAccount = account);
 
       widget.onAccountChanged?.call(account);

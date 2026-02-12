@@ -15,10 +15,10 @@ enum NodeStatus {
   error, // Crashed or failed to start
 }
 
-/// Manages the uat-node binary process lifecycle.
+/// Manages the los-node binary process lifecycle.
 ///
 /// Responsibilities:
-/// - Find or bundle the uat-node binary
+/// - Find or bundle the los-node binary
 /// - Launch with correct CLI args (--port, --data-dir, --json-log, etc.)
 /// - Monitor process stdout for structured JSON events
 /// - Track node status (starting → syncing → running)
@@ -27,7 +27,7 @@ enum NodeStatus {
 class NodeProcessService extends ChangeNotifier {
   Process? _process;
   NodeStatus _status = NodeStatus.stopped;
-  String? _nodeAddress; // Node's UATX... address
+  String? _nodeAddress; // Node's LOSX... address
   String? _onionAddress; // .onion hidden service address
   int _apiPort = 3035;
   String? _dataDir;
@@ -55,7 +55,7 @@ class NodeProcessService extends ChangeNotifier {
 
   String get localApiUrl => 'http://127.0.0.1:$_apiPort';
 
-  /// Kill any orphaned uat-node that survived a Flutter hot-reload.
+  /// Kill any orphaned los-node that survived a Flutter hot-reload.
   /// Uses lsof to find the process occupying [port] and kills it.
   Future<void> _killOrphanedNode(int port) async {
     try {
@@ -86,6 +86,8 @@ class NodeProcessService extends ChangeNotifier {
   /// Find an available port starting from [preferred].
   /// Returns the first port that's not already in use.
   static Future<int> findAvailablePort({int preferred = 3035}) async {
+    debugPrint(
+        '🖥️ [NodeProcessService.findAvailablePort] Searching from port $preferred...');
     for (int port = preferred; port < preferred + 20; port++) {
       try {
         final socket = await ServerSocket.bind(
@@ -94,15 +96,19 @@ class NodeProcessService extends ChangeNotifier {
           shared: false,
         );
         await socket.close();
+        debugPrint(
+            '🖥️ [NodeProcessService.findAvailablePort] Found available port: $port');
         return port;
       } catch (_) {
         // Port in use, try next
       }
     }
+    debugPrint(
+        '🖥️ [NodeProcessService.findAvailablePort] No free port found, fallback: $preferred');
     return preferred; // Fallback
   }
 
-  /// Start the uat-node process.
+  /// Start the los-node process.
   ///
   /// [port] — REST API port (default 3035, auto-detects if occupied)
   /// [onionAddress] — Pre-configured .onion address (from Tor hidden service)
@@ -126,17 +132,18 @@ class NodeProcessService extends ChangeNotifier {
     _apiPort = port;
     _status = NodeStatus.starting;
     _errorMessage = null;
+    final startTime = DateTime.now();
     notifyListeners();
 
     try {
-      // 0. Kill any orphaned uat-node on the target port (survives hot-reload)
+      // 0. Kill any orphaned los-node on the target port (survives hot-reload)
       await _killOrphanedNode(port);
 
-      // 1. Find uat-node binary
+      // 1. Find los-node binary
       final binaryPath = await _findNodeBinary();
       if (binaryPath == null) {
         _setError(
-            'uat-node binary not found. Please build with: cargo build --release -p uat-node');
+            'los-node binary not found. Please build with: cargo build --release -p los-node');
         return false;
       }
 
@@ -150,18 +157,20 @@ class NodeProcessService extends ChangeNotifier {
       //   'consensus'  = Level 2 (real aBFT, real signatures — default)
       //   'production' = Level 3 (identical to mainnet — full security)
       final env = <String, String>{
-        'UAT_TESTNET_LEVEL': testnetLevel,
+        'LOS_TESTNET_LEVEL': testnetLevel,
       };
       if (onionAddress != null) {
-        env['UAT_ONION_ADDRESS'] = onionAddress;
+        env['LOS_ONION_ADDRESS'] = onionAddress;
         _onionAddress = onionAddress;
       }
       if (bootstrapNodes != null) {
-        env['UAT_BOOTSTRAP_NODES'] = bootstrapNodes;
+        env['LOS_BOOTSTRAP_NODES'] = bootstrapNodes;
       }
-      if (walletPassword != null && walletPassword.isNotEmpty) {
-        env['UAT_WALLET_PASSWORD'] = walletPassword;
-      }
+      // SECURITY FIX F5: Wallet password passed via stdin pipe instead of
+      // environment variable. Environment variables are readable via
+      // /proc/[pid]/environ on Linux. Stdin is not externally observable.
+      final bool hasWalletPassword =
+          walletPassword != null && walletPassword.isNotEmpty;
 
       // 4. Build CLI args
       final args = <String>[
@@ -174,8 +183,8 @@ class NodeProcessService extends ChangeNotifier {
         '--json-log',
       ];
 
-      debugPrint('🚀 Starting uat-node: $binaryPath ${args.join(' ')}');
-      _addLog('Starting uat-node on port $port...');
+      debugPrint('🚀 Starting los-node: $binaryPath ${args.join(' ')}');
+      _addLog('Starting los-node on port $port...');
 
       // 5. Spawn process
       _process = await Process.start(
@@ -184,6 +193,14 @@ class NodeProcessService extends ChangeNotifier {
         environment: env,
         workingDirectory: await _getWorkingDir(),
       );
+
+      // SECURITY FIX F5: Write wallet password to stdin pipe then close.
+      // This avoids exposing the password in /proc/[pid]/environ.
+      if (hasWalletPassword) {
+        _process!.stdin.writeln(walletPassword);
+        await _process!.stdin.flush();
+        await _process!.stdin.close();
+      }
 
       // 6. Monitor stdout for JSON events + human-readable logs
       _process!.stdout
@@ -214,6 +231,9 @@ class NodeProcessService extends ChangeNotifier {
       }
 
       _crashCount = 0; // Reset crash counter on successful start
+      final elapsed = DateTime.now().difference(startTime).inMilliseconds;
+      debugPrint(
+          '🖥️ [NodeProcessService.start] Node started in ${elapsed}ms on port $_apiPort');
       return true;
     } catch (e) {
       _setError('Failed to start node: $e');
@@ -331,7 +351,7 @@ class NodeProcessService extends ChangeNotifier {
   }
 
   void _handleProcessExit(int exitCode) {
-    debugPrint('💀 uat-node exited with code $exitCode');
+    debugPrint('💀 los-node exited with code $exitCode');
     _addLog('⚠️ Node process exited (code: $exitCode)');
 
     if (_status == NodeStatus.stopping || _status == NodeStatus.stopped) {
@@ -374,9 +394,9 @@ class NodeProcessService extends ChangeNotifier {
   // BINARY DISCOVERY
   // ════════════════════════════════════════════════════════════════════════
 
-  /// Find uat-node binary — checks bundled location, cargo build output, PATH
+  /// Find los-node binary — checks bundled location, cargo build output, PATH
   Future<String?> _findNodeBinary() async {
-    final binaryName = Platform.isWindows ? 'uat-node.exe' : 'uat-node';
+    final binaryName = Platform.isWindows ? 'los-node.exe' : 'los-node';
 
     // 1. Check bundled in app (for distribution)
     final execDir = path.dirname(Platform.resolvedExecutable);
@@ -389,7 +409,7 @@ class NodeProcessService extends ChangeNotifier {
     ];
     for (final p in bundledPaths) {
       if (await File(p).exists()) {
-        debugPrint('✅ Found bundled uat-node: $p');
+        debugPrint('✅ Found bundled los-node: $p');
         return p;
       }
     }
@@ -402,7 +422,7 @@ class NodeProcessService extends ChangeNotifier {
     ];
     for (final p in cargoPaths) {
       if (await File(p).exists()) {
-        debugPrint('✅ Found cargo-built uat-node: $p');
+        debugPrint('✅ Found cargo-built los-node: $p');
         return p;
       }
     }
@@ -414,13 +434,13 @@ class NodeProcessService extends ChangeNotifier {
       if (result.exitCode == 0) {
         final p = result.stdout.toString().trim().split('\n').first;
         if (p.isNotEmpty && await File(p).exists()) {
-          debugPrint('✅ Found uat-node in PATH: $p');
+          debugPrint('✅ Found los-node in PATH: $p');
           return p;
         }
       }
     } catch (_) {}
 
-    debugPrint('❌ uat-node binary not found anywhere');
+    debugPrint('❌ los-node binary not found anywhere');
     return null;
   }
 
@@ -439,7 +459,6 @@ class NodeProcessService extends ChangeNotifier {
     // Fallback: check common dev paths
     final home = Platform.environment['HOME'] ?? '/tmp';
     final devPaths = [
-      path.join(home, 'Documents', 'monkey-one', 'project', 'unauthority-core'),
       path.join(home, 'unauthority-core'),
       Directory.current.path,
     ];

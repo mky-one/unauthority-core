@@ -11,7 +11,7 @@
 //! ## Deployment:
 //! ```bash
 //! cargo build --release --target wasm32-unknown-unknown
-//! uat-cli deploy target/wasm32-unknown-unknown/release/hello_world.wasm
+//! los-cli deploy target/wasm32-unknown-unknown/release/hello_world.wasm
 //! ```
 
 use serde::{Deserialize, Serialize};
@@ -117,5 +117,5 @@ pub extern "C" fn init() {
 
 fn main() {
     println!("Hello World Smart Contract");
-    println!("This contract must be compiled to WASM and deployed on UAT blockchain");
+    println!("This contract must be compiled to WASM and deployed on LOS blockchain");
 }

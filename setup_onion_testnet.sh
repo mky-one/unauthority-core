@@ -30,14 +30,14 @@ if [ -f "$TORRC_FILE" ]; then
 fi
 
 # 4. Create hidden service directory
-HIDDEN_SERVICE_DIR="$HOME/uat-testnet-onion"
+HIDDEN_SERVICE_DIR="$HOME/los-testnet-onion"
 mkdir -p "$HIDDEN_SERVICE_DIR"
 
 echo "📁 Hidden service dir: $HIDDEN_SERVICE_DIR"
 
 # 5. Add hidden service config to torrc
 echo "" >> "$TORRC_FILE"
-echo "# UAT Testnet Hidden Service" >> "$TORRC_FILE"
+echo "# LOS Testnet Hidden Service" >> "$TORRC_FILE"
 echo "HiddenServiceDir $HIDDEN_SERVICE_DIR" >> "$TORRC_FILE"
 echo "HiddenServicePort 80 127.0.0.1:3030" >> "$TORRC_FILE"
 
@@ -54,7 +54,7 @@ cat << 'EOF'
    - Start Tor Browser again
    
 2. GET YOUR .ONION ADDRESS:
-   cat ~/uat-testnet-onion/hostname
+   cat ~/los-testnet-onion/hostname
    
 3. START VALIDATORS:
    cd unauthority-core
@@ -62,7 +62,7 @@ cat << 'EOF'
    
 4. TEST CONNECTION:
    # Di terminal baru:
-   curl -x socks5h://localhost:9150 http://$(cat ~/uat-testnet-onion/hostname)/health
+   curl -x socks5h://localhost:9150 http://$(cat ~/los-testnet-onion/hostname)/health
    
 5. SHARE .ONION URL KE TEMAN:
    http://[YOUR_ONION_ADDRESS]

@@ -4,19 +4,19 @@ use serde::{Deserialize, Serialize};
 use std::fs;
 
 // Constants (matching uat-core/src/lib.rs)
-const VOID_PER_UAT: u128 = 100_000_000_000; // 100 billion VOI per UAT
-const TOTAL_SUPPLY_UAT: u128 = 21_936_236;
+const CIL_PER_LOS: u128 = 100_000_000_000; // 100 billion CIL per LOS
+const TOTAL_SUPPLY_LOS: u128 = 21_936_236;
 const DEV_ALLOCATION_PERCENT: f64 = 0.07; // 7%
 const DEV_TREASURY_COUNT: usize = 8;
 const BOOTSTRAP_NODE_COUNT: usize = 4;
-const BOOTSTRAP_NODE_STAKE_UAT: u128 = 1_000; // 1000 UAT per validator
+const BOOTSTRAP_NODE_STAKE_LOS: u128 = 1_000; // 1000 LOS per validator
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct GenesisWallet {
     wallet_type: String,
     address: String,
-    balance_uat: String,
-    balance_void: String,
+    balance_los: String,
+    balance_cil: String,
     seed_phrase: String,
     private_key: String,
     public_key: String,
@@ -39,13 +39,13 @@ fn main() {
     println!("\n12 Wallets: 8 Dev Treasury + 4 Bootstrap Validators\n");
 
     // Calculate allocations
-    let dev_allocation_void = (TOTAL_SUPPLY_UAT as f64 * DEV_ALLOCATION_PERCENT) as u128 * VOID_PER_UAT;
-    let total_bootstrap_allocation_void = BOOTSTRAP_NODE_STAKE_UAT * (BOOTSTRAP_NODE_COUNT as u128) * VOID_PER_UAT;
-    let allocation_per_treasury_void = dev_allocation_void / (DEV_TREASURY_COUNT as u128);
-    let treasury_8_balance_void = allocation_per_treasury_void - total_bootstrap_allocation_void;
+    let dev_allocation_cil = (TOTAL_SUPPLY_LOS as f64 * DEV_ALLOCATION_PERCENT) as u128 * CIL_PER_LOS;
+    let total_bootstrap_allocation_cil = BOOTSTRAP_NODE_STAKE_LOS * (BOOTSTRAP_NODE_COUNT as u128) * CIL_PER_LOS;
+    let allocation_per_treasury_cil = dev_allocation_cil / (DEV_TREASURY_COUNT as u128);
+    let treasury_8_balance_cil = allocation_per_treasury_cil - total_bootstrap_allocation_cil;
 
     let mut wallets: Vec<GenesisWallet> = Vec::new();
-    let mut total_allocated_void: u128 = 0;
+    let mut total_allocated_cil: u128 = 0;
 
     println!("═══════════════════════════════════════════════════════════");
     println!("MAINNET TREASURY WALLETS (Private - Do Not Share!)");
@@ -57,16 +57,16 @@ fn main() {
         let (seed_phrase, private_key, public_key, address) = generate_wallet(&wallet_label);
         
         let balance = if i == DEV_TREASURY_COUNT {
-            treasury_8_balance_void
+            treasury_8_balance_cil
         } else {
-            allocation_per_treasury_void
+            allocation_per_treasury_cil
         };
 
-        let balance_uat = balance as f64 / VOID_PER_UAT as f64;
+        let balance_los = balance as f64 / CIL_PER_LOS as f64;
         
         println!("Treasury Wallet #{}:", i);
         println!("  Address:      {}", address);
-        println!("  Balance:      {:.8} UAT ({} VOI)", balance_uat, balance);
+        println!("  Balance:      {:.8} LOS ({} CIL)", balance_los, balance);
         println!("  Seed Phrase:  {}", seed_phrase);
         println!("  Private Key:  {}", private_key);
         println!("  Public Key:   {}\n", public_key);
@@ -74,14 +74,14 @@ fn main() {
         wallets.push(GenesisWallet {
             wallet_type: format!("DevWallet({})", i),
             address,
-            balance_uat: format!("{:.8}", balance_uat),
-            balance_void: balance.to_string(),
+            balance_los: format!("{:.8}", balance_los),
+            balance_cil: balance.to_string(),
             seed_phrase,
             private_key,
             public_key,
         });
 
-        total_allocated_void += balance;
+        total_allocated_cil += balance;
     }
 
     println!("═══════════════════════════════════════════════════════════");
@@ -93,12 +93,12 @@ fn main() {
         let validator_label = format!("mainnet-validator-{}", i);
         let (seed_phrase, private_key, public_key, address) = generate_wallet(&validator_label);
         
-        let balance = BOOTSTRAP_NODE_STAKE_UAT * VOID_PER_UAT;
-        let balance_uat = balance as f64 / VOID_PER_UAT as f64;
+        let balance = BOOTSTRAP_NODE_STAKE_LOS * CIL_PER_LOS;
+        let balance_los = balance as f64 / CIL_PER_LOS as f64;
         
         println!("Bootstrap Validator #{}:", i);
         println!("  Address:      {}", address);
-        println!("  Balance:      {:.8} UAT ({} VOI)", balance_uat, balance);
+        println!("  Balance:      {:.8} LOS ({} CIL)", balance_los, balance);
         println!("  Seed Phrase:  {}", seed_phrase);
         println!("  Private Key:  {}", private_key);
         println!("  Public Key:   {}\n", public_key);
@@ -106,29 +106,29 @@ fn main() {
         wallets.push(GenesisWallet {
             wallet_type: format!("BootstrapNode({})", i),
             address,
-            balance_uat: format!("{:.8}", balance_uat),
-            balance_void: balance.to_string(),
+            balance_los: format!("{:.8}", balance_los),
+            balance_cil: balance.to_string(),
             seed_phrase,
             private_key,
             public_key,
         });
 
-        total_allocated_void += balance;
+        total_allocated_cil += balance;
     }
 
-    let total_uat = total_allocated_void as f64 / VOID_PER_UAT as f64;
-    let expected_uat = dev_allocation_void as f64 / VOID_PER_UAT as f64;
+    let total_uat = total_allocated_cil as f64 / CIL_PER_LOS as f64;
+    let expected_los = dev_allocation_cil as f64 / CIL_PER_LOS as f64;
 
     println!("═══════════════════════════════════════════════════════════");
     println!("ALLOCATION SUMMARY (MAINNET)");
     println!("═══════════════════════════════════════════════════════════");
-    println!("Total Supply:     {:.8} UAT", TOTAL_SUPPLY_UAT as f64);
-    println!("Dev Allocation:   {:.8} UAT (7%)", expected_uat);
-    println!("Treasury Wallets: 8 × {:.8} UAT", allocation_per_treasury_void as f64 / VOID_PER_UAT as f64);
-    println!("Treasury 8:       {:.8} UAT (after funding 4 nodes)", treasury_8_balance_void as f64 / VOID_PER_UAT as f64);
-    println!("Validators:       4 × {:.8} UAT", BOOTSTRAP_NODE_STAKE_UAT as f64);
-    println!("Total Allocated:  {:.8} UAT", total_uat);
-    println!("Difference:       {:.8} UAT", (total_uat - expected_uat).abs());
+    println!("Total Supply:     {:.8} LOS", TOTAL_SUPPLY_LOS as f64);
+    println!("Dev Allocation:   {:.8} LOS (7%)", expected_los);
+    println!("Treasury Wallets: 8 × {:.8} LOS", allocation_per_treasury_cil as f64 / CIL_PER_LOS as f64);
+    println!("Treasury 8:       {:.8} LOS (after funding 4 nodes)", treasury_8_balance_cil as f64 / CIL_PER_LOS as f64);
+    println!("Validators:       4 × {:.8} LOS", BOOTSTRAP_NODE_STAKE_LOS as f64);
+    println!("Total Allocated:  {:.8} LOS", total_uat);
+    println!("Difference:       {:.8} LOS", (total_uat - expected_los).abs());
     println!("═══════════════════════════════════════════════════════════\n");
 
     // Generate genesis config JSON
@@ -138,8 +138,8 @@ fn main() {
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
             .as_secs(),
-        total_supply: format!("{:.8}", TOTAL_SUPPLY_UAT as f64),
-        dev_allocation: format!("{:.8}", expected_uat),
+        total_supply: format!("{:.8}", TOTAL_SUPPLY_LOS as f64),
+        dev_allocation: format!("{:.8}", expected_los),
         wallets,
     };
 
@@ -173,8 +173,8 @@ fn generate_wallet(label: &str) -> (String, String, String, String) {
         .expect("Failed to create secret key");
     let public_key: PublicKey = (&secret_key).into();
     
-    // Generate UAT address (UAT + Base58 of public key)
-    let address = format!("UAT{}", bs58::encode(public_key.as_bytes()).into_string());
+    // Generate LOS address (LOS + Base58 of public key)
+    let address = format!("LOS{}", bs58::encode(public_key.as_bytes()).into_string());
     
     let private_key_hex = hex::encode(secret_key.as_bytes());
     let public_key_hex = hex::encode(public_key.as_bytes());

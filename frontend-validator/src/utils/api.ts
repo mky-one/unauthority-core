@@ -39,21 +39,21 @@ async function fetchWithTimeout(
 
 export function getApiUrl(): string {
   // Check for manual override first
-  const manualUrl = localStorage.getItem('uat_api_url_override');
+  const manualUrl = localStorage.getItem('los_api_url_override');
   if (manualUrl) return manualUrl;
   
   // Use network-based configuration
-  const savedNetwork = localStorage.getItem('uat_network') || 'testnet';
+  const savedNetwork = localStorage.getItem('los_network') || 'testnet';
   const networks = {
     testnet: 'http://ll22j45prmu3oymratallztx74peen4gsxudzbgf5qvybezobitvywyd.onion',
-    mainnet: 'http://uat-mainnet-pending.onion'
+    mainnet: 'http://los-mainnet-pending.onion'
   };
   return networks[savedNetwork as keyof typeof networks] || networks.testnet;
 }
 
 export function setApiUrl(url: string): void {
   const normalized = url.replace(/\/+$/, '');
-  localStorage.setItem('uat_api_url_override', normalized);
+  localStorage.setItem('los_api_url_override', normalized);
 }
 
 export const getApiBase = getApiUrl;
@@ -95,7 +95,7 @@ export async function getBalance(address: string): Promise<number> {
       throw new Error(`HTTP ${response.status}`);
     }
     const data = await response.json();
-    return (data.balance || data.balance_uat || 0) / 100_000_000;
+    return (data.balance || data.balance_los || 0) / 100_000_000;
   } catch (error) {
     console.error('Failed to get balance:', error);
     return 0;
@@ -239,7 +239,7 @@ export async function testEndpoint(url: string): Promise<{ success: boolean; mes
   }
 }
 
-// Submit burn transaction (Proof-of-burn: ETH/BTC -> UAT)
+// Submit burn transaction (Proof-of-burn: ETH/BTC -> LOS)
 export async function submitBurn(request: BurnRequest): Promise<BurnResponse> {
   try {
     const response = await fetchWithTimeout(`${getApiUrl()}/burn`, {
@@ -304,7 +304,7 @@ export interface FaucetResult {
   amount?: number;
   txHash?: string;
   status?: string;
-  amount_uat?: number;
+  amount_los?: number;
   error?: string;
   msg?: string;
 }
@@ -339,7 +339,7 @@ export interface BurnRequest {
   amount: number;
   txid: string;
   proof: string;
-  uat_address: string;
+  los_address: string;
   recipient_address: string;
 }
 
@@ -381,5 +381,5 @@ export interface BurnResponse {
   status: string;
   error?: string;
   tx_hash?: string;
-  amount_uat?: number;
+  amount_los?: number;
 }

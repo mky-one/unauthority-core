@@ -9,8 +9,8 @@ import '../constants/blockchain.dart';
 
 /// Validator Setup Wizard - 3-step flow:
 /// 1. Import Wallet (seed phrase / private key / address)
-/// 2. Validate balance >= 1000 UAT -> Confirm
-/// 3. Start Tor hidden service + uat-node binary -> Go to Dashboard
+/// 2. Validate balance >= 1000 LOS -> Confirm
+/// 3. Start Tor hidden service + los-node binary -> Go to Dashboard
 class SetupWizardScreen extends StatefulWidget {
   final VoidCallback onSetupComplete;
 
@@ -42,10 +42,13 @@ class _SetupWizardScreenState extends State<SetupWizardScreen> {
   String _launchStatus = '';
   double _launchProgress = 0.0;
 
-  static const double _minStakeUAT = 1000.0;
+  static const double _minStakeLOS = 1000.0;
 
   @override
   void dispose() {
+    // SECURITY FIX F9: Clear sensitive input from controllers on disposal.
+    _seedController.clear();
+    _privateKeyController.clear();
     _seedController.dispose();
     _privateKeyController.dispose();
     _addressController.dispose();
@@ -53,6 +56,8 @@ class _SetupWizardScreenState extends State<SetupWizardScreen> {
   }
 
   Future<void> _importAndValidate() async {
+    debugPrint(
+        '🛡️ [SetupWizardScreen._importAndValidate] Import method: ${_importMethod.name}');
     setState(() {
       _isValidating = true;
       _error = null;
@@ -86,8 +91,9 @@ class _SetupWizardScreenState extends State<SetupWizardScreen> {
         case _ImportMethod.walletAddress:
           final addr = _addressController.text.trim();
           if (addr.isEmpty) throw Exception('Please enter your wallet address');
-          if (!addr.startsWith('UAT'))
+          if (!addr.startsWith('LOS')) {
             throw Exception('Invalid address format');
+          }
           await walletService.importByAddress(addr);
           walletAddress = addr;
           break;
@@ -100,11 +106,11 @@ class _SetupWizardScreenState extends State<SetupWizardScreen> {
       debugPrint('Checking balance for $walletAddress...');
       final account = await apiService.getBalance(walletAddress);
 
-      if (account.balanceUAT < _minStakeUAT) {
+      if (account.balanceLOS < _minStakeLOS) {
         throw Exception(
-          'Insufficient balance: ${BlockchainConstants.formatUat(account.balanceUAT)} UAT.\n'
-          'Minimum validator stake is ${_minStakeUAT.toInt()} UAT.\n'
-          'Fund your wallet first using the UAT Wallet app.',
+          'Insufficient balance: ${BlockchainConstants.formatLos(account.balanceLOS)} LOS.\n'
+          'Minimum validator stake is ${_minStakeLOS.toInt()} LOS.\n'
+          'Fund your wallet first using the LOS Wallet app.',
         );
       }
 
@@ -113,16 +119,23 @@ class _SetupWizardScreenState extends State<SetupWizardScreen> {
       final isGenesisActive =
           await apiService.isActiveGenesisValidator(walletAddress);
 
+      if (!mounted) return;
       setState(() {
         _validatedAddress = walletAddress;
-        _validatedBalance = account.balanceUAT;
+        _validatedBalance = account.balanceLOS;
         _isGenesisMonitor = isGenesisActive;
         _currentStep = 1;
       });
+      debugPrint(
+          '🛡️ [SetupWizardScreen._importAndValidate] Success: address=$walletAddress, balance=${account.balanceLOS} LOS');
     } catch (e) {
+      debugPrint('🛡️ [SetupWizardScreen._importAndValidate] Error: $e');
+      if (!mounted) return;
       setState(() => _error = e.toString().replaceAll('Exception: ', ''));
     } finally {
-      setState(() => _isValidating = false);
+      if (mounted) {
+        setState(() => _isValidating = false);
+      }
     }
   }
 
@@ -139,9 +152,10 @@ class _SetupWizardScreenState extends State<SetupWizardScreen> {
 
       // ── MONITOR-ONLY MODE ──
       // Genesis bootstrap validator is already running as a CLI node.
-      // Don't spawn a new uat-node, don't create a new .onion address.
+      // Don't spawn a new los-node, don't create a new .onion address.
       // Just save the wallet and go straight to the dashboard.
       if (_isGenesisMonitor) {
+        if (!mounted) return;
         setState(() {
           _launchStatus = 'Genesis bootstrap validator detected.\n'
               'Entering monitor-only mode...';
@@ -150,6 +164,7 @@ class _SetupWizardScreenState extends State<SetupWizardScreen> {
 
         await walletService.setMonitorMode(true);
 
+        if (!mounted) return;
         setState(() {
           _launchStatus = 'Connecting to bootstrap node dashboard...';
           _launchProgress = 0.7;
@@ -157,19 +172,21 @@ class _SetupWizardScreenState extends State<SetupWizardScreen> {
 
         await Future.delayed(const Duration(seconds: 1));
 
+        if (!mounted) return;
         setState(() {
           _launchStatus = 'Monitor mode active!';
           _launchProgress = 1.0;
         });
 
         await Future.delayed(const Duration(seconds: 1));
-        widget.onSetupComplete();
+        if (mounted) widget.onSetupComplete();
         return;
       }
 
       // ── NORMAL MODE ── Spawn new validator node with Tor hidden service
       await walletService.setMonitorMode(false);
 
+      if (!mounted) return;
       setState(() {
         _launchStatus = 'Initializing Tor hidden service...';
       });
@@ -178,6 +195,7 @@ class _SetupWizardScreenState extends State<SetupWizardScreen> {
       final torService = context.read<TorService>();
 
       // Step A: Start Tor with hidden service
+      if (!mounted) return;
       setState(() {
         _launchStatus =
             'Starting Tor hidden service...\nThis may take up to 2 minutes on first run.';
@@ -194,6 +212,7 @@ class _SetupWizardScreenState extends State<SetupWizardScreen> {
         onionPort: 80,
       );
 
+      if (!mounted) return;
       if (onionAddress == null) {
         debugPrint('Tor hidden service failed, running localhost-only');
         setState(() {
@@ -208,12 +227,13 @@ class _SetupWizardScreenState extends State<SetupWizardScreen> {
         });
       }
 
-      // Step B: Start uat-node
+      // Step B: Start los-node
+      if (!mounted) return;
       setState(() {
         _launchProgress = 0.6;
       });
 
-      // Load bootstrap nodes so uat-node can discover peers on the network
+      // Load bootstrap nodes so los-node can discover peers on the network
       await NetworkConfig.load();
       final bootstrapAddresses =
           NetworkConfig.testnetNodes.map((n) => n.p2pAddress).join(',');
@@ -238,13 +258,14 @@ class _SetupWizardScreenState extends State<SetupWizardScreen> {
 
         if (!started) {
           throw Exception(
-              nodeService.errorMessage ?? 'Failed to start uat-node');
+              nodeService.errorMessage ?? 'Failed to start los-node');
         }
       }
 
       // Step C: Register as validator on the local node
       // This requires a Dilithium5 signed proof of key ownership.
       // The node will broadcast the registration to all peers via gossipsub.
+      if (!mounted) return;
       setState(() {
         _launchStatus = 'Registering as validator...';
         _launchProgress = 0.8;
@@ -286,34 +307,35 @@ class _SetupWizardScreenState extends State<SetupWizardScreen> {
           }
 
           // Also register on the BOOTSTRAP node so the network knows about us.
-          // This is the permissionless approach: any node can accept a valid
-          // registration with a cryptographic proof of key ownership.
-          // The bootstrap node will gossipsub-broadcast to all its peers.
-          final bootstrapApi = context.read<ApiService>();
-          try {
-            await bootstrapApi.ensureReady();
-            final result = await bootstrapApi.registerValidator(
-              address: address,
-              publicKey: publicKey,
-              signature: signature,
-              timestamp: timestamp,
-            );
-            debugPrint('✅ Bootstrap registration: ${result['msg']}');
-          } catch (e) {
-            // Non-fatal: local node still runs, bootstrap may be unreachable
-            debugPrint('⚠️ Bootstrap registration deferred: $e');
+          if (mounted) {
+            final bootstrapApi = context.read<ApiService>();
+            try {
+              await bootstrapApi.ensureReady();
+              final result = await bootstrapApi.registerValidator(
+                address: address,
+                publicKey: publicKey,
+                signature: signature,
+                timestamp: timestamp,
+              );
+              debugPrint('✅ Bootstrap registration: ${result['msg']}');
+            } catch (e) {
+              // Non-fatal: local node still runs, bootstrap may be unreachable
+              debugPrint('⚠️ Bootstrap registration deferred: $e');
+            }
           }
         }
       }
 
+      if (!mounted) return;
       setState(() {
         _launchStatus = 'Validator node is running!';
         _launchProgress = 1.0;
       });
 
       await Future.delayed(const Duration(seconds: 2));
-      widget.onSetupComplete();
+      if (mounted) widget.onSetupComplete();
     } catch (e) {
+      if (!mounted) return;
       setState(() {
         _error = e.toString().replaceAll('Exception: ', '');
         _isLaunching = false;
@@ -353,7 +375,7 @@ class _SetupWizardScreenState extends State<SetupWizardScreen> {
               textAlign: TextAlign.center),
           const SizedBox(height: 8),
           Text(
-              'Import your wallet to register as a validator node.\nMinimum stake: ${_minStakeUAT.toInt()} UAT',
+              'Import your wallet to register as a validator node.\nMinimum stake: ${_minStakeLOS.toInt()} LOS',
               style: TextStyle(fontSize: 14, color: Colors.grey[400]),
               textAlign: TextAlign.center),
           const SizedBox(height: 32),
@@ -396,8 +418,8 @@ class _SetupWizardScreenState extends State<SetupWizardScreen> {
                 SizedBox(width: 8),
                 Expanded(
                     child: Text(
-                        'Your wallet needs at least 1,000 UAT to register as a validator. '
-                        'Use the UAT Wallet app to send/receive funds.',
+                        'Your wallet needs at least 1,000 LOS to register as a validator. '
+                        'Use the LOS Wallet app to send/receive funds.',
                         style: TextStyle(fontSize: 12, color: Colors.blue))),
               ])),
         ],
@@ -429,9 +451,9 @@ class _SetupWizardScreenState extends State<SetupWizardScreen> {
                         '${_validatedAddress!.substring(0, 12)}...${_validatedAddress!.substring(_validatedAddress!.length - 8)}'),
                     const Divider(),
                     _infoRow('Balance',
-                        '${BlockchainConstants.formatUat(_validatedBalance!)} UAT'),
+                        '${BlockchainConstants.formatLos(_validatedBalance!)} LOS'),
                     const Divider(),
-                    _infoRow('Min Stake', '${_minStakeUAT.toInt()} UAT'),
+                    _infoRow('Min Stake', '${_minStakeLOS.toInt()} LOS'),
                     const Divider(),
                     _infoRow('Status', 'Eligible'),
                   ]))),
@@ -484,7 +506,7 @@ class _SetupWizardScreenState extends State<SetupWizardScreen> {
                           const SizedBox(height: 8),
                           _stepItem(
                               '1', 'Setup Tor hidden service (.onion address)'),
-                          _stepItem('2', 'Start uat-node validator binary'),
+                          _stepItem('2', 'Start los-node validator binary'),
                           _stepItem('3', 'Sync blockchain from network'),
                           _stepItem('4', 'Register as active validator'),
                         ]))),
@@ -615,7 +637,7 @@ class _SetupWizardScreenState extends State<SetupWizardScreen> {
       _methodTile(_ImportMethod.privateKey, Icons.vpn_key, 'Private Key',
           'Hex-encoded private key'),
       _methodTile(_ImportMethod.walletAddress, Icons.account_balance_wallet,
-          'Wallet Address', 'UAT address (view-only)'),
+          'Wallet Address', 'LOS address (view-only)'),
     ]);
   }
 
@@ -674,7 +696,7 @@ class _SetupWizardScreenState extends State<SetupWizardScreen> {
             controller: _addressController,
             decoration: InputDecoration(
                 labelText: 'Wallet Address',
-                hintText: 'UAT...',
+                hintText: 'LOS...',
                 border:
                     OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
                 prefixIcon: const Icon(Icons.account_balance_wallet)));

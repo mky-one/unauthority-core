@@ -43,7 +43,7 @@ RUN useradd -m -u 1000 uat && \
 WORKDIR /app
 
 # Copy binaries from builder
-COPY --from=builder /build/target/release/uat-node /usr/local/bin/
+COPY --from=builder /build/target/release/los-node /usr/local/bin/
 COPY --from=builder /build/target/release/uat-cli /usr/local/bin/
 COPY --from=builder /build/target/release/genesis_generator /usr/local/bin/
 
@@ -72,5 +72,5 @@ EXPOSE 8080 50051 9000 9090
 HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
     CMD /usr/local/bin/uat-cli node-info || exit 1
 
-ENTRYPOINT ["/usr/local/bin/uat-node"]
+ENTRYPOINT ["/usr/local/bin/los-node"]
 CMD ["--config", "/config/validator.toml", "--data-dir", "/data"]

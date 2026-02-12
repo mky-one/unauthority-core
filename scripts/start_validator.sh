@@ -1,6 +1,6 @@
 #!/bin/bash
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# Unauthority (UAT) - Validator Startup Script
+# Unauthority (LOS) - Validator Startup Script
 # Automatically loads environment-specific configuration for each validator
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
@@ -28,7 +28,7 @@ CONFIG_FILE="${VALIDATOR_DIR}/validator.toml"
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 echo "╔════════════════════════════════════════════════════════════╗"
-echo "║  UNAUTHORITY (UAT) - VALIDATOR STARTUP                     ║"
+echo "║  UNAUTHORITY (LOS) - VALIDATOR STARTUP                     ║"
 echo "╚════════════════════════════════════════════════════════════╝"
 echo ""
 
@@ -61,11 +61,11 @@ source "$ENV_FILE"
 # Display loaded configuration
 echo ""
 echo "🔧 Configuration:"
-echo "   • Validator ID: $UAT_NODE_ID"
-echo "   • Address: ${UAT_VALIDATOR_ADDRESS:0:30}..."
-echo "   • Sentry Port: $UAT_SENTRY_PORT"
-echo "   • Signer Port: $UAT_SIGNER_PORT"
-echo "   • Stake: $UAT_STAKE_VOID VOI"
+echo "   • Validator ID: $LOS_NODE_ID"
+echo "   • Address: ${LOS_VALIDATOR_ADDRESS:0:30}..."
+echo "   • Sentry Port: $LOS_SENTRY_PORT"
+echo "   • Signer Port: $LOS_SIGNER_PORT"
+echo "   • Stake: $LOS_STAKE_CIL VOI"
 echo ""
 
 # Check if private key exists
@@ -77,13 +77,13 @@ if [ ! -f "$PRIVKEY_PATH" ]; then
     echo "      $ $0 $VALIDATOR_NUM /path/to/your/key.key"
     echo ""
     echo "   2. Or set it via environment before running:"
-    echo "      $ export UAT_VALIDATOR_PRIVKEY_PATH=/path/to/key.key"
+    echo "      $ export LOS_VALIDATOR_PRIVKEY_PATH=/path/to/key.key"
     echo "      $ $0 $VALIDATOR_NUM"
     echo ""
     echo "   3. For testing, you can generate a test key:"
-    echo "      $ mkdir -p /tmp/uat-keys"
-    echo "      $ openssl rand -hex 32 > /tmp/uat-keys/validator-${VALIDATOR_NUM}.key"
-    echo "      $ $0 $VALIDATOR_NUM /tmp/uat-keys/validator-${VALIDATOR_NUM}.key"
+    echo "      $ mkdir -p /tmp/los-keys"
+    echo "      $ openssl rand -hex 32 > /tmp/los-keys/validator-${VALIDATOR_NUM}.key"
+    echo "      $ $0 $VALIDATOR_NUM /tmp/los-keys/validator-${VALIDATOR_NUM}.key"
     echo ""
     read -p "Continue without private key? (for testing only) [y/N] " -n 1 -r
     echo
@@ -92,7 +92,7 @@ if [ ! -f "$PRIVKEY_PATH" ]; then
     fi
 else
     echo "✓ Private key found: ${PRIVKEY_PATH:0:50}..."
-    export UAT_VALIDATOR_PRIVKEY_PATH="$PRIVKEY_PATH"
+    export LOS_VALIDATOR_PRIVKEY_PATH="$PRIVKEY_PATH"
 fi
 
 echo ""
@@ -108,4 +108,4 @@ echo ""
 
 # Execute validator
 cd "$PROJECT_ROOT"
-cargo run -p uat-node -- --config "$CONFIG_FILE"
+cargo run -p los-node -- --config "$CONFIG_FILE"

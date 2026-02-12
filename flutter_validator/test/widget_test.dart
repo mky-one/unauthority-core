@@ -15,7 +15,7 @@ void main() {
     await tester.pumpWidget(MyApp(walletService: WalletService()));
 
     // The app should render the dashboard app bar title
-    expect(find.text('UAT Validator Dashboard'), findsOneWidget);
+    expect(find.text('LOS Validator Dashboard'), findsOneWidget);
   });
 
   testWidgets('Dashboard shows loading indicator initially',

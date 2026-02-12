@@ -1,5 +1,5 @@
 import { useValidatorStore } from '../store/validatorStore';
-import { formatVoidToUAT } from '../utils/format';
+import { formatCilToLOS } from '../utils/format';
 import { Cpu, HardDrive, Users, TrendingUp, Wallet } from 'lucide-react';
 
 export default function Dashboard() {
@@ -7,7 +7,7 @@ export default function Dashboard() {
 
   if (!isConnected || !nodeInfo) {
     return (
-      <div className="bg-uat-gray border border-gray-700 rounded-xl p-8 text-center">
+      <div className="bg-los-gray border border-gray-700 rounded-xl p-8 text-center">
         <p className="text-gray-400">Node offline. Please check your connection.</p>
       </div>
     );
@@ -19,7 +19,7 @@ export default function Dashboard() {
   const stats = [
     {
       label: 'Total Supply',
-      value: `${(nodeInfo.total_supply || 0).toLocaleString()} UAT`,
+      value: `${(nodeInfo.total_supply || 0).toLocaleString()} LOS`,
       icon: HardDrive,
       color: 'text-blue-400',
     },
@@ -31,7 +31,7 @@ export default function Dashboard() {
     },
     {
       label: 'Total Staked',
-      value: `${formatVoidToUAT(totalStake)} UAT`,
+      value: `${formatCilToLOS(totalStake)} LOS`,
       icon: TrendingUp,
       color: 'text-purple-400',
     },
@@ -52,7 +52,7 @@ export default function Dashboard() {
           return (
             <div
               key={stat.label}
-              className="bg-gradient-to-br from-uat-gray to-slate-900 border border-gray-700 rounded-xl p-6 hover:border-gray-600 transition-colors"
+              className="bg-gradient-to-br from-los-gray to-slate-900 border border-gray-700 rounded-xl p-6 hover:border-gray-600 transition-colors"
             >
               <div className="flex items-center justify-between mb-4">
                 <Icon className={`w-8 h-8 ${stat.color}`} />
@@ -65,7 +65,7 @@ export default function Dashboard() {
       </div>
 
       {/* Node Info */}
-      <div className="bg-uat-gray border border-gray-700 rounded-xl p-6">
+      <div className="bg-los-gray border border-gray-700 rounded-xl p-6">
         <h3 className="text-lg font-semibold text-white mb-4">Node Information</h3>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
@@ -89,20 +89,20 @@ export default function Dashboard() {
 
       {/* Own Validator Address */}
       {ownAddress && (
-        <div className="bg-gradient-to-br from-uat-blue/10 to-uat-cyan/10 border border-uat-blue/30 rounded-xl p-6">
+        <div className="bg-gradient-to-br from-los-blue/10 to-los-cyan/10 border border-los-blue/30 rounded-xl p-6">
           <div className="flex items-center space-x-3 mb-3">
-            <Wallet className="w-5 h-5 text-uat-cyan" />
+            <Wallet className="w-5 h-5 text-los-cyan" />
             <h3 className="text-lg font-semibold text-white">Your Validator Address</h3>
           </div>
-          <div className="bg-uat-dark/50 rounded-lg p-4">
-            <p className="font-mono text-sm text-uat-cyan break-all">{ownAddress}</p>
+          <div className="bg-los-dark/50 rounded-lg p-4">
+            <p className="font-mono text-sm text-los-cyan break-all">{ownAddress}</p>
           </div>
           <p className="text-xs text-gray-400 mt-2">This is your validator's unique address on the network</p>
         </div>
       )}
 
       {/* Recent Activity */}
-      <div className="bg-uat-gray border border-gray-700 rounded-xl p-6">
+      <div className="bg-los-gray border border-gray-700 rounded-xl p-6">
         <h3 className="text-lg font-semibold text-white mb-4">Recent Activity</h3>
         <p className="text-gray-400 text-sm">Block validation and consensus data will appear here...</p>
       </div>

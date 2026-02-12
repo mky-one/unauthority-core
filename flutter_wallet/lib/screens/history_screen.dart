@@ -27,11 +27,14 @@ class _HistoryScreenState extends State<HistoryScreen> {
   }
 
   Future<void> _loadTransactionHistory() async {
+    debugPrint(
+        '💰 [HistoryScreen._loadTransactionHistory] Loading transaction history...');
     try {
       final walletService = context.read<WalletService>();
       final apiService = context.read<ApiService>();
       final wallet = await walletService.getCurrentWallet();
 
+      if (!mounted) return;
       if (wallet == null) {
         setState(() => _error = 'No wallet found');
         return;
@@ -43,11 +46,16 @@ class _HistoryScreenState extends State<HistoryScreen> {
 
       final history = await apiService.getHistory(_address!);
 
+      if (!mounted) return;
+      debugPrint(
+          '💰 [HistoryScreen._loadTransactionHistory] Loaded ${history.length} transactions for $_address');
       setState(() {
         _transactions = history;
         _isLoading = false;
       });
     } catch (e) {
+      debugPrint('💰 [HistoryScreen._loadTransactionHistory] ERROR: $e');
+      if (!mounted) return;
       setState(() {
         _error = e.toString();
         _isLoading = false;
@@ -227,7 +235,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
                                   ),
                                   const Spacer(),
                                   Text(
-                                    '${BlockchainConstants.formatUat(tx.amountUAT)} UAT',
+                                    '${BlockchainConstants.formatLos(tx.amountLOS)} LOS',
                                     style: TextStyle(
                                       fontWeight: FontWeight.bold,
                                       color: color,

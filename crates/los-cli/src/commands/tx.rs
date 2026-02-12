@@ -83,6 +83,19 @@ async fn send_tx(
         .and_then(|s| s.parse().ok())
         .unwrap_or_else(|| account_data["balance_cil"].as_u64().unwrap_or(0) as u128);
 
+    // 2b. Query fee estimate
+    let fee_url = format!("{}/fee-estimate/{}", rpc, sender_addr);
+    let fee_cil: u128 = match client.get(&fee_url).send().await {
+        Ok(resp) if resp.status().is_success() => {
+            let fee_data: serde_json::Value = resp.json().await?;
+            fee_data["estimated_fee_cil"]
+                .as_u64()
+                .map(|v| v as u128)
+                .unwrap_or(100_000) // Fallback to base fee
+        }
+        _ => 100_000, // Default base fee
+    };
+
     let amount_cil = (amount as u128)
         .checked_mul(CIL_PER_LOS)
         .ok_or("Amount overflow")?;
@@ -110,7 +123,7 @@ async fn send_tx(
         public_key: hex::encode(&keypair.public_key),
         work: 0,
         timestamp,
-        fee: 0, // Server will set/validate fee
+        fee: fee_cil, // Include proper fee from fee-estimate
     };
 
     // 4. Compute PoW (anti-spam)
@@ -146,8 +159,12 @@ async fn send_tx(
 
     if resp_data["status"].as_str() == Some("ok")
         || resp_data["status"].as_str() == Some("confirmed")
+        || resp_data["status"].as_str() == Some("success")
     {
-        let block_hash = resp_data["hash"].as_str().unwrap_or("unknown");
+        let block_hash = resp_data["hash"]
+            .as_str()
+            .or_else(|| resp_data["tx_hash"].as_str())
+            .unwrap_or("unknown");
         println!();
         print_success("Transaction sent successfully!");
         println!("  {} {}", "Block Hash:".bold(), block_hash.green());

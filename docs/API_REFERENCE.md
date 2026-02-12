@@ -1,487 +1,302 @@
-# API Reference
+# API Reference — Unauthority (LOS) v1.0.9
 
-Complete reference for the LOS node REST API and gRPC service.
+## Base URL
 
-**Version:** v1.0.6-testnet  
-**Default REST port:** 3030  
-**Default gRPC port:** 23030 (REST port + 20,000)
+- **REST:** `http://localhost:3030` (or node's API port)
+- **gRPC:** `localhost:23030` (REST port + 20,000)
 
----
+## Authentication
 
-## Rate Limits
-
-| Scope | Limit |
-|-------|-------|
-| Global | 100 req/s (burst 200) |
-| `/send` | 10 per 60 seconds |
-| `/burn` | 1 per 300 seconds |
-| `/faucet` | 1 per 3,600 seconds |
-
-CORS: All origins allowed (Tor .onion addresses provide access control).
+No authentication required. Rate limiting is enforced per IP and per address for state-changing endpoints.
 
 ---
 
-## REST Endpoints
+## Read Endpoints
 
-### General
+### GET `/`
+Node status overview and API endpoint index.
 
-#### `GET /`
-
-Root endpoint — API description and available routes.
-
-#### `GET /health`
-
-Health check.
-
-```json
-{ "status": "healthy" }
-```
-
-Status is `"healthy"` or `"degraded"`.
-
-#### `GET /node-info`
-
-Node metadata.
-
+**Response:**
 ```json
 {
-  "chain_id": "los-testnet",
-  "version": "1.0.6",
-  "total_supply": 21936236,
-  "circulating_supply": 677823,
-  "burned_supply": 0,
-  "validators": [
-    { "address": "LOS...", "stake": 1000, "active": true }
-  ],
+  "name": "Unauthority (LOS) Node",
+  "version": "1.0.9",
+  "node_id": "node-3030",
+  "address": "LOSW...",
+  "network": "testnet",
+  "block_count": 42,
+  "account_count": 6,
+  "uptime_seconds": 3600,
+  "endpoints": { ... }
+}
+```
+
+### GET `/health`
+Health check for monitoring.
+
+**Response:** `200 OK`
+```json
+{ "status": "healthy", "block_count": 42, "account_count": 6 }
+```
+
+### GET `/node-info`
+Detailed node information.
+
+**Response:**
+```json
+{
+  "node_id": "node-3030",
+  "version": "1.0.9",
+  "address": "LOSW...",
+  "block_count": 42,
+  "account_count": 6,
   "peers": 3,
-  "estimated_finality_ms": 3000
+  "is_validator": true,
+  "uptime_seconds": 3600,
+  "testnet_level": "consensus"
 }
 ```
 
-#### `GET /whoami`
-
-Returns this node's signing address.
-
-```json
-{ "address": "LOSBwXk9..." }
-```
-
-#### `GET /metrics`
-
-Prometheus-format metrics export for monitoring dashboards.
-
----
-
-### Balance & Accounts
-
-#### `GET /bal/{address}`
-
-Account balance.
-
-```json
-{
-  "address": "LOS...",
-  "balance_cil": 100000000000000,
-  "balance_los": 1000
-}
-```
-
-#### `GET /balance/{address}`
-
-Alias for `/bal/{address}` — same response format.
-
-#### `GET /account/{address}`
-
-Account details with recent transaction history.
-
-```json
-{
-  "address": "LOS...",
-  "balance_cil": 100000000000000,
-  "balance_los": 1000,
-  "block_count": 5,
-  "history": [ ... ]
-}
-```
-
----
-
-### Transactions
-
-#### `POST /send`
-
-Submit a signed transaction. Accepts client-signed blocks or node-signed (dev mode).
-
-**Request body (client-signed):**
-
-```json
-{
-  "from": "LOS...",
-  "to": "LOS...",
-  "amount": 100,
-  "previous": "abc123...",
-  "signature": "hex...",
-  "public_key": "hex...",
-  "work": "hex..."
-}
-```
-
-**Request body (node-signed, dev mode):**
-
-```json
-{
-  "to": "LOS...",
-  "amount": 100
-}
-```
+### GET `/bal/{address}`
+Get balance in CIL (atomic units). Alias: `/balance/{address}`.
 
 **Response:**
-
 ```json
-{
-  "status": "ok",
-  "tx_hash": "abc123...",
-  "block_hash": "def456..."
-}
+{ "address": "LOSW...", "balance": 100000000000000, "balance_los": 1000 }
 ```
 
-#### `GET /history/{address}`
+### GET `/supply`
+Total and circulating supply data.
 
-Full transaction history for an address.
-
-```json
-[
-  {
-    "type": "Send",
-    "hash": "abc...",
-    "amount": 100,
-    "timestamp": 1770580908,
-    "link": "LOS..."
-  }
-]
-```
-
-#### `GET /transaction/{hash}`
-
-Lookup a specific transaction by hash.
-
-#### `GET /search/{query}`
-
-Search across addresses, block hashes, and transaction hashes.
-
----
-
-### Blocks
-
-#### `GET /block`
-
-Latest block by timestamp.
-
-#### `GET /block/{hash}`
-
-Block by hash (block explorer).
-
-#### `GET /blocks/recent`
-
-Last 10 blocks across all accounts.
-
----
-
-### Supply
-
-#### `GET /supply`
-
-Supply statistics.
-
+**Response:**
 ```json
 {
-  "total_supply_los": 21936236,
   "total_supply_cil": 2193623600000000000,
-  "circulating_supply_los": 677823,
-  "burned_supply_los": 0,
-  "public_supply_remaining_los": 21258413
+  "total_supply_los": 21936236,
+  "remaining_supply_cil": 2125841300000000000,
+  "circulating_cil": 67782300000000000,
+  "total_burned_usd": 0
 }
 ```
 
----
-
-### Proof-of-Burn
-
-#### `POST /burn`
-
-Submit a Proof-of-Burn mint request. Burns ETH or BTC and mints proportional LOS.
-
-**Request body:**
-
-```json
-{
-  "burn_tx_id": "0xabc...",
-  "burn_chain": "ETH",
-  "burn_address": "0x000000000000000000000000000000000000dead",
-  "burn_amount": "1.0",
-  "recipient": "LOS..."
-}
-```
+### GET `/history/{address}`
+Transaction history for an account.
 
 **Response:**
-
 ```json
 {
-  "status": "pending",
-  "message": "Awaiting oracle consensus (2/3 validator confirmation)"
-}
-```
-
-Burn addresses:
-- ETH: `0x000000000000000000000000000000000000dead`
-- BTC: `1BitcoinEaterAddressDontSendf59kuE`
-
----
-
-### Faucet (Testnet Only)
-
-#### `POST /faucet`
-
-Claim testnet tokens.
-
-**Request body:**
-
-```json
-{
-  "address": "LOS..."
-}
-```
-
-**Response:**
-
-```json
-{
-  "status": "ok",
-  "amount": 5000,
-  "message": "5000 LOS sent to LOS..."
-}
-```
-
-Rate limit: 1 claim per hour per address. Cooldown tracked in sled database.
-
----
-
-### Validators
-
-#### `GET /validators`
-
-List bootstrap validators from genesis.
-
-```json
-{
-  "validators": [
+  "address": "LOSW...",
+  "transactions": [
     {
-      "address": "LOS...",
-      "stake": 1000,
-      "active": true,
-      "voting_power": 316227
+      "hash": "abc123...",
+      "type": "Send",
+      "amount": 100000000000000,
+      "from": "LOSW...",
+      "to": "LOSX...",
+      "timestamp": 1739000000,
+      "fee": 100000000
     }
   ]
 }
 ```
 
-Voting power = √(stake_in_cil), demonstrating quadratic voting.
+### GET `/block`
+Latest block across all accounts.
 
----
+### GET `/block/{hash}`
+Get a specific block by its hash.
 
-### Consensus & Slashing
+### GET `/blocks/recent`
+Recent blocks (last 50).
 
-#### `GET /consensus`
+### GET `/transaction/{hash}`
+Get a specific transaction by hash (searches blocks).
 
-aBFT consensus parameters and safety status.
+### GET `/search/{query}`
+Search across blocks, accounts, and transaction hashes.
 
+### GET `/validators`
+List active validators (accounts with ≥1,000 LOS stake).
+
+**Response:**
 ```json
 {
-  "type": "aBFT",
-  "finality_time_ms": 3000,
-  "byzantine_tolerance": 0.33,
-  "min_votes_percent": 67,
-  "total_validators": 4
-}
-```
-
-#### `GET /slashing`
-
-Global slashing statistics and validator safety.
-
-#### `GET /slashing/{address}`
-
-Slashing profile for a specific validator address.
-
----
-
-### Validator Rewards
-
-#### `GET /reward-info`
-
-Validator reward pool status, current epoch, and per-validator reward details.
-
-```json
-{
-  "pool_remaining_cil": 219362360000000000,
-  "pool_remaining_los": "2193623.60000000000",
-  "total_distributed_cil": 0,
-  "current_epoch": 0,
-  "epoch_start": 1770580908,
-  "epoch_duration_secs": 86400,
-  "epoch_remaining_secs": 43200,
-  "current_rate_cil_per_epoch": 5000000000000,
-  "current_rate_los_per_epoch": "50.00000000000",
-  "halving_interval_epochs": 365,
   "validators": [
     {
-      "address": "LOS...",
-      "heartbeats": 720,
-      "expected_heartbeats": 1440,
-      "uptime_pct": 50.0,
-      "qualified": false,
-      "sqrt_stake": 316227766016,
-      "is_genesis": true,
-      "cumulative_reward_cil": 0
+      "address": "LOSW...",
+      "stake_cil": 100000000000000,
+      "stake_los": 1000,
+      "block_count": 5,
+      "is_registered": true
     }
   ],
-  "config": {
-    "pool_total_cil": 219362360000000000,
-    "epoch_secs": 86400,
-    "initial_rate_cil": 5000000000000,
-    "halving_interval_epochs": 365,
-    "min_uptime_pct": 95,
-    "probation_epochs": 3
-  }
+  "count": 4
 }
 ```
 
-Validators with ≥ 95% uptime qualify for epoch rewards. Reward shares are proportional to √stake (quadratic). Genesis bootstrap validators are excluded from rewards. The reward rate halves every 365 epochs (~1 year).
+### GET `/consensus`
+aBFT consensus engine status.
 
-#### `GET /fee-estimate`
-
-Dynamic fee estimate based on current network activity and anti-whale parameters.
-
+**Response:**
 ```json
 {
-  "base_fee_cil": 100000,
-  "recommended_fee_cil": 100000,
-  "spam_multiplier": 1,
-  "network_load": "low"
+  "safety": {
+    "active_validators": 4,
+    "byzantine_threshold": 1,
+    "byzantine_safe": true,
+    "consensus_model": "aBFT"
+  },
+  "round": { "current": 12, "decided": 11 }
 }
 ```
+
+### GET `/reward-info`
+Validator reward pool and epoch information.
+
+**Response:**
+```json
+{
+  "epoch": { "current_epoch": 5, "epoch_reward_rate_los": 5000 },
+  "pool": { "remaining_los": 475000, "total_distributed_los": 25000 },
+  "validators": { "eligible": 4, "total": 4 }
+}
+```
+
+### GET `/slashing`
+Global slashing status summary.
+
+### GET `/slashing/{address}`
+Slashing profile for a specific validator.
+
+### GET `/metrics`
+Prometheus-compatible metrics output.
+
+### GET `/fee-estimate/{amount}`
+Estimate transaction fee for given CIL amount.
+
+### GET `/whoami`
+This node's address.
+
+### GET `/account/{address}`
+Full account details (balance, head block, block count, validator status).
+
+### GET `/peers`
+Connected peer addresses.
+
+### GET `/network/peers`
+Network peer discovery with endpoint information.
+
+### GET `/mempool/stats`
+Current mempool statistics.
+
+### GET `/sync?from={block_count}`
+GZIP-compressed ledger state for peer sync. Use `from` query parameter to request incremental sync.
+
+### GET `/contract/{id}`
+Get deployed WASM contract state.
 
 ---
 
-### Smart Contracts
+## Write Endpoints
 
-Requires `vm` feature flag.
+### POST `/send`
+Send LOS to another address.
 
-#### `POST /deploy-contract`
+**Request Body:**
+```json
+{
+  "target": "LOSX1YFT...",
+  "amount": 10,
+  "from": "LOSW...",
+  "signature": "hex...",
+  "public_key": "hex...",
+  "previous": "hash...",
+  "timestamp": 1739000000,
+  "fee": 100000000
+}
+```
 
+For node-signed transactions (no client signature), only `target` and `amount` are required.
+
+For client-signed transactions, `signature`, `public_key`, `previous`, `timestamp`, and optionally `amount_cil` (if sending in CIL directly) are required.
+
+### POST `/burn`
+Proof-of-Burn: burn ETH or BTC to receive LOS.
+
+**Request Body:**
+```json
+{
+  "coin_type": "eth",
+  "txid": "0xabc123...",
+  "recipient_address": "LOSW..."
+}
+```
+
+**Oracle Pipeline:** Burns are verified through a multi-validator oracle consensus mechanism. Prices are stored as micro-USD (u128, 6 decimal places). ETH amounts are in wei, BTC in satoshi. All arithmetic is pure integer — no floating-point in the consensus pipeline.
+
+### POST `/faucet`
+Request testnet tokens (testnet only, disabled on mainnet).
+
+**Request Body:**
+```json
+{ "address": "LOSW..." }
+```
+
+### POST `/register-validator`
+Register as a network validator. Requires Dilithium5 signature and minimum 1,000 LOS stake.
+
+**Request Body:**
+```json
+{
+  "address": "LOSW...",
+  "public_key": "hex...",
+  "signature": "hex...",
+  "endpoint": "abc123.onion:3030"
+}
+```
+
+### POST `/unregister-validator`
+Unregister from validator set.
+
+### POST `/deploy-contract`
 Deploy a WASM smart contract.
 
-**Request body:**
+### POST `/call-contract`
+Execute a function on a deployed contract.
 
-```json
-{
-  "bytecode": "<base64-encoded WASM>",
-  "deployer": "LOS..."
-}
-```
-
-Contract address = blake3 hash of bytecode.
-
-Max bytecode: 1 MB. Max execution: 5 seconds.
-
-#### `POST /call-contract`
-
-Execute a contract function.
-
-**Request body:**
-
-```json
-{
-  "contract_address": "abc123...",
-  "function": "transfer",
-  "args": ["LOS...", "1000"]
-}
-```
-
-#### `GET /contract/{address}`
-
-Contract metadata and state.
-
----
-
-### Peer Network
-
-#### `GET /peers`
-
-Connected P2P peers.
-
-```json
-{
-  "peers": ["peer_id_1", "peer_id_2"],
-  "count": 2
-}
-```
-
----
-
-### State Sync
-
-#### `GET /sync`
-
-HTTP-based full state sync. Returns GZIP-compressed ledger state.
-
-| Limit | Value |
-|-------|-------|
-| Max compressed | 8 MB |
-| Max decompressed | 50 MB |
-| Supply validation | 1% tolerance |
-
-Rate limited to prevent abuse.
+### POST `/reset-burn-txid`
+Reset a stuck burn TXID (testnet only).
 
 ---
 
 ## gRPC API
 
-The node also exposes a gRPC service on port `REST_PORT + 20000` (default: 23030).
+Protocol definition: `los.proto`
 
-**Proto file:** `los.proto`
-
-### Service: `LosNode`
-
-| RPC | Request | Response | Description |
-|-----|---------|----------|-------------|
-| `GetBalance` | `address` | `balance_cil`, `balance_los` | Account balance |
-| `GetAccount` | `address` | Account details | Full account info |
-| `GetBlock` | `hash` | Block | Block by hash |
-| `GetLatestBlock` | — | Block | Most recent block |
-| `SendTransaction` | `from`, `to`, `amount`, `signature`, `public_key`, `previous`, `work` | `tx_hash`, `block_hash` | Submit transaction |
-| `GetNodeInfo` | — | `chain_id`, `version`, `total_supply`, `peers`, `validators`, `estimated_finality_ms` | Node metadata |
-| `GetValidators` | — | Validator list with `voting_power` | Active validators |
-| `GetBlockHeight` | — | `height`, `latest_hash` | Chain height |
+| RPC | Description |
+|---|---|
+| `GetBalance` | Account balance |
+| `GetAccount` | Account details |
+| `GetBlock` | Block by hash |
+| `GetLatestBlock` | Latest block |
+| `SendTransaction` | Submit transaction |
+| `GetNodeInfo` | Node information |
+| `GetValidators` | Validator list |
+| `GetBlockHeight` | Current block height |
 
 ---
 
-## Connecting via Tor
+## Rate Limits
 
-All testnet endpoints are accessible via Tor hidden services:
+| Endpoint | Limit |
+|---|---|
+| `/faucet` | 1 per address per 24h |
+| `/send` | Anti-spam throttle |
+| `/burn` | 1 per TXID (globally deduplicated) |
 
-```bash
-# Health check via Tor
-curl --socks5-hostname 127.0.0.1:9052 \
-  http://ll22j45prmu3oymratallztx74peen4gsxudzbgf5qvybezobitvywyd.onion/health
+## Error Format
 
-# Node info
-curl --socks5-hostname 127.0.0.1:9052 \
-  http://ll22j45prmu3oymratallztx74peen4gsxudzbgf5qvybezobitvywyd.onion/node-info
-
-# Balance check
-curl --socks5-hostname 127.0.0.1:9052 \
-  http://ll22j45prmu3oymratallztx74peen4gsxudzbgf5qvybezobitvywyd.onion/bal/LOSYourAddress
+All errors return JSON:
+```json
+{ "status": "error", "msg": "Description of what went wrong" }
 ```
-
-Tor SOCKS5 ports: `9052` (setup_tor_testnet.sh), `9150` (Tor Browser), `9050` (system Tor).

@@ -1,8 +1,0 @@
-{
-  "dependencies": {
-    "@scure/bip39": "^2.0.1",
-    "base-x": "^5.0.1",
-    "bs58": "^6.0.0",
-    "tweetnacl": "^1.0.3"
-  }
-}

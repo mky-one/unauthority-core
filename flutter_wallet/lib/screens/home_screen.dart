@@ -7,6 +7,7 @@ import '../services/api_service.dart';
 import '../services/network_status_service.dart';
 import '../models/account.dart';
 import '../constants/blockchain.dart';
+import '../config/testnet_config.dart';
 import '../widgets/network_badge.dart';
 import '../widgets/network_status_bar.dart';
 import 'send_screen.dart';
@@ -40,6 +41,7 @@ class _HomeScreenState extends State<HomeScreen> {
       final walletService = context.read<WalletService>();
       final wallet = await walletService.getCurrentWallet();
 
+      if (!mounted) return;
       if (wallet == null) {
         setState(() => _error = 'No wallet found');
         return;
@@ -53,6 +55,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
       await _refreshBalance();
     } catch (e) {
+      if (!mounted) return;
       setState(() {
         _error = e.toString();
         _isLoading = false;
@@ -68,12 +71,14 @@ class _HomeScreenState extends State<HomeScreen> {
       final apiService = context.read<ApiService>();
       final account = await apiService.getAccount(_address!);
 
+      if (!mounted) return;
       setState(() {
         _account = account;
         _error = null;
       });
-      debugPrint('🏠 [Home] Balance: ${account.balanceUAT} UAT');
+      debugPrint('🏠 [Home] Balance: ${account.balanceLOS} LOS');
     } catch (e) {
+      if (!mounted) return;
       setState(() => _error = e.toString());
     }
   }
@@ -106,7 +111,7 @@ class _HomeScreenState extends State<HomeScreen> {
         SnackBar(content: Text(e.toString()), backgroundColor: Colors.red),
       );
     } finally {
-      setState(() => _isLoading = false);
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 
@@ -126,7 +131,7 @@ class _HomeScreenState extends State<HomeScreen> {
         title: Row(
           mainAxisSize: MainAxisSize.min,
           children: const [
-            Text('UAT Wallet'),
+            Text('LOS Wallet'),
             SizedBox(width: 8),
             NetworkBadge(),
           ],
@@ -196,16 +201,16 @@ class _HomeScreenState extends State<HomeScreen> {
                                             fontSize: 14, color: Colors.grey)),
                                     const SizedBox(height: 8),
                                     Text(
-                                      '${BlockchainConstants.formatUat(_account?.balanceUAT ?? 0)} UAT',
+                                      '${BlockchainConstants.formatLos(_account?.balanceLOS ?? 0)} LOS',
                                       style: const TextStyle(
                                           fontSize: 36,
                                           fontWeight: FontWeight.bold),
                                     ),
                                     if (_account != null &&
-                                        _account!.voidBalance > 0) ...[
+                                        _account!.cilBalance > 0) ...[
                                       const SizedBox(height: 8),
                                       Text(
-                                        'Void: ${BlockchainConstants.formatUat(_account!.voidBalanceUAT)} UAT',
+                                        'Void: ${BlockchainConstants.formatLos(_account!.cilBalanceLOS)} LOS',
                                         style: const TextStyle(
                                             fontSize: 14, color: Colors.orange),
                                       ),
@@ -324,15 +329,17 @@ class _HomeScreenState extends State<HomeScreen> {
 
                             const SizedBox(height: 16),
 
-                            ElevatedButton.icon(
-                              onPressed: _requestFaucet,
-                              icon: const Icon(Icons.water_drop),
-                              label: const Text('REQUEST FAUCET (5,000 UAT)'),
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: Colors.purple,
-                                padding: const EdgeInsets.all(16),
+                            // Faucet is only available on testnet, hidden on mainnet
+                            if (WalletConfig.current.faucetAvailable)
+                              ElevatedButton.icon(
+                                onPressed: _requestFaucet,
+                                icon: const Icon(Icons.water_drop),
+                                label: const Text('REQUEST FAUCET (5,000 LOS)'),
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: Colors.purple,
+                                  padding: const EdgeInsets.all(16),
+                                ),
                               ),
-                            ),
 
                             const SizedBox(height: 32),
 
@@ -383,7 +390,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                               : Colors.green),
                                     ),
                                     title: Text(
-                                      '${BlockchainConstants.formatUat(tx.amountUAT)} UAT',
+                                      '${BlockchainConstants.formatLos(tx.amountLOS)} LOS',
                                       style: const TextStyle(
                                           fontWeight: FontWeight.bold),
                                     ),

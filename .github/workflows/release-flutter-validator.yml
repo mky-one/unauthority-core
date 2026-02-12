@@ -1,7 +1,7 @@
 name: "Release Flutter Validator (Testnet)"
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# Builds UAT Validator Dashboard for macOS, Linux & Windows — creates GitHub Release
+# Builds LOS Validator Dashboard for macOS, Linux & Windows — creates GitHub Release
 # Triggered on merge to main (validator changes), tags, or manual dispatch
 # ═══════════════════════════════════════════════════════════════════════════════
 
@@ -51,11 +51,11 @@ jobs:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
-            flutter_validator/native/uat_crypto_ffi/target
-          key: macos-validator-rust-${{ hashFiles('flutter_validator/native/uat_crypto_ffi/Cargo.lock') }}
+            flutter_validator/native/los_crypto_ffi/target
+          key: macos-validator-rust-${{ hashFiles('flutter_validator/native/los_crypto_ffi/Cargo.lock') }}
 
       - name: Build Dilithium5 native library
-        working-directory: flutter_validator/native/uat_crypto_ffi
+        working-directory: flutter_validator/native/los_crypto_ffi
         run: |
           cargo build --release
           cargo test --release -- --nocapture
@@ -63,8 +63,8 @@ jobs:
       - name: Install protobuf compiler
         run: brew install protobuf
 
-      - name: Build uat-node binary
-        run: cargo build --release -p uat-node
+      - name: Build los-node binary
+        run: cargo build --release -p los-node
 
       - name: Flutter pub get
         working-directory: flutter_validator
@@ -74,18 +74,18 @@ jobs:
         working-directory: flutter_validator
         run: flutter build macos --release
 
-      - name: Bundle native library + uat-node binary
+      - name: Bundle native library + los-node binary
         working-directory: flutter_validator
         run: |
-          APP="build/macos/Build/Products/Release/UAT Validator Node.app"
+          APP="build/macos/Build/Products/Release/LOS Validator Node.app"
           FRAMEWORKS="$APP/Contents/Frameworks"
           RESOURCES="$APP/Contents/Resources"
           mkdir -p "$FRAMEWORKS" "$RESOURCES/bin"
-          cp native/uat_crypto_ffi/target/release/libuat_crypto_ffi.dylib "$FRAMEWORKS/"
-          install_name_tool -id "@executable_path/../Frameworks/libuat_crypto_ffi.dylib" "$FRAMEWORKS/libuat_crypto_ffi.dylib"
-          # Bundle the uat-node binary so the validator can start a local node
-          cp ../target/release/uat-node "$RESOURCES/bin/uat-node"
-          chmod +x "$RESOURCES/bin/uat-node"
+          cp native/los_crypto_ffi/target/release/liblos_crypto_ffi.dylib "$FRAMEWORKS/"
+          install_name_tool -id "@executable_path/../Frameworks/liblos_crypto_ffi.dylib" "$FRAMEWORKS/liblos_crypto_ffi.dylib"
+          # Bundle the los-node binary so the validator can start a local node
+          cp ../target/release/los-node "$RESOURCES/bin/los-node"
+          chmod +x "$RESOURCES/bin/los-node"
           codesign --force --deep --sign - "$APP"
 
       - name: Create DMG
@@ -96,17 +96,17 @@ jobs:
           if [ "$VERSION" = "$GITHUB_REF_NAME" ]; then VERSION="${{ github.event.inputs.version || '1.0.0-testnet' }}"; fi
 
           mkdir -p release/dmg_staging
-          cp -R "build/macos/Build/Products/Release/UAT Validator Node.app" release/dmg_staging/
+          cp -R "build/macos/Build/Products/Release/LOS Validator Node.app" release/dmg_staging/
           ln -s /Applications release/dmg_staging/Applications
 
           cat > release/dmg_staging/README.txt << 'EOF'
           ╔══════════════════════════════════════════════════════════════╗
-          ║         UAT VALIDATOR DASHBOARD - TESTNET RELEASE          ║
+          ║         LOS VALIDATOR DASHBOARD - TESTNET RELEASE          ║
           ║                Unauthority Blockchain                      ║
           ╚══════════════════════════════════════════════════════════════╝
 
           INSTALLATION:
-            Drag "UAT Validator Node.app" to the Applications folder.
+            Drag "LOS Validator Node.app" to the Applications folder.
 
           FIRST RUN:
             1. Open the app from Applications
@@ -115,10 +115,10 @@ jobs:
           EOF
 
           hdiutil create \
-            -volname "UAT Validator" \
+            -volname "LOS Validator" \
             -srcfolder release/dmg_staging \
             -ov -format UDZO \
-            "release/UAT-Validator-${VERSION}-macos.dmg"
+            "release/LOS-Validator-${VERSION}-macos.dmg"
 
           rm -rf release/dmg_staging
 
@@ -164,17 +164,17 @@ jobs:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
-            flutter_validator/native/uat_crypto_ffi/target
-          key: linux-validator-rust-${{ hashFiles('flutter_validator/native/uat_crypto_ffi/Cargo.lock') }}
+            flutter_validator/native/los_crypto_ffi/target
+          key: linux-validator-rust-${{ hashFiles('flutter_validator/native/los_crypto_ffi/Cargo.lock') }}
 
       - name: Build Dilithium5 native library
-        working-directory: flutter_validator/native/uat_crypto_ffi
+        working-directory: flutter_validator/native/los_crypto_ffi
         run: |
           cargo build --release
           cargo test --release -- --nocapture
 
-      - name: Build uat-node binary
-        run: cargo build --release -p uat-node
+      - name: Build los-node binary
+        run: cargo build --release -p los-node
 
       - name: Flutter pub get
         working-directory: flutter_validator
@@ -184,7 +184,7 @@ jobs:
         working-directory: flutter_validator
         run: flutter build linux --release
 
-      - name: Bundle native library, uat-node binary & package
+      - name: Bundle native library, los-node binary & package
         working-directory: flutter_validator
         run: |
           VERSION="${GITHUB_REF_NAME#validator-v}"
@@ -193,10 +193,10 @@ jobs:
 
           BUNDLE="build/linux/x64/release/bundle"
 
-          cp native/uat_crypto_ffi/target/release/libuat_crypto_ffi.so "$BUNDLE/lib/"
-          # Bundle the uat-node binary so the validator can start a local node
-          cp ../target/release/uat-node "$BUNDLE/uat-node"
-          chmod +x "$BUNDLE/uat-node"
+          cp native/los_crypto_ffi/target/release/liblos_crypto_ffi.so "$BUNDLE/lib/"
+          # Bundle the los-node binary so the validator can start a local node
+          cp ../target/release/los-node "$BUNDLE/los-node"
+          chmod +x "$BUNDLE/los-node"
 
           cat > "$BUNDLE/run.sh" << 'LAUNCHER'
           #!/bin/bash
@@ -208,7 +208,7 @@ jobs:
 
           cat > "$BUNDLE/README.txt" << 'EOF'
           ═══════════════════════════════════════════════════════════════
-            UAT VALIDATOR DASHBOARD - TESTNET RELEASE (Linux)
+            LOS VALIDATOR DASHBOARD - TESTNET RELEASE (Linux)
             Unauthority Blockchain
           ═══════════════════════════════════════════════════════════════
 
@@ -216,12 +216,12 @@ jobs:
             1. Extract this archive
             2. Run: ./run.sh
 
-          The validator dashboard connects to your UAT node.
+          The validator dashboard connects to your LOS node.
           EOF
 
           mkdir -p release
           cd build/linux/x64/release
-          tar czf "../../../../release/UAT-Validator-${VERSION}-linux-x64.tar.gz" bundle/
+          tar czf "../../../../release/LOS-Validator-${VERSION}-linux-x64.tar.gz" bundle/
           cd ../../../../
 
       - name: Upload Linux artifact
@@ -257,11 +257,11 @@ jobs:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
-            flutter_validator/native/uat_crypto_ffi/target
-          key: windows-validator-rust-${{ hashFiles('flutter_validator/native/uat_crypto_ffi/Cargo.lock') }}
+            flutter_validator/native/los_crypto_ffi/target
+          key: windows-validator-rust-${{ hashFiles('flutter_validator/native/los_crypto_ffi/Cargo.lock') }}
 
       - name: Build Dilithium5 native library
-        working-directory: flutter_validator/native/uat_crypto_ffi
+        working-directory: flutter_validator/native/los_crypto_ffi
         run: |
           cargo build --release
           cargo test --release -- --nocapture
@@ -269,8 +269,8 @@ jobs:
       - name: Install protobuf compiler
         run: choco install protoc -y
 
-      - name: Build uat-node binary
-        run: cargo build --release -p uat-node
+      - name: Build los-node binary
+        run: cargo build --release -p los-node
 
       - name: Flutter pub get
         working-directory: flutter_validator
@@ -280,7 +280,7 @@ jobs:
         working-directory: flutter_validator
         run: flutter build windows --release
 
-      - name: Bundle native library, uat-node binary & package
+      - name: Bundle native library, los-node binary & package
         working-directory: flutter_validator
         shell: pwsh
         run: |
@@ -289,13 +289,13 @@ jobs:
 
           $bundle = "build\windows\x64\runner\Release"
 
-          Copy-Item "native\uat_crypto_ffi\target\release\uat_crypto_ffi.dll" "$bundle\"
-          # Bundle the uat-node binary so the validator can start a local node
-          Copy-Item "..\target\release\uat-node.exe" "$bundle\"
+          Copy-Item "native\los_crypto_ffi\target\release\los_crypto_ffi.dll" "$bundle\"
+          # Bundle the los-node binary so the validator can start a local node
+          Copy-Item "..\target\release\los-node.exe" "$bundle\"
 
           @"
           ═══════════════════════════════════════════════════════════════
-            UAT VALIDATOR DASHBOARD - TESTNET RELEASE (Windows)
+            LOS VALIDATOR DASHBOARD - TESTNET RELEASE (Windows)
             Unauthority Blockchain
           ═══════════════════════════════════════════════════════════════
 
@@ -303,11 +303,11 @@ jobs:
             1. Extract this archive
             2. Run: flutter_validator.exe
 
-          The validator dashboard connects to your UAT node.
+          The validator dashboard connects to your LOS node.
           "@ | Out-File -FilePath "$bundle\README.txt" -Encoding utf8
 
           New-Item -ItemType Directory -Force -Path release | Out-Null
-          Compress-Archive -Path "$bundle\*" -DestinationPath "release\UAT-Validator-${version}-windows-x64.zip" -Force
+          Compress-Archive -Path "$bundle\*" -DestinationPath "release\LOS-Validator-${version}-windows-x64.zip" -Force
 
       - name: Upload Windows artifact
         uses: actions/upload-artifact@v4
@@ -360,12 +360,12 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.version.outputs.tag }}
-          name: "UAT Validator ${{ steps.version.outputs.version }} (Testnet)"
+          name: "LOS Validator ${{ steps.version.outputs.version }} (Testnet)"
           draft: false
           prerelease: true
           generate_release_notes: true
           body: |
-            # 🖥️ UAT Validator Dashboard — Testnet Release `${{ steps.version.outputs.version }}`
+            # 🖥️ LOS Validator Dashboard — Testnet Release `${{ steps.version.outputs.version }}`
 
             **Post-Quantum Secure** validator monitoring dashboard for the Unauthority blockchain testnet.
 
@@ -373,13 +373,13 @@ jobs:
 
             | Platform | File | Install |
             |----------|------|---------|
-            | 🍎 **macOS** | `UAT-Validator-*-macos.dmg` | Open DMG → drag to Applications |
-            | 🐧 **Linux** | `UAT-Validator-*-linux-x64.tar.gz` | Extract → `./run.sh` |
-            | 🪟 **Windows** | `UAT-Validator-*-windows-x64.zip` | Extract → `flutter_validator.exe` |
+            | 🍎 **macOS** | `LOS-Validator-*-macos.dmg` | Open DMG → drag to Applications |
+            | 🐧 **Linux** | `LOS-Validator-*-linux-x64.tar.gz` | Extract → `./run.sh` |
+            | 🪟 **Windows** | `LOS-Validator-*-windows-x64.zip` | Extract → `flutter_validator.exe` |
 
             ## ✅ What's Included
 
-            - �️ **Bundled uat-node** — Full validator node binary included, no separate build needed
+            - �️ **Bundled los-node** — Full validator node binary included, no separate build needed
             - 🔐 **CRYSTALS-Dilithium5** — Post-quantum digital signatures
             - 🧅 **Automatic Tor** — Zero-config .onion connectivity
             - 📊 **Live Dashboard** — Validator stats, peers, blocks, uptime
@@ -391,14 +391,14 @@ jobs:
 
             1. Install & open the validator dashboard
             2. Import existing keys or generate new ones
-            3. Click **START NODE** — the bundled uat-node starts automatically
+            3. Click **START NODE** — the bundled los-node starts automatically
             4. Dashboard connects via Tor to the testnet peers
 
             ## ⚠️ Notes
 
             - This is a **testnet** release — tokens have no real value
-            - The uat-node binary is bundled — no Rust toolchain or compilation needed
-            - Minimum 1,000 UAT stake for validator participation
+            - The los-node binary is bundled — no Rust toolchain or compilation needed
+            - Minimum 1,000 LOS stake for validator participation
 
           files: |
             artifacts/validator-macos/*.dmg

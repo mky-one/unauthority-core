@@ -2,7 +2,7 @@ library;
 
 import 'package:flutter/foundation.dart';
 
-/// UNAUTHORITY FLUTTER WALLET - GRADUATED TESTNET CONFIGURATION
+/// LOS FLUTTER WALLET - GRADUATED TESTNET CONFIGURATION
 ///
 /// Aligns with backend graduated testnet levels:
 /// - Level 1 (Functional): UI/API testing only
@@ -49,8 +49,7 @@ class WalletTestnetConfig {
     return const WalletTestnetConfig(
       network: NetworkType.testnet,
       testnetLevel: TestnetLevel.functional,
-      apiUrl:
-          'http://ozpxrb6t5qvvfpa6ejuflmogipmmvwazxdlxckwi6oiubywj6drmhiqd.onion',
+      apiUrl: '', // Loaded from NetworkConfig at runtime
       faucetAvailable: true,
       expectedConfirmationTime: Duration(milliseconds: 100), // Immediate
     );
@@ -61,8 +60,7 @@ class WalletTestnetConfig {
     return const WalletTestnetConfig(
       network: NetworkType.testnet,
       testnetLevel: TestnetLevel.consensus,
-      apiUrl:
-          'http://ozpxrb6t5qvvfpa6ejuflmogipmmvwazxdlxckwi6oiubywj6drmhiqd.onion',
+      apiUrl: '', // Loaded from NetworkConfig at runtime
       faucetAvailable: true, // May be disabled in Level 3
       expectedConfirmationTime: Duration(seconds: 3), // Real BFT finality
     );
@@ -73,7 +71,7 @@ class WalletTestnetConfig {
     return const WalletTestnetConfig(
       network: NetworkType.mainnet,
       testnetLevel: null,
-      apiUrl: 'http://mainnet-coming-soon.onion', // Will be updated on launch
+      apiUrl: '', // Loaded from NetworkConfig at runtime
       faucetAvailable: false,
       expectedConfirmationTime: Duration(seconds: 3), // Real BFT finality
     );
@@ -154,7 +152,7 @@ class WalletConfig {
 
   /// Detect from environment variable (if set)
   static void detectFromEnvironment() {
-    final env = const String.fromEnvironment('UAT_TESTNET_LEVEL',
+    final env = const String.fromEnvironment('LOS_TESTNET_LEVEL',
         defaultValue: 'functional');
 
     switch (env) {
@@ -169,7 +167,7 @@ class WalletConfig {
         useMainnet();
         break;
       default:
-        debugPrint('⚠️ Unknown UAT_TESTNET_LEVEL: $env, using functional');
+        debugPrint('⚠️ Unknown LOS_TESTNET_LEVEL: $env, using functional');
         useFunctionalTestnet();
     }
   }

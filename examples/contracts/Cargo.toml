@@ -1,5 +1,5 @@
 [package]
-name = "uat-contract-examples"
+name = "los-contract-examples"
 version = "0.1.0"
 edition = "2021"
 

@@ -12,7 +12,7 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
 
 # Tor hidden service directory (created by setup_tor_testnet.sh)
-ONION_DIR="${ONION_DIR:-$HOME/uat-testnet-onion}"
+ONION_DIR="${ONION_DIR:-$HOME/los-testnet-onion}"
 HOSTNAME_FILE="$ONION_DIR/hostname"
 
 if [[ ! -f "$HOSTNAME_FILE" ]]; then

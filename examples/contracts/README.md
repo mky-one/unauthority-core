@@ -1,6 +1,6 @@
-# UAT Smart Contract Examples
+# LOS Smart Contract Examples
 
-This directory contains example smart contracts for the Unauthority (UAT) blockchain.
+This directory contains example smart contracts for the Unauthority (LOS) blockchain.
 
 ## Prerequisites
 
@@ -32,22 +32,22 @@ cargo build --release --target wasm32-unknown-unknown --bin hello_world
 
 **Deploy:**
 ```bash
-uat-cli deploy target/wasm32-unknown-unknown/release/hello_world.wasm
+los-cli deploy target/wasm32-unknown-unknown/release/hello_world.wasm
 ```
 
 **Usage:**
 ```bash
 # Set a value
-uat-cli call <CONTRACT_ADDR> '{"Set": {"key": "greeting", "value": "Hello UAT"}}'
+los-cli call <CONTRACT_ADDR> '{"Set": {"key": "greeting", "value": "Hello LOS"}}'
 
 # Get a value
-uat-cli call <CONTRACT_ADDR> '{"Get": {"key": "greeting"}}'
+los-cli call <CONTRACT_ADDR> '{"Get": {"key": "greeting"}}'
 
 # List all keys
-uat-cli call <CONTRACT_ADDR> '{"ListAll": {}}'
+los-cli call <CONTRACT_ADDR> '{"ListAll": {}}'
 
 # Delete a key
-uat-cli call <CONTRACT_ADDR> '{"Delete": {"key": "greeting"}}'
+los-cli call <CONTRACT_ADDR> '{"Delete": {"key": "greeting"}}'
 ```
 
 ---
@@ -63,26 +63,26 @@ cargo build --release --target wasm32-unknown-unknown --bin token
 
 **Deploy:**
 ```bash
-uat-cli deploy target/wasm32-unknown-unknown/release/token.wasm \
+los-cli deploy target/wasm32-unknown-unknown/release/token.wasm \
   --init-args '{"name":"MyToken","symbol":"MTK","total_supply":1000000}'
 ```
 
 **Usage:**
 ```bash
 # Check balance
-uat-cli call <CONTRACT_ADDR> '{"BalanceOf": {"account": "UAT123..."}}'
+los-cli call <CONTRACT_ADDR> '{"BalanceOf": {"account": "LOS123..."}}'
 
 # Transfer tokens
-uat-cli call <CONTRACT_ADDR> '{"Transfer": {"to": "UAT456...", "amount": 100}}'
+los-cli call <CONTRACT_ADDR> '{"Transfer": {"to": "LOS456...", "amount": 100}}'
 
 # Approve spender
-uat-cli call <CONTRACT_ADDR> '{"Approve": {"spender": "UAT789...", "amount": 50}}'
+los-cli call <CONTRACT_ADDR> '{"Approve": {"spender": "LOS789...", "amount": 50}}'
 
 # Transfer from (using allowance)
-uat-cli call <CONTRACT_ADDR> '{"TransferFrom": {"from": "UAT123...", "to": "UAT999...", "amount": 50}}'
+los-cli call <CONTRACT_ADDR> '{"TransferFrom": {"from": "LOS123...", "to": "LOS999...", "amount": 50}}'
 
 # Get token info
-uat-cli call <CONTRACT_ADDR> '{"TokenInfo": {}}'
+los-cli call <CONTRACT_ADDR> '{"TokenInfo": {}}'
 ```
 
 ---
@@ -98,25 +98,25 @@ cargo build --release --target wasm32-unknown-unknown --bin oracle_price_feed
 
 **Deploy:**
 ```bash
-uat-cli deploy target/wasm32-unknown-unknown/release/oracle_price_feed.wasm
+los-cli deploy target/wasm32-unknown-unknown/release/oracle_price_feed.wasm
 ```
 
 **Usage:**
 ```bash
 # Fetch latest BTC price from oracle
-uat-cli call <CONTRACT_ADDR> '{"FetchPrice": {"asset": "BTC"}}'
+los-cli call <CONTRACT_ADDR> '{"FetchPrice": {"asset": "BTC"}}'
 
 # Get stored latest price
-uat-cli call <CONTRACT_ADDR> '{"GetLatestPrice": {"asset": "BTC"}}'
+los-cli call <CONTRACT_ADDR> '{"GetLatestPrice": {"asset": "BTC"}}'
 
 # Get average price (last 10 periods)
-uat-cli call <CONTRACT_ADDR> '{"GetAveragePrice": {"asset": "ETH", "periods": 10}}'
+los-cli call <CONTRACT_ADDR> '{"GetAveragePrice": {"asset": "ETH", "periods": 10}}'
 
 # Get price history (last 20 records)
-uat-cli call <CONTRACT_ADDR> '{"GetPriceHistory": {"asset": "BTC", "limit": 20}}'
+los-cli call <CONTRACT_ADDR> '{"GetPriceHistory": {"asset": "BTC", "limit": 20}}'
 
 # Subscribe to price alerts
-uat-cli call <CONTRACT_ADDR> '{"Subscribe": {"asset": "ETH", "threshold_percent": 5}}'
+los-cli call <CONTRACT_ADDR> '{"Subscribe": {"asset": "ETH", "threshold_percent": 5}}'
 ```
 
 ---
@@ -142,7 +142,7 @@ uat-cli call <CONTRACT_ADDR> '{"Subscribe": {"asset": "ETH", "threshold_percent"
 cargo test
 
 # Integration test with local node
-uat-cli test <CONTRACT_WASM>
+los-cli test <CONTRACT_WASM>
 ```
 
 ### Debugging
@@ -190,5 +190,5 @@ unsafe {
 ## Resources
 
 - [UVM Documentation](../../docs/developer/SMART_CONTRACTS.md)
-- [UAT Whitepaper](../../docs/WHITEPAPER.md)
+- [LOS Whitepaper](../../docs/WHITEPAPER.md)
 - [API Reference](../../api_docs/API_REFERENCE.md)

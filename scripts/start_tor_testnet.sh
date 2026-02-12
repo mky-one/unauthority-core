@@ -10,7 +10,7 @@ echo ""
 # Check if backend is running
 if ! curl -s http://localhost:3030/health > /dev/null 2>&1; then
     echo "❌ Backend node not running on port 3030"
-    echo "   Start it first: ./target/release/uat-node --port 3030 --grpc-port 50051"
+    echo "   Start it first: ./target/release/los-node --port 3030 --grpc-port 50051"
     exit 1
 fi
 
@@ -95,7 +95,7 @@ echo ""
 echo "📖 FULL GUIDE: See TESTNET_ACCESS_GUIDE.md"
 echo ""
 echo "⚠️  KEEP THESE RUNNING:"
-echo "   ✅ UAT Node (PID: $(pgrep -f uat-node))"
+echo "   ✅ LOS Node (PID: $(pgrep -f los-node))"
 echo "   ✅ Tor Daemon (PID: $(pgrep -f 'tor.*unauthority'))"
 echo "   ✅ Wallet Frontend: http://localhost:5173"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"

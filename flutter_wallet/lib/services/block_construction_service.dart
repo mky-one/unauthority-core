@@ -1,13 +1,13 @@
 import 'dart:convert';
 import 'dart:isolate';
-import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 import 'package:pointycastle/digests/keccak.dart';
 import 'api_service.dart';
 import 'dilithium_service.dart';
 import 'wallet_service.dart';
+import '../constants/blockchain.dart';
 
-/// Client-side block-lattice block construction for UAT.
+/// Client-side block-lattice block construction for LOS.
 ///
 /// Matches the backend's Block struct and signing_hash() exactly:
 /// - Keccak-256 with CHAIN_ID domain separation (via pointycastle)
@@ -36,9 +36,9 @@ class BlockConstructionService {
   /// PoW difficulty: fetched from /node-info (fallback 16 if cached)
   int _powDifficultyBits = 16;
 
-  /// Base fee in VOID — fetched from /node-info (single source of truth).
+  /// Base fee in CIL — fetched from /node-info (single source of truth).
   /// null until first fetch; sendTransaction will fail if node unreachable.
-  int? _baseFeeVoid;
+  int? _baseFeeCil;
 
   /// Whether protocol params have been fetched from the node.
   bool _protocolFetched = false;
@@ -51,8 +51,9 @@ class BlockConstructionService {
   static const int blockTypeMint = 3;
   static const int blockTypeSlash = 4;
 
-  /// 1 UAT = 10^11 VOID (matches backend VOID_PER_UAT)
-  static const int voidPerUat = 100000000000;
+  /// 1 LOS = 10^11 CIL — redirects to the single source of truth.
+  /// DO NOT define a separate constant here; always use BlockchainConstants.
+  static int get cilPerLos => BlockchainConstants.cilPerLos;
 
   BlockConstructionService({
     required ApiService api,
@@ -78,7 +79,7 @@ class BlockConstructionService {
       final info = await _api.getNodeInfo();
       final protocol = info['protocol'] as Map<String, dynamic>?;
       if (protocol != null) {
-        _baseFeeVoid = (protocol['base_fee_void'] as num).toInt();
+        _baseFeeCil = (protocol['base_fee_cil'] as num).toInt();
         _powDifficultyBits = (protocol['pow_difficulty_bits'] as num).toInt();
         final nodeChainId = (protocol['chain_id_numeric'] as num).toInt();
         if (nodeChainId != chainId) {
@@ -88,14 +89,14 @@ class BlockConstructionService {
         }
         _protocolFetched = true;
         debugPrint(
-            '✅ Protocol params from node: base_fee=$_baseFeeVoid VOID, pow=$_powDifficultyBits bits, chain_id=$chainId');
+            '✅ Protocol params from node: base_fee=$_baseFeeCil CILD, pow=$_powDifficultyBits bits, chain_id=$chainId');
       } else {
         throw Exception(
             '/node-info missing "protocol" field — node upgrade required');
       }
     } catch (e) {
       debugPrint('⚠️ Failed to fetch protocol params: $e');
-      if (_baseFeeVoid == null) {
+      if (_baseFeeCil == null) {
         throw Exception(
             'Cannot send: protocol parameters unavailable from node. '
             'Ensure the node is reachable.');
@@ -107,10 +108,10 @@ class BlockConstructionService {
   /// Invalidate cached protocol params (e.g., after network switch).
   void invalidateProtocolCache() {
     _protocolFetched = false;
-    _baseFeeVoid = null;
+    _baseFeeCil = null;
   }
 
-  /// Send UAT with full client-side block construction.
+  /// Send LOS with full client-side block construction.
   ///
   /// 1. Fetch sender's frontier (head block hash) from node
   /// 2. Construct Block with all fields
@@ -121,8 +122,10 @@ class BlockConstructionService {
   /// Returns the transaction result from the node.
   Future<Map<String, dynamic>> sendTransaction({
     required String to,
-    required double amountUatDouble,
+    required double amountLosDouble,
   }) async {
+    debugPrint(
+        '📦 [BlockConstruction.sendTransaction] from=pending, to=$to, amount=$amountLosDouble LOS');
     // 0. Fetch protocol params from node (base_fee, pow_difficulty, chain_id)
     await _ensureProtocolParams();
     final powBits = _powDifficultyBits;
@@ -132,6 +135,7 @@ class BlockConstructionService {
     if (walletInfo == null) throw Exception('No wallet found');
 
     final address = walletInfo['address']!;
+    debugPrint('📦 [BlockConstruction.sendTransaction] from=$address');
     final publicKeyHex = walletInfo['public_key'];
     if (publicKeyHex == null) {
       throw Exception(
@@ -140,22 +144,24 @@ class BlockConstructionService {
 
     // 1b. Fetch dynamic fee from anti-whale engine (may be > base_fee if rapid sends)
     final feeData = await _api.getFeeEstimate(address);
-    final fee = (feeData['estimated_fee_void'] as num).toInt();
+    final fee = (feeData['estimated_fee_cil'] as num).toInt();
     final multiplier = (feeData['fee_multiplier'] as num).toInt();
+    debugPrint(
+        '📦 [BlockConstruction.sendTransaction] Fee: $fee CIL (multiplier: ${multiplier}x)');
     if (multiplier > 1) {
       debugPrint(
-          '⚠️ Anti-whale fee scaling active: $multiplier× base fee ($fee VOID)');
+          '⚠️ Anti-whale fee scaling active: $multiplier× base fee ($fee CIL)');
     }
 
     // 2. Fetch account state (frontier)
     final account = await _api.getAccount(address);
     final previous = account.headBlock ?? '0';
 
-    // 3. Convert amount to VOID (supports sub-UAT decimals)
-    // e.g. 0.5 UAT = 0.5 × 10^11 = 50,000,000,000 VOID
-    final amountVoid = BigInt.from((amountUatDouble * voidPerUat).round());
-    final amountUat =
-        amountUatDouble.floor(); // Integer UAT for API backward compat
+    // 3. Convert amount to CIL (supports sub-LOS decimals)
+    // e.g. 0.5 LOS = 0.5 × 10^11 = 50,000,000,000 CIL
+    final amountCil = BigInt.from((amountLosDouble * cilPerLos).round());
+    final amountLos =
+        amountLosDouble.floor(); // Integer LOS for API backward compat
 
     // 4. Current timestamp
     final timestamp = DateTime.now().millisecondsSinceEpoch ~/ 1000;
@@ -169,7 +175,7 @@ class BlockConstructionService {
       account: address,
       previous: previous,
       blockType: blockTypeSend,
-      amount: amountVoid,
+      amount: amountCil,
       link: to,
       publicKey: publicKeyHex,
       timestamp: timestamp,
@@ -198,19 +204,22 @@ class BlockConstructionService {
     debugPrint('📡 [Send] Submitting to node...');
 
     // 7. Submit pre-signed block to node
-    // Pass amount_void so backend uses exact VOID amount (supports sub-UAT precision)
-    return await _api.sendTransaction(
+    // Pass amount_cil so backend uses exact CIL amount (supports sub-LOS precision)
+    final txResult = await _api.sendTransaction(
       from: address,
       to: to,
-      amount: amountUat,
+      amount: amountLos,
       signature: signature,
       publicKey: publicKeyHex,
       previous: previous,
       work: work,
       timestamp: timestamp,
       fee: fee,
-      amountVoid: amountVoid.toString(),
+      amountCil: amountCil.toString(),
     );
+    debugPrint(
+        '📦 [BlockConstruction.sendTransaction] SUCCESS txid=${txResult['tx_hash'] ?? txResult['txid']}');
+    return txResult;
   }
 
   /// Compute the signing_hash — delegates to static method for isolate compatibility.
@@ -423,12 +432,12 @@ class BlockConstructionService {
         final elapsed = sw.elapsedMilliseconds;
         final hashHex =
             output.map((b) => b.toRadixString(16).padLeft(2, '0')).join('');
-        print(
+        debugPrint(
             '⛏️ PoW found! nonce=$nonce, ${elapsed}ms, ${(nonce / (elapsed / 1000)).round()} H/s');
         return {'work': nonce, 'hash': hashHex};
       }
     }
-    print(
+    debugPrint(
         '❌ PoW FAILED after $maxIter iterations (${sw.elapsedMilliseconds}ms)');
     return null; // Failed to find valid nonce
   }
@@ -477,28 +486,6 @@ class BlockConstructionService {
     return _keccak256Static(Uint8List.fromList(data));
   }
 
-  /// Static leading zero bits check for isolate use.
-  static bool _hasLeadingZeroBitsStatic(String hexHash, int requiredBits) {
-    final bytes = _hexToBytesStatic(hexHash);
-    int zeroBits = 0;
-    for (final byte in bytes) {
-      if (byte == 0) {
-        zeroBits += 8;
-      } else {
-        int b = byte;
-        for (int i = 7; i >= 0; i--) {
-          if ((b >> i) & 1 == 0) {
-            zeroBits++;
-          } else {
-            return zeroBits >= requiredBits;
-          }
-        }
-        return zeroBits >= requiredBits;
-      }
-    }
-    return zeroBits >= requiredBits;
-  }
-
   /// Static u128 LE for isolate use.
   static Uint8List _u128ToLeBytesStatic(BigInt value) {
     final bytes = Uint8List(16);
@@ -508,15 +495,6 @@ class BlockConstructionService {
       v = v >> 8;
     }
     return bytes;
-  }
-
-  /// Static hex→bytes for isolate use.
-  static Uint8List _hexToBytesStatic(String hex) {
-    final result = Uint8List(hex.length ~/ 2);
-    for (int i = 0; i < result.length; i++) {
-      result[i] = int.parse(hex.substring(i * 2, i * 2 + 2), radix: 16);
-    }
-    return result;
   }
 
   // ════════════════════════════════════════════════════════════════════

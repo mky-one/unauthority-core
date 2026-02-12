@@ -68,13 +68,13 @@ else
     echo -e "${YELLOW}⚠️  Node not running. Starting node...${NC}"
     
     # Build if needed
-    if [ ! -f "target/release/uat-node" ]; then
+    if [ ! -f "target/release/los-node" ]; then
         echo -e "${BLUE}🔨 Building node...${NC}"
         cargo build --release
     fi
     
     # Start node in background
-    nohup ./target/release/uat-node \
+    nohup ./target/release/los-node \
         --port 3030 \
         --api-port 3030 \
         --ws-port 9030 \
@@ -147,7 +147,7 @@ echo "   Chain: $CHAIN_NAME"
 echo ""
 echo -e "${BLUE}🧪 TEST ENDPOINTS:${NC}"
 echo "   Node Info:  ${PUBLIC_URL}/node-info"
-echo "   Balance:    ${PUBLIC_URL}/balance/UAT..."
+echo "   Balance:    ${PUBLIC_URL}/balance/LOS..."
 echo "   Faucet:     ${PUBLIC_URL}/faucet"
 echo "   Send:       ${PUBLIC_URL}/send"
 echo ""
@@ -167,7 +167,7 @@ echo "   1. Download wallet from GitHub releases"
 echo "   2. In wallet Settings, change API endpoint to:"
 echo "      $PUBLIC_URL"
 echo "   3. Create/import wallet"
-echo "   4. Request faucet (100 UAT)"
+echo "   4. Request faucet (100 LOS)"
 echo "   5. Start testing!"
 echo ""
 echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
@@ -205,12 +205,12 @@ cat > testnet-connection-info.txt <<EOF
    curl ${PUBLIC_URL}/node-info
 
    # Get balance
-   curl ${PUBLIC_URL}/balance/UAT...
+   curl ${PUBLIC_URL}/balance/LOS...
 
-   # Request faucet (100 UAT)
+   # Request faucet (100 LOS)
    curl -X POST ${PUBLIC_URL}/faucet \\
      -H "Content-Type: application/json" \\
-     -d '{"address": "UAT..."}'
+     -d '{"address": "LOS..."}'
 
 ⚠️  NOTES:
    - This is testnet - tokens have NO real value

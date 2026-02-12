@@ -1,6 +1,6 @@
-# UAT Validator Node
+# LOS Validator Node
 
-Validator node dashboard for **Unauthority (UAT)** blockchain. Track node status, manage keys, and monitor consensus participation.
+Validator node dashboard for **Unauthority (LOS)** blockchain. Track node status, manage keys, and monitor consensus participation.
 
 ## Features
 
@@ -20,12 +20,12 @@ Pre-built releases for macOS, Windows, and Linux:
 
 | Platform | File |
 |----------|------|
-| macOS | `UAT-Validator-*-macos.dmg` |
-| Windows | `UAT-Validator-*-windows-x64.zip` |
-| Linux | `UAT-Validator-*-linux-x64.tar.gz` |
+| macOS | `LOS-Validator-*-macos.dmg` |
+| Windows | `LOS-Validator-*-windows-x64.zip` |
+| Linux | `LOS-Validator-*-linux-x64.tar.gz` |
 
 > **macOS:** Apple blocks unsigned apps. After install, run:
-> `xattr -cr /Applications/UAT\ Validator\ Node.app`
+> `xattr -cr /Applications/LOS\ Validator\ Node.app`
 > Or: System Settings → Privacy & Security → Open Anyway
 
 ## Build from Source
@@ -39,7 +39,7 @@ Pre-built releases for macOS, Windows, and Linux:
 
 ```bash
 # 1. Build the Dilithium5 native library
-cd native/uat_crypto_ffi
+cd native/los_crypto_ffi
 cargo build --release
 cd ../..
 
@@ -65,7 +65,7 @@ flutter build windows --release  # Windows
 
 To run your own validator node, see the [Testnet Run Guide](../dev_docs/TESTNET_RUN_GUIDE.md).
 
-Minimum stake requirement: **1,000 UAT**.
+Minimum stake requirement: **1,000 LOS**.
 
 ## Project Structure
 
@@ -79,7 +79,7 @@ flutter_validator/
 │   ├── services/              # API, wallet, Dilithium5, Tor services
 │   └── widgets/               # Reusable UI components
 ├── native/
-│   └── uat_crypto_ffi/        # Rust FFI crate for Dilithium5
+│   └── los_crypto_ffi/        # Rust FFI crate for Dilithium5
 └── test/                      # Widget tests
 ```
 

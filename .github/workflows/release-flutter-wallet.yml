@@ -1,7 +1,7 @@
 name: "Release Flutter Wallet (Testnet)"
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# Builds UAT Wallet for macOS, Linux & Windows — creates GitHub Release
+# Builds LOS Wallet for macOS, Linux & Windows — creates GitHub Release
 # Triggered on merge to main (wallet changes), tags, or manual dispatch
 # ═══════════════════════════════════════════════════════════════════════════════
 
@@ -51,11 +51,11 @@ jobs:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
-            flutter_wallet/native/uat_crypto_ffi/target
-          key: macos-rust-${{ hashFiles('flutter_wallet/native/uat_crypto_ffi/Cargo.lock') }}
+            flutter_wallet/native/los_crypto_ffi/target
+          key: macos-rust-${{ hashFiles('flutter_wallet/native/los_crypto_ffi/Cargo.lock') }}
 
       - name: Build Dilithium5 native library
-        working-directory: flutter_wallet/native/uat_crypto_ffi
+        working-directory: flutter_wallet/native/los_crypto_ffi
         run: |
           cargo build --release
           cargo test --release -- --nocapture
@@ -71,11 +71,11 @@ jobs:
       - name: Bundle native library
         working-directory: flutter_wallet
         run: |
-          APP="build/macos/Build/Products/Release/UAT Wallet.app"
+          APP="build/macos/Build/Products/Release/LOS Wallet.app"
           FRAMEWORKS="$APP/Contents/Frameworks"
           mkdir -p "$FRAMEWORKS"
-          cp native/uat_crypto_ffi/target/release/libuat_crypto_ffi.dylib "$FRAMEWORKS/"
-          install_name_tool -id "@executable_path/../Frameworks/libuat_crypto_ffi.dylib" "$FRAMEWORKS/libuat_crypto_ffi.dylib"
+          cp native/los_crypto_ffi/target/release/liblos_crypto_ffi.dylib "$FRAMEWORKS/"
+          install_name_tool -id "@executable_path/../Frameworks/liblos_crypto_ffi.dylib" "$FRAMEWORKS/liblos_crypto_ffi.dylib"
           codesign --force --deep --sign - "$APP"
 
       - name: Create DMG
@@ -87,17 +87,17 @@ jobs:
           if [ "$VERSION" = "$GITHUB_REF_NAME" ]; then VERSION="${{ github.event.inputs.version || '1.0.0-testnet' }}"; fi
           
           mkdir -p release/dmg_staging
-          cp -R "build/macos/Build/Products/Release/UAT Wallet.app" release/dmg_staging/
+          cp -R "build/macos/Build/Products/Release/LOS Wallet.app" release/dmg_staging/
           ln -s /Applications release/dmg_staging/Applications
           
           cat > release/dmg_staging/README.txt << 'EOF'
           ╔══════════════════════════════════════════════════════════════╗
-          ║            UAT WALLET - TESTNET RELEASE                    ║
+          ║            LOS WALLET - TESTNET RELEASE                    ║
           ║            Unauthority Blockchain                          ║
           ╚══════════════════════════════════════════════════════════════╝
           
           INSTALLATION:
-            Drag "UAT Wallet.app" to the Applications folder.
+            Drag "LOS Wallet.app" to the Applications folder.
           
           FIRST RUN:
             1. Open the app from Applications
@@ -106,10 +106,10 @@ jobs:
           EOF
           
           hdiutil create \
-            -volname "UAT Wallet" \
+            -volname "LOS Wallet" \
             -srcfolder release/dmg_staging \
             -ov -format UDZO \
-            "release/UAT-Wallet-${VERSION}-macos.dmg"
+            "release/LOS-Wallet-${VERSION}-macos.dmg"
           
           rm -rf release/dmg_staging
 
@@ -154,11 +154,11 @@ jobs:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
-            flutter_wallet/native/uat_crypto_ffi/target
-          key: linux-rust-${{ hashFiles('flutter_wallet/native/uat_crypto_ffi/Cargo.lock') }}
+            flutter_wallet/native/los_crypto_ffi/target
+          key: linux-rust-${{ hashFiles('flutter_wallet/native/los_crypto_ffi/Cargo.lock') }}
 
       - name: Build Dilithium5 native library
-        working-directory: flutter_wallet/native/uat_crypto_ffi
+        working-directory: flutter_wallet/native/los_crypto_ffi
         run: |
           cargo build --release
           cargo test --release -- --nocapture
@@ -181,7 +181,7 @@ jobs:
           BUNDLE="build/linux/x64/release/bundle"
           
           # Copy .so into bundle/lib/
-          cp native/uat_crypto_ffi/target/release/libuat_crypto_ffi.so "$BUNDLE/lib/"
+          cp native/los_crypto_ffi/target/release/liblos_crypto_ffi.so "$BUNDLE/lib/"
           
           # Create launcher script
           cat > "$BUNDLE/run.sh" << 'LAUNCHER'
@@ -195,7 +195,7 @@ jobs:
           # Create README
           cat > "$BUNDLE/README.txt" << 'EOF'
           ═══════════════════════════════════════════════════════════════
-            UAT WALLET - TESTNET RELEASE (Linux)
+            LOS WALLET - TESTNET RELEASE (Linux)
             Unauthority Blockchain
           ═══════════════════════════════════════════════════════════════
           
@@ -209,7 +209,7 @@ jobs:
           # Package as tar.gz
           mkdir -p release
           cd build/linux/x64/release
-          tar czf "../../../../release/UAT-Wallet-${VERSION}-linux-x64.tar.gz" bundle/
+          tar czf "../../../../release/LOS-Wallet-${VERSION}-linux-x64.tar.gz" bundle/
           cd ../../../../
 
       - name: Upload Linux artifact
@@ -245,11 +245,11 @@ jobs:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
-            flutter_wallet/native/uat_crypto_ffi/target
-          key: windows-rust-${{ hashFiles('flutter_wallet/native/uat_crypto_ffi/Cargo.lock') }}
+            flutter_wallet/native/los_crypto_ffi/target
+          key: windows-rust-${{ hashFiles('flutter_wallet/native/los_crypto_ffi/Cargo.lock') }}
 
       - name: Build Dilithium5 native library
-        working-directory: flutter_wallet/native/uat_crypto_ffi
+        working-directory: flutter_wallet/native/los_crypto_ffi
         run: |
           cargo build --release
           cargo test --release -- --nocapture
@@ -272,12 +272,12 @@ jobs:
           $bundle = "build\windows\x64\runner\Release"
           
           # Copy .dll next to the executable
-          Copy-Item "native\uat_crypto_ffi\target\release\uat_crypto_ffi.dll" "$bundle\"
+          Copy-Item "native\los_crypto_ffi\target\release\los_crypto_ffi.dll" "$bundle\"
           
           # Create README
           @"
           ═══════════════════════════════════════════════════════════════
-            UAT WALLET - TESTNET RELEASE (Windows)
+            LOS WALLET - TESTNET RELEASE (Windows)
             Unauthority Blockchain
           ═══════════════════════════════════════════════════════════════
           
@@ -290,7 +290,7 @@ jobs:
           
           # Package as zip
           New-Item -ItemType Directory -Force -Path release | Out-Null
-          Compress-Archive -Path "$bundle\*" -DestinationPath "release\UAT-Wallet-${version}-windows-x64.zip" -Force
+          Compress-Archive -Path "$bundle\*" -DestinationPath "release\LOS-Wallet-${version}-windows-x64.zip" -Force
 
       - name: Upload Windows artifact
         uses: actions/upload-artifact@v4
@@ -343,12 +343,12 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.version.outputs.tag }}
-          name: "UAT Wallet ${{ steps.version.outputs.version }} (Testnet)"
+          name: "LOS Wallet ${{ steps.version.outputs.version }} (Testnet)"
           draft: false
           prerelease: true
           generate_release_notes: true
           body: |
-            # 🔐 UAT Wallet — Testnet Release `${{ steps.version.outputs.version }}`
+            # 🔐 LOS Wallet — Testnet Release `${{ steps.version.outputs.version }}`
 
             **Post-Quantum Secure** wallet for the Unauthority blockchain testnet.
 
@@ -356,16 +356,16 @@ jobs:
 
             | Platform | File | Install |
             |----------|------|---------|
-            | 🍎 **macOS** | `UAT-Wallet-*-macos.dmg` | Open DMG → drag to Applications |
-            | 🐧 **Linux** | `UAT-Wallet-*-linux-x64.tar.gz` | Extract → `./run.sh` |
-            | 🪟 **Windows** | `UAT-Wallet-*-windows-x64.zip` | Extract → `flutter_wallet.exe` |
+            | 🍎 **macOS** | `LOS-Wallet-*-macos.dmg` | Open DMG → drag to Applications |
+            | 🐧 **Linux** | `LOS-Wallet-*-linux-x64.tar.gz` | Extract → `./run.sh` |
+            | 🪟 **Windows** | `LOS-Wallet-*-windows-x64.zip` | Extract → `flutter_wallet.exe` |
 
             ## ✅ What's Included
 
             - 🔐 **CRYSTALS-Dilithium5** — Post-quantum digital signatures (compiled native library)
             - 🧅 **Automatic Tor** — Zero-config .onion connectivity (auto-installs if needed)
-            - 💰 **Send/Receive UAT** — Full transaction support
-            - 🔥 **Proof-of-Burn** — Convert BTC/ETH to UAT
+            - 💰 **Send/Receive LOS** — Full transaction support
+            - 🔥 **Proof-of-Burn** — Convert BTC/ETH to LOS
             - 📝 **BIP39 Seed Phrase** — 24-word backup & recovery
             - 🛡️ **Anti-Whale Protection** — Dynamic fee scaling, quadratic voting
             - ⚡ **Guaranteed Mainnet** — All features active (Dilithium5, slashing, anti-whale)

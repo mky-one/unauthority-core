@@ -7,11 +7,11 @@ export default {
   theme: {
     extend: {
       colors: {
-        'uat-dark': '#0a0a0f',
-        'uat-gray': '#1a1a24',
-        'uat-blue': '#2563eb',
-        'uat-cyan': '#06b6d4',
-        'uat-orange': '#f97316',
+        'los-dark': '#0a0a0f',
+        'los-gray': '#1a1a24',
+        'los-blue': '#2563eb',
+        'los-cyan': '#06b6d4',
+        'los-orange': '#f97316',
       },
     },
   },

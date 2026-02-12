@@ -1,4 +1,4 @@
-# Unauthority (UAT) — Technical Whitepaper
+# Unauthority (LOS) — Technical Whitepaper
 
 **Version:** 1.0.6-testnet  
 **Date:** February 2026
@@ -7,17 +7,17 @@
 
 ## Abstract
 
-Unauthority (UAT) is a Layer-1 blockchain designed for absolute immutability. There are no admin keys, no pause functions, no upgrade mechanisms. Once deployed, the chain is autonomous and cannot be altered by any party.
+Unauthority (LOS) is a Layer-1 blockchain designed for absolute immutability. There are no admin keys, no pause functions, no upgrade mechanisms. Once deployed, the chain is autonomous and cannot be altered by any party.
 
 The system combines a **block-lattice (DAG) structure** with **aBFT consensus**, **post-quantum cryptography** (CRYSTALS-Dilithium5), and **Tor-only networking** to create a permissionless, censorship-resistant financial network.
 
-Total supply is fixed at **21,936,236 UAT**, distributed 93% via Proof-of-Burn and 7% to the development treasury.
+Total supply is fixed at **21,936,236 LOS**, distributed 93% via Proof-of-Burn and 7% to the development treasury.
 
 ---
 
 ## 1. Ledger Structure: Block-Lattice
 
-UAT uses a **block-lattice** architecture where each account maintains its own blockchain. This eliminates global block ordering for simple transfers and enables high throughput.
+LOS uses a **block-lattice** architecture where each account maintains its own blockchain. This eliminates global block ordering for simple transfers and enables high throughput.
 
 ### Block Types
 
@@ -26,18 +26,18 @@ UAT uses a **block-lattice** architecture where each account maintains its own b
 | `Send` | Transfer value to another account | Recipient address |
 | `Receive` | Accept incoming Send | Hash of the Send block |
 | `Change` | Update representative (delegated voting) | New representative address |
-| `Mint` | Create new UAT via Proof-of-Burn consensus | Burn proof data |
+| `Mint` | Create new LOS via Proof-of-Burn consensus | Burn proof data |
 | `Slash` | Penalize misbehaving validators | Evidence hash |
 
 ### Block Fields
 
 ```
-account:         Account address (UAT...)
+account:         Account address (LOS...)
 previous:        Hash of previous block in this account's chain
 representative:  Delegated voting representative
-balance:         Account balance after this block (in VOID)
+balance:         Account balance after this block (in CIL)
 link:            Context-dependent (see above)
-fee:             Transaction fee (minimum 100,000 VOID = 0.001 UAT)
+fee:             Transaction fee (minimum 100,000 CIL = 0.001 LOS)
 timestamp:       Unix timestamp (±300s drift tolerance)
 work:            Proof-of-work nonce (16-bit difficulty, anti-spam only)
 signature:       CRYSTALS-Dilithium5 signature
@@ -57,7 +57,7 @@ block_hash   = Keccak-256(signing_hash || signature)
 
 ### 2.1 Protocol
 
-UAT implements aBFT with three-phase voting:
+LOS implements aBFT with three-phase voting:
 
 1. **Pre-prepare** — Leader proposes a block
 2. **Prepare** — Validators verify and broadcast prepare messages
@@ -71,9 +71,9 @@ Byzantine tolerance: `f = ⌊(n-1)/3⌋` — the network tolerates up to f fault
 
 Voting power is proportional to the **square root of stake**, not the raw stake:
 
-$$\text{voting\_power} = \sqrt{\text{stake\_in\_void}}$$
+$$\text{voting\_power} = \sqrt{\text{stake\_in\_cil}}$$
 
-This prevents whale concentration. A validator with 100,000 UAT has only 10× the voting power of one with 1,000 UAT (not 100×).
+This prevents whale concentration. A validator with 100,000 LOS has only 10× the voting power of one with 1,000 LOS (not 100×).
 
 Implementation uses deterministic integer square root via Newton's method on `u128` with 6-decimal precision.
 
@@ -112,17 +112,17 @@ All signatures use **CRYSTALS-Dilithium5** — a NIST PQC Level 5 lattice-based 
 ```
 public_key  →  BLAKE2b-512  →  first 20 bytes  →  prepend version byte 0x4A
             →  SHA-256(SHA-256(versioned))  →  first 4 bytes (checksum)
-            →  Base58(versioned + checksum)  →  prepend "UAT"
+            →  Base58(versioned + checksum)  →  prepend "LOS"
 ```
 
-Example address: `UATBwXk9m2P3dU7N5R1Qj8K4vL6Y...`
+Example address: `LOSBwXk9m2P3dU7N5R1Qj8K4vL6Y...`
 
 ### 3.3 Deterministic Key Generation (v1.0.3+)
 
 BIP39 mnemonic (24 words) → 64-byte seed → domain-separated derivation:
 
 ```
-salt    = SHA-256("uat-dilithium5-keygen-v1")
+salt    = SHA-256("los-dilithium5-keygen-v1")
 derived = SHA-256(salt || bip39_seed)  →  32-byte ChaCha20 seed
 keypair = Dilithium5::keypair_from_seed(derived)
 ```
@@ -131,7 +131,7 @@ This produces identical keypairs across Rust (node) and Dart (Flutter wallet) im
 
 ### 3.4 Key Encryption
 
-Private keys are encrypted at rest using the `age` crate with scrypt KDF. On mainnet, a minimum 12-character password is required (`UAT_WALLET_PASSWORD`). Node auto-migrates plaintext keys to encrypted format.
+Private keys are encrypted at rest using the `age` crate with scrypt KDF. On mainnet, a minimum 12-character password is required (`LOS_WALLET_PASSWORD`). Node auto-migrates plaintext keys to encrypted format.
 
 ### 3.5 Memory Safety
 
@@ -143,7 +143,7 @@ All key material implements `Zeroize` on `Drop` — private keys are overwritten
 
 ### 4.1 Transport
 
-UAT uses **libp2p** with the following configuration:
+LOS uses **libp2p** with the following configuration:
 
 - **Protocol**: GossipSub on topic `"uat-blocks"`
 - **Encryption**: Noise Protocol Framework
@@ -183,35 +183,35 @@ The Flutter wallet and validator apps include **bundled Tor** — zero-configura
 
 | Parameter | Value |
 |-----------|-------|
-| Total supply | 21,936,236 UAT |
-| Smallest unit | 1 VOID |
-| Conversion | 1 UAT = 10^11 VOID (100,000,000,000) |
+| Total supply | 21,936,236 LOS |
+| Smallest unit | 1 CIL |
+| Conversion | 1 LOS = 10^11 CIL (100,000,000,000) |
 | Inflation | **Zero** — supply is fixed forever |
 
 ### 5.2 Distribution
 
-| Allocation | UAT | Percentage |
+| Allocation | LOS | Percentage |
 |------------|-----|-----------|
 | Public (Proof-of-Burn) | 20,400,700 | 93% |
 | Dev Treasury (8 wallets) | 1,535,536 | 7% |
 | **Total** | **21,936,236** | **100%** |
 
-Dev Treasury: Wallets #1–#7 hold 191,942 UAT each. Wallet #8 holds 187,942 UAT (funded 4 bootstrap validators at 1,000 UAT each).
+Dev Treasury: Wallets #1–#7 hold 191,942 LOS each. Wallet #8 holds 187,942 LOS (funded 4 bootstrap validators at 1,000 LOS each).
 
 ### 5.3 Proof-of-Burn Minting
 
-New UAT is minted by verifiably burning ETH or BTC:
+New LOS is minted by verifiably burning ETH or BTC:
 
 1. User burns ETH/BTC to a dead address (`0x...dead` / `1BitcoinEater...`)
-2. User submits burn proof (txid) to UAT network
+2. User submits burn proof (txid) to LOS network
 3. Oracle consensus verifies the burn via external price feeds
-4. If ≥ 2/3 validators confirm, UAT is minted proportionally
+4. If ≥ 2/3 validators confirm, LOS is minted proportionally
 
 Mint calculation uses **pure integer math** (no floating-point):
 
 ```
-1 UAT = $0.01 = 10,000 micro-USD
-mint_void = (burn_micro_usd * VOID_PER_UAT) / 10,000
+1 LOS = $0.01 = 10,000 micro-USD
+mint_cil = (burn_micro_usd * CIL_PER_LOS) / 10,000
 ```
 
 Oracle sources: CoinGecko, CryptoCompare, Kraken (via Tor SOCKS5 proxy).  
@@ -222,14 +222,14 @@ Sanity bounds: ETH $10–$100,000 · BTC $100–$10,000,000. Oracle fails closed
 - **Quadratic Voting**: voting_power = √(stake) — dampens whale influence
 - **Dynamic Fee Scaling**: fees multiply 2× per additional tx beyond 10 tx/minute per account
 - **Activity Windows**: 60-second rolling windows track per-account tx frequency
-- **Max burn per block**: 1,000 UAT (anti-abuse)
+- **Max burn per block**: 1,000 LOS (anti-abuse)
 
 ### 5.5 Transaction Fees
 
 | Parameter | Value |
 |-----------|-------|
-| Minimum fee | 0.001 UAT (100,000 VOID) |
-| Base gas price | 1,000 VOID |
+| Minimum fee | 0.001 LOS (100,000 CIL) |
+| Base gas price | 1,000 CIL |
 | Max gas per tx | 10,000,000 |
 | Gas per byte | 10 |
 | Spam threshold | 10 tx/s per account |
@@ -241,9 +241,9 @@ Validators are incentivized through an epoch-based reward system drawn from a de
 
 | Parameter | Value |
 |-----------|-------|
-| Reward pool | 2,193,623 UAT (~10% of total supply) |
+| Reward pool | 2,193,623 LOS (~10% of total supply) |
 | Epoch duration | 24 hours (86,400 seconds) |
-| Initial rate | 50 UAT per epoch |
+| Initial rate | 50 LOS per epoch |
 | Halving schedule | Every 365 epochs (~1 year) |
 | Minimum uptime | 95% (heartbeats per epoch) |
 | Probation period | 3 epochs after registration |
@@ -288,9 +288,9 @@ Contract deployment validates WASM magic bytes (`\0asm`), computes a blake3 addr
 Defined in `genesis_config.json`:
 
 - Network ID: 1 (`uat-mainnet`)
-- Total supply: 2,193,623,600,000,000,000 VOID (= 21,936,236 UAT)
-- Dev supply: 153,553,600,000,000,000 VOID (= 1,535,536 UAT, 7%)
-- 8 dev treasury wallets + 4 bootstrap validators (1,000 UAT each)
+- Total supply: 2,193,623,600,000,000,000 CIL (= 21,936,236 LOS)
+- Dev supply: 153,553,600,000,000,000 CIL (= 1,535,536 LOS, 7%)
+- 8 dev treasury wallets + 4 bootstrap validators (1,000 LOS each)
 
 ### 7.2 Testnet Genesis
 
@@ -299,7 +299,7 @@ Defined in `testnet-genesis/testnet_wallets.json`:
 - Network ID: 2 (`uat-testnet`)
 - Identical allocation structure to mainnet
 - All wallets have BIP39 seed phrases and deterministic Dilithium5 keypairs
-- Faucet available: 5,000 UAT per claim, 1-hour cooldown
+- Faucet available: 5,000 LOS per claim, 1-hour cooldown
 
 ---
 
@@ -325,13 +325,13 @@ Defined in `testnet-genesis/testnet_wallets.json`:
 
 ```
 crates/
-├── uat-core        # Ledger, accounts, block types, supply math, anti-whale, validator rewards
-├── uat-crypto      # Dilithium5, address derivation, key encryption
-├── uat-consensus   # aBFT protocol, quadratic voting, slashing, checkpoints
-├── uat-network     # libp2p, GossipSub, Tor transport, fee scaling
-├── uat-vm          # WASM smart contract engine (Wasmer + Cranelift)
-├── uat-node        # Full node binary — REST API + gRPC + P2P
-└── uat-cli         # Command-line interface
+├── los-core        # Ledger, accounts, block types, supply math, anti-whale, validator rewards
+├── los-crypto      # Dilithium5, address derivation, key encryption
+├── los-consensus   # aBFT protocol, quadratic voting, slashing, checkpoints
+├── los-network     # libp2p, GossipSub, Tor transport, fee scaling
+├── los-vm          # WASM smart contract engine (Wasmer + Cranelift)
+├── los-node        # Full node binary — REST API + gRPC + P2P
+└── los-cli         # Command-line interface
 ```
 
 Both Flutter apps (`flutter_wallet/`, `flutter_validator/`) use `flutter_rust_bridge` (FFI) to call native Dilithium5 functions compiled per platform.

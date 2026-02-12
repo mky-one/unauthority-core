@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import '../config/testnet_config.dart';
 import '../services/wallet_service.dart';
 import '../services/api_service.dart';
 
@@ -60,7 +61,7 @@ class _BurnScreenState extends State<BurnScreen> {
         SnackBar(content: Text(e.toString()), backgroundColor: Colors.red),
       );
     } finally {
-      setState(() => _isLoading = false);
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 
@@ -85,13 +86,13 @@ class _BurnScreenState extends State<BurnScreen> {
                 ),
                 const SizedBox(height: 16),
                 const Text(
-                  'Burn BTC or ETH to receive UAT',
+                  'Burn BTC or ETH to receive LOS',
                   style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
                   textAlign: TextAlign.center,
                 ),
                 const SizedBox(height: 8),
                 const Text(
-                  'Submit your burn transaction ID. Oracle validators will verify and mint UAT to your wallet.',
+                  'Submit your burn transaction ID. Oracle validators will verify and mint LOS to your wallet.',
                   style: TextStyle(fontSize: 12, color: Colors.grey),
                   textAlign: TextAlign.center,
                 ),
@@ -161,59 +162,60 @@ class _BurnScreenState extends State<BurnScreen> {
 
                 const SizedBox(height: 12),
 
-                // Test TXID buttons (for testnet convenience)
-                Card(
-                  color: const Color(0xFF1A2332),
-                  child: Padding(
-                    padding: const EdgeInsets.all(12),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Text(
-                          '🧪 Test TXIDs (Testnet)',
-                          style: TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.blueGrey,
+                // Test TXID buttons (for testnet convenience — hidden on mainnet)
+                if (WalletConfig.current.network != NetworkType.mainnet)
+                  Card(
+                    color: const Color(0xFF1A2332),
+                    child: Padding(
+                      padding: const EdgeInsets.all(12),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            '🧪 Test TXIDs (Testnet)',
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.blueGrey,
+                            ),
                           ),
-                        ),
-                        const SizedBox(height: 8),
-                        Wrap(
-                          spacing: 8,
-                          runSpacing: 8,
-                          children: [
-                            _TestTxidChip(
-                              label: 'BTC Test',
-                              txid:
-                                  '2096b844178ecc776e050be7886e618ee111e2a68fcf70b28928b82b5f97dcc9',
-                              coinType: 'btc',
-                              onTap: () {
-                                setState(() {
-                                  _selectedCoin = 'btc';
-                                  _txidController.text =
-                                      '2096b844178ecc776e050be7886e618ee111e2a68fcf70b28928b82b5f97dcc9';
-                                });
-                              },
-                            ),
-                            _TestTxidChip(
-                              label: 'ETH Test',
-                              txid:
-                                  '0x459ccd6fe488b0f826aef198ad5625d0275f5de1b77b905f85d6e71460c1f1aa',
-                              coinType: 'eth',
-                              onTap: () {
-                                setState(() {
-                                  _selectedCoin = 'eth';
-                                  _txidController.text =
-                                      '0x459ccd6fe488b0f826aef198ad5625d0275f5de1b77b905f85d6e71460c1f1aa';
-                                });
-                              },
-                            ),
-                          ],
-                        ),
-                      ],
+                          const SizedBox(height: 8),
+                          Wrap(
+                            spacing: 8,
+                            runSpacing: 8,
+                            children: [
+                              _TestTxidChip(
+                                label: 'BTC Test',
+                                txid:
+                                    '2096b844178ecc776e050be7886e618ee111e2a68fcf70b28928b82b5f97dcc9',
+                                coinType: 'btc',
+                                onTap: () {
+                                  setState(() {
+                                    _selectedCoin = 'btc';
+                                    _txidController.text =
+                                        '2096b844178ecc776e050be7886e618ee111e2a68fcf70b28928b82b5f97dcc9';
+                                  });
+                                },
+                              ),
+                              _TestTxidChip(
+                                label: 'ETH Test',
+                                txid:
+                                    '0x459ccd6fe488b0f826aef198ad5625d0275f5de1b77b905f85d6e71460c1f1aa',
+                                coinType: 'eth',
+                                onTap: () {
+                                  setState(() {
+                                    _selectedCoin = 'eth';
+                                    _txidController.text =
+                                        '0x459ccd6fe488b0f826aef198ad5625d0275f5de1b77b905f85d6e71460c1f1aa';
+                                  });
+                                },
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
                     ),
                   ),
-                ),
 
                 const SizedBox(height: 32),
 
@@ -244,8 +246,8 @@ class _BurnScreenState extends State<BurnScreen> {
                         Text(
                           '• Send BTC/ETH to the burn address FIRST\n'
                           '• Oracle validators verify on-chain automatically\n'
-                          '• UAT amount is calculated from live oracle prices\n'
-                          '• Max 1,000 UAT per block (Anti-Whale protection)\n'
+                          '• LOS amount is calculated from live oracle prices\n'
+                          '• Max 1,000 LOS per block (Anti-Whale protection)\n'
                           '• Rate limit: 1 burn per 5 minutes\n'
                           '• False submissions are rejected automatically',
                           style: TextStyle(fontSize: 12),

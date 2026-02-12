@@ -27,6 +27,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   List<BlockInfo> _recentBlocks = [];
   List<String> _peers = [];
   bool _isLoading = true;
+  bool _isFirstLoad = true;
   String? _error;
   String? _myAddress;
 
@@ -57,6 +58,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   /// Start a 1-second timer that decrements the countdown locally
   void _startCountdownTimer() {
+    debugPrint(
+        '📊 [DashboardScreen._startCountdownTimer] Starting countdown timer');
     _countdownTimer = Timer.periodic(const Duration(seconds: 1), (_) {
       if (_epochRemainingSecs > 0 && mounted) {
         setState(() => _epochRemainingSecs--);
@@ -65,15 +68,24 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 
   Future<void> _loadMyAddress() async {
+    debugPrint('📊 [DashboardScreen._loadMyAddress] Loading address...');
     final walletService = context.read<WalletService>();
     final wallet = await walletService.getCurrentWallet();
     if (wallet != null && mounted) {
       setState(() => _myAddress = wallet['address']);
+      debugPrint(
+          '📊 [DashboardScreen._loadMyAddress] Address: ${wallet['address']}');
     }
   }
 
   Future<void> _loadDashboard() async {
-    setState(() => _isLoading = true);
+    debugPrint('📊 [DashboardScreen._loadDashboard] Loading dashboard...');
+    // Only show full-screen spinner on first load.
+    // Subsequent refreshes update data silently in the background
+    // to avoid annoying loading indicators.
+    if (_isFirstLoad) {
+      setState(() => _isLoading = true);
+    }
 
     try {
       final apiService = context.read<ApiService>();
@@ -105,12 +117,20 @@ class _DashboardScreenState extends State<DashboardScreen> {
         }
         _error = null;
         _isLoading = false;
+        _isFirstLoad = false;
       });
+      debugPrint(
+          '📊 [DashboardScreen._loadDashboard] Success: validators=${_validators.length}, block_height=${_nodeInfo?['block_height']}, peers=${_peers.length}');
     } catch (e) {
       if (!mounted) return;
       setState(() {
-        _error = e.toString();
+        // Only show error on first load. On subsequent refreshes,
+        // keep showing the last known data instead of replacing with error screen.
+        if (_isFirstLoad) {
+          _error = e.toString();
+        }
         _isLoading = false;
+        _isFirstLoad = false;
       });
     }
   }
@@ -124,7 +144,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
               title: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  const Text('UAT Validator'),
+                  const Text('LOS Validator'),
                   const SizedBox(width: 8),
                   Container(
                     padding:
@@ -397,7 +417,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                                       vertical: 2),
                                                   decoration: BoxDecoration(
                                                     color: Colors.amberAccent
-                                                        .withOpacity(0.2),
+                                                        .withValues(alpha: 0.2),
                                                     borderRadius:
                                                         BorderRadius.circular(
                                                             8),
@@ -419,7 +439,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                             ],
                                           ),
                                           subtitle: Text(
-                                            'Stake: ${v.stakeUAT.toStringAsFixed(0)} UAT',
+                                            'Stake: ${v.stakeLOS.toStringAsFixed(0)} LOS',
                                           ),
                                           trailing: Text(
                                             v.isActive ? 'ACTIVE' : 'INACTIVE',
@@ -588,10 +608,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
         _rewardInfo?['validators'] as Map<String, dynamic>? ?? {};
     final currentEpoch = (epoch['current_epoch'] as num?)?.toInt() ?? 0;
     final epochDuration = (epoch['epoch_duration_secs'] as num?)?.toInt() ?? 0;
-    final rewardRateUat =
-        (epoch['epoch_reward_rate_uat'] as num?)?.toInt() ?? 0;
+    final rewardRateLos =
+        (epoch['epoch_reward_rate_los'] as num?)?.toInt() ?? 0;
     final eligibleCount = (validatorsInfo['eligible'] as num?)?.toInt() ?? 0;
-    final remainingUat = (pool['remaining_uat'] as num?)?.toInt() ?? 0;
+    final remainingLos = (pool['remaining_los'] as num?)?.toInt() ?? 0;
 
     // Calculate progress (0.0 to 1.0)
     final elapsed =
@@ -648,7 +668,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   padding:
                       const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                   decoration: BoxDecoration(
-                    color: Colors.blue.withOpacity(0.1),
+                    color: Colors.blue.withValues(alpha: 0.1),
                     borderRadius: BorderRadius.circular(12),
                     border: Border.all(color: Colors.blue, width: 1),
                   ),
@@ -691,7 +711,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
               child: LinearProgressIndicator(
                 value: progress,
                 minHeight: 8,
-                backgroundColor: Colors.grey.withOpacity(0.2),
+                backgroundColor: Colors.grey.withValues(alpha: 0.2),
                 valueColor: AlwaysStoppedAnimation<Color>(
                   _epochRemainingSecs <= 30 ? Colors.green : Colors.blue,
                 ),
@@ -700,9 +720,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
             const SizedBox(height: 12),
 
             _buildInfoRow('Epoch Duration', _formatCountdown(epochDuration)),
-            _buildInfoRow('Reward/Epoch', '$rewardRateUat UAT'),
+            _buildInfoRow('Reward/Epoch', '$rewardRateLos LOS'),
             _buildInfoRow('Eligible Validators', '$eligibleCount'),
-            _buildInfoRow('Pool Remaining', '$remainingUat UAT'),
+            _buildInfoRow('Pool Remaining', '$remainingLos LOS'),
             _buildInfoRow('Your Status', myRewardStatus),
           ],
         ),
@@ -757,8 +777,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
     final seconds = up > 1577836800 ? (now - up).abs() : up;
     if (seconds < 60) return '${seconds}s';
     if (seconds < 3600) return '${seconds ~/ 60}m ${seconds % 60}s';
-    if (seconds < 86400)
+    if (seconds < 86400) {
       return '${seconds ~/ 3600}h ${(seconds % 3600) ~/ 60}m';
+    }
     return '${seconds ~/ 86400}d ${(seconds % 86400) ~/ 3600}h';
   }
 }

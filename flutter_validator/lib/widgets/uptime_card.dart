@@ -131,11 +131,11 @@ class UptimeCard extends StatelessWidget {
                   child: _buildStatCard(
                     context,
                     icon: Icons.warning,
-                    iconColor: validatorInfo.totalSlashedUat > 0
+                    iconColor: validatorInfo.totalSlashedLos > 0
                         ? Colors.red.shade400
                         : Colors.grey,
                     label: 'Slashed',
-                    value: '${validatorInfo.totalSlashedUat} UAT',
+                    value: '${validatorInfo.totalSlashedLos} LOS',
                   ),
                 ),
               ],
@@ -175,7 +175,7 @@ class UptimeCard extends StatelessWidget {
               ),
             ],
 
-            if (validatorInfo.totalSlashedUat > 0) ...[
+            if (validatorInfo.totalSlashedLos > 0) ...[
               const SizedBox(height: 12),
               Container(
                 padding: const EdgeInsets.all(12),
@@ -194,7 +194,7 @@ class UptimeCard extends StatelessWidget {
                     const SizedBox(width: 8),
                     Expanded(
                       child: Text(
-                        'Your validator has been slashed for ${validatorInfo.totalSlashedUat} UAT due to downtime or misbehavior.',
+                        'Your validator has been slashed for ${validatorInfo.totalSlashedLos} LOS due to downtime or misbehavior.',
                         style: TextStyle(
                           fontSize: 12,
                           color: Colors.red.shade400,

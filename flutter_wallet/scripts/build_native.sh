@@ -1,6 +1,6 @@
 #!/bin/bash
 # ==============================================================================
-# UAT Wallet — Build Native Dilithium5 Library
+# LOS Wallet — Build Native Dilithium5 Library
 # ==============================================================================
 # Compiles the Rust FFI crate and copies the dynamic library to the correct
 # platform-specific location for Flutter desktop apps.
@@ -14,7 +14,7 @@ set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 WALLET_DIR="$(dirname "$SCRIPT_DIR")"
-NATIVE_DIR="$WALLET_DIR/native/uat_crypto_ffi"
+NATIVE_DIR="$WALLET_DIR/native/los_crypto_ffi"
 
 # Check if Rust is installed
 if ! command -v cargo &> /dev/null; then
@@ -37,7 +37,7 @@ fi
 
 # Build the native library
 echo ""
-echo "📦 Compiling uat-crypto-ffi (Dilithium5 FFI)..."
+echo "📦 Compiling los-crypto-ffi (Dilithium5 FFI)..."
 cd "$NATIVE_DIR"
 cargo build $CARGO_FLAGS 2>&1
 
@@ -53,7 +53,7 @@ echo ""
 OS="$(uname -s)"
 case "$OS" in
     Darwin)
-        LIB_NAME="libuat_crypto_ffi.dylib"
+        LIB_NAME="liblos_crypto_ffi.dylib"
         PLATFORM="macOS"
         # Copy to macOS Frameworks directory (for release builds)
         MACOS_DIR="$WALLET_DIR/macos/Runner"
@@ -63,7 +63,7 @@ case "$OS" in
         fi
         ;;
     Linux)
-        LIB_NAME="libuat_crypto_ffi.so"
+        LIB_NAME="liblos_crypto_ffi.so"
         PLATFORM="Linux"
         # Copy to Linux bundle directory
         LINUX_DIR="$WALLET_DIR/linux"
@@ -73,12 +73,12 @@ case "$OS" in
         fi
         ;;
     MINGW*|MSYS*|CYGWIN*)
-        LIB_NAME="uat_crypto_ffi.dll"
+        LIB_NAME="los_crypto_ffi.dll"
         PLATFORM="Windows"
         ;;
     *)
         echo "⚠️  Unknown platform: $OS"
-        LIB_NAME="libuat_crypto_ffi.so"
+        LIB_NAME="liblos_crypto_ffi.so"
         PLATFORM="Unknown"
         ;;
 esac
@@ -88,7 +88,7 @@ LIB_SIZE=$(du -h "$LIB_PATH" | cut -f1)
 
 echo ""
 echo "═══════════════════════════════════════════════════"
-echo "  ✅ UAT Crypto FFI Build Complete"
+echo "  ✅ LOS Crypto FFI Build Complete"
 echo "═══════════════════════════════════════════════════"
 echo "  Platform:  $PLATFORM"
 echo "  Library:   $LIB_NAME"

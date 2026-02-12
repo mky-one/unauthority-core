@@ -1,4 +1,4 @@
-# Join the UAT Testnet
+# Join the LOS Testnet
 
 Quick start guide — from zero to sending tokens in 5 minutes.
 
@@ -12,16 +12,16 @@ Pre-built desktop apps with built-in Tor and Dilithium5 cryptography. No externa
 
 | Platform | Download |
 |----------|----------|
-| macOS | [UAT-Wallet-macos.dmg](https://github.com/unauthoritymky-6236/unauthority-core/releases/tag/wallet-v1.0.6-testnet) |
-| Windows | [UAT-Wallet-windows-x64.zip](https://github.com/unauthoritymky-6236/unauthority-core/releases/tag/wallet-v1.0.6-testnet) |
-| Linux | [UAT-Wallet-linux-x64.tar.gz](https://github.com/unauthoritymky-6236/unauthority-core/releases/tag/wallet-v1.0.6-testnet) |
+| macOS | [LOS-Wallet-macos.dmg](https://github.com/unauthoritymky-6236/unauthority-core/releases/tag/wallet-v1.0.6-testnet) |
+| Windows | [LOS-Wallet-windows-x64.zip](https://github.com/unauthoritymky-6236/unauthority-core/releases/tag/wallet-v1.0.6-testnet) |
+| Linux | [LOS-Wallet-linux-x64.tar.gz](https://github.com/unauthoritymky-6236/unauthority-core/releases/tag/wallet-v1.0.6-testnet) |
 
 ### macOS: Remove Gatekeeper Block
 
 Apple blocks unsigned apps. After installing, run:
 
 ```bash
-xattr -cr /Applications/UAT\ Wallet.app
+xattr -cr /Applications/LOS\ Wallet.app
 ```
 
 Or: **System Settings → Privacy & Security → Open Anyway**.
@@ -35,15 +35,15 @@ Or: **System Settings → Privacy & Security → Open Anyway**.
 3. **Write down your 24-word seed phrase on paper** — this is your only backup
 4. Confirm the seed phrase when prompted
 
-Your address starts with `UAT` (e.g., `UATBwXk9...`). This is derived from a CRYSTALS-Dilithium5 post-quantum keypair.
+Your address starts with `LOS` (e.g., `LOSBwXk9...`). This is derived from a CRYSTALS-Dilithium5 post-quantum keypair.
 
 ---
 
 ## 3. Get Testnet Tokens
 
-Go to the **Faucet** tab and click **Request UAT**.
+Go to the **Faucet** tab and click **Request LOS**.
 
-- **Amount:** 5,000 UAT per claim
+- **Amount:** 5,000 LOS per claim
 - **Cooldown:** 1 hour per address
 - **Network:** Testnet only (CHAIN_ID = 2)
 
@@ -52,7 +52,7 @@ Go to the **Faucet** tab and click **Request UAT**.
 ## 4. Send Tokens
 
 1. Go to the **Send** tab
-2. Enter a recipient `UAT...` address
+2. Enter a recipient `LOS...` address
 3. Enter amount (e.g., `100`)
 4. Click **Send**
 
@@ -99,11 +99,11 @@ Quick start:
 ```bash
 git clone https://github.com/unauthoritymky-6236/unauthority-core.git
 cd unauthority-core
-cargo build --release --bin uat-node
-./target/release/uat-node --dev
+cargo build --release --bin los-node
+./target/release/los-node --dev
 ```
 
-Minimum stake: 1,000 UAT.
+Minimum stake: 1,000 LOS.
 
 ---
 
@@ -111,11 +111,11 @@ Minimum stake: 1,000 UAT.
 
 | Issue | Solution |
 |-------|----------|
-| "Cannot verify app" on macOS | `xattr -cr /Applications/UAT\ Wallet.app` |
+| "Cannot verify app" on macOS | `xattr -cr /Applications/LOS\ Wallet.app` |
 | Wallet won't connect | Ensure Tor is running — the app auto-installs it on first launch |
 | Faucet says "rate limited" | Wait 1 hour between claims |
 | Balance shows 0 after faucet | Wait ~3 seconds for finality, then refresh |
-| Address doesn't start with UAT | Update to v1.0.6 — older versions had incompatible address format |
+| Address doesn't start with LOS | Update to v1.0.6 — older versions had incompatible address format |
 
 ---
 
@@ -127,7 +127,7 @@ Minimum stake: 1,000 UAT.
 | Finality | < 3 seconds |
 | Consensus | aBFT (Asynchronous Byzantine Fault Tolerance) |
 | Cryptography | CRYSTALS-Dilithium5 (NIST Level 5, post-quantum) |
-| Address format | Version `0x4A` + BLAKE2b-160 + Base58Check + `UAT` prefix |
-| Unit | 1 UAT = 10^11 VOID |
-| Minimum fee | 0.001 UAT (100,000 VOID) |
+| Address format | Version `0x4A` + BLAKE2b-160 + Base58Check + `LOS` prefix |
+| Unit | 1 LOS = 10^11 CIL |
+| Minimum fee | 0.001 LOS (100,000 CIL) |
 | PoW | 16 leading zero bits (anti-spam, not consensus) |

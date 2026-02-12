@@ -46,9 +46,9 @@ export default function SettingsPanel() {
 
   return (
     <div className="max-w-2xl">
-      <div className="bg-uat-gray border border-gray-700 rounded-xl p-6 space-y-6">
+      <div className="bg-los-gray border border-gray-700 rounded-xl p-6 space-y-6">
         <div className="flex items-center space-x-3 pb-4 border-b border-gray-700">
-          <SettingsIcon className="w-6 h-6 text-uat-blue" />
+          <SettingsIcon className="w-6 h-6 text-los-blue" />
           <h3 className="text-lg font-semibold text-white">Dashboard Settings</h3>
         </div>
 
@@ -63,7 +63,7 @@ export default function SettingsPanel() {
             value={apiEndpoint}
             onChange={(e) => setApiEndpoint(e.target.value)}
             placeholder="http://fhljoiopyz2eflttc7o5qwfj6l6skhtlkjpn4r6yw4atqpy2azydnnqd.onion"
-            className="w-full bg-uat-dark border border-gray-600 rounded-lg px-4 py-2 text-white focus:outline-none focus:border-uat-blue"
+            className="w-full bg-los-dark border border-gray-600 rounded-lg px-4 py-2 text-white focus:outline-none focus:border-los-blue"
           />
           <p className="text-xs text-gray-400 mt-1">The REST API endpoint of your validator node</p>
         </div>
@@ -80,12 +80,12 @@ export default function SettingsPanel() {
               value={localAddress}
               onChange={(e) => setLocalAddress(e.target.value)}
               placeholder="Click 'Fetch from Node' to auto-fill..."
-              className="flex-1 bg-uat-dark border border-gray-600 rounded-lg px-4 py-2 text-white focus:outline-none focus:border-uat-blue font-mono text-sm"
+              className="flex-1 bg-los-dark border border-gray-600 rounded-lg px-4 py-2 text-white focus:outline-none focus:border-los-blue font-mono text-sm"
             />
             <button
               onClick={handleFetchNodeAddress}
               disabled={isLoadingAddress}
-              className="flex items-center space-x-2 px-4 py-2 bg-uat-blue hover:bg-uat-blue/80 disabled:opacity-50 disabled:cursor-not-allowed rounded-lg transition-colors"
+              className="flex items-center space-x-2 px-4 py-2 bg-los-blue hover:bg-los-blue/80 disabled:opacity-50 disabled:cursor-not-allowed rounded-lg transition-colors"
             >
               <RefreshCw className={`w-4 h-4 ${isLoadingAddress ? 'animate-spin' : ''}`} />
               <span className="font-medium">Fetch from Node</span>
@@ -103,7 +103,7 @@ export default function SettingsPanel() {
               type="checkbox"
               checked={autoRefresh}
               onChange={(e) => setAutoRefresh(e.target.checked)}
-              className="w-4 h-4 text-uat-blue bg-uat-dark border-gray-600 rounded focus:ring-uat-blue"
+              className="w-4 h-4 text-los-blue bg-los-dark border-gray-600 rounded focus:ring-los-blue"
             />
             <span className="text-sm font-medium text-gray-300">Auto-refresh data</span>
           </label>
@@ -121,7 +121,7 @@ export default function SettingsPanel() {
               onChange={(e) => setRefreshInterval(parseInt(e.target.value))}
               min="5"
               max="60"
-              className="w-full bg-uat-dark border border-gray-600 rounded-lg px-4 py-2 text-white focus:outline-none focus:border-uat-blue"
+              className="w-full bg-los-dark border border-gray-600 rounded-lg px-4 py-2 text-white focus:outline-none focus:border-los-blue"
             />
           </div>
         )}
@@ -130,7 +130,7 @@ export default function SettingsPanel() {
         <div className="pt-4">
           <button
             onClick={handleSave}
-            className="w-full bg-gradient-to-r from-uat-blue to-uat-cyan hover:opacity-90 text-white font-medium py-3 rounded-lg transition-opacity flex items-center justify-center space-x-2"
+            className="w-full bg-gradient-to-r from-los-blue to-los-cyan hover:opacity-90 text-white font-medium py-3 rounded-lg transition-opacity flex items-center justify-center space-x-2"
           >
             <Save className="w-4 h-4" />
             <span>Save Settings</span>

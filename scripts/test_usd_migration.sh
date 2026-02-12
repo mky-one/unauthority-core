@@ -26,9 +26,9 @@ fi
 # Test 2: Verify USD is used everywhere
 echo ""
 echo "🔍 Test 2: Verifying USD adoption..."
-USD_STRUCT=$(grep -c "total_burned_usd" crates/uat-core/src/distribution.rs)
-USD_ORACLE=$(grep -c "eth_price_usd" crates/uat-core/src/oracle_consensus.rs)
-USD_PROTO=$(grep -c "eth_price_usd" uat.proto)
+USD_STRUCT=$(grep -c "total_burned_usd" crates/los-core/src/distribution.rs)
+USD_ORACLE=$(grep -c "eth_price_usd" crates/los-core/src/oracle_consensus.rs)
+USD_PROTO=$(grep -c "eth_price_usd" los.proto)
 
 if [ "$USD_STRUCT" -ge 1 ] && [ "$USD_ORACLE" -ge 1 ] && [ "$USD_PROTO" -ge 1 ]; then
     echo "✅ PASS: USD fields found in:"
@@ -43,19 +43,19 @@ fi
 # Test 3: Check oracle API URLs
 echo ""
 echo "🔍 Test 3: Verifying oracle APIs (no Indonesian exchanges)..."
-if grep -q "indodax" crates/uat-node/src/main.rs; then
+if grep -q "indodax" crates/los-node/src/main.rs; then
     echo "❌ FAIL: Indodax (Indonesian exchange) still present!"
     exit 1
 fi
 
-if grep -q "vs_currencies=usd" crates/uat-node/src/main.rs; then
+if grep -q "vs_currencies=usd" crates/los-node/src/main.rs; then
     echo "✅ PASS: CoinGecko using USD"
 else
     echo "❌ FAIL: CoinGecko not using USD!"
     exit 1
 fi
 
-if grep -q "Kraken" crates/uat-node/src/main.rs; then
+if grep -q "Kraken" crates/los-node/src/main.rs; then
     echo "✅ PASS: Kraken (global exchange) integrated"
 else
     echo "⚠️  WARNING: Kraken not found (using fallback)"
@@ -64,7 +64,7 @@ fi
 # Test 4: Check log formatting
 echo ""
 echo "🔍 Test 4: Verifying log message currency symbols..."
-if grep -q 'ETH=\${' crates/uat-node/src/main.rs; then
+if grep -q 'ETH=\${' crates/los-node/src/main.rs; then
     echo "✅ PASS: USD log formatting detected (\$ symbol)"
 else
     echo "❌ FAIL: No USD formatting in logs!"
@@ -85,8 +85,8 @@ fi
 # Test 6: Economic viability check
 echo ""
 echo "🔍 Test 6: Checking economic parameters..."
-DEFAULT_ETH=$(grep -A2 "if eth_prices.is_empty()" crates/uat-node/src/main.rs | grep -oP '\d+\.\d+' | head -1)
-DEFAULT_BTC=$(grep -A2 "if btc_prices.is_empty()" crates/uat-node/src/main.rs | grep -oP '\d+' | head -1)
+DEFAULT_ETH=$(grep -A2 "if eth_prices.is_empty()" crates/los-node/src/main.rs | grep -oP '\d+\.\d+' | head -1)
+DEFAULT_BTC=$(grep -A2 "if btc_prices.is_empty()" crates/los-node/src/main.rs | grep -oP '\d+' | head -1)
 
 echo "   Default ETH price: \$$DEFAULT_ETH"
 echo "   Default BTC price: \$$DEFAULT_BTC"
@@ -118,7 +118,7 @@ echo "                    🎉 ALL TESTS PASSED 🎉"
 echo "======================================================================"
 echo ""
 echo "✅ Anonymity: PRESERVED (no IDR/Indonesian references)"
-echo "✅ Economics: USD-based (\$0.01 per UAT starting price)"
+echo "✅ Economics: USD-based (\$0.01 per LOS starting price)"
 echo "✅ Oracle: Global exchanges only (CoinGecko, CryptoCompare, Kraken)"
 echo "✅ Compilation: SUCCESS"
 echo ""

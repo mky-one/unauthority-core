@@ -1,6 +1,6 @@
 #!/bin/bash
 # 
-# UNAUTHORITY GRADUATED TESTNET FRAMEWORK
+# LOS GRADUATED TESTNET FRAMEWORK
 # Ensures testnet success = mainnet success guarantee
 # 
 # TESTING LEVELS:
@@ -28,7 +28,7 @@ TESTNET_LEVEL=${1:-functional}
 
 echo -e "${CYAN}"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo "                UAT GRADUATED TESTNET FRAMEWORK"
+echo "                LOS GRADUATED TESTNET FRAMEWORK"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo -e "${NC}"
 
@@ -61,18 +61,18 @@ esac
 echo ""
 
 # Set environment variable
-export UAT_TESTNET_LEVEL=$TESTNET_LEVEL
+export LOS_TESTNET_LEVEL=$TESTNET_LEVEL
 
 # Clean previous test data
 echo -e "${MAGENTA}🧹 Cleaning previous test data...${NC}"
-pkill -f "uat-node" 2>/dev/null || true
+pkill -f "los-node" 2>/dev/null || true
 sleep 2
 rm -rf node_data/testnet-*
 mkdir -p node_data/testnet-{1,2,3,4}
 
 # Build with testnet configuration
 echo -e "${MAGENTA}🔨 Building with testnet level: $TESTNET_LEVEL${NC}"
-cargo build --release --bin uat-node
+cargo build --release --bin los-node
 
 # Start validators based on testnet level
 case $TESTNET_LEVEL in
@@ -102,9 +102,9 @@ start_functional_testnet() {
         port=$((3029 + i))
         echo "   Starting validator-$i on port $port..."
         
-        UAT_NODE_ID="testnet-$i" \
-        UAT_TESTNET_LEVEL="functional" \
-        ./target/release/uat-node $port \
+        LOS_NODE_ID="testnet-$i" \
+        LOS_TESTNET_LEVEL="functional" \
+        ./target/release/los-node $port \
             > node_data/testnet-$i/node.log 2>&1 &
         
         sleep 1
@@ -135,9 +135,9 @@ start_consensus_testnet() {
         port=$((3029 + i))
         echo "   Starting validator-$i on port $port (consensus mode)..."
         
-        UAT_NODE_ID="testnet-$i" \
-        UAT_TESTNET_LEVEL="consensus" \
-        ./target/release/uat-node $port \
+        LOS_NODE_ID="testnet-$i" \
+        LOS_TESTNET_LEVEL="consensus" \
+        ./target/release/los-node $port \
             > node_data/testnet-$i/node.log 2>&1 &
         
         sleep 1
@@ -159,9 +159,9 @@ start_production_testnet() {
         port=$((3029 + i))
         echo "   Starting validator-$i on port $port (production simulation)..."
         
-        UAT_NODE_ID="testnet-$i" \
-        UAT_TESTNET_LEVEL="production" \
-        ./target/release/uat-node $port \
+        LOS_NODE_ID="testnet-$i" \
+        LOS_TESTNET_LEVEL="production" \
+        ./target/release/los-node $port \
             > node_data/testnet-$i/node.log 2>&1 &
         
         # Stagger starts to avoid overwhelming
@@ -186,8 +186,8 @@ test_consensus_agreement() {
     tx_hash=$(curl -s -X POST "http://localhost:3030/send" \
         -H "Content-Type: application/json" \
         -d '{
-            "from": "UAT8R5HZiK3VNSubMmiRJsUC4AeBzzrEi1Chfwe2baRAmoY",
-            "target": "UATAGdtJrioyV8gN7e3MjF4XB9KBtd3Tiu1b6e8m97VjiMs", 
+            "from": "LOS8R5HZiK3VNSubMmiRJsUC4AeBzzrEi1Chfwe2baRAmoY",
+            "target": "LOSAGdtJrioyV8gN7e3MjF4XB9KBtd3Tiu1b6e8m97VjiMs", 
             "amount": 100,
             "signature": "consensus_test"
         }' | jq -r '.tx_hash')
@@ -205,9 +205,9 @@ test_consensus_agreement() {
     echo "   Verifying consistency across validators..."
     local balance1 balance2 balance3
     
-    balance1=$(curl -s "http://localhost:3030/balance/UATAGdtJrioyV8gN7e3MjF4XB9KBtd3Tiu1b6e8m97VjiMs" | jq '.balance')
-    balance2=$(curl -s "http://localhost:3031/balance/UATAGdtJrioyV8gN7e3MjF4XB9KBtd3Tiu1b6e8m97VjiMs" | jq '.balance') 
-    balance3=$(curl -s "http://localhost:3032/balance/UATAGdtJrioyV8gN7e3MjF4XB9KBtd3Tiu1b6e8m97VjiMs" | jq '.balance')
+    balance1=$(curl -s "http://localhost:3030/balance/LOSAGdtJrioyV8gN7e3MjF4XB9KBtd3Tiu1b6e8m97VjiMs" | jq '.balance')
+    balance2=$(curl -s "http://localhost:3031/balance/LOSAGdtJrioyV8gN7e3MjF4XB9KBtd3Tiu1b6e8m97VjiMs" | jq '.balance') 
+    balance3=$(curl -s "http://localhost:3032/balance/LOSAGdtJrioyV8gN7e3MjF4XB9KBtd3Tiu1b6e8m97VjiMs" | jq '.balance')
     
     if [ "$balance1" = "$balance2" ] && [ "$balance2" = "$balance3" ]; then
         echo -e "${GREEN}   ✅ Consensus agreement verified (balance: $balance1)${NC}"
@@ -320,7 +320,7 @@ test_network_resilience() {
 # Cleanup function
 cleanup() {
     echo -e "${MAGENTA}🧹 Cleaning up testnet...${NC}"
-    pkill -f "uat-node" 2>/dev/null || true
+    pkill -f "los-node" 2>/dev/null || true
     echo -e "${GREEN}✅ Cleanup complete${NC}"
 }
 

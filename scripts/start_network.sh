@@ -22,17 +22,17 @@ echo -e "${NC}"
 echo ""
 
 # Check if binary exists
-if [ ! -f "target/release/uat-node" ]; then
+if [ ! -f "target/release/los-node" ]; then
     echo -e "${RED}❌ Binary not found!${NC}"
     echo "   Building release binary..."
-    cargo build --release --bin uat-node || exit 1
+    cargo build --release --bin los-node || exit 1
     echo -e "${GREEN}✅ Build complete${NC}"
     echo ""
 fi
 
 # Clean old processes
 echo -e "${YELLOW}🧹 Cleaning old processes...${NC}"
-pkill -9 uat-node 2>/dev/null && echo "   Killed existing nodes" || echo "   No existing processes"
+pkill -9 los-node 2>/dev/null && echo "   Killed existing nodes" || echo "   No existing processes"
 
 # Clean old PID file
 rm -f node_data/pids.txt
@@ -48,7 +48,7 @@ echo "   ✓ node_data/validator-3/"
 # Optional: Clean databases for fresh start (comment out for persistence)
 # echo ""
 # echo -e "${YELLOW}⚠️  Cleaning databases (fresh start)...${NC}"
-# rm -rf node_data/validator-*/uat_database
+# rm -rf node_data/validator-*/los_database
 # echo "   Databases cleared"
 
 echo ""
@@ -63,11 +63,11 @@ echo -e "${GREEN}▶️  Starting Node 1 (Validator 1)${NC}"
 echo "   Node ID: validator-1"
 echo "   REST API: http://localhost:3030"
 echo "   gRPC API: localhost:23030"
-echo "   Database: node_data/validator-1/uat_database"
+echo "   Database: node_data/validator-1/los_database"
 echo "   Log file: node_data/validator-1/node.log"
 
-export UAT_NODE_ID="validator-1"
-./target/release/uat-node 3030 > node_data/validator-1/node.log 2>&1 &
+export LOS_NODE_ID="validator-1"
+./target/release/los-node 3030 > node_data/validator-1/node.log 2>&1 &
 PID1=$!
 
 echo -e "   ${GREEN}✓ Started (PID: $PID1)${NC}"
@@ -83,11 +83,11 @@ echo -e "${GREEN}▶️  Starting Node 2 (Validator 2)${NC}"
 echo "   Node ID: validator-2"
 echo "   REST API: http://localhost:3031"
 echo "   gRPC API: localhost:23031"
-echo "   Database: node_data/validator-2/uat_database"
+echo "   Database: node_data/validator-2/los_database"
 echo "   Log file: node_data/validator-2/node.log"
 
-export UAT_NODE_ID="validator-2"
-./target/release/uat-node 3031 > node_data/validator-2/node.log 2>&1 &
+export LOS_NODE_ID="validator-2"
+./target/release/los-node 3031 > node_data/validator-2/node.log 2>&1 &
 PID2=$!
 
 echo -e "   ${GREEN}✓ Started (PID: $PID2)${NC}"
@@ -103,11 +103,11 @@ echo -e "${GREEN}▶️  Starting Node 3 (Validator 3)${NC}"
 echo "   Node ID: validator-3"
 echo "   REST API: http://localhost:3032"
 echo "   gRPC API: localhost:23032"
-echo "   Database: node_data/validator-3/uat_database"
+echo "   Database: node_data/validator-3/los_database"
 echo "   Log file: node_data/validator-3/node.log"
 
-export UAT_NODE_ID="validator-3"
-./target/release/uat-node 3032 > node_data/validator-3/node.log 2>&1 &
+export LOS_NODE_ID="validator-3"
+./target/release/los-node 3032 > node_data/validator-3/node.log 2>&1 &
 PID3=$!
 
 echo -e "   ${GREEN}✓ Started (PID: $PID3)${NC}"
@@ -144,7 +144,7 @@ echo ""
 # Check Node 1
 echo -n "   Node 1 (3030): "
 if curl -s http://localhost:3030/supply > /dev/null 2>&1; then
-    SUPPLY_1=$(curl -s http://localhost:3030/supply | grep -o '"remaining_supply_void":[0-9]*' | cut -d':' -f2)
+    SUPPLY_1=$(curl -s http://localhost:3030/supply | grep -o '"remaining_supply_cil":[0-9]*' | cut -d':' -f2)
     echo -e "${GREEN}ONLINE${NC} (Supply: $SUPPLY_1 VOI)"
 else
     echo -e "${RED}OFFLINE${NC}"
@@ -153,7 +153,7 @@ fi
 # Check Node 2
 echo -n "   Node 2 (3031): "
 if curl -s http://localhost:3031/supply > /dev/null 2>&1; then
-    SUPPLY_2=$(curl -s http://localhost:3031/supply | grep -o '"remaining_supply_void":[0-9]*' | cut -d':' -f2)
+    SUPPLY_2=$(curl -s http://localhost:3031/supply | grep -o '"remaining_supply_cil":[0-9]*' | cut -d':' -f2)
     echo -e "${GREEN}ONLINE${NC} (Supply: $SUPPLY_2 VOI)"
 else
     echo -e "${RED}OFFLINE${NC}"
@@ -162,7 +162,7 @@ fi
 # Check Node 3
 echo -n "   Node 3 (3032): "
 if curl -s http://localhost:3032/supply > /dev/null 2>&1; then
-    SUPPLY_3=$(curl -s http://localhost:3032/supply | grep -o '"remaining_supply_void":[0-9]*' | cut -d':' -f2)
+    SUPPLY_3=$(curl -s http://localhost:3032/supply | grep -o '"remaining_supply_cil":[0-9]*' | cut -d':' -f2)
     echo -e "${GREEN}ONLINE${NC} (Supply: $SUPPLY_3 VOI)"
 else
     echo -e "${RED}OFFLINE${NC}"
@@ -191,12 +191,12 @@ echo ""
 echo -e "${BLUE}Test Transaction:${NC}"
 echo "   curl -X POST http://localhost:3030/send \\"
 echo "     -H 'Content-Type: application/json' \\"
-echo "     -d '{\"target\":\"uat_test\",\"amount\":1000000}'"
+echo "     -d '{\"target\":\"los_test\",\"amount\":1000000}'"
 echo ""
 echo -e "${BLUE}Test Burn (PoB):${NC}"
 echo "   curl -X POST http://localhost:3030/burn \\"
 echo "     -H 'Content-Type: application/json' \\"
-echo "     -d '{\"coin_type\":\"btc\",\"txid\":\"abc123...\",\"recipient_address\":\"UAT...\"}'"
+echo "     -d '{\"coin_type\":\"btc\",\"txid\":\"abc123...\",\"recipient_address\":\"LOS...\"}'"
 echo ""
 echo -e "${RED}Stop All Nodes:${NC}"
 echo "   ./stop_network.sh"

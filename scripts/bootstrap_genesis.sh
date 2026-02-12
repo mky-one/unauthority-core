@@ -1,6 +1,6 @@
 #!/bin/bash
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# Unauthority (UAT) - Genesis Bootstrap Script
+# Unauthority (LOS) - Genesis Bootstrap Script
 # Integration test showing how to use generated genesis wallets in node startup
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
@@ -11,7 +11,7 @@ GENESIS_DIR="${PROJECT_ROOT}/genesis"
 NODE_DATA_DIR="${PROJECT_ROOT}/node_data"
 
 echo "╔════════════════════════════════════════════════════════════╗"
-echo "║  UNAUTHORITY (UAT) - GENESIS BOOTSTRAP INTEGRATION TEST    ║"
+echo "║  UNAUTHORITY (LOS) - GENESIS BOOTSTRAP INTEGRATION TEST    ║"
 echo "╚════════════════════════════════════════════════════════════╝"
 echo ""
 
@@ -54,9 +54,9 @@ echo ""
 
 echo "📌 Step 3: Verifying Supply..."
 
-DEV_SUPPLY=$(jq -r '.constants.dev_supply_void' "${GENESIS_DIR}/genesis_config.json")
-PUBLIC_SUPPLY=$(jq -r '.constants.public_supply_void' "${GENESIS_DIR}/genesis_config.json")
-TOTAL_SUPPLY=$(jq -r '.constants.total_supply_void' "${GENESIS_DIR}/genesis_config.json")
+DEV_SUPPLY=$(jq -r '.constants.dev_supply_cil' "${GENESIS_DIR}/genesis_config.json")
+PUBLIC_SUPPLY=$(jq -r '.constants.public_supply_cil' "${GENESIS_DIR}/genesis_config.json")
+TOTAL_SUPPLY=$(jq -r '.constants.total_supply_cil' "${GENESIS_DIR}/genesis_config.json")
 
 echo "   • Dev Supply:    ${DEV_SUPPLY} VOI"
 echo "   • Public Supply: ${PUBLIC_SUPPLY} VOI"
@@ -113,21 +113,21 @@ for i in 1 2 3; do
     
     # Customize for this node with UNIQUE ADDRESS, PORTS, and NODE_ID
     sed -i "" "s|node_id = \"validator-1\"|node_id = \"validator-${i}\"|g" "${CONFIG_FILE}"
-    sed -i "" "s|listen_port = \${UAT_SENTRY_PORT:-30333}|listen_port = ${SENTRY_PORT}|g" "${CONFIG_FILE}"
-    sed -i "" "s|external_port = \${UAT_SENTRY_PORT:-30333}|external_port = ${SENTRY_PORT}|g" "${CONFIG_FILE}"
-    sed -i "" "s|listen_port = \${UAT_SIGNER_PORT:-30331}|listen_port = ${SIGNER_PORT}|g" "${CONFIG_FILE}"
-    sed -i "" "s|signer_endpoint = \"127.0.0.1:\${UAT_SIGNER_PORT:-30331}\"|signer_endpoint = \"127.0.0.1:${SIGNER_PORT}\"|g" "${CONFIG_FILE}"
+    sed -i "" "s|listen_port = \${LOS_SENTRY_PORT:-30333}|listen_port = ${SENTRY_PORT}|g" "${CONFIG_FILE}"
+    sed -i "" "s|external_port = \${LOS_SENTRY_PORT:-30333}|external_port = ${SENTRY_PORT}|g" "${CONFIG_FILE}"
+    sed -i "" "s|listen_port = \${LOS_SIGNER_PORT:-30331}|listen_port = ${SIGNER_PORT}|g" "${CONFIG_FILE}"
+    sed -i "" "s|signer_endpoint = \"127.0.0.1:\${LOS_SIGNER_PORT:-30331}\"|signer_endpoint = \"127.0.0.1:${SIGNER_PORT}\"|g" "${CONFIG_FILE}"
     sed -i "" "s|./node_data/validator-1|./node_data/validator-${i}|g" "${CONFIG_FILE}"
     
     # Create environment file for this validator
     cat > "${ENV_FILE}" << EOF
 # Auto-generated environment variables for validator-${i}
-export UAT_VALIDATOR_ADDRESS="${VALIDATOR_ADDR}"
-export UAT_SENTRY_PORT="${SENTRY_PORT}"
-export UAT_SIGNER_PORT="${SIGNER_PORT}"
-export UAT_VALIDATOR_PRIVKEY_PATH="/path/to/bootstrap-node-${i}.key"
-export UAT_NODE_ID="validator-${i}"
-export UAT_STAKE_VOID=100000000000
+export LOS_VALIDATOR_ADDRESS="${VALIDATOR_ADDR}"
+export LOS_SENTRY_PORT="${SENTRY_PORT}"
+export LOS_SIGNER_PORT="${SIGNER_PORT}"
+export LOS_VALIDATOR_PRIVKEY_PATH="/path/to/bootstrap-node-${i}.key"
+export LOS_NODE_ID="validator-${i}"
+export LOS_STAKE_CIL=100000000000
 EOF
     chmod 600 "${ENV_FILE}"
     
@@ -164,18 +164,18 @@ echo ""
 echo "   Terminal 1 (Validator Node 1):"
 echo "   $ cd ${PROJECT_ROOT}"
 echo "   $ source node_data/validator-1/.env"
-echo "   $ export UAT_VALIDATOR_PRIVKEY_PATH='/path/to/bootstrap-node-1.key'"
-echo "   $ cargo run -p uat-node -- --config node_data/validator-1/validator.toml"
+echo "   $ export LOS_VALIDATOR_PRIVKEY_PATH='/path/to/bootstrap-node-1.key'"
+echo "   $ cargo run -p los-node -- --config node_data/validator-1/validator.toml"
 echo ""
 echo "   Terminal 2 (Validator Node 2):"
 echo "   $ source node_data/validator-2/.env"
-echo "   $ export UAT_VALIDATOR_PRIVKEY_PATH='/path/to/bootstrap-node-2.key'"
-echo "   $ cargo run -p uat-node -- --config node_data/validator-2/validator.toml"
+echo "   $ export LOS_VALIDATOR_PRIVKEY_PATH='/path/to/bootstrap-node-2.key'"
+echo "   $ cargo run -p los-node -- --config node_data/validator-2/validator.toml"
 echo ""
 echo "   Terminal 3 (Validator Node 3):"
 echo "   $ source node_data/validator-3/.env"
-echo "   $ export UAT_VALIDATOR_PRIVKEY_PATH='/path/to/bootstrap-node-3.key'"
-echo "   $ cargo run -p uat-node -- --config node_data/validator-3/validator.toml"
+echo "   $ export LOS_VALIDATOR_PRIVKEY_PATH='/path/to/bootstrap-node-3.key'"
+echo "   $ cargo run -p los-node -- --config node_data/validator-3/validator.toml"
 echo ""
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -187,8 +187,8 @@ echo "║ ✓ GENESIS BOOTSTRAP PREPARATION COMPLETE                 ║"
 echo "╚════════════════════════════════════════════════════════════╝"
 echo ""
 echo "📊 GENESIS STATE SUMMARY:"
-echo "   • Total Supply: 21,936,236 UAT"
-echo "   • Dev Allocation: 1,535,536 UAT (8 wallets)"
+echo "   • Total Supply: 21,936,236 LOS"
+echo "   • Dev Allocation: 1,535,536 LOS (8 wallets)"
 echo "   • Bootstrap Nodes: 3 (Initial Validators)"
 echo "   • Treasury Wallets: 5 (Long-term Storage)"
 echo "   • Consensus: aBFT (<3 sec finality)"
@@ -201,7 +201,7 @@ echo "   • ${NODE_DATA_DIR}/validator-3"
 echo ""
 echo "⚠️  IMPORTANT SECURITY NOTES:"
 echo "   1. Store private keys in COLD STORAGE (offline)"
-echo "   2. Use environment variables: UAT_VALIDATOR_PRIVKEY_PATH"
+echo "   2. Use environment variables: LOS_VALIDATOR_PRIVKEY_PATH"
 echo "   3. Never commit private keys to Git"
 echo "   4. Use Sentry Node architecture for production"
 echo "   5. Enable firewall rules before going live"

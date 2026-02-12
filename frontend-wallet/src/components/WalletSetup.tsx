@@ -52,25 +52,25 @@ export default function WalletSetup() {
 
   if (mode === 'welcome') {
     return (
-      <div className="h-screen flex items-center justify-center bg-gradient-to-br from-uat-dark via-uat-gray to-uat-dark">
+      <div className="h-screen flex items-center justify-center bg-gradient-to-br from-los-dark via-los-gray to-los-dark">
         <div className="max-w-md w-full mx-4">
-          <div className="bg-uat-gray border border-gray-700 rounded-2xl p-8 shadow-2xl">
-            {/* UAT Logo */}
+          <div className="bg-los-gray border border-gray-700 rounded-2xl p-8 shadow-2xl">
+            {/* LOS Logo */}
             <div className="flex justify-center mb-6">
-              <div className="w-32 h-32 bg-gradient-to-br from-uat-blue to-uat-cyan rounded-full flex items-center justify-center shadow-2xl">
+              <div className="w-32 h-32 bg-gradient-to-br from-los-blue to-los-cyan rounded-full flex items-center justify-center shadow-2xl">
                 <Wallet className="w-16 h-16 text-white" />
               </div>
             </div>
             
             <h1 className="text-3xl font-bold text-center mb-2">Unauthority Wallet</h1>
             <p className="text-gray-400 text-center mb-8">
-              Burn BTC/ETH to mint UAT. 100% local, 100% private.
+              Burn BTC/ETH to mint LOS. 100% local, 100% private.
             </p>
 
             <div className="space-y-3">
               <button
                 onClick={() => setMode('create')}
-                className="w-full bg-gradient-to-r from-uat-blue to-uat-cyan text-white py-4 rounded-xl font-semibold hover:shadow-lg transition-all flex items-center justify-center space-x-2"
+                className="w-full bg-gradient-to-r from-los-blue to-los-cyan text-white py-4 rounded-xl font-semibold hover:shadow-lg transition-all flex items-center justify-center space-x-2"
               >
                 <Wallet className="w-5 h-5" />
                 <span>Create New Wallet</span>
@@ -78,7 +78,7 @@ export default function WalletSetup() {
 
               <button
                 onClick={() => setMode('import-seed')}
-                className="w-full bg-uat-dark border border-gray-600 text-white py-4 rounded-xl font-semibold hover:bg-gray-800 transition-all flex items-center justify-center space-x-2"
+                className="w-full bg-los-dark border border-gray-600 text-white py-4 rounded-xl font-semibold hover:bg-gray-800 transition-all flex items-center justify-center space-x-2"
               >
                 <Download className="w-5 h-5" />
                 <span>Import from Seed Phrase</span>
@@ -86,7 +86,7 @@ export default function WalletSetup() {
 
               <button
                 onClick={() => setMode('import-key')}
-                className="w-full bg-uat-dark border border-gray-600 text-white py-4 rounded-xl font-semibold hover:bg-gray-800 transition-all flex items-center justify-center space-x-2"
+                className="w-full bg-los-dark border border-gray-600 text-white py-4 rounded-xl font-semibold hover:bg-gray-800 transition-all flex items-center justify-center space-x-2"
               >
                 <Key className="w-5 h-5" />
                 <span>Import from Private Key</span>
@@ -109,9 +109,9 @@ export default function WalletSetup() {
 
   if (mode === 'create') {
     return (
-      <div className="h-screen flex items-center justify-center bg-gradient-to-br from-uat-dark via-uat-gray to-uat-dark">
+      <div className="h-screen flex items-center justify-center bg-gradient-to-br from-los-dark via-los-gray to-los-dark">
         <div className="max-w-md w-full mx-4">
-          <div className="bg-uat-gray border border-gray-700 rounded-2xl p-8 shadow-2xl">
+          <div className="bg-los-gray border border-gray-700 rounded-2xl p-8 shadow-2xl">
             <h2 className="text-2xl font-bold mb-6">Create New Wallet</h2>
             
             <div className="mb-6 p-4 bg-blue-500/10 border border-blue-500/30 rounded-lg">
@@ -132,14 +132,14 @@ export default function WalletSetup() {
             <div className="space-y-3">
               <button
                 onClick={handleCreateWallet}
-                className="w-full bg-gradient-to-r from-uat-blue to-uat-cyan text-white py-3 rounded-xl font-semibold hover:shadow-lg transition-all"
+                className="w-full bg-gradient-to-r from-los-blue to-los-cyan text-white py-3 rounded-xl font-semibold hover:shadow-lg transition-all"
               >
                 Generate Wallet
               </button>
 
               <button
                 onClick={() => setMode('welcome')}
-                className="w-full bg-uat-dark border border-gray-600 text-white py-3 rounded-xl font-semibold hover:bg-gray-800 transition-all"
+                className="w-full bg-los-dark border border-gray-600 text-white py-3 rounded-xl font-semibold hover:bg-gray-800 transition-all"
               >
                 Back
               </button>
@@ -154,15 +154,15 @@ export default function WalletSetup() {
     const words = generatedWallet.seedPhrase?.split(' ') || [];
     
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-uat-dark via-uat-gray to-uat-dark overflow-y-auto py-8">
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-los-dark via-los-gray to-los-dark overflow-y-auto py-8">
         <div className="max-w-2xl w-full mx-4 my-auto">
-          <div className="bg-uat-gray border border-gray-700 rounded-2xl p-8 shadow-2xl">
+          <div className="bg-los-gray border border-gray-700 rounded-2xl p-8 shadow-2xl">
             <h2 className="text-2xl font-bold mb-2">Backup Your Seed Phrase</h2>
             <p className="text-gray-400 mb-6">Write down these 12 words in order. You'll need them to recover your wallet.</p>
 
             <div className="grid grid-cols-3 gap-3 mb-6">
               {words.map((word: string, index: number) => (
-                <div key={index} className="bg-uat-dark border border-gray-600 rounded-lg p-3">
+                <div key={index} className="bg-los-dark border border-gray-600 rounded-lg p-3">
                   <span className="text-xs text-gray-500">#{index + 1}</span>
                   <p className="font-mono font-semibold">{word}</p>
                 </div>
@@ -171,7 +171,7 @@ export default function WalletSetup() {
 
             <button
               onClick={() => copyToClipboard(generatedWallet.seedPhrase || '')}
-              className="w-full mb-4 bg-uat-dark border border-gray-600 text-white py-2 rounded-lg hover:bg-gray-800 transition-all flex items-center justify-center space-x-2"
+              className="w-full mb-4 bg-los-dark border border-gray-600 text-white py-2 rounded-lg hover:bg-gray-800 transition-all flex items-center justify-center space-x-2"
             >
               <Copy className="w-4 h-4" />
               <span>Copy to Clipboard</span>
@@ -197,7 +197,7 @@ export default function WalletSetup() {
                 type="checkbox"
                 checked={seedConfirmed}
                 onChange={(e) => setSeedConfirmed(e.target.checked)}
-                className="w-5 h-5 rounded border-gray-600 text-uat-blue focus:ring-uat-blue"
+                className="w-5 h-5 rounded border-gray-600 text-los-blue focus:ring-los-blue"
               />
               <span className="text-sm">I have safely backed up my seed phrase</span>
             </label>
@@ -207,7 +207,7 @@ export default function WalletSetup() {
               disabled={!seedConfirmed}
               className={`w-full py-3 rounded-xl font-semibold transition-all ${
                 seedConfirmed
-                  ? 'bg-gradient-to-r from-uat-blue to-uat-cyan text-white hover:shadow-lg'
+                  ? 'bg-gradient-to-r from-los-blue to-los-cyan text-white hover:shadow-lg'
                   : 'bg-gray-700 text-gray-500 cursor-not-allowed'
               }`}
             >
@@ -221,9 +221,9 @@ export default function WalletSetup() {
 
   if (mode === 'import-seed') {
     return (
-      <div className="h-screen flex items-center justify-center bg-gradient-to-br from-uat-dark via-uat-gray to-uat-dark">
+      <div className="h-screen flex items-center justify-center bg-gradient-to-br from-los-dark via-los-gray to-los-dark">
         <div className="max-w-md w-full mx-4">
-          <div className="bg-uat-gray border border-gray-700 rounded-2xl p-8 shadow-2xl">
+          <div className="bg-los-gray border border-gray-700 rounded-2xl p-8 shadow-2xl">
             <h2 className="text-2xl font-bold mb-6">Import from Seed Phrase</h2>
             
             <div className="mb-4">
@@ -233,7 +233,7 @@ export default function WalletSetup() {
                 onChange={(e) => setSeedPhrase(e.target.value)}
                 placeholder="word1 word2 word3 ..."
                 rows={4}
-                className="w-full bg-uat-dark border border-gray-600 rounded-lg px-4 py-3 text-sm font-mono focus:ring-2 focus:ring-uat-blue focus:border-transparent"
+                className="w-full bg-los-dark border border-gray-600 rounded-lg px-4 py-3 text-sm font-mono focus:ring-2 focus:ring-los-blue focus:border-transparent"
               />
             </div>
 
@@ -246,14 +246,14 @@ export default function WalletSetup() {
             <div className="space-y-3">
               <button
                 onClick={handleImportSeed}
-                className="w-full bg-gradient-to-r from-uat-blue to-uat-cyan text-white py-3 rounded-xl font-semibold hover:shadow-lg transition-all"
+                className="w-full bg-gradient-to-r from-los-blue to-los-cyan text-white py-3 rounded-xl font-semibold hover:shadow-lg transition-all"
               >
                 Import Wallet
               </button>
 
               <button
                 onClick={() => setMode('welcome')}
-                className="w-full bg-uat-dark border border-gray-600 text-white py-3 rounded-xl font-semibold hover:bg-gray-800 transition-all"
+                className="w-full bg-los-dark border border-gray-600 text-white py-3 rounded-xl font-semibold hover:bg-gray-800 transition-all"
               >
                 Back
               </button>
@@ -266,9 +266,9 @@ export default function WalletSetup() {
 
   if (mode === 'import-key') {
     return (
-      <div className="h-screen flex items-center justify-center bg-gradient-to-br from-uat-dark via-uat-gray to-uat-dark">
+      <div className="h-screen flex items-center justify-center bg-gradient-to-br from-los-dark via-los-gray to-los-dark">
         <div className="max-w-md w-full mx-4">
-          <div className="bg-uat-gray border border-gray-700 rounded-2xl p-8 shadow-2xl">
+          <div className="bg-los-gray border border-gray-700 rounded-2xl p-8 shadow-2xl">
             <h2 className="text-2xl font-bold mb-6">Import from Private Key</h2>
             
             <div className="mb-4">
@@ -278,7 +278,7 @@ export default function WalletSetup() {
                 value={privateKey}
                 onChange={(e) => setPrivateKey(e.target.value)}
                 placeholder="0x..."
-                className="w-full bg-uat-dark border border-gray-600 rounded-lg px-4 py-3 text-sm font-mono focus:ring-2 focus:ring-uat-blue focus:border-transparent"
+                className="w-full bg-los-dark border border-gray-600 rounded-lg px-4 py-3 text-sm font-mono focus:ring-2 focus:ring-los-blue focus:border-transparent"
               />
             </div>
 
@@ -291,14 +291,14 @@ export default function WalletSetup() {
             <div className="space-y-3">
               <button
                 onClick={handleImportKey}
-                className="w-full bg-gradient-to-r from-uat-blue to-uat-cyan text-white py-3 rounded-xl font-semibold hover:shadow-lg transition-all"
+                className="w-full bg-gradient-to-r from-los-blue to-los-cyan text-white py-3 rounded-xl font-semibold hover:shadow-lg transition-all"
               >
                 Import Wallet
               </button>
 
               <button
                 onClick={() => setMode('welcome')}
-                className="w-full bg-uat-dark border border-gray-600 text-white py-3 rounded-xl font-semibold hover:bg-gray-800 transition-all"
+                className="w-full bg-los-dark border border-gray-600 text-white py-3 rounded-xl font-semibold hover:bg-gray-800 transition-all"
               >
                 Back
               </button>

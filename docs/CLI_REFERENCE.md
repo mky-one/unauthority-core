@@ -1,6 +1,6 @@
 # CLI Reference
 
-The `uat-cli` command-line tool for interacting with a running UAT node.
+The `los-cli` command-line tool for interacting with a running LOS node.
 
 **Version:** v1.0.6-testnet
 
@@ -9,8 +9,8 @@ The `uat-cli` command-line tool for interacting with a running UAT node.
 ## Installation
 
 ```bash
-cargo build --release --bin uat-cli
-# Binary: target/release/uat-cli
+cargo build --release --bin los-cli
+# Binary: target/release/los-cli
 ```
 
 ---
@@ -19,7 +19,7 @@ cargo build --release --bin uat-cli
 
 | Flag | Env Variable | Default | Description |
 |------|-------------|---------|-------------|
-| `--rpc <URL>` | `UAT_RPC_URL` | `http://localhost:3030` | Node RPC endpoint |
+| `--rpc <URL>` | `LOS_RPC_URL` | `http://localhost:3030` | Node RPC endpoint |
 | `--config-dir <DIR>` | — | `~/.uat` | Configuration directory |
 
 ---
@@ -32,19 +32,19 @@ Manage local wallets.
 
 ```bash
 # Create a new wallet (generates Dilithium5 keypair + BIP39 mnemonic)
-uat-cli wallet new
+los-cli wallet new
 
 # List all wallets in config directory
-uat-cli wallet list
+los-cli wallet list
 
 # Check balance for a wallet
-uat-cli wallet balance --address UAT...
+los-cli wallet balance --address LOS...
 
 # Export wallet to file
-uat-cli wallet export --address UAT... --output wallet.json
+los-cli wallet export --address LOS... --output wallet.json
 
 # Import wallet from file
-uat-cli wallet import --file wallet.json
+los-cli wallet import --file wallet.json
 ```
 
 ### validator
@@ -53,16 +53,16 @@ Manage validator operations.
 
 ```bash
 # Stake to become a validator
-uat-cli validator stake --amount 1000
+los-cli validator stake --amount 1000
 
 # Unstake and begin exit
-uat-cli validator unstake
+los-cli validator unstake
 
 # Check validator status
-uat-cli validator status --address UAT...
+los-cli validator status --address LOS...
 
 # List all validators on the network
-uat-cli validator list
+los-cli validator list
 ```
 
 ### query
@@ -71,16 +71,16 @@ Query blockchain data.
 
 ```bash
 # Get block by hash
-uat-cli query block --hash abc123...
+los-cli query block --hash abc123...
 
 # Get account details
-uat-cli query account --address UAT...
+los-cli query account --address LOS...
 
 # Get node info (chain_id, version, supply, validators, peers)
-uat-cli query info
+los-cli query info
 
 # List validators with stakes
-uat-cli query validators
+los-cli query validators
 ```
 
 ### tx
@@ -88,11 +88,11 @@ uat-cli query validators
 Transaction operations.
 
 ```bash
-# Send UAT to an address
-uat-cli tx send --to UAT... --amount 100
+# Send LOS to an address
+los-cli tx send --to LOS... --amount 100
 
 # Check transaction status by hash
-uat-cli tx status --hash abc123...
+los-cli tx status --hash abc123...
 ```
 
 ---
@@ -103,51 +103,51 @@ uat-cli tx status --hash abc123...
 
 ```bash
 # Point to your node
-export UAT_RPC_URL=http://127.0.0.1:3030
+export LOS_RPC_URL=http://127.0.0.1:3030
 
 # Create wallet
-uat-cli wallet new
-# → Address: UATBwXk9...
+los-cli wallet new
+# → Address: LOSBwXk9...
 # → Seed phrase: word1 word2 ... word24
 
 # Check balance
-uat-cli wallet balance --address UATBwXk9...
-# → Balance: 0 UAT (0 VOID)
+los-cli wallet balance --address LOSBwXk9...
+# → Balance: 0 LOS (0 CIL)
 
 # After getting testnet tokens via faucet...
-uat-cli tx send --to UATRecipient... --amount 50
+los-cli tx send --to LOSRecipient... --amount 50
 # → TX hash: abc123...
 
 # Verify
-uat-cli tx status --hash abc123...
+los-cli tx status --hash abc123...
 ```
 
 ### Connect via Tor
 
 ```bash
 # If your node is behind a Tor hidden service
-export UAT_RPC_URL=http://your-node.onion
+export LOS_RPC_URL=http://your-node.onion
 
 # Use with Tor SOCKS5 proxy
-# Note: uat-cli uses reqwest, configure proxy via environment
+# Note: los-cli uses reqwest, configure proxy via environment
 export HTTPS_PROXY=socks5h://127.0.0.1:9052
 export HTTP_PROXY=socks5h://127.0.0.1:9052
 
-uat-cli query info
+los-cli query info
 ```
 
 ---
 
 ## Node Console Commands
 
-When running `uat-node` interactively, these commands are available in the terminal:
+When running `los-node` interactively, these commands are available in the terminal:
 
 | Command | Description |
 |---------|-------------|
 | `bal` | Show this node's balance |
 | `whoami` | Show this node's address |
 | `history` | Show transaction history |
-| `send <address> <amount>` | Send UAT |
+| `send <address> <amount>` | Send LOS |
 | `burn <amount>` | Proof-of-Burn |
 | `supply` | Show supply statistics |
 | `peers` | Show connected peers |

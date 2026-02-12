@@ -33,7 +33,7 @@ sleep 1
 
 # Step 1: Check binaries
 echo -e "${BLUE}[1/3] Checking blockchain binaries...${NC}"
-if [ ! -f "$PROJECT_ROOT/target/release/uat-node" ]; then
+if [ ! -f "$PROJECT_ROOT/target/release/los-node" ]; then
     echo -e "${YELLOW}⚠️  Binary not found. Building release version...${NC}"
     cargo build --release
 fi
@@ -47,7 +47,7 @@ echo -e "${BLUE}[2/3] Starting backend network (3 nodes)...${NC}"
 # Check if start_network.sh exists
 if [ -f "$PROJECT_ROOT/start_network.sh" ]; then
     # Kill existing nodes
-    pkill -9 uat-node 2>/dev/null || true
+    pkill -9 los-node 2>/dev/null || true
     sleep 1
     
     # Start network
@@ -55,7 +55,7 @@ if [ -f "$PROJECT_ROOT/start_network.sh" ]; then
     sleep 3
     
     # Verify nodes are running
-    NODE_COUNT=$(ps aux | grep uat-node | grep -v grep | wc -l | tr -d ' ')
+    NODE_COUNT=$(ps aux | grep los-node | grep -v grep | wc -l | tr -d ' ')
     if [ "$NODE_COUNT" -ge "1" ]; then
         echo -e "${GREEN}   ✅ Backend network started ($NODE_COUNT nodes running)${NC}"
     else

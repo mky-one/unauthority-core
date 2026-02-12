@@ -48,11 +48,11 @@ echo ""
 echo -e "${MAGENTA}━━━ SESI 1: BUILD & COMPILATION ━━━${NC}"
 echo ""
 echo -e "${BLUE}[TEST 1.1]${NC} Release Build"
-if cargo build --release --bin uat-node > /dev/null 2>&1; then
+if cargo build --release --bin los-node > /dev/null 2>&1; then
     test_pass "Release build successful"
     
     # Check binary size
-    BINARY_SIZE=$(du -h target/release/uat-node | cut -f1)
+    BINARY_SIZE=$(du -h target/release/los-node | cut -f1)
     echo -e "   ${BLUE}ℹ${NC}  Binary size: $BINARY_SIZE"
 else
     test_fail "Release build failed"
@@ -79,8 +79,8 @@ echo ""
 
 # Clean old processes
 echo -e "${YELLOW}🧹 Cleaning environment...${NC}"
-pkill -9 uat-node 2>/dev/null || true
-rm -rf node_data/validator-*/uat_database 2>/dev/null || true
+pkill -9 los-node 2>/dev/null || true
+rm -rf node_data/validator-*/los_database 2>/dev/null || true
 mkdir -p node_data/validator-{1,2,3}
 
 echo -e "${BLUE}[TEST 2.1]${NC} Node Directory Structure"
@@ -96,24 +96,24 @@ echo -e "${BLUE}[TEST 2.2]${NC} Starting 3-Node Network"
 echo "   Launching nodes..."
 
 # Start Node 1
-export UAT_NODE_ID="validator-1"
-./target/release/uat-node 3030 > node_data/validator-1/node.log 2>&1 &
+export LOS_NODE_ID="validator-1"
+./target/release/los-node 3030 > node_data/validator-1/node.log 2>&1 &
 PID1=$!
 echo "   Node 1 started (PID: $PID1)"
 
 sleep 3
 
 # Start Node 2
-export UAT_NODE_ID="validator-2"
-./target/release/uat-node 3031 > node_data/validator-2/node.log 2>&1 &
+export LOS_NODE_ID="validator-2"
+./target/release/los-node 3031 > node_data/validator-2/node.log 2>&1 &
 PID2=$!
 echo "   Node 2 started (PID: $PID2)"
 
 sleep 3
 
 # Start Node 3
-export UAT_NODE_ID="validator-3"
-./target/release/uat-node 3032 > node_data/validator-3/node.log 2>&1 &
+export LOS_NODE_ID="validator-3"
+./target/release/los-node 3032 > node_data/validator-3/node.log 2>&1 &
 PID3=$!
 echo "   Node 3 started (PID: $PID3)"
 
@@ -162,15 +162,15 @@ echo -e "${MAGENTA}━━━ SESI 3: DATABASE ISOLATION ━━━${NC}"
 echo ""
 
 echo -e "${BLUE}[TEST 3.1]${NC} Separate Database Files"
-if [ -d "node_data/validator-1/uat_database" ] && \
-   [ -d "node_data/validator-2/uat_database" ] && \
-   [ -d "node_data/validator-3/uat_database" ]; then
+if [ -d "node_data/validator-1/los_database" ] && \
+   [ -d "node_data/validator-2/los_database" ] && \
+   [ -d "node_data/validator-3/los_database" ]; then
     test_pass "Each node has separate database"
     
     # Check database sizes
-    DB1_SIZE=$(du -sh node_data/validator-1/uat_database 2>/dev/null | cut -f1 || echo "N/A")
-    DB2_SIZE=$(du -sh node_data/validator-2/uat_database 2>/dev/null | cut -f1 || echo "N/A")
-    DB3_SIZE=$(du -sh node_data/validator-3/uat_database 2>/dev/null | cut -f1 || echo "N/A")
+    DB1_SIZE=$(du -sh node_data/validator-1/los_database 2>/dev/null | cut -f1 || echo "N/A")
+    DB2_SIZE=$(du -sh node_data/validator-2/los_database 2>/dev/null | cut -f1 || echo "N/A")
+    DB3_SIZE=$(du -sh node_data/validator-3/los_database 2>/dev/null | cut -f1 || echo "N/A")
     
     echo -e "   ${BLUE}ℹ${NC}  Node 1 DB: $DB1_SIZE"
     echo -e "   ${BLUE}ℹ${NC}  Node 2 DB: $DB2_SIZE"
@@ -188,9 +188,9 @@ echo -e "${MAGENTA}━━━ SESI 4: CONSENSUS & STATE SYNC ━━━${NC}"
 echo ""
 
 echo -e "${BLUE}[TEST 4.1]${NC} Supply Consistency"
-SUPPLY_1=$(curl -s http://localhost:3030/supply | grep -o '"remaining_supply_void":[0-9]*' | cut -d':' -f2)
-SUPPLY_2=$(curl -s http://localhost:3031/supply | grep -o '"remaining_supply_void":[0-9]*' | cut -d':' -f2)
-SUPPLY_3=$(curl -s http://localhost:3032/supply | grep -o '"remaining_supply_void":[0-9]*' | cut -d':' -f2)
+SUPPLY_1=$(curl -s http://localhost:3030/supply | grep -o '"remaining_supply_cil":[0-9]*' | cut -d':' -f2)
+SUPPLY_2=$(curl -s http://localhost:3031/supply | grep -o '"remaining_supply_cil":[0-9]*' | cut -d':' -f2)
+SUPPLY_3=$(curl -s http://localhost:3032/supply | grep -o '"remaining_supply_cil":[0-9]*' | cut -d':' -f2)
 
 echo "   Node 1: $SUPPLY_1 VOI"
 echo "   Node 2: $SUPPLY_2 VOI"
@@ -211,7 +211,7 @@ echo -e "${MAGENTA}━━━ SESI 5: TRANSACTION TESTS ━━━${NC}"
 echo ""
 
 echo -e "${BLUE}[TEST 5.1]${NC} Faucet Endpoint (DEV MODE)"
-TEST_WALLET="UATTest_$(date +%s)"
+TEST_WALLET="LOSTest_$(date +%s)"
 FAUCET_RESULT=$(curl -s -X POST http://localhost:3030/faucet \
     -H "Content-Type: application/json" \
     -d "{\"address\":\"$TEST_WALLET\"}")
@@ -219,7 +219,7 @@ FAUCET_RESULT=$(curl -s -X POST http://localhost:3030/faucet \
 if echo "$FAUCET_RESULT" | grep -q '"status":"success"'; then
     test_pass "Faucet claim successful"
     FAUCET_AMT=$(echo "$FAUCET_RESULT" | grep -o '"amount":[0-9]*' | cut -d':' -f2)
-    echo -e "   ${BLUE}ℹ${NC}  Received: $FAUCET_AMT UAT"
+    echo -e "   ${BLUE}ℹ${NC}  Received: $FAUCET_AMT LOS"
 else
     test_fail "Faucet endpoint failed"
 fi
@@ -227,17 +227,17 @@ fi
 echo ""
 echo -e "${BLUE}[TEST 5.2]${NC} Balance Verification"
 sleep 2
-BALANCE=$(curl -s http://localhost:3030/balance/$TEST_WALLET | grep -o '"balance_uat":[0-9]*' | cut -d':' -f2)
+BALANCE=$(curl -s http://localhost:3030/balance/$TEST_WALLET | grep -o '"balance_los":[0-9]*' | cut -d':' -f2)
 
 if [ "$BALANCE" -gt 0 ]; then
-    test_pass "Balance updated correctly ($BALANCE UAT)"
+    test_pass "Balance updated correctly ($BALANCE LOS)"
 else
     test_fail "Balance not updated"
 fi
 
 echo ""
 echo -e "${BLUE}[TEST 5.3]${NC} Burn Transaction (Recipient Fix)"
-BURN_WALLET="UATBurn_$(date +%s)"
+BURN_WALLET="LOSBurn_$(date +%s)"
 BURN_TXID="a1b2c3d4e5f6789012345678901234567890123456789012345678901234test"
 
 BURN_RESULT=$(curl -s -X POST http://localhost:3030/burn \
@@ -248,9 +248,9 @@ if echo "$BURN_RESULT" | grep -q '"status":"success"'; then
     test_pass "Burn transaction succeeded"
     
     RECIPIENT=$(echo "$BURN_RESULT" | grep -o '"recipient":"[^"]*"' | cut -d'"' -f4)
-    UAT_MINTED=$(echo "$BURN_RESULT" | grep -o '"uat_minted":[0-9]*' | cut -d':' -f2)
+    LOS_MINTED=$(echo "$BURN_RESULT" | grep -o '"los_minted":[0-9]*' | cut -d':' -f2)
     
-    echo -e "   ${BLUE}ℹ${NC}  UAT Minted: $UAT_MINTED"
+    echo -e "   ${BLUE}ℹ${NC}  LOS Minted: $LOS_MINTED"
     echo -e "   ${BLUE}ℹ${NC}  Recipient: $RECIPIENT"
     
     if [ "$RECIPIENT" = "$BURN_WALLET" ]; then
@@ -261,10 +261,10 @@ if echo "$BURN_RESULT" | grep -q '"status":"success"'; then
     
     # Verify balance
     sleep 2
-    BURN_BALANCE=$(curl -s http://localhost:3030/balance/$BURN_WALLET | grep -o '"balance_uat":[0-9]*' | cut -d':' -f2)
+    BURN_BALANCE=$(curl -s http://localhost:3030/balance/$BURN_WALLET | grep -o '"balance_los":[0-9]*' | cut -d':' -f2)
     
-    if [ "$BURN_BALANCE" = "$UAT_MINTED" ]; then
-        test_pass "UAT correctly credited to user wallet (not validator)"
+    if [ "$BURN_BALANCE" = "$LOS_MINTED" ]; then
+        test_pass "LOS correctly credited to user wallet (not validator)"
     else
         test_fail "Balance mismatch after burn"
     fi
@@ -335,7 +335,7 @@ NODE_INFO=$(curl -s http://localhost:3030/node-info)
 TOTAL_SUPPLY=$(echo "$NODE_INFO" | grep -o '"total_supply":[0-9]*' | cut -d':' -f2)
 
 if [ "$TOTAL_SUPPLY" = "21936236" ]; then
-    test_pass "Total supply fixed at 21,936,236 UAT"
+    test_pass "Total supply fixed at 21,936,236 LOS"
 else
     test_fail "Total supply incorrect: $TOTAL_SUPPLY"
 fi

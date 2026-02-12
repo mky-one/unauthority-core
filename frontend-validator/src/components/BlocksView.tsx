@@ -22,7 +22,7 @@ export default function BlocksView() {
 
   if (loading) {
     return (
-      <div className="bg-uat-gray border border-gray-700 rounded-xl p-8 text-center">
+      <div className="bg-los-gray border border-gray-700 rounded-xl p-8 text-center">
         <p className="text-gray-400">Loading blocks...</p>
       </div>
     );
@@ -30,7 +30,7 @@ export default function BlocksView() {
 
   if (blocks.length === 0) {
     return (
-      <div className="bg-uat-gray border border-gray-700 rounded-xl p-8 text-center">
+      <div className="bg-los-gray border border-gray-700 rounded-xl p-8 text-center">
         <Box className="w-12 h-12 text-gray-500 mx-auto mb-4" />
         <p className="text-gray-400">No recent blocks found.</p>
       </div>
@@ -38,7 +38,7 @@ export default function BlocksView() {
   }
 
   return (
-    <div className="bg-uat-gray border border-gray-700 rounded-xl overflow-hidden">
+    <div className="bg-los-gray border border-gray-700 rounded-xl overflow-hidden">
       <div className="p-6 border-b border-gray-700">
         <h3 className="text-lg font-semibold text-white">Recent Blocks</h3>
         <p className="text-sm text-gray-400 mt-1">Latest finalized blocks on the network</p>

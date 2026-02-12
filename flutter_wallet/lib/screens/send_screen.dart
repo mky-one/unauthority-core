@@ -33,31 +33,31 @@ class _SendScreenState extends State<SendScreen> {
       if (wallet == null) throw Exception('No wallet found');
       debugPrint('💸 [Send] From: ${wallet['address']}');
 
-      // FIX C11-01: Backend expects UAT in `amount` field.
-      // Support decimal amounts (e.g., 0.5 UAT) — BlockConstructionService
-      // converts to VOID with full 10^11 precision.
-      final amountUatDouble = double.tryParse(_amountController.text.trim());
-      if (amountUatDouble == null || amountUatDouble <= 0) {
+      // FIX C11-01: Backend expects LOS in `amount` field.
+      // Support decimal amounts (e.g., 0.5 LOS) — BlockConstructionService
+      // converts to CIL with full 10^11 precision.
+      final amountLosDouble = double.tryParse(_amountController.text.trim());
+      if (amountLosDouble == null || amountLosDouble <= 0) {
         throw Exception('Please enter a valid amount greater than 0');
       }
-      if (amountUatDouble < 0.00000000001) {
-        throw Exception('Minimum send amount is 0.00000000001 UAT (1 VOID)');
+      if (amountLosDouble < 0.00000000001) {
+        throw Exception('Minimum send amount is 0.00000000001 LOS (1 CIL)');
       }
 
       // FIX H-06: Prevent sending to own address
       final toAddress = _toController.text.trim();
-      debugPrint('💸 [Send] To: $toAddress, Amount: $amountUatDouble UAT');
+      debugPrint('💸 [Send] To: $toAddress, Amount: $amountLosDouble LOS');
       if (toAddress == wallet['address']) {
         throw Exception('Cannot send to your own address');
       }
 
       // Balance validation: prevent sending more than available
-      // Compare in UAT to avoid unit mismatch
+      // Compare in LOS to avoid unit mismatch
       try {
         final account = await apiService.getBalance(wallet['address']!);
-        if (amountUatDouble > account.balanceUAT) {
+        if (amountLosDouble > account.balanceLOS) {
           throw Exception(
-              'Insufficient balance: have ${BlockchainConstants.formatUat(account.balanceUAT)} UAT');
+              'Insufficient balance: have ${BlockchainConstants.formatLos(account.balanceLOS)} LOS');
         }
       } catch (e) {
         if (e.toString().contains('Insufficient balance')) rethrow;
@@ -80,16 +80,26 @@ class _SendScreenState extends State<SendScreen> {
         debugPrint('💸 [Send] Client-side signing with Dilithium5...');
         result = await blockService.sendTransaction(
           to: toAddress,
-          amountUatDouble: amountUatDouble,
+          amountLosDouble: amountLosDouble,
         );
       } else {
-        // Address-only import — no keys, let node sign (functional testnet only)
+        // SECURITY FIX H-02: Refuse unsigned node-signed transactions on mainnet.
+        // Address-only imports cannot produce valid signatures — node-signed
+        // transactions are only acceptable on functional testnet.
+        if (apiService.environment == NetworkEnvironment.mainnet) {
+          throw Exception(
+            'Mainnet requires signed transactions. '
+            'Please import your wallet with a seed phrase or private key.',
+          );
+        }
+
+        // Address-only import — no keys, let node sign (TESTNET ONLY)
         debugPrint(
             '💸 [Send] No signing keys — node-signed (functional testnet)...');
         result = await apiService.sendTransaction(
           from: wallet['address']!,
           to: toAddress,
-          amount: amountUatDouble.floor(),
+          amount: amountLosDouble.floor(),
         );
       }
 
@@ -114,7 +124,7 @@ class _SendScreenState extends State<SendScreen> {
         SnackBar(content: Text(e.toString()), backgroundColor: Colors.red),
       );
     } finally {
-      setState(() => _isLoading = false);
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 
@@ -122,7 +132,7 @@ class _SendScreenState extends State<SendScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Send UAT'),
+        title: const Text('Send LOS'),
         centerTitle: true,
       ),
       body: SafeArea(
@@ -139,7 +149,7 @@ class _SendScreenState extends State<SendScreen> {
                   controller: _toController,
                   decoration: const InputDecoration(
                     labelText: 'To Address',
-                    hintText: 'UAT...',
+                    hintText: 'LOS...',
                     border: OutlineInputBorder(),
                     prefixIcon: Icon(Icons.person),
                   ),
@@ -156,9 +166,9 @@ class _SendScreenState extends State<SendScreen> {
                 TextFormField(
                   controller: _amountController,
                   decoration: const InputDecoration(
-                    labelText: 'Amount (UAT)',
+                    labelText: 'Amount (LOS)',
                     hintText: '0.5',
-                    helperText: 'Supports decimals (e.g., 0.5 UAT)',
+                    helperText: 'Supports decimals (e.g., 0.5 LOS)',
                     border: OutlineInputBorder(),
                     prefixIcon: Icon(Icons.attach_money),
                   ),

@@ -13,11 +13,11 @@ cd "$(dirname "$0")"
 
 # Clean old database
 echo -e "${YELLOW}🧹 Cleaning old database...${NC}"
-rm -rf uat_database
+rm -rf los_database
 
 # Start node in background with stdin redirect
 echo -e "${BLUE}📡 Starting Unauthority Node...${NC}"
-(cat /dev/null | ./target/release/uat-node 3030 > /tmp/uat_node.log 2>&1 &)
+(cat /dev/null | ./target/release/los-node 3030 > /tmp/los_node.log 2>&1 &)
 NODE_PID=$!
 
 echo -e "${GREEN}✅ Node started (PID: $NODE_PID)${NC}"
@@ -29,7 +29,7 @@ if curl -s http://localhost:3030/supply > /dev/null 2>&1; then
     SUPPLY=$(curl -s http://localhost:3030/supply)
     echo -e "${GREEN}✅ Node API responding (Supply: $SUPPLY VOI)${NC}"
 else
-    echo -e "${YELLOW}⚠️  Node API not responding yet (check /tmp/uat_node.log)${NC}"
+    echo -e "${YELLOW}⚠️  Node API not responding yet (check /tmp/los_node.log)${NC}"
     echo "   You can still use the wallet, but node connection will be offline."
 fi
 

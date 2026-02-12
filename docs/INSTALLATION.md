@@ -12,17 +12,17 @@ Build Unauthority from source or download pre-built binaries.
 
 | Platform | Download |
 |----------|----------|
-| macOS | [UAT-Wallet-macos.dmg](https://github.com/unauthoritymky-6236/unauthority-core/releases/tag/wallet-v1.0.6-testnet) |
-| Windows | [UAT-Wallet-windows-x64.zip](https://github.com/unauthoritymky-6236/unauthority-core/releases/tag/wallet-v1.0.6-testnet) |
-| Linux | [UAT-Wallet-linux-x64.tar.gz](https://github.com/unauthoritymky-6236/unauthority-core/releases/tag/wallet-v1.0.6-testnet) |
+| macOS | [LOS-Wallet-macos.dmg](https://github.com/unauthoritymky-6236/unauthority-core/releases/tag/wallet-v1.0.6-testnet) |
+| Windows | [LOS-Wallet-windows-x64.zip](https://github.com/unauthoritymky-6236/unauthority-core/releases/tag/wallet-v1.0.6-testnet) |
+| Linux | [LOS-Wallet-linux-x64.tar.gz](https://github.com/unauthoritymky-6236/unauthority-core/releases/tag/wallet-v1.0.6-testnet) |
 
 ### Validator Dashboard
 
 | Platform | Download |
 |----------|----------|
-| macOS | [UAT-Validator-macos.dmg](https://github.com/unauthoritymky-6236/unauthority-core/releases/tag/validator-v1.0.6-testnet) |
-| Windows | [UAT-Validator-windows-x64.zip](https://github.com/unauthoritymky-6236/unauthority-core/releases/tag/validator-v1.0.6-testnet) |
-| Linux | [UAT-Validator-linux-x64.tar.gz](https://github.com/unauthoritymky-6236/unauthority-core/releases/tag/validator-v1.0.6-testnet) |
+| macOS | [LOS-Validator-macos.dmg](https://github.com/unauthoritymky-6236/unauthority-core/releases/tag/validator-v1.0.6-testnet) |
+| Windows | [LOS-Validator-windows-x64.zip](https://github.com/unauthoritymky-6236/unauthority-core/releases/tag/validator-v1.0.6-testnet) |
+| Linux | [LOS-Validator-linux-x64.tar.gz](https://github.com/unauthoritymky-6236/unauthority-core/releases/tag/validator-v1.0.6-testnet) |
 
 ---
 
@@ -42,11 +42,11 @@ Build Unauthority from source or download pre-built binaries.
 git clone https://github.com/unauthoritymky-6236/unauthority-core.git
 cd unauthority-core
 
-# Build all binaries (uat-node, uat-cli, genesis_generator)
+# Build all binaries (los-node, los-cli, genesis_generator)
 cargo build --release
 
 # Binaries in target/release/
-ls target/release/uat-node target/release/uat-cli target/release/genesis_generator
+ls target/release/los-node target/release/los-cli target/release/genesis_generator
 ```
 
 ### Flutter Wallet
@@ -55,7 +55,7 @@ ls target/release/uat-node target/release/uat-cli target/release/genesis_generat
 cd flutter_wallet
 
 # Build native Rust crypto library (required for Dilithium5)
-cd native/uat_crypto_ffi
+cd native/los_crypto_ffi
 cargo build --release
 cd ../..
 
@@ -72,7 +72,7 @@ The built app is in `build/macos/Build/Products/Release/`.
 cd flutter_validator
 
 # Build native Rust crypto library
-cd native/uat_crypto_ffi
+cd native/los_crypto_ffi
 cargo build --release
 cd ../..
 
@@ -86,15 +86,15 @@ flutter build macos --release    # or: linux, windows
 
 ```bash
 # Full test suite (240 tests)
-cargo test --workspace --all-features --exclude uat-vm
+cargo test --workspace --all-features --exclude los-vm
 
 # Individual crates
-cargo test -p uat-core          # Core: ledger, accounts, supply (55 tests)
-cargo test -p uat-consensus     # aBFT, voting, slashing (43 tests)
-cargo test -p uat-crypto        # Dilithium5, address derivation (30 tests)
-cargo test -p uat-network       # P2P, fee scaling, rewards (57 tests)
-cargo test -p uat-node          # Node integration (13 tests)
-cargo test -p uat-vm            # WASM virtual machine (20 tests)
+cargo test -p los-core          # Core: ledger, accounts, supply (55 tests)
+cargo test -p los-consensus     # aBFT, voting, slashing (43 tests)
+cargo test -p los-crypto        # Dilithium5, address derivation (30 tests)
+cargo test -p los-network       # P2P, fee scaling, rewards (57 tests)
+cargo test -p los-node          # Node integration (13 tests)
+cargo test -p los-vm            # WASM virtual machine (20 tests)
 
 # Doc tests
 cargo test --doc --workspace
@@ -106,11 +106,11 @@ cargo test --doc --workspace
 
 ```bash
 # Check node version
-./target/release/uat-node --version
-# uat-node 1.0.6
+./target/release/los-node --version
+# los-node 1.0.6
 
 # Run a dev-mode testnet node
-./target/release/uat-node --dev
+./target/release/los-node --dev
 
 # Check health
 curl http://127.0.0.1:3030/health
@@ -127,7 +127,7 @@ curl http://127.0.0.1:3030/node-info
 Apple blocks unsigned apps. After installing a pre-built `.dmg`:
 
 ```bash
-xattr -cr /Applications/UAT\ Wallet.app
+xattr -cr /Applications/LOS\ Wallet.app
 xattr -cr /Applications/flutter_validator.app
 ```
 
@@ -139,8 +139,8 @@ Or: **System Settings → Privacy & Security → Open Anyway**.
 
 ```
 target/release/
-├── uat-node               # Full validator node binary
-├── uat-cli                # Command-line interface
+├── los-node               # Full validator node binary
+├── los-cli                # Command-line interface
 └── genesis_generator      # Genesis block generator
 
 flutter_wallet/build/      # Wallet app (platform-specific)

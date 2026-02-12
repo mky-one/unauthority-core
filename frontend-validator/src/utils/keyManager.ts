@@ -1,6 +1,6 @@
 import CryptoJS from 'crypto-js';
 
-const STORAGE_KEY = 'uat_validator_keys';
+const STORAGE_KEY = 'los_validator_keys';
 const SESSION_TIMEOUT = 15 * 60 * 1000; // 15 minutes
 
 interface EncryptedKeys {

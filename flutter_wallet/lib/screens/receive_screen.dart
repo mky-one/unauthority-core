@@ -22,6 +22,7 @@ class _ReceiveScreenState extends State<ReceiveScreen> {
   }
 
   Future<void> _loadAddress() async {
+    debugPrint('💰 [ReceiveScreen._loadAddress] Loading address...');
     try {
       final walletService = context.read<WalletService>();
       final wallet = await walletService.getCurrentWallet();
@@ -31,6 +32,7 @@ class _ReceiveScreenState extends State<ReceiveScreen> {
           _address = wallet['address'];
           _isLoading = false;
         });
+        debugPrint('💰 [ReceiveScreen._loadAddress] Address: $_address');
       }
     } catch (e) {
       if (mounted) {
@@ -59,7 +61,7 @@ class _ReceiveScreenState extends State<ReceiveScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Receive UAT'),
+        title: const Text('Receive LOS'),
         centerTitle: true,
       ),
       body: _isLoading
@@ -122,7 +124,7 @@ class _ReceiveScreenState extends State<ReceiveScreen> {
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 const Text(
-                                  'Your UAT Address',
+                                  'Your LOS Address',
                                   style: TextStyle(
                                     fontSize: 12,
                                     color: Colors.grey,
@@ -176,7 +178,7 @@ class _ReceiveScreenState extends State<ReceiveScreen> {
                               SizedBox(width: 12),
                               Expanded(
                                 child: Text(
-                                  'Only send UAT tokens to this address. Sending other tokens may result in permanent loss.',
+                                  'Only send LOS tokens to this address. Sending other tokens may result in permanent loss.',
                                   style: TextStyle(
                                       fontSize: 12, color: Colors.orange),
                                 ),

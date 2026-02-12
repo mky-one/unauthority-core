@@ -9,7 +9,7 @@ import 'package:ffi/ffi.dart';
 /// - Keypair generation (NIST Level 5, 2592-byte PK, 4864-byte SK)
 /// - Message signing (detached signatures)
 /// - Signature verification
-/// - UAT address derivation (Base58Check, identical to backend)
+/// - LOS address derivation (Base58Check, identical to backend)
 /// - Address validation
 ///
 /// Falls back to a "not available" state if the native library isn't compiled.
@@ -21,12 +21,12 @@ class DilithiumService {
   static DynamicLibrary? _lib;
 
   // FFI function typedefs
-  static late int Function() _uatPublicKeyBytes;
-  static late int Function() _uatSecretKeyBytes;
-  static late int Function() _uatSignatureBytes;
-  static late int Function() _uatMaxAddressBytes;
+  static late int Function() _losPublicKeyBytes;
+  static late int Function() _losSecretKeyBytes;
+  static late int Function() _losSignatureBytes;
+  static late int Function() _losMaxAddressBytes;
   static late int Function(Pointer<Uint8>, int, Pointer<Uint8>, int)
-  _uatGenerateKeypair;
+      _losGenerateKeypair;
   static late int Function(
     Pointer<Uint8>,
     int,
@@ -34,8 +34,7 @@ class DilithiumService {
     int,
     Pointer<Uint8>,
     int,
-  )
-  _uatGenerateKeypairFromSeed;
+  ) _losGenerateKeypairFromSeed;
   static late int Function(
     Pointer<Uint8>,
     int,
@@ -43,8 +42,7 @@ class DilithiumService {
     int,
     Pointer<Uint8>,
     int,
-  )
-  _uatSign;
+  ) _losSign;
   static late int Function(
     Pointer<Uint8>,
     int,
@@ -52,15 +50,14 @@ class DilithiumService {
     int,
     Pointer<Uint8>,
     int,
-  )
-  _uatVerify;
+  ) _losVerify;
   static late int Function(Pointer<Uint8>, int, Pointer<Uint8>, int)
-  _uatPublicKeyToAddress;
-  static late int Function(Pointer<Uint8>, int) _uatValidateAddress;
+      _losPublicKeyToAddress;
+  static late int Function(Pointer<Uint8>, int) _losValidateAddress;
   static late int Function(Pointer<Uint8>, int, Pointer<Uint8>, int)
-  _uatBytesToHex;
+      _losBytesToHex;
   static late int Function(Pointer<Uint8>, int, Pointer<Uint8>, int)
-  _uatHexToBytes;
+      _losHexToBytes;
 
   // Cached sizes
   static int _pkBytes = 0;
@@ -104,118 +101,106 @@ class DilithiumService {
       }
 
       // Bind FFI functions
-      _uatPublicKeyBytes = _lib!
-          .lookupFunction<Int32 Function(), int Function()>(
-            'uat_public_key_bytes',
-          );
-      _uatSecretKeyBytes = _lib!
-          .lookupFunction<Int32 Function(), int Function()>(
-            'uat_secret_key_bytes',
-          );
-      _uatSignatureBytes = _lib!
-          .lookupFunction<Int32 Function(), int Function()>(
-            'uat_signature_bytes',
-          );
-      _uatMaxAddressBytes = _lib!
-          .lookupFunction<Int32 Function(), int Function()>(
-            'uat_max_address_bytes',
-          );
+      _losPublicKeyBytes =
+          _lib!.lookupFunction<Int32 Function(), int Function()>(
+        'los_public_key_bytes',
+      );
+      _losSecretKeyBytes =
+          _lib!.lookupFunction<Int32 Function(), int Function()>(
+        'los_secret_key_bytes',
+      );
+      _losSignatureBytes =
+          _lib!.lookupFunction<Int32 Function(), int Function()>(
+        'los_signature_bytes',
+      );
+      _losMaxAddressBytes =
+          _lib!.lookupFunction<Int32 Function(), int Function()>(
+        'los_max_address_bytes',
+      );
 
-      _uatGenerateKeypair = _lib!
-          .lookupFunction<
-            Int32 Function(Pointer<Uint8>, Int32, Pointer<Uint8>, Int32),
-            int Function(Pointer<Uint8>, int, Pointer<Uint8>, int)
-          >('uat_generate_keypair');
+      _losGenerateKeypair = _lib!.lookupFunction<
+          Int32 Function(Pointer<Uint8>, Int32, Pointer<Uint8>, Int32),
+          int Function(Pointer<Uint8>, int, Pointer<Uint8>,
+              int)>('los_generate_keypair');
 
-      _uatGenerateKeypairFromSeed = _lib!
-          .lookupFunction<
-            Int32 Function(
-              Pointer<Uint8>,
-              Int32,
-              Pointer<Uint8>,
-              Int32,
-              Pointer<Uint8>,
-              Int32,
-            ),
-            int Function(
-              Pointer<Uint8>,
-              int,
-              Pointer<Uint8>,
-              int,
-              Pointer<Uint8>,
-              int,
-            )
-          >('uat_generate_keypair_from_seed');
+      _losGenerateKeypairFromSeed = _lib!.lookupFunction<
+          Int32 Function(
+            Pointer<Uint8>,
+            Int32,
+            Pointer<Uint8>,
+            Int32,
+            Pointer<Uint8>,
+            Int32,
+          ),
+          int Function(
+            Pointer<Uint8>,
+            int,
+            Pointer<Uint8>,
+            int,
+            Pointer<Uint8>,
+            int,
+          )>('los_generate_keypair_from_seed');
 
-      _uatSign = _lib!
-          .lookupFunction<
-            Int32 Function(
-              Pointer<Uint8>,
-              Int32,
-              Pointer<Uint8>,
-              Int32,
-              Pointer<Uint8>,
-              Int32,
-            ),
-            int Function(
-              Pointer<Uint8>,
-              int,
-              Pointer<Uint8>,
-              int,
-              Pointer<Uint8>,
-              int,
-            )
-          >('uat_sign');
+      _losSign = _lib!.lookupFunction<
+          Int32 Function(
+            Pointer<Uint8>,
+            Int32,
+            Pointer<Uint8>,
+            Int32,
+            Pointer<Uint8>,
+            Int32,
+          ),
+          int Function(
+            Pointer<Uint8>,
+            int,
+            Pointer<Uint8>,
+            int,
+            Pointer<Uint8>,
+            int,
+          )>('los_sign');
 
-      _uatVerify = _lib!
-          .lookupFunction<
-            Int32 Function(
-              Pointer<Uint8>,
-              Int32,
-              Pointer<Uint8>,
-              Int32,
-              Pointer<Uint8>,
-              Int32,
-            ),
-            int Function(
-              Pointer<Uint8>,
-              int,
-              Pointer<Uint8>,
-              int,
-              Pointer<Uint8>,
-              int,
-            )
-          >('uat_verify');
+      _losVerify = _lib!.lookupFunction<
+          Int32 Function(
+            Pointer<Uint8>,
+            Int32,
+            Pointer<Uint8>,
+            Int32,
+            Pointer<Uint8>,
+            Int32,
+          ),
+          int Function(
+            Pointer<Uint8>,
+            int,
+            Pointer<Uint8>,
+            int,
+            Pointer<Uint8>,
+            int,
+          )>('los_verify');
 
-      _uatPublicKeyToAddress = _lib!
-          .lookupFunction<
-            Int32 Function(Pointer<Uint8>, Int32, Pointer<Uint8>, Int32),
-            int Function(Pointer<Uint8>, int, Pointer<Uint8>, int)
-          >('uat_public_key_to_address');
+      _losPublicKeyToAddress = _lib!.lookupFunction<
+          Int32 Function(Pointer<Uint8>, Int32, Pointer<Uint8>, Int32),
+          int Function(Pointer<Uint8>, int, Pointer<Uint8>,
+              int)>('los_public_key_to_address');
 
-      _uatValidateAddress = _lib!
-          .lookupFunction<
-            Int32 Function(Pointer<Uint8>, Int32),
-            int Function(Pointer<Uint8>, int)
-          >('uat_validate_address');
+      _losValidateAddress = _lib!.lookupFunction<
+          Int32 Function(Pointer<Uint8>, Int32),
+          int Function(Pointer<Uint8>, int)>('los_validate_address');
 
-      _uatBytesToHex = _lib!
-          .lookupFunction<
-            Int32 Function(Pointer<Uint8>, Int32, Pointer<Uint8>, Int32),
-            int Function(Pointer<Uint8>, int, Pointer<Uint8>, int)
-          >('uat_bytes_to_hex');
+      _losBytesToHex = _lib!.lookupFunction<
+          Int32 Function(Pointer<Uint8>, Int32, Pointer<Uint8>, Int32),
+          int Function(
+              Pointer<Uint8>, int, Pointer<Uint8>, int)>('los_bytes_to_hex');
 
-      _uatHexToBytes = _lib!
-          .lookupFunction<
-            Int32 Function(Pointer<Uint8>, Int32, Pointer<Uint8>, Int32),
-            int Function(Pointer<Uint8>, int, Pointer<Uint8>, int)
-          >('uat_hex_to_bytes');
+      _losHexToBytes = _lib!.lookupFunction<
+          Int32 Function(Pointer<Uint8>, Int32, Pointer<Uint8>, Int32),
+          int Function(
+              Pointer<Uint8>, int, Pointer<Uint8>, int)>('los_hex_to_bytes');
 
       // Query sizes
-      _pkBytes = _uatPublicKeyBytes();
-      _skBytes = _uatSecretKeyBytes();
-      _sigBytes = _uatSignatureBytes();
-      _maxAddrBytes = _uatMaxAddressBytes();
+      _pkBytes = _losPublicKeyBytes();
+      _skBytes = _losSecretKeyBytes();
+      _sigBytes = _losSignatureBytes();
+      _maxAddrBytes = _losMaxAddressBytes();
 
       _available = true;
       debugPrint('✅ Dilithium5 native library loaded');
@@ -232,11 +217,11 @@ class DilithiumService {
   static DynamicLibrary? _loadNativeLibrary() {
     final String libName;
     if (Platform.isMacOS) {
-      libName = 'libuat_crypto_ffi.dylib';
+      libName = 'liblos_crypto_ffi.dylib';
     } else if (Platform.isLinux) {
-      libName = 'libuat_crypto_ffi.so';
+      libName = 'liblos_crypto_ffi.so';
     } else if (Platform.isWindows) {
-      libName = 'uat_crypto_ffi.dll';
+      libName = 'los_crypto_ffi.dll';
     } else {
       return null;
     }
@@ -255,9 +240,9 @@ class DilithiumService {
       // 3. Windows/Linux: next to executable
       '$execDir$sep$libName',
       // 4. Development: relative to flutter_wallet/
-      'native${sep}uat_crypto_ffi${sep}target${sep}release$sep$libName',
+      'native${sep}los_crypto_ffi${sep}target${sep}release$sep$libName',
       // 5. Development: from workspace root
-      '${Directory.current.path}${sep}native${sep}uat_crypto_ffi${sep}target${sep}release$sep$libName',
+      '${Directory.current.path}${sep}native${sep}los_crypto_ffi${sep}target${sep}release$sep$libName',
       // 6. macOS Runner copy
       '${Directory.current.path}${sep}macos${sep}Runner$sep$libName',
       // 7. System library path (fallback)
@@ -283,6 +268,7 @@ class DilithiumService {
   /// Generate a new Dilithium5 keypair.
   /// Returns {publicKey: Uint8List, secretKey: Uint8List}
   static DilithiumKeypair generateKeypair() {
+    debugPrint('🔑 [DilithiumService.generateKeypair] Generating keypair...');
     if (!_available) {
       throw StateError('Dilithium5 native library not available');
     }
@@ -291,11 +277,13 @@ class DilithiumService {
     final skPtr = calloc<Uint8>(_skBytes);
 
     try {
-      final result = _uatGenerateKeypair(pkPtr, _pkBytes, skPtr, _skBytes);
+      final result = _losGenerateKeypair(pkPtr, _pkBytes, skPtr, _skBytes);
       if (result != 0) {
         throw StateError('Keypair generation failed: error $result');
       }
 
+      debugPrint(
+          '🔑 [DilithiumService.generateKeypair] Generated keypair (PK: $_pkBytes bytes, SK: $_skBytes bytes)');
       return DilithiumKeypair(
         publicKey: Uint8List.fromList(pkPtr.asTypedList(_pkBytes)),
         secretKey: Uint8List.fromList(skPtr.asTypedList(_skBytes)),
@@ -313,6 +301,8 @@ class DilithiumService {
   /// Same seed always produces the same keypair, enabling wallet recovery
   /// from mnemonic alone. Uses domain-separated SHA-256 → ChaCha20 DRBG.
   static DilithiumKeypair generateKeypairFromSeed(List<int> seed) {
+    debugPrint(
+        '🔑 [DilithiumService.generateKeypairFromSeed] Seed: ${seed.length} bytes');
     if (!_available) {
       throw StateError('Dilithium5 native library not available');
     }
@@ -327,7 +317,7 @@ class DilithiumService {
     try {
       seedPtr.asTypedList(seed.length).setAll(0, seed);
 
-      final result = _uatGenerateKeypairFromSeed(
+      final result = _losGenerateKeypairFromSeed(
         seedPtr,
         seed.length,
         pkPtr,
@@ -339,6 +329,8 @@ class DilithiumService {
         throw StateError('Seeded keypair generation failed: error $result');
       }
 
+      debugPrint(
+          '🔑 [DilithiumService.generateKeypairFromSeed] Deterministic keypair generated (PK: $_pkBytes bytes, SK: $_skBytes bytes)');
       return DilithiumKeypair(
         publicKey: Uint8List.fromList(pkPtr.asTypedList(_pkBytes)),
         secretKey: Uint8List.fromList(skPtr.asTypedList(_skBytes)),
@@ -357,6 +349,8 @@ class DilithiumService {
   /// Sign a message with a Dilithium5 secret key.
   /// Returns the signature as Uint8List.
   static Uint8List sign(Uint8List message, Uint8List secretKey) {
+    debugPrint(
+        '🔑 [DilithiumService.sign] Signing message (${message.length} bytes)');
     if (!_available) {
       throw StateError('Dilithium5 native library not available');
     }
@@ -369,7 +363,7 @@ class DilithiumService {
       msgPtr.asTypedList(message.length).setAll(0, message);
       skPtr.asTypedList(secretKey.length).setAll(0, secretKey);
 
-      final sigLen = _uatSign(
+      final sigLen = _losSign(
         msgPtr,
         message.length,
         skPtr,
@@ -381,7 +375,10 @@ class DilithiumService {
         throw StateError('Signing failed: error $sigLen');
       }
 
-      return Uint8List.fromList(sigPtr.asTypedList(sigLen));
+      final sig = Uint8List.fromList(sigPtr.asTypedList(sigLen));
+      debugPrint(
+          '🔑 [DilithiumService.sign] Signed (sig: ${sig.length} bytes)');
+      return sig;
     } finally {
       // SECURITY FIX S3: Zero secret key memory before freeing to prevent leak
       skPtr.asTypedList(secretKey.length).fillRange(0, secretKey.length, 0);
@@ -397,6 +394,8 @@ class DilithiumService {
     Uint8List signature,
     Uint8List publicKey,
   ) {
+    debugPrint(
+        '🔑 [DilithiumService.verify] Verifying (msg: ${message.length} bytes, sig: ${signature.length} bytes)');
     if (!_available) return false;
 
     final msgPtr = calloc<Uint8>(message.length);
@@ -408,7 +407,7 @@ class DilithiumService {
       sigPtr.asTypedList(signature.length).setAll(0, signature);
       pkPtr.asTypedList(publicKey.length).setAll(0, publicKey);
 
-      final result = _uatVerify(
+      final result = _losVerify(
         msgPtr,
         message.length,
         sigPtr,
@@ -416,7 +415,9 @@ class DilithiumService {
         pkPtr,
         publicKey.length,
       );
-      return result == 1;
+      final verified = result == 1;
+      debugPrint('🔑 [DilithiumService.verify] Verify result: $verified');
+      return verified;
     } finally {
       calloc.free(msgPtr);
       calloc.free(sigPtr);
@@ -424,9 +425,11 @@ class DilithiumService {
     }
   }
 
-  /// Derive UAT address from Dilithium5 public key.
-  /// Returns a string like "UATHjvLcaLZp..." (Base58Check format).
+  /// Derive LOS address from Dilithium5 public key.
+  /// Returns a string like "LOSHjvLcaLZp..." (Base58Check format).
   static String publicKeyToAddress(Uint8List publicKey) {
+    debugPrint(
+        '🔑 [DilithiumService.publicKeyToAddress] PK: ${publicKey.length} bytes');
     if (!_available) {
       throw StateError('Dilithium5 native library not available');
     }
@@ -437,7 +440,7 @@ class DilithiumService {
     try {
       pkPtr.asTypedList(publicKey.length).setAll(0, publicKey);
 
-      final addrLen = _uatPublicKeyToAddress(
+      final addrLen = _losPublicKeyToAddress(
         pkPtr,
         publicKey.length,
         addrPtr,
@@ -448,15 +451,20 @@ class DilithiumService {
       }
 
       final bytes = addrPtr.asTypedList(addrLen);
-      return String.fromCharCodes(bytes);
+      final address = String.fromCharCodes(bytes);
+      debugPrint(
+          '🔑 [DilithiumService.publicKeyToAddress] Address: ${address.length > 12 ? '${address.substring(0, 8)}...${address.substring(address.length - 4)}' : address}');
+      return address;
     } finally {
       calloc.free(pkPtr);
       calloc.free(addrPtr);
     }
   }
 
-  /// Validate a UAT address (checksum + format).
+  /// Validate a LOS address (checksum + format).
   static bool validateAddress(String address) {
+    debugPrint(
+        '🔑 [DilithiumService.validateAddress] Address: ${address.length > 12 ? '${address.substring(0, 8)}...${address.substring(address.length - 4)}' : address}');
     if (!_available) return false;
 
     final addrBytes = address.codeUnits;
@@ -464,7 +472,9 @@ class DilithiumService {
 
     try {
       addrPtr.asTypedList(addrBytes.length).setAll(0, addrBytes);
-      return _uatValidateAddress(addrPtr, addrBytes.length) == 1;
+      final isValid = _losValidateAddress(addrPtr, addrBytes.length) == 1;
+      debugPrint('🔑 [DilithiumService.validateAddress] Result: $isValid');
+      return isValid;
     } finally {
       calloc.free(addrPtr);
     }
@@ -481,7 +491,7 @@ class DilithiumService {
 
     try {
       inPtr.asTypedList(bytes.length).setAll(0, bytes);
-      final hexLen = _uatBytesToHex(
+      final hexLen = _losBytesToHex(
         inPtr,
         bytes.length,
         outPtr,
@@ -513,7 +523,7 @@ class DilithiumService {
 
     try {
       inPtr.asTypedList(hexBytes.length).setAll(0, hexBytes);
-      final bytesLen = _uatHexToBytes(
+      final bytesLen = _losHexToBytes(
         inPtr,
         hexBytes.length,
         outPtr,

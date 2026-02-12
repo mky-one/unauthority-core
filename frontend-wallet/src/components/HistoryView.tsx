@@ -33,10 +33,10 @@ export default function HistoryView() {
 
   return (
     <div className="max-w-6xl mx-auto p-6">
-      <div className="bg-uat-gray border border-gray-700 rounded-2xl p-8">
+      <div className="bg-los-gray border border-gray-700 rounded-2xl p-8">
         <div className="flex items-center justify-between mb-6">
           <div className="flex items-center space-x-3">
-            <div className="w-12 h-12 bg-gradient-to-br from-uat-blue to-uat-cyan rounded-xl flex items-center justify-center">
+            <div className="w-12 h-12 bg-gradient-to-br from-los-blue to-los-cyan rounded-xl flex items-center justify-center">
               <History className="w-6 h-6 text-white" />
             </div>
             <div>
@@ -48,7 +48,7 @@ export default function HistoryView() {
           <button
             onClick={fetchHistory}
             disabled={loading}
-            className="flex items-center space-x-2 px-4 py-2 bg-uat-dark border border-gray-600 rounded-lg hover:bg-gray-800 transition-all"
+            className="flex items-center space-x-2 px-4 py-2 bg-los-dark border border-gray-600 rounded-lg hover:bg-gray-800 transition-all"
           >
             <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
             <span>Refresh</span>
@@ -66,7 +66,7 @@ export default function HistoryView() {
             {transactions.map((tx, index) => (
               <div
                 key={index}
-                className="bg-uat-dark border border-gray-600 rounded-xl p-4 hover:border-uat-blue transition-all"
+                className="bg-los-dark border border-gray-600 rounded-xl p-4 hover:border-los-blue transition-all"
               >
                 <div className="flex items-start justify-between">
                   <div className="flex-1">
@@ -104,7 +104,7 @@ export default function HistoryView() {
                     <p className={`text-xl font-bold ${
                       (tx.type === 'receive' || tx.tx_type === 'receive') ? 'text-green-400' : 'text-red-400'
                     }`}>
-                      {(tx.type === 'receive' || tx.tx_type === 'receive') ? '+' : '-'}{formatBalance(tx.amount)} UAT
+                      {(tx.type === 'receive' || tx.tx_type === 'receive') ? '+' : '-'}{formatBalance(tx.amount)} LOS
                     </p>
                     <p className="text-xs text-gray-500 mt-1">
                       ≈ ${(parseFloat(formatBalance(tx.amount)) * 0.01).toFixed(2)}

@@ -1,6 +1,6 @@
 /**
  * Testnet Faucet Component
- * Allows users to request free testnet UAT tokens
+ * Allows users to request free testnet LOS tokens
  */
 
 import { useState, useEffect } from 'react';
@@ -53,7 +53,7 @@ export default function FaucetPanel() {
       if (response.status === 'success') {
         setResult({
           type: 'success',
-          message: `Success! Received ${response.amount_uat} UAT. Check your balance in a few seconds.`,
+          message: `Success! Received ${response.amount_los} LOS. Check your balance in a few seconds.`,
         });
         
         // Set cooldown (1 hour = 3600 seconds)
@@ -89,7 +89,7 @@ export default function FaucetPanel() {
 
   return (
     <div className="max-w-2xl mx-auto p-6">
-      <div className="bg-uat-gray border border-gray-700 rounded-2xl p-8">
+      <div className="bg-los-gray border border-gray-700 rounded-2xl p-8">
         {/* Header */}
         <div className="flex items-center space-x-3 mb-6">
           <div className="w-12 h-12 bg-gradient-to-br from-blue-500 to-cyan-500 rounded-xl flex items-center justify-center">
@@ -97,15 +97,15 @@ export default function FaucetPanel() {
           </div>
           <div>
             <h2 className="text-2xl font-bold">💧 Testnet Faucet</h2>
-            <p className="text-sm text-gray-400">Get free test UAT tokens</p>
+            <p className="text-sm text-gray-400">Get free test LOS tokens</p>
           </div>
         </div>
 
         {/* Description */}
         <div className="bg-blue-900/20 border border-blue-700 rounded-lg p-4 mb-6">
           <p className="text-sm text-blue-200">
-            Request free testnet UAT tokens for development and testing. 
-            Limited to <strong>100 UAT per hour</strong> per address.
+            Request free testnet LOS tokens for development and testing. 
+            Limited to <strong>100 LOS per hour</strong> per address.
           </p>
         </div>
 
@@ -174,7 +174,7 @@ export default function FaucetPanel() {
           ) : (
             <>
               <Droplet className="w-5 h-5" />
-              <span>Request 100 UAT</span>
+              <span>Request 100 LOS</span>
             </>
           )}
         </button>

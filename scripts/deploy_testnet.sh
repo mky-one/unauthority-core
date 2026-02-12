@@ -18,8 +18,8 @@ echo "╚═══════════════════════�
 echo ""
 
 # Configuration
-TESTNET_DIR="$HOME/.uat/testnet"
-BINARY="./target/release/uat-node"
+TESTNET_DIR="$HOME/.los/testnet"
+BINARY="./target/release/los-node"
 
 # Build project first
 echo "🔨 Building project in release mode..."
@@ -27,7 +27,7 @@ cargo build --release
 
 # Check if binary exists
 if [ ! -f "$BINARY" ]; then
-    echo "❌ Error: uat-node binary not found at $BINARY"
+    echo "❌ Error: los-node binary not found at $BINARY"
     exit 1
 fi
 
@@ -236,6 +236,6 @@ echo "  tail -f $TESTNET_DIR/logs/node_c.log"
 echo ""
 echo "🔍 TEST CONNECTION:"
 echo "  curl http://localhost:3030/node-info"
-echo "  cargo run --bin uat-cli -- query info --rpc http://localhost:3030"
+echo "  cargo run --bin los-cli -- query info --rpc http://localhost:3030"
 echo ""
 echo "✅ Ready for testnet launch (Feb 18, 2026)!"

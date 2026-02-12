@@ -59,7 +59,7 @@ function App() {
 
   const handleLogout = () => {
     if (confirm('Are you sure you want to logout? Your wallet will be removed from this device.')) {
-      localStorage.removeItem('uat_wallet');
+      localStorage.removeItem('los_wallet');
       clearWallet();
     }
   };
@@ -94,17 +94,17 @@ function App() {
   }
 
   return (
-    <div className="h-screen flex flex-col bg-uat-dark">
+    <div className="h-screen flex flex-col bg-los-dark">
       {/* Header */}
-      <header className="bg-uat-gray border-b border-gray-700 px-6 py-4">
+      <header className="bg-los-gray border-b border-gray-700 px-6 py-4">
         <div className="flex items-center justify-between">
           <div className="flex items-center space-x-3">
-            <div className="w-10 h-10 bg-gradient-to-br from-uat-blue to-uat-cyan rounded-lg flex items-center justify-center">
+            <div className="w-10 h-10 bg-gradient-to-br from-los-blue to-los-cyan rounded-lg flex items-center justify-center">
               <Wallet className="w-6 h-6 text-white" />
             </div>
             <div>
               <h1 className="text-xl font-bold">Unauthority Wallet</h1>
-              <p className="text-xs text-gray-400">Burn BTC/ETH to Mint UAT</p>
+              <p className="text-xs text-gray-400">Burn BTC/ETH to Mint LOS</p>
             </div>
           </div>
           
@@ -137,7 +137,7 @@ function App() {
             </div>
             
             {oraclePrices && (
-              <div className="text-xs text-gray-400 bg-uat-dark px-3 py-1 rounded">
+              <div className="text-xs text-gray-400 bg-los-dark px-3 py-1 rounded">
                 ETH: ${oraclePrices.eth.toLocaleString()} | BTC: ${oraclePrices.btc.toLocaleString()}
               </div>
             )}
@@ -146,7 +146,7 @@ function App() {
       </header>
 
       {/* Tab Navigation */}
-      <nav className="bg-uat-gray border-b border-gray-700 px-6">
+      <nav className="bg-los-gray border-b border-gray-700 px-6">
         <div className="flex space-x-1">
           <TabButton
             icon={<Wallet className="w-4 h-4" />}
@@ -213,8 +213,8 @@ function TabButton({ icon, label, active, onClick }: TabButtonProps) {
       onClick={onClick}
       className={`flex items-center space-x-2 px-4 py-3 border-b-2 transition-colors ${
         active
-          ? 'border-uat-blue text-white bg-uat-dark'
-          : 'border-transparent text-gray-400 hover:text-white hover:bg-uat-dark'
+          ? 'border-los-blue text-white bg-los-dark'
+          : 'border-transparent text-gray-400 hover:text-white hover:bg-los-dark'
       }`}
     >
       {icon}

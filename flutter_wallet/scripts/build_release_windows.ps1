@@ -1,5 +1,5 @@
 # ══════════════════════════════════════════════════════════════════════════════
-# UAT WALLET — WINDOWS RELEASE BUILD (PowerShell)
+# LOS WALLET — WINDOWS RELEASE BUILD (PowerShell)
 # ══════════════════════════════════════════════════════════════════════════════
 #
 # Builds a complete standalone installer for Windows that includes:
@@ -12,7 +12,7 @@
 #   .\scripts\build_release_windows.ps1
 #
 # Output:
-#   release\UAT-Wallet-v1.0.0-testnet-windows-x64.zip
+#   release\LOS-Wallet-v1.0.9-testnet-windows-x64.zip
 #
 # Prerequisites:
 #   - Flutter SDK installed
@@ -23,15 +23,15 @@
 $ErrorActionPreference = "Stop"
 
 # ── Configuration ────────────────────────────────────────────────────────────
-$VERSION = "1.0.0-testnet"
+$VERSION = "1.0.9-testnet"
 $SCRIPT_DIR = Split-Path -Parent $MyInvocation.MyCommand.Definition
 $WALLET_DIR = Split-Path -Parent $SCRIPT_DIR
-$NATIVE_DIR = Join-Path $WALLET_DIR "native\uat_crypto_ffi"
+$NATIVE_DIR = Join-Path $WALLET_DIR "native\los_crypto_ffi"
 $RELEASE_DIR = Join-Path $WALLET_DIR "release"
 
 Write-Host ""
 Write-Host "═══════════════════════════════════════════════════════════════"
-Write-Host "  🚀 UAT Wallet Release Build (Windows)"
+Write-Host "  🚀 LOS Wallet Release Build (Windows)"
 Write-Host "═══════════════════════════════════════════════════════════════"
 Write-Host "  Version:   $VERSION"
 Write-Host "  Output:    $RELEASE_DIR\"
@@ -90,7 +90,7 @@ Write-Host "  Step 3/4: Bundling native crypto library..."
 Write-Host "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
 $BUNDLE = Join-Path $WALLET_DIR "build\windows\x64\runner\Release"
-$DLL_SRC = Join-Path $NATIVE_DIR "target\release\uat_crypto_ffi.dll"
+$DLL_SRC = Join-Path $NATIVE_DIR "target\release\los_crypto_ffi.dll"
 
 if (-not (Test-Path $DLL_SRC)) {
     Write-Host "❌ Native library not found: $DLL_SRC"
@@ -99,7 +99,7 @@ if (-not (Test-Path $DLL_SRC)) {
 
 # Copy DLL next to the executable
 Copy-Item $DLL_SRC $BUNDLE
-Write-Host "   ✅ uat_crypto_ffi.dll → $BUNDLE\"
+Write-Host "   ✅ los_crypto_ffi.dll → $BUNDLE\"
 Write-Host ""
 
 # ── Step 4: Package for Distribution ────────────────────────────────────────
@@ -112,7 +112,7 @@ New-Item -ItemType Directory -Force -Path $RELEASE_DIR | Out-Null
 # Create README
 @"
 ═══════════════════════════════════════════════════════════════
-  UAT WALLET - TESTNET RELEASE (Windows)
+  LOS WALLET - TESTNET RELEASE (Windows)
   Unauthority Blockchain v1.0
 ═══════════════════════════════════════════════════════════════
 
@@ -129,8 +129,8 @@ FIRST RUN:
 FEATURES:
   ✅ Post-Quantum Cryptography (CRYSTALS-Dilithium5)
   ✅ Automatic Tor Connectivity (zero config)
-  ✅ Send/Receive UAT tokens
-  ✅ Proof-of-Burn (BTC/ETH → UAT)
+  ✅ Send/Receive LOS tokens
+  ✅ Proof-of-Burn (BTC/ETH → LOS)
   ✅ 24-word BIP39 seed phrase backup
 
 NETWORK:
@@ -138,7 +138,7 @@ NETWORK:
   All traffic is automatically routed through Tor.
 "@ | Out-File -FilePath "$BUNDLE\README.txt" -Encoding utf8
 
-$ZIP_NAME = "UAT-Wallet-v${VERSION}-windows-x64.zip"
+$ZIP_NAME = "LOS-Wallet-v${VERSION}-windows-x64.zip"
 $ZIP_PATH = Join-Path $RELEASE_DIR $ZIP_NAME
 
 if (Test-Path $ZIP_PATH) { Remove-Item $ZIP_PATH }

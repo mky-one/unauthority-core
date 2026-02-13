@@ -220,7 +220,12 @@ class AccountManagementService {
   /// Switch active account and restore its wallet keys into the primary
   /// WalletService storage so all signing/balance operations use the
   /// correct keypair.
-  Future<void> switchAccount(String accountId) async {
+  ///
+  /// [walletService] — the app's shared WalletService instance (from Provider).
+  /// This avoids creating a throwaway WalletService() that's disconnected
+  /// from the widget tree.
+  Future<void> switchAccount(String accountId,
+      {WalletService? walletService}) async {
     debugPrint(
         '👤 [AccountManagementService.switchAccount] Switching to account: $accountId');
     final accountsList = await loadAccounts();
@@ -236,15 +241,14 @@ class AccountManagementService {
 
     // Restore this account's wallet into the primary WalletService keys
     // so that signing, balance checks, etc. use the right keypair.
+    final ws = walletService ?? WalletService();
     if (account.seedPhrase != null && !account.isHardwareWallet) {
-      final WalletService walletService = WalletService();
-      await walletService.importWallet(account.seedPhrase!);
+      await ws.importWallet(account.seedPhrase!);
     } else if (account.isHardwareWallet) {
       // Hardware wallets don't have seed phrases to restore
     } else {
       // Address-only account — restore address via importByAddress
-      final WalletService walletService = WalletService();
-      await walletService.importByAddress(account.address);
+      await ws.importByAddress(account.address);
     }
     debugPrint(
         '👤 [AccountManagementService.switchAccount] Switched to account: ${account.name}');

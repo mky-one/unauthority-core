@@ -15,6 +15,8 @@ import 'burn_screen.dart';
 import 'settings_screen.dart';
 import 'receive_screen.dart';
 import 'history_screen.dart';
+import 'network_info_screen.dart';
+import 'explorer_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -319,6 +321,49 @@ class _HomeScreenState extends State<HomeScreen> {
                                     },
                                     icon: const Icon(Icons.history),
                                     label: const Text('HISTORY'),
+                                    style: OutlinedButton.styleFrom(
+                                      padding: const EdgeInsets.all(16),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+
+                            const SizedBox(height: 12),
+
+                            // Action Buttons Row 3: NETWORK / EXPLORER
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: OutlinedButton.icon(
+                                    onPressed: () {
+                                      Navigator.push(
+                                        context,
+                                        MaterialPageRoute(
+                                            builder: (_) =>
+                                                const NetworkInfoScreen()),
+                                      );
+                                    },
+                                    icon: const Icon(Icons.public),
+                                    label: const Text('NETWORK'),
+                                    style: OutlinedButton.styleFrom(
+                                      padding: const EdgeInsets.all(16),
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 16),
+                                Expanded(
+                                  child: OutlinedButton.icon(
+                                    onPressed: () {
+                                      Navigator.push(
+                                        context,
+                                        MaterialPageRoute(
+                                            builder: (_) =>
+                                                const ExplorerScreen()),
+                                      );
+                                    },
+                                    icon: const Icon(Icons.explore),
+                                    label: const Text('EXPLORER'),
                                     style: OutlinedButton.styleFrom(
                                       padding: const EdgeInsets.all(16),
                                     ),

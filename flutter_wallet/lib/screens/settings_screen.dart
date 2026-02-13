@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
+import '../constants/blockchain.dart';
 import '../services/wallet_service.dart';
 import '../services/api_service.dart';
 import '../widgets/network_badge.dart';
@@ -127,18 +128,26 @@ class _SettingsScreenState extends State<SettingsScreen> {
   void _switchNetwork(NetworkEnvironment network) {
     debugPrint(
         '⚙️ [SettingsScreen._switchNetwork] Switching from ${_currentNetwork.name} to ${network.name}');
-    setState(() => _currentNetwork = network);
     final apiService = context.read<ApiService>();
-    apiService.switchEnvironment(network);
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          'Switched to ${network.name.toUpperCase()}',
+    try {
+      apiService.switchEnvironment(network);
+      setState(() => _currentNetwork = network);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Switched to ${network.name.toUpperCase()}',
+          ),
+          backgroundColor: Colors.green,
         ),
-        backgroundColor: Colors.green,
-      ),
-    );
+      );
+    } on StateError catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(e.message),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
   }
 
   @override
@@ -185,7 +194,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   Text(
                     _currentNetwork == NetworkEnvironment.testnet
                         ? 'Connected to Testnet (.onion via Tor)'
-                        : 'Mainnet coming Q2 2026',
+                        : 'Mainnet coming soon',
                     style: const TextStyle(fontSize: 12, color: Colors.grey),
                   ),
                   const SizedBox(height: 12),
@@ -324,7 +333,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           const SizedBox(height: 16),
           const Center(
             child: Text(
-              'LOS Wallet v1.0.5-testnet\nBuilt with Flutter',
+              'LOS Wallet v${BlockchainConstants.version}\nBuilt with Flutter',
               textAlign: TextAlign.center,
               style: TextStyle(fontSize: 12, color: Colors.grey),
             ),
@@ -362,7 +371,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 style: TextStyle(fontWeight: FontWeight.bold),
               ),
               Text('• Testnet: Online (.onion)'),
-              Text('• Mainnet: Coming Q2 2026'),
+              Text('• Mainnet: Coming soon'),
             ],
           ),
         ),

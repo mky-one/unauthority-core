@@ -96,10 +96,16 @@ class _SendScreenState extends State<SendScreen> {
         // Address-only import — no keys, let node sign (TESTNET ONLY)
         debugPrint(
             '💸 [Send] No signing keys — node-signed (functional testnet)...');
+        // FIX: Use amountCil for sub-LOS precision (0.5 LOS = 50_000_000_000 CIL).
+        // floor() alone truncates sub-LOS amounts to 0 which the backend rejects.
+        final amountCilStr =
+            BlockchainConstants.losStringToCil(_amountController.text.trim())
+                .toString();
         result = await apiService.sendTransaction(
           from: wallet['address']!,
           to: toAddress,
           amount: amountLosDouble.floor(),
+          amountCil: amountCilStr,
         );
       }
 

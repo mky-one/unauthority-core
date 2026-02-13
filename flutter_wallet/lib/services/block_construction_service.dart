@@ -43,6 +43,10 @@ class BlockConstructionService {
   /// Whether protocol params have been fetched from the node.
   bool _protocolFetched = false;
 
+  /// Default base fee in CIL (0.001 LOS) — used as last-resort fallback
+  /// when both /node-info and /fee-estimate are unreachable.
+  static const int defaultBaseFeeCil = 100000000;
+
   /// Maximum PoW iterations before giving up
   static const int maxPowIterations = 50000000;
   static const int blockTypeSend = 0;
@@ -79,9 +83,12 @@ class BlockConstructionService {
       final info = await _api.getNodeInfo();
       final protocol = info['protocol'] as Map<String, dynamic>?;
       if (protocol != null) {
-        _baseFeeCil = (protocol['base_fee_cil'] as num).toInt();
-        _powDifficultyBits = (protocol['pow_difficulty_bits'] as num).toInt();
-        final nodeChainId = (protocol['chain_id_numeric'] as num).toInt();
+        _baseFeeCil =
+            (protocol['base_fee_cil'] as num?)?.toInt() ?? defaultBaseFeeCil;
+        _powDifficultyBits =
+            (protocol['pow_difficulty_bits'] as num?)?.toInt() ?? 16;
+        final nodeChainId =
+            (protocol['chain_id_numeric'] as num?)?.toInt() ?? chainId;
         if (nodeChainId != chainId) {
           debugPrint(
               '⚠️ Chain ID mismatch: wallet=$chainId, node=$nodeChainId — updating to node value');
@@ -89,7 +96,7 @@ class BlockConstructionService {
         }
         _protocolFetched = true;
         debugPrint(
-            '✅ Protocol params from node: base_fee=$_baseFeeCil CILD, pow=$_powDifficultyBits bits, chain_id=$chainId');
+            '✅ Protocol params from node: base_fee=$_baseFeeCil CIL, pow=$_powDifficultyBits bits, chain_id=$chainId');
       } else {
         throw Exception(
             '/node-info missing "protocol" field — node upgrade required');
@@ -143,7 +150,20 @@ class BlockConstructionService {
     }
 
     // 1b. Fetch dynamic fee from anti-whale engine (may be > base_fee if rapid sends)
-    final feeData = await _api.getFeeEstimate(address);
+    Map<String, dynamic> feeData;
+    try {
+      feeData = await _api.getFeeEstimate(address);
+    } catch (e) {
+      debugPrint('⚠️ Fee endpoint unreachable, using last-resort base fee: $e');
+      // Only as a last resort — callers should be aware this is a fallback
+      feeData = {
+        'base_fee_cil': _baseFeeCil ?? defaultBaseFeeCil,
+        'estimated_fee_cil': _baseFeeCil ?? defaultBaseFeeCil,
+        'fee_multiplier': 1,
+        'tx_count_in_window': 0,
+        'is_fallback': true,
+      };
+    }
     final fee = (feeData['estimated_fee_cil'] as num).toInt();
     final multiplier = (feeData['fee_multiplier'] as num).toInt();
     debugPrint(
@@ -157,9 +177,11 @@ class BlockConstructionService {
     final account = await _api.getAccount(address);
     final previous = account.headBlock ?? '0';
 
-    // 3. Convert amount to CIL (supports sub-LOS decimals)
-    // e.g. 0.5 LOS = 0.5 × 10^11 = 50,000,000,000 CIL
-    final amountCil = BigInt.from((amountLosDouble * cilPerLos).round());
+    // 3. Convert amount to CIL using integer-only math (no f64 precision loss).
+    // FIX: amountLosDouble * cilPerLos can produce off-by-1 CIL errors on values
+    // like 0.3, 0.6, 0.7 due to IEEE 754. Convert via string → integer math.
+    final amountCil = BigInt.from(
+        BlockchainConstants.losStringToCil(amountLosDouble.toString()));
     final amountLos =
         amountLosDouble.floor(); // Integer LOS for API backward compat
 

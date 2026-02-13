@@ -3,7 +3,7 @@ use ed25519_dalek::{PublicKey, SecretKey};
 use serde::{Deserialize, Serialize};
 use std::fs;
 
-// Constants (matching uat-core/src/lib.rs)
+// Constants (matching los-core/src/lib.rs)
 const CIL_PER_LOS: u128 = 100_000_000_000; // 100 billion CIL per LOS
 const TOTAL_SUPPLY_LOS: u128 = 21_936_236;
 const DEV_ALLOCATION_PERCENT: f64 = 0.07; // 7%
@@ -116,7 +116,7 @@ fn main() {
         total_allocated_cil += balance;
     }
 
-    let total_uat = total_allocated_cil as f64 / CIL_PER_LOS as f64;
+    let total_los = total_allocated_cil as f64 / CIL_PER_LOS as f64;
     let expected_los = dev_allocation_cil as f64 / CIL_PER_LOS as f64;
 
     println!("═══════════════════════════════════════════════════════════");
@@ -127,8 +127,8 @@ fn main() {
     println!("Treasury Wallets: 8 × {:.8} LOS", allocation_per_treasury_cil as f64 / CIL_PER_LOS as f64);
     println!("Treasury 8:       {:.8} LOS (after funding 4 nodes)", treasury_8_balance_cil as f64 / CIL_PER_LOS as f64);
     println!("Validators:       4 × {:.8} LOS", BOOTSTRAP_NODE_STAKE_LOS as f64);
-    println!("Total Allocated:  {:.8} LOS", total_uat);
-    println!("Difference:       {:.8} LOS", (total_uat - expected_los).abs());
+    println!("Total Allocated:  {:.8} LOS", total_los);
+    println!("Difference:       {:.8} LOS", (total_los - expected_los).abs());
     println!("═══════════════════════════════════════════════════════════\n");
 
     // Generate genesis config JSON

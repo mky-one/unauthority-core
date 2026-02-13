@@ -127,6 +127,11 @@ struct BurnRequest {
     coin_type: String, // "eth" or "btc"
     txid: String,
     recipient_address: Option<String>, // Address to receive minted LOS (optional, defaults to sender)
+    // MAINNET SECURITY: signature proves caller owns the recipient_address
+    // Required on mainnet and consensus testnet when recipient_address is provided.
+    // On functional testnet, these are optional (node signs the Mint block).
+    signature: Option<String>,   // Dilithium5 signature over "BURN:{coin_type}:{txid}:{recipient}"
+    public_key: Option<String>,  // Sender's Dilithium5 public key (hex)
 }
 
 #[cfg(feature = "vm")]
@@ -273,7 +278,7 @@ pub struct ApiServerConfig {
     pub ledger: Arc<Mutex<Ledger>>,
     pub tx_out: mpsc::Sender<String>,
     pub pending_sends: Arc<Mutex<HashMap<String, (Block, u128)>>>,
-    pub pending_burns: Arc<Mutex<HashMap<String, (f64, f64, String, u128, u64, String)>>>,
+    pub pending_burns: Arc<Mutex<HashMap<String, (u128, u128, String, u128, u64, String)>>>,
     pub address_book: Arc<Mutex<HashMap<String, String>>>,
     pub my_address: String,
     pub secret_key: Zeroizing<Vec<u8>>,
@@ -297,6 +302,8 @@ pub struct ApiServerConfig {
     pub validator_endpoints: Arc<Mutex<HashMap<String, String>>>,
     /// Mempool: tracks pending transactions with priority ordering and expiration.
     pub mempool_pool: Arc<Mutex<mempool::Mempool>>,
+    /// aBFT Consensus Engine — shared between API server and main event loop
+    pub abft_consensus: Arc<Mutex<ABFTConsensus>>,
 }
 
 #[allow(clippy::type_complexity)]
@@ -321,6 +328,7 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
         burn_voters,
         validator_endpoints,
         mempool_pool,
+        abft_consensus,
     } = cfg;
     // Rate Limiter: 100 req/sec per IP, burst 200
     let limiter = RateLimiter::new(100, Some(200));
@@ -334,19 +342,8 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
     let burn_limiter = Arc::new(EndpointRateLimiter::new(1, 60)); // /burn: 1 per 60 seconds (testnet)
     let faucet_limiter = Arc::new(EndpointRateLimiter::new(1, 120)); // /faucet: 1 per 2 minutes (testnet)
 
-    // aBFT Consensus Engine — tracks consensus parameters and safety invariants
-    let validator_count = {
-        let l = safe_lock(&ledger);
-        l.accounts
-            .iter()
-            .filter(|(_, a)| a.balance >= MIN_VALIDATOR_STAKE_CIL)
-            .count()
-            .max(4)
-    };
-    let abft_consensus = Arc::new(Mutex::new(ABFTConsensus::new(
-        my_address.clone(),
-        validator_count,
-    )));
+    // aBFT Consensus Engine — passed from main() via ApiServerConfig, shared with event loop
+    // Initialize shared secret and validator set
     {
         let mut abft = safe_lock(&abft_consensus);
         // C-03 FIX: Set shared secret for MAC authentication (Keccak256 of node's secret key)
@@ -765,16 +762,28 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
                     }
                     println!("✅ Client signature verified successfully");
                 } else {
-                    // Node signs with its own key (menggunakan signing_hash sebagai pesan)
-                    // On functional testnet, allow node to sign on behalf of any address (no client-side crypto needed)
+                    // MAINNET SAFETY: On Production level, ALL transactions MUST be client-signed.
+                    // Node auto-signing (even for its own address) is a testnet convenience only.
+                    // On mainnet, the API caller must prove key ownership via signature.
+                    if los_core::is_mainnet_build() {
+                        return warp::reply::json(&serde_json::json!({
+                            "status": "error",
+                            "msg": "Mainnet requires client-side signature. Provide signature + public_key fields."
+                        }));
+                    }
+
+                    // TESTNET: Node signs with its own key
+                    // On consensus/production testnet, only allow node to sign for its OWN address
                     if sender_addr != my_addr && testnet_config::get_testnet_config().should_validate_signatures() {
                         return warp::reply::json(&serde_json::json!({
                             "status": "error",
-                            "msg": "External address requires client-side signature. Please provide signature field."
+                            "msg": "External address requires client-side Dilithium5 signature. Provide signature + public_key fields."
                         }));
                     }
                     if sender_addr != my_addr {
                         println!("🧪 TESTNET functional: node signing on behalf of external address {}", sender_addr);
+                    } else {
+                        println!("🔑 Node auto-signing for own address (testnet convenience)");
                     }
                     blk.signature = match try_sign_hex(blk.signing_hash().as_bytes(), &key) {
                         Ok(sig) => sig,
@@ -966,7 +975,7 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
         .and(warp::post())
         .and(warp::body::bytes())
         .and(with_state((p_burn, tx_burn, my_address.clone(), l_burn, oc_burn, bl_burn, aw_burn, (pk_burn, sk_burn, bv_burn))))
-        .then(#[allow(clippy::type_complexity)] |body: bytes::Bytes, (p, tx, my_addr, l, oc, rate_lim, aw, (node_pk, node_sk, bv)): (Arc<Mutex<HashMap<String, (f64, f64, String, u128, u64, String)>>>, mpsc::Sender<String>, String, Arc<Mutex<Ledger>>, Arc<Mutex<OracleConsensus>>, Arc<EndpointRateLimiter>, Arc<Mutex<AntiWhaleEngine>>, (Vec<u8>, Zeroizing<Vec<u8>>, Arc<Mutex<HashMap<String, HashSet<String>>>>))| async move {
+        .then(#[allow(clippy::type_complexity)] |body: bytes::Bytes, (p, tx, my_addr, l, oc, rate_lim, aw, (node_pk, node_sk, bv)): (Arc<Mutex<HashMap<String, (u128, u128, String, u128, u64, String)>>>, mpsc::Sender<String>, String, Arc<Mutex<Ledger>>, Arc<Mutex<OracleConsensus>>, Arc<EndpointRateLimiter>, Arc<Mutex<AntiWhaleEngine>>, (Vec<u8>, Zeroizing<Vec<u8>>, Arc<Mutex<HashMap<String, HashSet<String>>>>))| async move {
 
             // FIX BUG-3: Parse JSON manually to return proper 400 instead of 500
             let req: BurnRequest = match serde_json::from_slice(&body) {
@@ -1004,6 +1013,54 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
 
             // Determine recipient address for rate limiting
             let recipient = req.recipient_address.as_ref().unwrap_or(&my_addr);
+
+            // MAINNET/CONSENSUS SECURITY: When a custom recipient_address is specified,
+            // caller must prove ownership via Dilithium5 signature.
+            // Burn message format: "BURN:{coin_type}:{txid}:{recipient}"
+            // If no recipient is specified, the node's own address is used (node signs Mint block).
+            if req.recipient_address.is_some() && testnet_config::get_testnet_config().should_validate_signatures() {
+                match (&req.signature, &req.public_key) {
+                    (Some(sig_hex), Some(pk_hex)) => {
+                        // Verify that public_key maps to the claimed recipient_address
+                        let pk_bytes = match hex::decode(pk_hex) {
+                            Ok(b) => b,
+                            Err(_) => return warp::reply::json(&serde_json::json!({
+                                "status": "error",
+                                "msg": "Invalid public_key hex encoding"
+                            })),
+                        };
+                        let derived_addr = los_crypto::public_key_to_address(&pk_bytes);
+                        if derived_addr != *recipient {
+                            return warp::reply::json(&serde_json::json!({
+                                "status": "error",
+                                "msg": "public_key does not match recipient_address"
+                            }));
+                        }
+                        // Verify signature over burn message
+                        let burn_msg = format!("BURN:{}:{}:{}", coin_lower, clean_txid, recipient);
+                        let sig_bytes = match hex::decode(sig_hex) {
+                            Ok(b) => b,
+                            Err(_) => return warp::reply::json(&serde_json::json!({
+                                "status": "error",
+                                "msg": "Invalid signature hex encoding"
+                            })),
+                        };
+                        if !los_crypto::verify_signature(burn_msg.as_bytes(), &sig_bytes, &pk_bytes) {
+                            return warp::reply::json(&serde_json::json!({
+                                "status": "error",
+                                "msg": "Invalid burn signature: Dilithium5 verification failed"
+                            }));
+                        }
+                        println!("✅ Burn signature verified for recipient {}", get_short_addr(recipient));
+                    }
+                    _ => {
+                        return warp::reply::json(&serde_json::json!({
+                            "status": "error",
+                            "msg": "Custom recipient_address requires signature + public_key fields for authentication"
+                        }));
+                    }
+                }
+            }
 
             // RATE LIMIT: 1 burn per 60 seconds per recipient address
             // Only CHECK here — record only after successful burn (not on failures like duplicate TXID)
@@ -1121,9 +1178,9 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
                                 // MAINNET: is_testnet_build() is a const fn that returns false on mainnet builds,
                                 // so the compiler eliminates the TESTNET: branch entirely — it cannot exist in mainnet binary.
                                 link: if los_core::is_testnet_build() && testnet_config::get_testnet_config().level == testnet_config::TestnetLevel::Functional {
-                                    format!("TESTNET:{}:{}:{}", sym, clean_txid, prc as u128)
+                                    format!("TESTNET:{}:{}:{}", sym, clean_txid, prc)
                                 } else {
-                                    format!("{}:{}:{}", sym, clean_txid, prc as u128)
+                                    format!("{}:{}:{}", sym, clean_txid, prc)
                                 },
                                 signature: "".to_string(),
                                 public_key: hex::encode(&node_pk), // Node's public key
@@ -1141,7 +1198,7 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
                             match l_guard.process_block(&mint_blk) {
                                 Ok(hash) => {
                                     SAVE_DIRTY.store(true, Ordering::Relaxed);
-                                    println!("🧪 TESTNET (Functional): Instant mint {} {} → {} LOS to {}", amt, sym, los_to_mint / CIL_PER_LOS, recipient);
+                                    println!("🧪 TESTNET (Functional): Instant mint {} → {} LOS to {}", sym, los_to_mint / CIL_PER_LOS, recipient);
                                     // Return hash AND serialized block for gossip
                                     Ok((hash, serde_json::to_string(&mint_blk).unwrap_or_default()))
                                 }
@@ -1162,11 +1219,15 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
                             let _ = tx.send(gossip_msg).await;
                             // Record rate limit ONLY on successful burn
                             rate_lim.record_success(&recipient);
+                            // Pure u128: usd_micro = amt_base × price_micro / base_divisor
+                            let base_div: u128 = if sym == "ETH" { 1_000_000_000_000_000_000 } else { 100_000_000 };
+                            let usd_micro = amt.saturating_mul(prc) / base_div;
+                            let usd_value_str = format!("{}.{:02}", usd_micro / 1_000_000, (usd_micro % 1_000_000) / 10_000);
                             return warp::reply::json(&serde_json::json!({
                                 "status":"success",
                                 "msg":"Burn finalized instantly (Functional Testnet)",
                                 "los_minted": los_to_mint / CIL_PER_LOS,
-                                "usd_value": format!("{:.2}", amt * prc),
+                                "usd_value": usd_value_str,
                                 "recipient": recipient,
                                 "block_hash": hash
                             }));
@@ -1240,7 +1301,7 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
                             previous: state.head.clone(),
                             block_type: BlockType::Mint,
                             amount: los_to_mint,
-                            link: format!("Src:{}:{}:{}", sym, clean_txid, prc as u128),
+                            link: format!("Src:{}:{}:{}", sym, clean_txid, prc),
                             signature: "".to_string(),
                             public_key: hex::encode(&node_pk),
                             work: 0,
@@ -1276,11 +1337,14 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
                             let _ = tx.send(gossip_msg).await;
                             // Record rate limit
                             rate_lim.record_success(recipient);
+                            let base_div: u128 = if sym == "ETH" { 1_000_000_000_000_000_000 } else { 100_000_000 };
+                            let usd_micro = amt.saturating_mul(prc) / base_div;
+                            let usd_value_str = format!("{}.{:02}", usd_micro / 1_000_000, (usd_micro % 1_000_000) / 10_000);
                             return warp::reply::json(&serde_json::json!({
                                 "status": "success",
                                 "msg": "Burn finalized (consensus reached)",
                                 "los_minted": minted / CIL_PER_LOS,
-                                "usd_value": format!("{:.2}", amt * prc),
+                                "usd_value": usd_value_str,
                                 "recipient": burn_recipient
                             }));
                         }
@@ -1589,11 +1653,16 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
                 let validators: Vec<serde_json::Value> = all_validator_addrs
                     .iter()
                     .filter_map(|addr| {
-                        l_guard.accounts.get(addr.as_str()).map(|acc| {
+                        l_guard.accounts.get(addr.as_str()).and_then(|acc| {
+                            // Skip non-validators that are no longer active (e.g. unstaked)
+                            // Bootstrap validators are always shown regardless of flag
+                            let is_genesis = bv_validators.contains(addr);
+                            if !acc.is_validator && !is_genesis {
+                                return None;
+                            }
                             // ACTIVE = verified validator with sufficient stake
                             let is_self = addr == &my_addr_validators;
                             let in_peers = ab_guard.values().any(|v| v.contains(addr.as_str()));
-                            let is_genesis = bv_validators.contains(addr);
                             let has_min_stake = acc.balance >= MIN_VALIDATOR_STAKE_CIL;
                             // Connected = evidence of P2P liveness (online indicator)
                             let connected = is_self || in_peers;
@@ -1631,7 +1700,7 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
                             if let Some(onion_addr) = onion {
                                 entry["onion_address"] = serde_json::json!(onion_addr);
                             }
-                            entry
+                            Some(entry)
                         })
                     })
                     .collect();
@@ -2130,7 +2199,7 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
     // 20. GET /slashing (Slashing statistics and validator safety)
     let sm_stats = slashing_manager.clone();
     let slashing_route =
-        warp::path("slashing")
+        warp::path!("slashing")
             .and(with_state(sm_stats))
             .map(|sm: Arc<Mutex<SlashingManager>>| {
                 let sm_guard = safe_lock(&sm);
@@ -2544,19 +2613,21 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
     // 29. POST /register-validator (Register as an active validator)
     // Requires proof of ownership via Dilithium5 signature + minimum stake.
     // Sets is_validator = true, registers in SlashingManager and RewardPool,
-    // and broadcasts to peers so the entire network knows about this validator.
+    // updates aBFT validator set dynamically, and broadcasts to peers.
     let l_regval = ledger.clone();
     let sm_regval = slashing_manager.clone();
     let rp_regval = reward_pool.clone();
     let tx_regval = tx_out.clone();
     let bv_regval = bootstrap_validators.clone();
     let db_regval = database.clone();
+    let abft_regval = abft_consensus.clone();
     let register_validator_route = warp::path("register-validator")
         .and(warp::post())
         .and(warp::body::bytes())
         .and(with_state((l_regval, sm_regval, rp_regval, tx_regval, db_regval)))
         .then(#[allow(clippy::type_complexity)] move |body: bytes::Bytes, (l, sm, rp, tx, db): (Arc<Mutex<Ledger>>, Arc<Mutex<SlashingManager>>, Arc<Mutex<ValidatorRewardPool>>, mpsc::Sender<String>, Arc<LosDatabase>)| {
             let bv_inner = bv_regval.clone();
+            let abft_inner = abft_regval.clone();
             async move {
             // FIX: Parse JSON manually to return proper 400 instead of 500
             let req: serde_json::Value = match serde_json::from_slice(&body) {
@@ -2698,6 +2769,20 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
             // 9. Mark ledger dirty for persistence
             SAVE_DIRTY.store(true, Ordering::Relaxed);
 
+            // 9b. Dynamically update aBFT validator set so new validator
+            // participates in consensus immediately (no restart required).
+            {
+                let l_guard = safe_lock(&l);
+                let mut validators: Vec<String> = l_guard
+                    .accounts
+                    .iter()
+                    .filter(|(_, a)| a.balance >= MIN_VALIDATOR_STAKE_CIL && a.is_validator)
+                    .map(|(addr, _)| addr.clone())
+                    .collect();
+                validators.sort();
+                safe_lock(&abft_inner).update_validator_set(validators);
+            }
+
             // 10. Broadcast to peers so they also register this validator
             // Include this node's onion_address if known, so peers can connect directly
             let onion_addr = std::env::var("LOS_ONION_ADDRESS").ok();
@@ -2725,6 +2810,213 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
                 "is_genesis": false,
             }))
         }});
+
+    // 29b. POST /unregister-validator (Voluntary validator exit / unstake)
+    // Requires proof of ownership via Dilithium5 signature.
+    // Sets is_validator = false, marks Unstaking in SlashingManager, removes from RewardPool,
+    // updates aBFT validator set, and broadcasts to peers.
+    // Also available as /unregister_validator (underscore) for CLI compatibility.
+    let bv_unregval = bootstrap_validators.clone();
+    let abft_unregval = abft_consensus.clone();
+    let unregister_handler = move |body: bytes::Bytes, (l, sm, rp, tx, db): (Arc<Mutex<Ledger>>, Arc<Mutex<SlashingManager>>, Arc<Mutex<ValidatorRewardPool>>, mpsc::Sender<String>, Arc<LosDatabase>)| {
+        let bv_inner = bv_unregval.clone();
+        let abft_inner = abft_unregval.clone();
+        async move {
+            // Parse JSON
+            let req: serde_json::Value = match serde_json::from_slice(&body) {
+                Ok(r) => r,
+                Err(e) => {
+                    return warp::reply::json(&serde_json::json!({
+                        "status": "error",
+                        "code": 400,
+                        "msg": format!("Invalid request body: {}", e)
+                    }));
+                }
+            };
+
+            let address = match req["address"].as_str() {
+                Some(a) if !a.is_empty() => a.to_string(),
+                _ => return warp::reply::json(&serde_json::json!({
+                    "status": "error",
+                    "msg": "Missing 'address' field"
+                })),
+            };
+            let public_key = match req["public_key"].as_str() {
+                Some(pk) if !pk.is_empty() => pk.to_string(),
+                _ => return warp::reply::json(&serde_json::json!({
+                    "status": "error",
+                    "msg": "Missing 'public_key' field"
+                })),
+            };
+            let signature = match req["signature"].as_str() {
+                Some(s) if !s.is_empty() => s.to_string(),
+                _ => return warp::reply::json(&serde_json::json!({
+                    "status": "error",
+                    "msg": "Missing 'signature' field"
+                })),
+            };
+            let timestamp = req["timestamp"].as_u64().unwrap_or(0);
+
+            // 1. Validate address format
+            if !los_crypto::validate_address(&address) {
+                return warp::reply::json(&serde_json::json!({
+                    "status": "error",
+                    "msg": "Invalid address format"
+                }));
+            }
+
+            // 2. Verify public_key derives to address
+            let pk_bytes = match hex::decode(&public_key) {
+                Ok(b) => b,
+                Err(_) => return warp::reply::json(&serde_json::json!({
+                    "status": "error",
+                    "msg": "Invalid public_key hex encoding"
+                })),
+            };
+            let derived_addr = los_crypto::public_key_to_address(&pk_bytes);
+            if derived_addr != address {
+                return warp::reply::json(&serde_json::json!({
+                    "status": "error",
+                    "msg": "public_key does not match address"
+                }));
+            }
+
+            // 3. Verify signature (message = "UNREGISTER_VALIDATOR:<address>:<timestamp>")
+            let message = format!("UNREGISTER_VALIDATOR:{}:{}", address, timestamp);
+            let sig_bytes = match hex::decode(&signature) {
+                Ok(b) => b,
+                Err(_) => return warp::reply::json(&serde_json::json!({
+                    "status": "error",
+                    "msg": "Invalid signature hex encoding"
+                })),
+            };
+            if !los_crypto::verify_signature(message.as_bytes(), &sig_bytes, &pk_bytes) {
+                return warp::reply::json(&serde_json::json!({
+                    "status": "error",
+                    "msg": "Signature verification failed"
+                }));
+            }
+
+            // 4. Timestamp freshness (5 minute window)
+            let now = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_secs();
+            if timestamp == 0 || now.abs_diff(timestamp) > 300 {
+                return warp::reply::json(&serde_json::json!({
+                    "status": "error",
+                    "msg": "Timestamp too old or missing (max 5 minute window)"
+                }));
+            }
+
+            // 5. Prevent genesis/bootstrap validators from unregistering
+            if bv_inner.contains(&address) {
+                return warp::reply::json(&serde_json::json!({
+                    "status": "error",
+                    "msg": "Bootstrap validators cannot unregister"
+                }));
+            }
+
+            // 6. Check that address is currently a validator
+            let (is_validator, balance) = {
+                let l_guard = safe_lock(&l);
+                match l_guard.accounts.get(&address) {
+                    Some(acc) => (acc.is_validator, acc.balance),
+                    None => (false, 0),
+                }
+            };
+
+            if !is_validator {
+                return warp::reply::json(&serde_json::json!({
+                    "status": "error",
+                    "msg": "Address is not a registered validator"
+                }));
+            }
+
+            // 7. Set is_validator = false in ledger
+            {
+                let mut l_guard = safe_lock(&l);
+                if let Some(acc) = l_guard.accounts.get_mut(&address) {
+                    acc.is_validator = false;
+                }
+            }
+
+            // 8. Mark Unstaking in SlashingManager
+            {
+                let mut sm_guard = safe_lock(&sm);
+                let _ = sm_guard.set_unstaking(&address);
+            }
+
+            // 9. Remove from RewardPool
+            {
+                let mut rp_guard = safe_lock(&rp);
+                rp_guard.unregister_validator(&address);
+            }
+
+            // 10. Update aBFT validator set
+            {
+                let l_guard = safe_lock(&l);
+                let mut validators: Vec<String> = l_guard
+                    .accounts
+                    .iter()
+                    .filter(|(_, a)| a.balance >= MIN_VALIDATOR_STAKE_CIL && a.is_validator)
+                    .map(|(addr, _)| addr.clone())
+                    .collect();
+                validators.sort();
+                safe_lock(&abft_inner).update_validator_set(validators);
+            }
+
+            SAVE_DIRTY.store(true, Ordering::Relaxed);
+
+            // 11. Broadcast to peers
+            let unreg_msg = serde_json::json!({
+                "type": "VALIDATOR_UNREG",
+                "address": address,
+                "public_key": public_key,
+                "signature": signature,
+                "timestamp": timestamp,
+            });
+            let _ = tx.send(format!("VALIDATOR_UNREG:{}", unreg_msg)).await;
+
+            println!("🔻 Validator unregistered: {} (balance: {} LOS)", get_short_addr(&address), balance / CIL_PER_LOS);
+
+            // Persist immediately
+            let _ = db.save_ledger(&safe_lock(&l));
+
+            warp::reply::json(&serde_json::json!({
+                "status": "ok",
+                "msg": "Validator unregistered successfully",
+                "address": address,
+                "balance_los": balance / CIL_PER_LOS,
+                "is_validator": false,
+            }))
+        }
+    };
+
+    // Route 1: /unregister-validator (hyphenated — canonical)
+    let l_unregval1 = ledger.clone();
+    let sm_unregval1 = slashing_manager.clone();
+    let rp_unregval1 = reward_pool.clone();
+    let tx_unregval1 = tx_out.clone();
+    let db_unregval1 = database.clone();
+    let handler1 = unregister_handler.clone();
+    let unregister_validator_route = warp::path("unregister-validator")
+        .and(warp::post())
+        .and(warp::body::bytes())
+        .and(with_state((l_unregval1, sm_unregval1, rp_unregval1, tx_unregval1, db_unregval1)))
+        .then(handler1);
+
+    // Route 2: /unregister_validator (underscore — CLI compatibility)
+    let l_unregval2 = ledger.clone();
+    let sm_unregval2 = slashing_manager.clone();
+    let rp_unregval2 = reward_pool.clone();
+    let tx_unregval2 = tx_out.clone();
+    let db_unregval2 = database.clone();
+    let unregister_validator_underscore_route = warp::path("unregister_validator")
+        .and(warp::post())
+        .and(warp::body::bytes())
+        .and(with_state((l_unregval2, sm_unregval2, rp_unregval2, tx_unregval2, db_unregval2)))
+        .then(unregister_handler);
 
     // 30. GET /network/peers — Lightweight endpoint for Flutter peer discovery.
     // Returns only the list of known validator .onion endpoints so Flutter apps
@@ -2842,6 +3134,8 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
         .or(consensus_route.boxed())
         .or(reward_info_route.boxed())
         .or(register_validator_route.boxed())
+        .or(unregister_validator_route.boxed())
+        .or(unregister_validator_underscore_route.boxed())
         .or(network_peers_route.boxed())
         .or(mempool_stats_route.boxed())
         .boxed();
@@ -2946,7 +3240,13 @@ async fn handle_rejection(
     }
 }
 
-async fn get_crypto_prices() -> (f64, f64) {
+/// Fetch crypto prices from external APIs, returning micro-USD (u128).
+/// 1 USD = 1,000,000 micro-USD. NO f64 in return path — deterministic across nodes.
+/// API JSON f64 values are converted to u128 at the boundary (single conversion, safe).
+async fn get_crypto_prices() -> (u128, u128) {
+    /// 1 USD = 1,000,000 micro-USD
+    const MICRO: u128 = 1_000_000;
+
     // SECURITY: Route oracle requests through Tor SOCKS5 proxy if available
     // Prevents IP leak when fetching prices from clearweb APIs
     let proxy_url = std::env::var("LOS_SOCKS5_PROXY").unwrap_or_default();
@@ -2961,12 +3261,12 @@ async fn get_crypto_prices() -> (f64, f64) {
             Err(e) => {
                 // MAINNET SAFETY (W7): If proxy was configured but failed,
                 // DO NOT fall back to direct connection (would leak real IP).
-                // Return fail-closed prices (0.0) instead.
+                // Return fail-closed prices (0) instead.
                 eprintln!(
-                    "🛑 Oracle SOCKS5 proxy failed ({}): {} — returning 0.0 (fail-closed, no IP leak)",
+                    "🛑 Oracle SOCKS5 proxy failed ({}): {} — returning 0 (fail-closed, no IP leak)",
                     proxy_url, e
                 );
-                return (0.0, 0.0);
+                return (0, 0);
             }
         }
     } else {
@@ -2983,16 +3283,26 @@ async fn get_crypto_prices() -> (f64, f64) {
         "https://min-api.cryptocompare.com/data/pricemulti?fsyms=BTC,ETH&tsyms=USD";
     let url_kraken = "https://api.kraken.com/0/public/Ticker?pair=ETHUSD,XBTUSD"; // Kraken (global exchange)
 
-    let mut eth_prices = Vec::new();
-    let mut btc_prices = Vec::new();
+    // Collect prices as micro-USD (u128) — f64→u128 conversion at API boundary
+    let mut eth_prices: Vec<u128> = Vec::new();
+    let mut btc_prices: Vec<u128> = Vec::new();
+
+    /// Convert API f64 price to micro-USD (u128). Single f64→u128 conversion is safe.
+    fn to_micro(price_f64: f64) -> Option<u128> {
+        if price_f64.is_finite() && price_f64 > 0.0 {
+            Some((price_f64 * MICRO as f64).round() as u128)
+        } else {
+            None
+        }
+    }
 
     // 1. Fetch CoinGecko
     if let Ok(resp) = client.get(url_coingecko).send().await {
         if let Ok(json) = resp.json::<Value>().await {
-            if let Some(p) = json["ethereum"]["usd"].as_f64() {
+            if let Some(p) = json["ethereum"]["usd"].as_f64().and_then(to_micro) {
                 eth_prices.push(p);
             }
-            if let Some(p) = json["bitcoin"]["usd"].as_f64() {
+            if let Some(p) = json["bitcoin"]["usd"].as_f64().and_then(to_micro) {
                 btc_prices.push(p);
             }
         }
@@ -3001,10 +3311,10 @@ async fn get_crypto_prices() -> (f64, f64) {
     // 2. Fetch CryptoCompare
     if let Ok(resp) = client.get(url_cryptocompare).send().await {
         if let Ok(json) = resp.json::<Value>().await {
-            if let Some(p) = json["ETH"]["USD"].as_f64() {
+            if let Some(p) = json["ETH"]["USD"].as_f64().and_then(to_micro) {
                 eth_prices.push(p);
             }
-            if let Some(p) = json["BTC"]["USD"].as_f64() {
+            if let Some(p) = json["BTC"]["USD"].as_f64().and_then(to_micro) {
                 btc_prices.push(p);
             }
         }
@@ -3014,12 +3324,14 @@ async fn get_crypto_prices() -> (f64, f64) {
     if let Ok(resp) = client.get(url_kraken).send().await {
         if let Ok(json) = resp.json::<Value>().await {
             if let Some(result) = json["result"].as_object() {
-                // Kraken returns prices in array format
+                // Kraken returns prices in array format (string)
                 if let Some(eth) = result.get("XETHZUSD") {
                     if let Some(p_array) = eth["c"].as_array() {
                         if let Some(p_str) = p_array[0].as_str() {
                             if let Ok(p) = p_str.parse::<f64>() {
-                                eth_prices.push(p);
+                                if let Some(micro) = to_micro(p) {
+                                    eth_prices.push(micro);
+                                }
                             }
                         }
                     }
@@ -3028,7 +3340,9 @@ async fn get_crypto_prices() -> (f64, f64) {
                     if let Some(p_array) = btc["c"].as_array() {
                         if let Some(p_str) = p_array[0].as_str() {
                             if let Ok(p) = p_str.parse::<f64>() {
-                                btc_prices.push(p);
+                                if let Some(micro) = to_micro(p) {
+                                    btc_prices.push(micro);
+                                }
                             }
                         }
                     }
@@ -3037,7 +3351,7 @@ async fn get_crypto_prices() -> (f64, f64) {
         }
     }
 
-    // Calculate Final Average
+    // Calculate Final Average (pure u128 integer math)
     // SECURITY: On production testnet level, require at least 1 real oracle price
     // Fallback prices are only used on functional/consensus levels
     // MAINNET SAFETY: On mainnet build, is_production_level is always true (forced by
@@ -3052,63 +3366,75 @@ async fn get_crypto_prices() -> (f64, f64) {
         "MAINNET: is_production_level must be true — oracle fallback prices are unreachable"
     );
 
-    let final_eth = if eth_prices.is_empty() {
+    // Testnet fallback prices in micro-USD: ETH $2500, BTC $83000
+    const FALLBACK_ETH_MICRO: u128 = 2_500_000_000; // $2,500.00
+    const FALLBACK_BTC_MICRO: u128 = 83_000_000_000; // $83,000.00
+
+    let final_eth: u128 = if eth_prices.is_empty() {
         if is_production_level {
             println!("🛑 PRODUCTION: All ETH oracle APIs failed — rejecting (fail-closed)");
-            0.0 // Fail-closed: returning 0 will cause burn validation to reject
+            0 // Fail-closed: returning 0 will cause burn validation to reject
         } else {
             println!("⚠️ Oracle: No ETH prices from APIs, using testnet fallback $2500");
-            2500.0
+            FALLBACK_ETH_MICRO
         }
     } else {
-        eth_prices.iter().sum::<f64>() / eth_prices.len() as f64
+        // Integer average: sum / count (no f64 division)
+        let sum: u128 = eth_prices.iter().sum();
+        sum / eth_prices.len() as u128
     };
 
-    let final_btc = if btc_prices.is_empty() {
+    let final_btc: u128 = if btc_prices.is_empty() {
         if is_production_level {
             println!("🛑 PRODUCTION: All BTC oracle APIs failed — rejecting (fail-closed)");
-            0.0 // Fail-closed
+            0 // Fail-closed
         } else {
             println!("⚠️ Oracle: No BTC prices from APIs, using testnet fallback $83000");
-            83000.0
+            FALLBACK_BTC_MICRO
         }
     } else {
-        btc_prices.iter().sum::<f64>() / btc_prices.len() as f64
+        let sum: u128 = btc_prices.iter().sum();
+        sum / btc_prices.len() as u128
     };
 
-    // SECURITY FIX #15: Sanity bounds to reject manipulated oracle prices
+    // SECURITY FIX #15: Sanity bounds to reject manipulated oracle prices (micro-USD)
     // ETH reasonable range: $10 - $100,000 | BTC reasonable range: $100 - $10,000,000
-    let final_eth = if !(10.0..=100_000.0).contains(&final_eth) {
-        if is_production_level || final_eth == 0.0 {
+    const ETH_MIN_MICRO: u128 = 10 * MICRO;            // $10
+    const ETH_MAX_MICRO: u128 = 100_000 * MICRO;       // $100,000
+    const BTC_MIN_MICRO: u128 = 100 * MICRO;            // $100
+    const BTC_MAX_MICRO: u128 = 10_000_000 * MICRO;     // $10,000,000
+
+    let final_eth = if !(ETH_MIN_MICRO..=ETH_MAX_MICRO).contains(&final_eth) {
+        if is_production_level || final_eth == 0 {
             println!(
-                "🛑 Oracle ETH price ${:.2} out of sanity bounds — fail-closed",
-                final_eth
+                "🛑 Oracle ETH price ${}.{:02} out of sanity bounds — fail-closed",
+                final_eth / MICRO, (final_eth % MICRO) / 10_000
             );
-            0.0
+            0
         } else {
             println!(
-                "⚠️ Oracle ETH price ${:.2} out of sanity bounds, using fallback $2500",
-                final_eth
+                "⚠️ Oracle ETH price ${}.{:02} out of sanity bounds, using fallback $2500",
+                final_eth / MICRO, (final_eth % MICRO) / 10_000
             );
-            2500.0
+            FALLBACK_ETH_MICRO
         }
     } else {
         final_eth
     };
 
-    let final_btc = if !(100.0..=10_000_000.0).contains(&final_btc) {
-        if is_production_level || final_btc == 0.0 {
+    let final_btc = if !(BTC_MIN_MICRO..=BTC_MAX_MICRO).contains(&final_btc) {
+        if is_production_level || final_btc == 0 {
             println!(
-                "🛑 Oracle BTC price ${:.2} out of sanity bounds — fail-closed",
-                final_btc
+                "🛑 Oracle BTC price ${}.{:02} out of sanity bounds — fail-closed",
+                final_btc / MICRO, (final_btc % MICRO) / 10_000
             );
-            0.0
+            0
         } else {
             println!(
-                "⚠️ Oracle BTC price ${:.2} out of sanity bounds, using fallback $83000",
-                final_btc
+                "⚠️ Oracle BTC price ${}.{:02} out of sanity bounds, using fallback $83000",
+                final_btc / MICRO, (final_btc % MICRO) / 10_000
             );
-            83000.0
+            FALLBACK_BTC_MICRO
         }
     } else {
         final_btc
@@ -3116,16 +3442,18 @@ async fn get_crypto_prices() -> (f64, f64) {
 
     // Show successful source count (for debugging)
     println!(
-        "📊 Oracle Consensus ({} APIs): ETH ${:.2}, BTC ${:.2}",
+        "📊 Oracle Prices ({} APIs): ETH ${}.{:02}, BTC ${}.{:02}",
         eth_prices.len(),
-        format_u128(final_eth as u128),
-        format_u128(final_btc as u128)
+        final_eth / MICRO, (final_eth % MICRO) / 10_000,
+        final_btc / MICRO, (final_btc % MICRO) / 10_000
     );
 
     (final_eth, final_btc)
 }
 
-async fn verify_eth_burn_tx(txid: &str) -> Option<f64> {
+/// Verify ETH burn transaction, returning amount in wei (u128).
+/// 1 ETH = 10^18 wei. No f64 in return path — deterministic.
+async fn verify_eth_burn_tx(txid: &str) -> Option<u128> {
     // Testnet: Accept any valid format TXID and mock burn amount
     // TXID verification is an external dependency (real ETH blockchain) — mock it in testnet.
     // Oracle price consensus and mint consensus still run for real at Level 2+.
@@ -3136,7 +3464,7 @@ async fn verify_eth_burn_tx(txid: &str) -> Option<f64> {
                 "🧪 TESTNET: Accepting ETH TXID {} with mock amount 0.01 ETH",
                 &clean_txid[..16]
             );
-            return Some(0.01); // Mock 0.01 ETH burn (~30 LOS, within anti-whale limit)
+            return Some(10_000_000_000_000_000); // 0.01 ETH in wei (~30 LOS, within anti-whale limit)
         }
         return None;
     }
@@ -3161,7 +3489,13 @@ async fn verify_eth_burn_tx(txid: &str) -> Option<f64> {
                     if let Some(addrs) = out["addresses"].as_array() {
                         for a in addrs {
                             if a.as_str().unwrap_or("").to_lowercase() == target {
-                                return Some(out["value"].as_f64().unwrap_or(0.0) / 1e18);
+                                // BlockCypher returns value in wei (integer)
+                                // Try u64 first (covers < 18.4 ETH), fallback to f64→u128
+                                let wei = out["value"].as_u64().map(|v| v as u128)
+                                    .unwrap_or_else(|| {
+                                        out["value"].as_f64().map(|v| v.round() as u128).unwrap_or(0)
+                                    });
+                                return Some(wei);
                             }
                         }
                     }
@@ -3172,7 +3506,9 @@ async fn verify_eth_burn_tx(txid: &str) -> Option<f64> {
     None
 }
 
-async fn verify_btc_burn_tx(txid: &str) -> Option<f64> {
+/// Verify BTC burn transaction, returning amount in satoshi (u128).
+/// 1 BTC = 10^8 satoshi. No f64 in return path — deterministic.
+async fn verify_btc_burn_tx(txid: &str) -> Option<u128> {
     // Testnet: Accept any valid format TXID and mock burn amount
     // TXID verification is an external dependency (real BTC blockchain) — mock it in testnet.
     // Oracle price consensus and mint consensus still run for real at Level 2+.
@@ -3183,7 +3519,7 @@ async fn verify_btc_burn_tx(txid: &str) -> Option<f64> {
                 "🧪 TESTNET: Accepting BTC TXID {} with mock amount 0.001 BTC",
                 &clean_txid[..16]
             );
-            return Some(0.001); // Mock 0.001 BTC burn (~69 LOS, within anti-whale limit)
+            return Some(100_000); // 0.001 BTC in satoshi (~69 LOS, within anti-whale limit)
         }
         return None;
     }
@@ -3207,7 +3543,12 @@ async fn verify_btc_burn_tx(txid: &str) -> Option<f64> {
                 if let Some(vout) = json["vout"].as_array() {
                     for out in vout.iter() {
                         if out.to_string().contains(BURN_ADDRESS_BTC) {
-                            return Some(out["value"].as_f64().unwrap_or(0.0) / 1e8);
+                            // mempool.space returns value in satoshi (integer)
+                            let satoshi = out["value"].as_u64().map(|v| v as u128)
+                                .unwrap_or_else(|| {
+                                    out["value"].as_f64().map(|v| v.round() as u128).unwrap_or(0)
+                                });
+                            return Some(satoshi);
                         }
                     }
                 }
@@ -3237,24 +3578,25 @@ fn format_balance_precise(cil_amount: u128) -> String {
     )
 }
 
-/// SECURITY FIX NEW#3: Convert f64 burn amount + price to CIL using integer math.
-/// Single f64→u128 conversions have negligible error (~10^-15 relative).
-/// Compounding multiple f64 multiplications is where precision loss occurs,
-/// so we convert each f64 to integer base units FIRST, then multiply as u128.
+/// MAINNET DETERMINISTIC: Convert burn amount + price to CIL using pure u128 integer math.
+/// NO f64 anywhere — inputs are already in integer base units.
 /// FIX C11-C2: Returns Result to prevent silent fund loss on overflow.
-fn calculate_mint_cil(amt_coin: f64, price_usd: f64, symbol: &str) -> Result<u128, String> {
-    // Convert coin amount to its smallest integer unit (single f64→u128, safe)
-    let (amt_base, base_divisor): (u128, u128) = if symbol == "ETH" {
-        ((amt_coin * 1e18).round() as u128, 1_000_000_000_000_000_000) // wei
+///
+/// # Arguments
+/// * `amt_base` — Amount in base units: wei (10^18 per ETH) or satoshi (10^8 per BTC)
+/// * `price_micro_usd` — Price in micro-USD (10^6 per USD)
+/// * `symbol` — "ETH" or "BTC"
+fn calculate_mint_cil(amt_base: u128, price_micro_usd: u128, symbol: &str) -> Result<u128, String> {
+    // Base divisor: converts base units back to whole-coin equivalent in micro-USD
+    let base_divisor: u128 = if symbol == "ETH" {
+        1_000_000_000_000_000_000 // 10^18 (wei per ETH)
     } else {
-        ((amt_coin * 1e8).round() as u128, 100_000_000) // satoshi
+        100_000_000 // 10^8 (satoshi per BTC)
     };
-    // Convert price to micro-USD (6 decimal places, single f64→u128, safe)
-    let price_micro: u128 = (price_usd * 1_000_000.0).round() as u128;
 
-    // Integer math: usd_micro = (amt_base * price_micro) / base_divisor
+    // Integer math: usd_micro = (amt_base * price_micro_usd) / base_divisor
     let usd_micro = amt_base
-        .checked_mul(price_micro)
+        .checked_mul(price_micro_usd)
         .ok_or_else(|| "Overflow: burn value × price exceeds calculation range".to_string())?
         / base_divisor;
 
@@ -4034,7 +4376,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let pending_burns = Arc::new(Mutex::new(HashMap::<
         String,
-        (f64, f64, String, u128, u64, String),
+        (u128, u128, String, u128, u64, String),
     >::new()));
 
     let pending_sends = Arc::new(Mutex::new(HashMap::<String, (Block, u128)>::new()));
@@ -4335,7 +4677,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
 
             // Clean stale pending burns by timestamp-based TTL
-            // pending_burns: HashMap<txid, (f64_amount, f64_price, String_sym, u128_power, u64_created_at, String_recipient)>
+            // pending_burns: HashMap<txid, (u128_amt_base, u128_price_micro, String_sym, u128_power, u64_created_at, String_recipient)>
             if let Ok(mut pb) = cleanup_pending_burns.lock() {
                 let before = pb.len();
                 pb.retain(|_, (_, _, _, _, created_at, _)| {
@@ -4383,6 +4725,23 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let api_validator_endpoints = Arc::clone(&validator_endpoints);
     let api_mempool = Arc::clone(&mempool_pool);
 
+    // Create aBFT Consensus Engine in main() so it's shared with both API server and event loop
+    let abft_consensus = {
+        let validator_count = {
+            let l = safe_lock(&ledger);
+            l.accounts
+                .iter()
+                .filter(|(_, a)| a.balance >= MIN_VALIDATOR_STAKE_CIL)
+                .count()
+                .max(4)
+        };
+        Arc::new(Mutex::new(ABFTConsensus::new(
+            my_address.clone(),
+            validator_count,
+        )))
+    };
+    let api_abft = Arc::clone(&abft_consensus);
+
     tokio::spawn(async move {
         start_api_server(ApiServerConfig {
             ledger: api_ledger,
@@ -4404,6 +4763,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             burn_voters: api_burn_voters,
             validator_endpoints: api_validator_endpoints,
             mempool_pool: api_mempool,
+            abft_consensus: api_abft,
         })
         .await;
     });
@@ -4461,10 +4821,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             };
 
             if is_validator {
-                // Fetch price from external oracle
+                // Fetch price from external oracle (returns micro-USD u128)
                 let (eth_price, btc_price) = get_crypto_prices().await;
 
-                // Sign the oracle payload: "addr:eth:btc" with Dilithium5
+                // Sign the oracle payload: "addr:eth_micro:btc_micro" with Dilithium5
                 let payload = format!("{}:{}:{}", oracle_addr, eth_price, btc_price);
                 let sig = match los_crypto::sign_message(payload.as_bytes(), &oracle_sk) {
                     Ok(s) => hex::encode(s),
@@ -4475,7 +4835,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 };
                 let pk_hex = hex::encode(&oracle_pk);
 
-                // Format: ORACLE_SUBMIT:addr:eth:btc:signature:pubkey
+                // Format: ORACLE_SUBMIT:addr:eth_micro:btc_micro:signature:pubkey
                 let oracle_msg = format!(
                     "ORACLE_SUBMIT:{}:{}:{}:{}:{}",
                     oracle_addr, eth_price, btc_price, sig, pk_hex
@@ -4483,8 +4843,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let _ = oracle_tx.send(oracle_msg).await;
 
                 println!(
-                    "📊 Broadcasting signed oracle prices: ETH=${:.2}, BTC=${:.2}",
-                    eth_price, btc_price
+                    "📊 Broadcasting signed oracle prices: ETH=${}.{:02}, BTC=${}.{:02}",
+                    eth_price / 1_000_000, (eth_price % 1_000_000) / 10_000,
+                    btc_price / 1_000_000, (btc_price % 1_000_000) / 10_000
                 );
             }
         }
@@ -4559,6 +4920,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
                     // Set expected heartbeats for CURRENT (completing) epoch before eligibility check
                     pool.set_expected_heartbeats(heartbeat_secs);
+
+                    // Refresh stake weights from current ledger balances before distribution.
+                    // This ensures reward proportions reflect actual balances (including
+                    // rewards received in previous epochs or additional deposits).
+                    {
+                        let l = safe_lock(&reward_ledger);
+                        let addrs: Vec<String> = pool.validators.keys().cloned().collect();
+                        for addr in &addrs {
+                            if let Some(acct) = l.accounts.get(addr) {
+                                pool.update_stake(addr, acct.balance);
+                            }
+                        }
+                    }
 
                     // Distribute rewards for the completed epoch
                     // (this calls advance_epoch() internally which resets counters)
@@ -5010,6 +5384,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let burn_voters_clone = Arc::clone(&burn_voters);
     let send_voters_clone = Arc::clone(&send_voters);
     let ve_event = Arc::clone(&validator_endpoints);
+    let abft_event = Arc::clone(&abft_consensus);
 
     loop {
         tokio::select! {
@@ -5128,7 +5503,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
                             let (ep, bp) = match consensus_price_opt {
                                 Some((eth_median, btc_median)) => {
-                                    println!("✅ Using Oracle Consensus: ETH=${:.2}, BTC=${:.2}", eth_median, btc_median);
+                                    println!("✅ Using Oracle Consensus: ETH=${}.{:02}, BTC=${}.{:02}",
+                                        eth_median / 1_000_000, (eth_median % 1_000_000) / 10_000,
+                                        btc_median / 1_000_000, (btc_median % 1_000_000) / 10_000);
                                     (eth_median, btc_median)
                                 },
                                 None => {
@@ -5147,7 +5524,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             };
 
                             if let Some((amt, prc, sym)) = res {
-                                println!("✅ Valid TXID: {:.6} {} detected.", amt, sym);
+                                println!("✅ Valid TXID: {} {} (base units) detected.", amt, sym);
 
                                 // CONSENSUS FIX: Start burn power at 0 — sender doesn't self-vote.
                                 // Only distinct external validators contribute voting power via VOTE_RES.
@@ -5629,16 +6006,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 });
                             }
                         } else if data.starts_with("ORACLE_SUBMIT:") {
-                            // FORMAT: ORACLE_SUBMIT:validator_address:eth_price:btc_price:signature:pubkey
+                            // FORMAT: ORACLE_SUBMIT:validator_address:eth_price_micro:btc_price_micro:signature:pubkey
                             let parts: Vec<&str> = data.split(':').collect();
                             if parts.len() == 6 {
                                 let validator_addr = parts[1].to_string();
-                                let eth_price: f64 = parts[2].parse().unwrap_or(0.0);
-                                let btc_price: f64 = parts[3].parse().unwrap_or(0.0);
+                                let eth_price: u128 = parts[2].parse().unwrap_or(0);
+                                let btc_price: u128 = parts[3].parse().unwrap_or(0);
                                 let sig_hex = parts[4];
                                 let pk_hex = parts[5];
 
                                 // SECURITY: Verify Dilithium5 signature on oracle submission
+                                // Payload matches sender format: "addr:eth_micro:btc_micro"
                                 let payload = format!("{}:{}:{}", validator_addr, eth_price, btc_price);
                                 let sig_bytes = hex::decode(sig_hex).unwrap_or_default();
                                 let pk_bytes = hex::decode(pk_hex).unwrap_or_default();
@@ -5669,14 +6047,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     }
                                 }
 
-                                // Submit to oracle consensus (signature verified)
+                                // Submit to oracle consensus (signature verified, u128 micro-USD)
                                 let mut oc = safe_lock(&oracle_consensus);
                                 oc.submit_price(validator_addr.clone(), eth_price, btc_price);
 
                                 // Check if consensus achieved
                                 if let Some((eth_median, btc_median)) = oc.get_consensus_price() {
-                                    println!("✅ Oracle Consensus: ETH=${:.2}, BTC=${:.2} (from {} validators)",
-                                        eth_median, btc_median, oc.submission_count());
+                                    println!("✅ Oracle Consensus: ETH=${}.{:02}, BTC=${}.{:02} (from {} validators)",
+                                        eth_median / 1_000_000, (eth_median % 1_000_000) / 10_000,
+                                        btc_median / 1_000_000, (btc_median % 1_000_000) / 10_000,
+                                        oc.submission_count());
                                 } else {
                                     println!("📊 Oracle submission from {} ({} more validators needed)",
                                         get_short_addr(&validator_addr),
@@ -5970,7 +6350,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                                 previous: state.head.clone(),
                                                 block_type: BlockType::Mint,
                                                 amount: los_to_mint,
-                                                link: format!("Src:{}:{}:{}", sym, txid, price as u128),
+                                                link: format!("Src:{}:{}:{}", sym, txid, price),
                                                 signature: "".to_string(),
                                                 public_key: hex::encode(&keys.public_key),
                                                 work: 0,
@@ -6401,6 +6781,25 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     println!("✅ Validator registered via P2P: {} (stake: {} LOS)",
                                         get_short_addr(&addr), balance / CIL_PER_LOS);
 
+                                    // Dynamically update aBFT validator set (no restart required)
+                                    {
+                                        let l = safe_lock(&ledger);
+                                        let mut validators: Vec<String> = l
+                                            .accounts
+                                            .iter()
+                                            .filter(|(_, a)| a.balance >= MIN_VALIDATOR_STAKE_CIL && a.is_validator)
+                                            .map(|(addr, _)| addr.clone())
+                                            .collect();
+                                        validators.sort();
+                                        safe_lock(&abft_event).update_validator_set(validators);
+                                    }
+
+                                    // Add to address_book so heartbeats are recorded for this validator
+                                    {
+                                        let short = get_short_addr(&addr);
+                                        safe_lock(&address_book).entry(short).or_insert(addr.clone());
+                                    }
+
                                     // Extract and store onion_address for peer discovery
                                     if let Some(onion) = reg["onion_address"].as_str() {
                                         if !onion.is_empty() && onion.ends_with(".onion") {
@@ -6411,6 +6810,100 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 },
                                 Err(e) => {
                                     println!("⚠️ VALIDATOR_REG: invalid JSON from peer: {}", e);
+                                }
+                            }
+                        } else if let Some(json_str) = data.strip_prefix("VALIDATOR_UNREG:") {
+                            // Handle validator unregistration broadcast from peers.
+                            // Validates proof of ownership via Dilithium5 signature.
+                            match serde_json::from_str::<serde_json::Value>(json_str) {
+                                Ok(unreg) => {
+                                    let addr = unreg["address"].as_str().unwrap_or_default().to_string();
+                                    let pk_hex = unreg["public_key"].as_str().unwrap_or_default().to_string();
+                                    let sig_hex = unreg["signature"].as_str().unwrap_or_default().to_string();
+                                    let ts = unreg["timestamp"].as_u64().unwrap_or(0);
+
+                                    // Validate address format
+                                    if addr.is_empty() || !los_crypto::validate_address(&addr) {
+                                        println!("🚫 VALIDATOR_UNREG: invalid address from peer");
+                                        continue;
+                                    }
+
+                                    // Verify public_key derives to claimed address
+                                    let pk_bytes = match hex::decode(&pk_hex) {
+                                        Ok(b) => b,
+                                        Err(_) => { println!("🚫 VALIDATOR_UNREG: invalid pk hex"); continue; }
+                                    };
+                                    if los_crypto::public_key_to_address(&pk_bytes) != addr {
+                                        println!("🚫 VALIDATOR_UNREG: pk does not match address");
+                                        continue;
+                                    }
+
+                                    // Verify Dilithium5 signature
+                                    let message = format!("UNREGISTER_VALIDATOR:{}:{}", addr, ts);
+                                    let sig_bytes = match hex::decode(&sig_hex) {
+                                        Ok(b) => b,
+                                        Err(_) => { println!("🚫 VALIDATOR_UNREG: invalid sig hex"); continue; }
+                                    };
+                                    if !los_crypto::verify_signature(message.as_bytes(), &sig_bytes, &pk_bytes) {
+                                        println!("🚫 VALIDATOR_UNREG: signature verification failed for {}", get_short_addr(&addr));
+                                        continue;
+                                    }
+
+                                    // Timestamp freshness (5 minute window)
+                                    let now = std::time::SystemTime::now()
+                                        .duration_since(std::time::UNIX_EPOCH)
+                                        .unwrap_or_default()
+                                        .as_secs();
+                                    if ts == 0 || now.abs_diff(ts) > 300 {
+                                        println!("🚫 VALIDATOR_UNREG: stale timestamp from {}", get_short_addr(&addr));
+                                        continue;
+                                    }
+
+                                    // Check if address is currently a validator on this node
+                                    let is_validator = {
+                                        let l = safe_lock(&ledger);
+                                        l.accounts.get(&addr).map(|a| a.is_validator).unwrap_or(false)
+                                    };
+
+                                    if !is_validator {
+                                        // Already unregistered on this node — silently ignore
+                                        continue;
+                                    }
+
+                                    // All checks passed — unregister the validator on this node
+                                    {
+                                        let mut l = safe_lock(&ledger);
+                                        if let Some(acc) = l.accounts.get_mut(&addr) {
+                                            acc.is_validator = false;
+                                        }
+                                    }
+                                    {
+                                        let mut sm = safe_lock(&slashing_clone);
+                                        let _ = sm.set_unstaking(&addr);
+                                    }
+                                    {
+                                        let mut rp = safe_lock(&reward_pool);
+                                        rp.unregister_validator(&addr);
+                                    }
+
+                                    // Update aBFT validator set
+                                    {
+                                        let l = safe_lock(&ledger);
+                                        let mut validators: Vec<String> = l
+                                            .accounts
+                                            .iter()
+                                            .filter(|(_, a)| a.balance >= MIN_VALIDATOR_STAKE_CIL && a.is_validator)
+                                            .map(|(addr, _)| addr.clone())
+                                            .collect();
+                                        validators.sort();
+                                        safe_lock(&abft_event).update_validator_set(validators);
+                                    }
+
+                                    SAVE_DIRTY.store(true, Ordering::Relaxed);
+                                    println!("🔻 Validator unregistered via P2P: {}", get_short_addr(&addr));
+                                },
+                                Err(e) => {
+                                    println!("⚠️ VALIDATOR_UNREG: invalid JSON from peer: {}", e);
                                 }
                             }
                         } else if let Some(json_str) = data.strip_prefix("PEER_LIST:") {

@@ -103,7 +103,8 @@ class PeerDiscoveryService {
       if (raw == null || raw.isEmpty) return 0;
       final List<dynamic> decoded = json.decode(raw);
       return decoded.length;
-    } catch (_) {
+    } catch (e) {
+      debugPrint('⚠️ PeerDiscovery: getSavedPeerCount error: $e');
       return 0;
     }
   }
@@ -122,7 +123,8 @@ class PeerDiscoveryService {
     try {
       final List<dynamic> decoded = json.decode(raw);
       return decoded.whereType<Map<String, dynamic>>().toList();
-    } catch (_) {
+    } catch (e) {
+      debugPrint('⚠️ PeerDiscovery: _loadRawPeers decode error: $e');
       return [];
     }
   }

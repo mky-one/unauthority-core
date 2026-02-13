@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:bip39/bip39.dart' as bip39;
+import 'package:provider/provider.dart';
 import '../models/account_profile.dart';
 import '../services/account_management_service.dart';
 import '../services/dilithium_service.dart';
@@ -55,7 +56,8 @@ class _AccountManagementScreenState extends State<AccountManagementScreen> {
     debugPrint(
         '👤 [AccountManagementScreen._switchAccount] Switching to ${account.name}...');
     try {
-      await _accountService.switchAccount(account.id);
+      await _accountService.switchAccount(account.id,
+          walletService: context.read<WalletService>());
       if (!mounted) return;
       setState(() => _activeAccountId = account.id);
       debugPrint(

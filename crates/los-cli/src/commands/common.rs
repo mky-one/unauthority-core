@@ -27,8 +27,11 @@ pub fn load_wallet_keypair(
         .ok_or("Wallet file missing 'address' field")?
         .to_string();
 
-    // Prompt password & decrypt
-    let password = rpassword::prompt_password("Enter wallet password: ")?;
+    // Password from env var (for automation/scripting) or interactive prompt
+    let password = match std::env::var("LOS_WALLET_PASSWORD") {
+        Ok(p) if !p.is_empty() => p,
+        _ => rpassword::prompt_password("Enter wallet password: ")?,
+    };
 
     let encrypted_key: los_crypto::EncryptedKey =
         serde_json::from_value(wallet["encrypted_key"].clone())
@@ -37,8 +40,21 @@ pub fn load_wallet_keypair(
     let secret_bytes = los_crypto::decrypt_private_key(&encrypted_key, &password)
         .map_err(|e| format!("Decryption failed (wrong password?): {:?}", e))?;
 
-    let keypair = los_crypto::keypair_from_secret(&secret_bytes)
-        .map_err(|_| "Decrypted key has invalid format")?;
+    // Build keypair using the stored public key (known correct) and decrypted secret
+    // We prefer using the stored public_key rather than extracting from SK
+    // because SK layout varies between pqcrypto library versions
+    let keypair = if !encrypted_key.public_key.is_empty() {
+        // Validate the secret key is parse-able by the crypto library
+        los_crypto::sign_message(b"validate", &secret_bytes)
+            .map_err(|_| "Decrypted secret key invalid (cannot sign)")?;
+        los_crypto::KeyPair {
+            public_key: encrypted_key.public_key.clone(),
+            secret_key: secret_bytes,
+        }
+    } else {
+        los_crypto::keypair_from_secret(&secret_bytes)
+            .map_err(|_| format!("Decrypted key has invalid format (len={})", secret_bytes.len()))?
+    };
 
     // Verify derived address matches stored address
     let derived_addr = los_crypto::public_key_to_address(&keypair.public_key);

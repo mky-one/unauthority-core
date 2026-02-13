@@ -391,6 +391,24 @@ impl SlashingManager {
         &self.slash_events
     }
 
+    /// Set validator status to Unstaking (voluntary exit).
+    /// Returns Err if validator is not found or already banned/unstaking.
+    pub fn set_unstaking(&mut self, validator_address: &str) -> Result<(), String> {
+        let profile = self
+            .validators
+            .get_mut(validator_address)
+            .ok_or_else(|| format!("Validator {} not registered", validator_address))?;
+
+        match profile.status {
+            ValidatorStatus::Banned => Err(format!("Validator {} is permanently banned", validator_address)),
+            ValidatorStatus::Unstaking => Err(format!("Validator {} is already unstaking", validator_address)),
+            ValidatorStatus::Active | ValidatorStatus::Slashed => {
+                profile.status = ValidatorStatus::Unstaking;
+                Ok(())
+            }
+        }
+    }
+
     /// Get total slashed amount for validator
     pub fn get_total_slashed(&self, validator_address: &str) -> Option<u128> {
         self.validators

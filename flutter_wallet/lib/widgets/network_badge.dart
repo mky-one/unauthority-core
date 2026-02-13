@@ -179,7 +179,7 @@ class NetworkSettingsScreen extends StatelessWidget {
           ListTile(
             leading: const Icon(Icons.rocket_launch, color: Colors.green),
             title: const Text('Mainnet'),
-            subtitle: const Text('Production network (Coming Q2 2026)'),
+            subtitle: const Text('Production network (Coming soon)'),
             trailing: WalletConfig.current.network == NetworkType.mainnet
                 ? const Icon(Icons.check_circle, color: Colors.green)
                 : null,

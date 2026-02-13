@@ -109,7 +109,7 @@ class TransactionDetailScreen extends StatelessWidget {
                   label: 'Amount',
                   value:
                       '${BlockchainConstants.formatLos(transaction.amountLOS)} LOS',
-                  subtitle: '${_formatNumber(transaction.amount)} CILD',
+                  subtitle: '${_formatNumber(transaction.amount)} CIL',
                   icon: Icons.attach_money,
                 ),
                 // Fee: only shown when backend returns actual fee (fee > 0)
@@ -119,7 +119,7 @@ class TransactionDetailScreen extends StatelessWidget {
                     label: 'Fee',
                     value:
                         '${BlockchainConstants.formatLos(transaction.feeLOS)} LOS',
-                    subtitle: '${_formatNumber(transaction.fee)} CILD',
+                    subtitle: '${_formatNumber(transaction.fee)} CIL',
                     icon: Icons.local_gas_station,
                   ),
                 ],

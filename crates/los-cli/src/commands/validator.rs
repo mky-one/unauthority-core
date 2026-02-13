@@ -47,9 +47,9 @@ async fn stake(
     let signature = los_crypto::sign_message(message.as_bytes(), &keypair.secret_key)
         .map_err(|e| format!("Signing failed: {:?}", e))?;
 
-    // POST /register_validator
+    // POST /register-validator
     let client = reqwest::Client::new();
-    let url = format!("{}/register_validator", rpc);
+    let url = format!("{}/register-validator", rpc);
     let payload = serde_json::json!({
         "address": address,
         "public_key": hex::encode(&keypair.public_key),
@@ -99,9 +99,9 @@ async fn unstake(
     let signature = los_crypto::sign_message(message.as_bytes(), &keypair.secret_key)
         .map_err(|e| format!("Signing failed: {:?}", e))?;
 
-    // POST /unregister_validator (or deregister endpoint)
+    // POST /unregister-validator (voluntary unstake)
     let client = reqwest::Client::new();
-    let url = format!("{}/unregister_validator", rpc);
+    let url = format!("{}/unregister-validator", rpc);
     let payload = serde_json::json!({
         "address": address,
         "public_key": hex::encode(&keypair.public_key),

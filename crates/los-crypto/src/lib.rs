@@ -119,15 +119,13 @@ pub fn generate_keypair_from_seed(bip39_seed: &[u8]) -> KeyPair {
 
 /// Reconstruct a KeyPair from an existing Dilithium5 secret key.
 ///
-/// Dilithium5 secret key (4864 bytes) contains the public key embedded.
-/// This extracts it to reconstruct the full pair.
+/// Dilithium5 secret key contains the public key embedded in the last 2592 bytes.
+/// Key size varies by pqcrypto library version (4864 or 4896 bytes).
 ///
 /// Also accepts 32-byte seeds — treated as BIP39 seed[0:32] for legacy compat.
 pub fn keypair_from_secret(secret_bytes: &[u8]) -> Result<KeyPair, CryptoError> {
-    if secret_bytes.len() == 4864 {
-        // Full Dilithium5 secret key — validate and extract public key
-        let _sk =
-            DilithiumSecretKey::from_bytes(secret_bytes).map_err(|_| CryptoError::InvalidKey)?;
+    // Try to parse as full Dilithium5 secret key (size varies by implementation)
+    if let Ok(_sk) = DilithiumSecretKey::from_bytes(secret_bytes) {
         // Dilithium5 SK contains PK in the last 2592 bytes
         let pk_bytes = &secret_bytes[secret_bytes.len() - 2592..];
         Ok(KeyPair {

@@ -3,7 +3,7 @@
 //! Exposes CRYSTALS-Dilithium5 (NIST Level 5) operations:
 //! - Keypair generation (random)
 //! - Message signing / verification
-//! - LOS address derivation (Base58Check, matching uat-crypto backend)
+//! - LOS address derivation (Base58Check, matching los-crypto backend)
 //! - Address validation
 //! - PoW mining (native Keccak-256, 100-1000x faster than pure Dart)
 //!
@@ -272,15 +272,15 @@ pub extern "C" fn los_verify(
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-// ADDRESS DERIVATION — Exact match with uat-crypto backend
+// ADDRESS DERIVATION — Exact match with los-crypto backend
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-/// Address format (matches uat-crypto/src/lib.rs):
+/// Address format (matches los-crypto/src/lib.rs):
 /// "LOS" + Base58( 0x4A | BLAKE2b-160(pubkey) | SHA256²(payload)[0..4] )
 const VERSION_BYTE: u8 = 0x4A; // 74 = LOS identifier
 
 /// Derive LOS address from Dilithium5 public key.
-/// Exact same algorithm as uat-crypto::public_key_to_address().
+/// Exact same algorithm as los-crypto::public_key_to_address().
 ///
 /// # Returns
 /// Address length (positive) on success, negative on error:
@@ -337,7 +337,7 @@ pub extern "C" fn los_public_key_to_address(
 }
 
 /// Validate LOS address format and checksum.
-/// Exact same algorithm as uat-crypto::validate_address().
+/// Exact same algorithm as los-crypto::validate_address().
 ///
 /// # Returns
 /// 1 = valid, 0 = invalid
@@ -719,7 +719,7 @@ mod tests {
     #[test]
     fn test_address_consistency_with_backend() {
         // The address derivation here must produce the exact same output
-        // as uat-crypto::public_key_to_address() for any given public key.
+        // as los-crypto::public_key_to_address() for any given public key.
         // This is verified by using the same algorithm:
         // "LOS" + Base58( 0x4A | BLAKE2b-160(pubkey) | SHA256²(payload)[0..4] )
         let pk_size = los_public_key_bytes() as usize;

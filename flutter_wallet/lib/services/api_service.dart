@@ -462,7 +462,7 @@ class ApiService {
     final started = await _torService.start();
     final socksPort = started
         ? _torService.activeSocksPort
-        : 9150; // Last resort: Tor Browser
+        : TorService.torBrowserPort; // Last-resort fallback
     if (!started) {
       debugPrint(
           '⚠️ TorService.start() failed, trying Tor Browser on port $socksPort');
@@ -484,6 +484,18 @@ class ApiService {
 
   // Switch network environment
   void switchEnvironment(NetworkEnvironment newEnv) {
+    _loadBootstrapUrls(newEnv);
+
+    // Mainnet guard: refuse switch if no mainnet nodes are configured
+    if (newEnv == NetworkEnvironment.mainnet && _bootstrapUrls.isEmpty) {
+      debugPrint('🚫 Cannot switch to mainnet: no bootstrap nodes configured');
+      // Revert to testnet
+      _loadBootstrapUrls(NetworkEnvironment.testnet);
+      throw StateError(
+        'Mainnet has not launched yet. No bootstrap nodes available.',
+      );
+    }
+
     environment = newEnv;
     // SECURITY FIX M-06: Sync mainnet mode to WalletService so Ed25519
     // fallback crypto is refused on mainnet.
@@ -492,7 +504,6 @@ class ApiService {
     _initialDiscoveryDone = false;
     _rediscoveryTimer?.cancel();
     _latencyProbeTimer?.cancel();
-    _loadBootstrapUrls(newEnv);
     baseUrl =
         _bootstrapUrls.isNotEmpty ? _bootstrapUrls.first : _getBaseUrl(newEnv);
     _clientReady = _initializeClient();
@@ -522,7 +533,7 @@ class ApiService {
   }
 
   /// Fetch dynamic fee estimate for the NEXT transaction from [address].
-  /// Returns the estimated fee in CILD, accounting for anti-whale scaling.
+  /// Returns the estimated fee in CIL, accounting for anti-whale scaling.
   /// Wallet MUST call this before constructing a signed block.
   Future<Map<String, dynamic>> getFeeEstimate(String address) async {
     debugPrint(
@@ -535,19 +546,15 @@ class ApiService {
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
         debugPrint(
-            '🌐 [ApiService.getFeeEstimate] SUCCESS fee=${data['estimated_fee_cil']} CILD');
+            '🌐 [ApiService.getFeeEstimate] SUCCESS fee=${data['estimated_fee_cil']} CIL');
         return data;
       }
       throw Exception('Failed to get fee estimate: ${response.statusCode}');
     } catch (e) {
-      debugPrint('⚠️ getFeeEstimate error (falling back to base fee): $e');
-      // Fallback: return base fee so wallet still works if endpoint is unreachable
-      return {
-        'base_fee_cil': 100000,
-        'estimated_fee_cil': 100000,
-        'fee_multiplier': 1,
-        'tx_count_in_window': 0,
-      };
+      debugPrint('⚠️ getFeeEstimate error: $e');
+      // Re-throw so callers can show the user a proper error
+      // instead of silently using a stale hardcoded fee.
+      rethrow;
     }
   }
 
@@ -582,12 +589,14 @@ class ApiService {
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
         debugPrint(
-            '🌐 [ApiService.getBalance] SUCCESS balance=${data['balance_cil'] ?? 0} CILD');
+            '🌐 [ApiService.getBalance] SUCCESS balance=${data['balance_cil'] ?? 0} CIL');
         return Account(
           address: address,
           balance: data['balance_cil'] ?? 0,
           cilBalance: 0,
           history: [],
+          headBlock: data['head']?.toString(),
+          blockCount: data['block_count'] ?? 0,
         );
       }
       throw Exception('Failed to get balance: ${response.statusCode}');
@@ -791,20 +800,27 @@ class ApiService {
     }
   }
 
-  // Get Latest Block
+  // Get Latest Block — uses /blocks/recent endpoint which returns timestamp
   Future<BlockInfo> getLatestBlock() async {
     debugPrint('🌐 [ApiService.getLatestBlock] Fetching latest block...');
     try {
       final response = await _requestWithFailover(
-        (url) => _client.get(Uri.parse('$url/block')),
-        '/block',
+        (url) => _client.get(Uri.parse('$url/blocks/recent')),
+        '/blocks/recent',
       );
       if (response.statusCode == 200) {
-        final data = json.decode(response.body);
-        final block = BlockInfo.fromJson(data);
-        debugPrint(
-            '🌐 [ApiService.getLatestBlock] SUCCESS height=${block.height}');
-        return block;
+        final decoded = json.decode(response.body);
+        final List<dynamic> blocks = decoded is List
+            ? decoded
+            : (decoded['blocks'] as List<dynamic>?) ?? [];
+        if (blocks.isNotEmpty) {
+          final block = BlockInfo.fromJson(blocks[0] as Map<String, dynamic>);
+          debugPrint(
+              '🌐 [ApiService.getLatestBlock] SUCCESS height=${block.height}');
+          return block;
+        }
+        // No blocks yet — return empty sentinel
+        return BlockInfo(height: 0, hash: '', timestamp: 0, txCount: 0);
       }
       throw Exception('Failed to get latest block: ${response.statusCode}');
     } catch (e) {
@@ -839,7 +855,6 @@ class ApiService {
     }
   }
 
-  // Get Peers
   // Get Peers
   // Backend returns {"peers": [{...}], "peer_count": N, ...}
   Future<List<String>> getPeers() async {
@@ -901,6 +916,134 @@ class ApiService {
       throw Exception('Failed to get history: ${response.statusCode}');
     } catch (e) {
       debugPrint('❌ getHistory error: $e');
+      rethrow;
+    }
+  }
+
+  // ══════════════════════════════════════════════════════════════════
+  //  ADDITIONAL API ENDPOINTS
+  // ══════════════════════════════════════════════════════════════════
+
+  /// Get supply information: remaining supply, total burned USD, circulating supply.
+  Future<Map<String, dynamic>> getSupply() async {
+    debugPrint('🌐 [ApiService.getSupply] Fetching supply info...');
+    try {
+      final response = await _requestWithFailover(
+        (url) => _client.get(Uri.parse('$url/supply')),
+        '/supply',
+      );
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        debugPrint('🌐 [ApiService.getSupply] SUCCESS');
+        return data;
+      }
+      throw Exception('Failed to get supply: ${response.statusCode}');
+    } catch (e) {
+      debugPrint('❌ getSupply error: $e');
+      rethrow;
+    }
+  }
+
+  /// Look up a specific transaction by its hash.
+  /// Returns: { status, transaction: { hash, from, to, type, amount, amount_cil, timestamp, signature, confirmed } }
+  Future<Map<String, dynamic>> getTransaction(String hash) async {
+    debugPrint('🌐 [ApiService.getTransaction] Fetching transaction $hash...');
+    try {
+      final response = await _requestWithFailover(
+        (url) => _client.get(Uri.parse('$url/transaction/$hash')),
+        '/transaction/$hash',
+      );
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        debugPrint('🌐 [ApiService.getTransaction] SUCCESS');
+        return data;
+      }
+      throw Exception('Failed to get transaction: ${response.statusCode}');
+    } catch (e) {
+      debugPrint('❌ getTransaction error: $e');
+      rethrow;
+    }
+  }
+
+  /// Look up a specific block by its hash.
+  /// Returns: { status, block: { hash, account, previous, type, amount, amount_cil, ... } }
+  Future<Map<String, dynamic>> getBlock(String hash) async {
+    debugPrint('🌐 [ApiService.getBlock] Fetching block $hash...');
+    try {
+      final response = await _requestWithFailover(
+        (url) => _client.get(Uri.parse('$url/block/$hash')),
+        '/block/$hash',
+      );
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        debugPrint('🌐 [ApiService.getBlock] SUCCESS');
+        return data;
+      }
+      throw Exception('Failed to get block: ${response.statusCode}');
+    } catch (e) {
+      debugPrint('❌ getBlock error: $e');
+      rethrow;
+    }
+  }
+
+  /// Search for addresses, transactions, or blocks by query string.
+  /// Returns: { query, results: [{ type, address, balance, block_count }], count }
+  Future<Map<String, dynamic>> search(String query) async {
+    debugPrint('🌐 [ApiService.search] Searching for "$query"...');
+    try {
+      final response = await _requestWithFailover(
+        (url) => _client.get(Uri.parse('$url/search/$query')),
+        '/search/$query',
+      );
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        debugPrint(
+            '🌐 [ApiService.search] SUCCESS count=${data['count'] ?? 0}');
+        return data;
+      }
+      throw Exception('Failed to search: ${response.statusCode}');
+    } catch (e) {
+      debugPrint('❌ search error: $e');
+      rethrow;
+    }
+  }
+
+  /// Get network consensus status: protocol info, safety metrics, finality times.
+  Future<Map<String, dynamic>> getConsensus() async {
+    debugPrint('🌐 [ApiService.getConsensus] Fetching consensus...');
+    try {
+      final response = await _requestWithFailover(
+        (url) => _client.get(Uri.parse('$url/consensus')),
+        '/consensus',
+      );
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        debugPrint('🌐 [ApiService.getConsensus] SUCCESS');
+        return data;
+      }
+      throw Exception('Failed to get consensus: ${response.statusCode}');
+    } catch (e) {
+      debugPrint('❌ getConsensus error: $e');
+      rethrow;
+    }
+  }
+
+  /// Get reward pool information: epoch, distribution, validator eligibility.
+  Future<Map<String, dynamic>> getRewardInfo() async {
+    debugPrint('🌐 [ApiService.getRewardInfo] Fetching reward info...');
+    try {
+      final response = await _requestWithFailover(
+        (url) => _client.get(Uri.parse('$url/reward-info')),
+        '/reward-info',
+      );
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        debugPrint('🌐 [ApiService.getRewardInfo] SUCCESS');
+        return data;
+      }
+      throw Exception('Failed to get reward info: ${response.statusCode}');
+    } catch (e) {
+      debugPrint('❌ getRewardInfo error: $e');
       rethrow;
     }
   }

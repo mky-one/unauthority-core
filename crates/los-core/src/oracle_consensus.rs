@@ -320,7 +320,13 @@ mod tests {
     #[test]
     fn test_median_calculation() {
         // Odd number of values (micro-USD)
-        let odd = vec![10_000_000u128, 20_000_000, 30_000_000, 40_000_000, 50_000_000];
+        let odd = vec![
+            10_000_000u128,
+            20_000_000,
+            30_000_000,
+            40_000_000,
+            50_000_000,
+        ];
         assert_eq!(OracleConsensus::calculate_median(&odd), 30_000_000);
 
         // Even number of values — integer average

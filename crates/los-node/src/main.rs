@@ -130,8 +130,8 @@ struct BurnRequest {
     // MAINNET SECURITY: signature proves caller owns the recipient_address
     // Required on mainnet and consensus testnet when recipient_address is provided.
     // On functional testnet, these are optional (node signs the Mint block).
-    signature: Option<String>,   // Dilithium5 signature over "BURN:{coin_type}:{txid}:{recipient}"
-    public_key: Option<String>,  // Sender's Dilithium5 public key (hex)
+    signature: Option<String>, // Dilithium5 signature over "BURN:{coin_type}:{txid}:{recipient}"
+    public_key: Option<String>, // Sender's Dilithium5 public key (hex)
 }
 
 #[cfg(feature = "vm")]
@@ -2818,7 +2818,14 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
     // Also available as /unregister_validator (underscore) for CLI compatibility.
     let bv_unregval = bootstrap_validators.clone();
     let abft_unregval = abft_consensus.clone();
-    let unregister_handler = move |body: bytes::Bytes, (l, sm, rp, tx, db): (Arc<Mutex<Ledger>>, Arc<Mutex<SlashingManager>>, Arc<Mutex<ValidatorRewardPool>>, mpsc::Sender<String>, Arc<LosDatabase>)| {
+    let unregister_handler = move |body: bytes::Bytes,
+                                   (l, sm, rp, tx, db): (
+        Arc<Mutex<Ledger>>,
+        Arc<Mutex<SlashingManager>>,
+        Arc<Mutex<ValidatorRewardPool>>,
+        mpsc::Sender<String>,
+        Arc<LosDatabase>,
+    )| {
         let bv_inner = bv_unregval.clone();
         let abft_inner = abft_unregval.clone();
         async move {
@@ -2836,24 +2843,30 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
 
             let address = match req["address"].as_str() {
                 Some(a) if !a.is_empty() => a.to_string(),
-                _ => return warp::reply::json(&serde_json::json!({
-                    "status": "error",
-                    "msg": "Missing 'address' field"
-                })),
+                _ => {
+                    return warp::reply::json(&serde_json::json!({
+                        "status": "error",
+                        "msg": "Missing 'address' field"
+                    }))
+                }
             };
             let public_key = match req["public_key"].as_str() {
                 Some(pk) if !pk.is_empty() => pk.to_string(),
-                _ => return warp::reply::json(&serde_json::json!({
-                    "status": "error",
-                    "msg": "Missing 'public_key' field"
-                })),
+                _ => {
+                    return warp::reply::json(&serde_json::json!({
+                        "status": "error",
+                        "msg": "Missing 'public_key' field"
+                    }))
+                }
             };
             let signature = match req["signature"].as_str() {
                 Some(s) if !s.is_empty() => s.to_string(),
-                _ => return warp::reply::json(&serde_json::json!({
-                    "status": "error",
-                    "msg": "Missing 'signature' field"
-                })),
+                _ => {
+                    return warp::reply::json(&serde_json::json!({
+                        "status": "error",
+                        "msg": "Missing 'signature' field"
+                    }))
+                }
             };
             let timestamp = req["timestamp"].as_u64().unwrap_or(0);
 
@@ -2868,10 +2881,12 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
             // 2. Verify public_key derives to address
             let pk_bytes = match hex::decode(&public_key) {
                 Ok(b) => b,
-                Err(_) => return warp::reply::json(&serde_json::json!({
-                    "status": "error",
-                    "msg": "Invalid public_key hex encoding"
-                })),
+                Err(_) => {
+                    return warp::reply::json(&serde_json::json!({
+                        "status": "error",
+                        "msg": "Invalid public_key hex encoding"
+                    }))
+                }
             };
             let derived_addr = los_crypto::public_key_to_address(&pk_bytes);
             if derived_addr != address {
@@ -2885,10 +2900,12 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
             let message = format!("UNREGISTER_VALIDATOR:{}:{}", address, timestamp);
             let sig_bytes = match hex::decode(&signature) {
                 Ok(b) => b,
-                Err(_) => return warp::reply::json(&serde_json::json!({
-                    "status": "error",
-                    "msg": "Invalid signature hex encoding"
-                })),
+                Err(_) => {
+                    return warp::reply::json(&serde_json::json!({
+                        "status": "error",
+                        "msg": "Invalid signature hex encoding"
+                    }))
+                }
             };
             if !los_crypto::verify_signature(message.as_bytes(), &sig_bytes, &pk_bytes) {
                 return warp::reply::json(&serde_json::json!({
@@ -2978,7 +2995,11 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
             });
             let _ = tx.send(format!("VALIDATOR_UNREG:{}", unreg_msg)).await;
 
-            println!("🔻 Validator unregistered: {} (balance: {} LOS)", get_short_addr(&address), balance / CIL_PER_LOS);
+            println!(
+                "🔻 Validator unregistered: {} (balance: {} LOS)",
+                get_short_addr(&address),
+                balance / CIL_PER_LOS
+            );
 
             // Persist immediately
             let _ = db.save_ledger(&safe_lock(&l));
@@ -3003,7 +3024,13 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
     let unregister_validator_route = warp::path("unregister-validator")
         .and(warp::post())
         .and(warp::body::bytes())
-        .and(with_state((l_unregval1, sm_unregval1, rp_unregval1, tx_unregval1, db_unregval1)))
+        .and(with_state((
+            l_unregval1,
+            sm_unregval1,
+            rp_unregval1,
+            tx_unregval1,
+            db_unregval1,
+        )))
         .then(handler1);
 
     // Route 2: /unregister_validator (underscore — CLI compatibility)
@@ -3015,7 +3042,13 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
     let unregister_validator_underscore_route = warp::path("unregister_validator")
         .and(warp::post())
         .and(warp::body::bytes())
-        .and(with_state((l_unregval2, sm_unregval2, rp_unregval2, tx_unregval2, db_unregval2)))
+        .and(with_state((
+            l_unregval2,
+            sm_unregval2,
+            rp_unregval2,
+            tx_unregval2,
+            db_unregval2,
+        )))
         .then(unregister_handler);
 
     // 30. GET /network/peers — Lightweight endpoint for Flutter peer discovery.
@@ -3399,22 +3432,24 @@ async fn get_crypto_prices() -> (u128, u128) {
 
     // SECURITY FIX #15: Sanity bounds to reject manipulated oracle prices (micro-USD)
     // ETH reasonable range: $10 - $100,000 | BTC reasonable range: $100 - $10,000,000
-    const ETH_MIN_MICRO: u128 = 10 * MICRO;            // $10
-    const ETH_MAX_MICRO: u128 = 100_000 * MICRO;       // $100,000
-    const BTC_MIN_MICRO: u128 = 100 * MICRO;            // $100
-    const BTC_MAX_MICRO: u128 = 10_000_000 * MICRO;     // $10,000,000
+    const ETH_MIN_MICRO: u128 = 10 * MICRO; // $10
+    const ETH_MAX_MICRO: u128 = 100_000 * MICRO; // $100,000
+    const BTC_MIN_MICRO: u128 = 100 * MICRO; // $100
+    const BTC_MAX_MICRO: u128 = 10_000_000 * MICRO; // $10,000,000
 
     let final_eth = if !(ETH_MIN_MICRO..=ETH_MAX_MICRO).contains(&final_eth) {
         if is_production_level || final_eth == 0 {
             println!(
                 "🛑 Oracle ETH price ${}.{:02} out of sanity bounds — fail-closed",
-                final_eth / MICRO, (final_eth % MICRO) / 10_000
+                final_eth / MICRO,
+                (final_eth % MICRO) / 10_000
             );
             0
         } else {
             println!(
                 "⚠️ Oracle ETH price ${}.{:02} out of sanity bounds, using fallback $2500",
-                final_eth / MICRO, (final_eth % MICRO) / 10_000
+                final_eth / MICRO,
+                (final_eth % MICRO) / 10_000
             );
             FALLBACK_ETH_MICRO
         }
@@ -3426,13 +3461,15 @@ async fn get_crypto_prices() -> (u128, u128) {
         if is_production_level || final_btc == 0 {
             println!(
                 "🛑 Oracle BTC price ${}.{:02} out of sanity bounds — fail-closed",
-                final_btc / MICRO, (final_btc % MICRO) / 10_000
+                final_btc / MICRO,
+                (final_btc % MICRO) / 10_000
             );
             0
         } else {
             println!(
                 "⚠️ Oracle BTC price ${}.{:02} out of sanity bounds, using fallback $83000",
-                final_btc / MICRO, (final_btc % MICRO) / 10_000
+                final_btc / MICRO,
+                (final_btc % MICRO) / 10_000
             );
             FALLBACK_BTC_MICRO
         }
@@ -3444,8 +3481,10 @@ async fn get_crypto_prices() -> (u128, u128) {
     println!(
         "📊 Oracle Prices ({} APIs): ETH ${}.{:02}, BTC ${}.{:02}",
         eth_prices.len(),
-        final_eth / MICRO, (final_eth % MICRO) / 10_000,
-        final_btc / MICRO, (final_btc % MICRO) / 10_000
+        final_eth / MICRO,
+        (final_eth % MICRO) / 10_000,
+        final_btc / MICRO,
+        (final_btc % MICRO) / 10_000
     );
 
     (final_eth, final_btc)
@@ -3491,9 +3530,12 @@ async fn verify_eth_burn_tx(txid: &str) -> Option<u128> {
                             if a.as_str().unwrap_or("").to_lowercase() == target {
                                 // BlockCypher returns value in wei (integer)
                                 // Try u64 first (covers < 18.4 ETH), fallback to f64→u128
-                                let wei = out["value"].as_u64().map(|v| v as u128)
-                                    .unwrap_or_else(|| {
-                                        out["value"].as_f64().map(|v| v.round() as u128).unwrap_or(0)
+                                let wei =
+                                    out["value"].as_u64().map(|v| v as u128).unwrap_or_else(|| {
+                                        out["value"]
+                                            .as_f64()
+                                            .map(|v| v.round() as u128)
+                                            .unwrap_or(0)
                                     });
                                 return Some(wei);
                             }
@@ -3544,9 +3586,12 @@ async fn verify_btc_burn_tx(txid: &str) -> Option<u128> {
                     for out in vout.iter() {
                         if out.to_string().contains(BURN_ADDRESS_BTC) {
                             // mempool.space returns value in satoshi (integer)
-                            let satoshi = out["value"].as_u64().map(|v| v as u128)
-                                .unwrap_or_else(|| {
-                                    out["value"].as_f64().map(|v| v.round() as u128).unwrap_or(0)
+                            let satoshi =
+                                out["value"].as_u64().map(|v| v as u128).unwrap_or_else(|| {
+                                    out["value"]
+                                        .as_f64()
+                                        .map(|v| v.round() as u128)
+                                        .unwrap_or(0)
                                 });
                             return Some(satoshi);
                         }
@@ -4844,8 +4889,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
                 println!(
                     "📊 Broadcasting signed oracle prices: ETH=${}.{:02}, BTC=${}.{:02}",
-                    eth_price / 1_000_000, (eth_price % 1_000_000) / 10_000,
-                    btc_price / 1_000_000, (btc_price % 1_000_000) / 10_000
+                    eth_price / 1_000_000,
+                    (eth_price % 1_000_000) / 10_000,
+                    btc_price / 1_000_000,
+                    (btc_price % 1_000_000) / 10_000
                 );
             }
         }

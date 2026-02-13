@@ -400,8 +400,14 @@ impl SlashingManager {
             .ok_or_else(|| format!("Validator {} not registered", validator_address))?;
 
         match profile.status {
-            ValidatorStatus::Banned => Err(format!("Validator {} is permanently banned", validator_address)),
-            ValidatorStatus::Unstaking => Err(format!("Validator {} is already unstaking", validator_address)),
+            ValidatorStatus::Banned => Err(format!(
+                "Validator {} is permanently banned",
+                validator_address
+            )),
+            ValidatorStatus::Unstaking => Err(format!(
+                "Validator {} is already unstaking",
+                validator_address
+            )),
             ValidatorStatus::Active | ValidatorStatus::Slashed => {
                 profile.status = ValidatorStatus::Unstaking;
                 Ok(())

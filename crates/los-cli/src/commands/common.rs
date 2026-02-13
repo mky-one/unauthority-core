@@ -52,8 +52,12 @@ pub fn load_wallet_keypair(
             secret_key: secret_bytes,
         }
     } else {
-        los_crypto::keypair_from_secret(&secret_bytes)
-            .map_err(|_| format!("Decrypted key has invalid format (len={})", secret_bytes.len()))?
+        los_crypto::keypair_from_secret(&secret_bytes).map_err(|_| {
+            format!(
+                "Decrypted key has invalid format (len={})",
+                secret_bytes.len()
+            )
+        })?
     };
 
     // Verify derived address matches stored address

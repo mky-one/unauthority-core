@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import '../models/account_profile.dart';
 import '../services/account_management_service.dart';
+import '../services/wallet_service.dart';
 import '../screens/account_management_screen.dart';
 
 class AccountSwitcher extends StatefulWidget {
@@ -41,7 +43,9 @@ class _AccountSwitcherState extends State<AccountSwitcher> {
 
   Future<void> _switchAccount(AccountProfile account) async {
     try {
-      await _accountService.switchAccount(account.id);
+      final walletService = context.read<WalletService>();
+      await _accountService.switchAccount(account.id,
+          walletService: walletService);
       if (!mounted) return;
       setState(() => _activeAccount = account);
 

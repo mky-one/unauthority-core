@@ -17,7 +17,29 @@ import 'package:path/path.dart' as path;
 class TorService {
   Process? _torProcess;
   String? _torDataDir;
-  final int _socksPort = 9250;
+
+  // ── Named constants (no magic numbers) ────────────────────────────
+  /// SOCKS port used when we start our own bundled Tor process.
+  static const int bundledSocksPort = 9250;
+
+  /// Well-known SOCKS ports to probe for existing Tor instances.
+  static const int torBrowserPort = 9150;
+  static const int testnetTorPort = 9052;
+  static const int systemTorPort = 9050;
+
+  /// Timeout for Tor to finish bootstrapping (100% circuit established).
+  static const Duration bootstrapTimeout = Duration(seconds: 120);
+
+  /// Timeout for package-manager install (brew/apt).
+  static const Duration installTimeout = Duration(minutes: 5);
+
+  /// Timeout for downloading the Tor Expert Bundle tarball.
+  static const Duration downloadTimeout = Duration(minutes: 10);
+
+  /// Interval between health-check probes while waiting for bootstrap.
+  static const Duration bootstrapPollInterval = Duration(milliseconds: 500);
+
+  final int _socksPort = bundledSocksPort;
   bool _isRunning = false;
   String? _activeProxy; // "host:port" of the active SOCKS proxy
 
@@ -75,7 +97,7 @@ class TorService {
     if (_torProcess != null) {
       debugPrint('🛑 Stopping Tor daemon...');
       _torProcess!.kill(ProcessSignal.sigterm);
-      await Future.delayed(const Duration(milliseconds: 500));
+      await Future.delayed(bootstrapPollInterval);
       _torProcess = null;
       _isRunning = false;
       _activeProxy = null;
@@ -100,7 +122,9 @@ class TorService {
           return torPath;
         }
       }
-    } catch (_) {}
+    } catch (e) {
+      debugPrint('⚠️ _findTorBinary PATH check failed: $e');
+    }
 
     // Check common installation locations
     final commonPaths = <String>[];
@@ -187,7 +211,9 @@ class TorService {
         debugPrint('✅ Found cached tor: $cachedPath');
         return cachedPath;
       }
-    } catch (_) {}
+    } catch (e) {
+      debugPrint('⚠️ _getCachedTorBinary check failed: $e');
+    }
     return null;
   }
 
@@ -208,7 +234,7 @@ class TorService {
             'brew',
             ['install', 'tor'],
             runInShell: true,
-          ).timeout(const Duration(minutes: 5));
+          ).timeout(installTimeout);
 
           if (installResult.exitCode == 0) {
             // Find the installed binary
@@ -237,7 +263,7 @@ class TorService {
             'apt-get',
             ['install', '-y', 'tor'],
             runInShell: true,
-          ).timeout(const Duration(minutes: 5));
+          ).timeout(installTimeout);
 
           if (result.exitCode == 0) {
             return '/usr/bin/tor';
@@ -252,7 +278,7 @@ class TorService {
             'dnf',
             ['install', '-y', 'tor'],
             runInShell: true,
-          ).timeout(const Duration(minutes: 5));
+          ).timeout(installTimeout);
 
           if (result.exitCode == 0) {
             return '/usr/bin/tor';
@@ -292,7 +318,7 @@ class TorService {
         'curl',
         ['-L', '-o', downloadPath, '--connect-timeout', '30', url],
         runInShell: true,
-      ).timeout(const Duration(minutes: 10));
+      ).timeout(downloadTimeout);
 
       if (curlResult.exitCode != 0) {
         debugPrint('❌ Download failed: ${curlResult.stderr}');
@@ -338,7 +364,9 @@ class TorService {
         // Clean up tarball
         try {
           await downloadFile.delete();
-        } catch (_) {}
+        } catch (e) {
+          debugPrint('⚠️ Tarball cleanup failed: $e');
+        }
 
         debugPrint('✅ Tor downloaded and cached: $stablePath');
         return stablePath;
@@ -400,7 +428,9 @@ class TorService {
           }
         }
       }
-    } catch (_) {}
+    } catch (e) {
+      debugPrint('⚠️ _findTorBinaryInDir find failed: $e');
+    }
 
     // Manual search of common subdirectories
     final candidates = [
@@ -468,10 +498,10 @@ class TorService {
         _isRunning = false;
       });
 
-      // Wait for bootstrap (max 120 seconds for slow connections)
-      final timeout = DateTime.now().add(const Duration(seconds: 120));
-      while (!_isRunning && DateTime.now().isBefore(timeout)) {
-        await Future.delayed(const Duration(milliseconds: 500));
+      // Wait for bootstrap (allow enough time for slow connections)
+      final deadline = DateTime.now().add(bootstrapTimeout);
+      while (!_isRunning && DateTime.now().isBefore(deadline)) {
+        await Future.delayed(bootstrapPollInterval);
         // Also check if process died
         if (_torProcess == null) return false;
       }
@@ -527,32 +557,40 @@ UseBridges 0
 
   /// Detect existing Tor SOCKS proxies
   Future<Map<String, dynamic>> detectExistingTor() async {
-    // Check LOS bundled Tor (port 9250)
-    if (await _isPortOpen('localhost', 9250)) {
+    // Check LOS bundled Tor
+    if (await _isPortOpen('localhost', bundledSocksPort)) {
       return {
         'found': true,
         'type': 'LOS Bundled Tor',
-        'proxy': 'localhost:9250'
+        'proxy': 'localhost:$bundledSocksPort'
       };
     }
 
-    // Check Tor Browser (port 9150)
-    if (await _isPortOpen('localhost', 9150)) {
-      return {'found': true, 'type': 'Tor Browser', 'proxy': 'localhost:9150'};
+    // Check Tor Browser
+    if (await _isPortOpen('localhost', torBrowserPort)) {
+      return {
+        'found': true,
+        'type': 'Tor Browser',
+        'proxy': 'localhost:$torBrowserPort'
+      };
     }
 
-    // Check LOS testnet Tor (port 9052)
-    if (await _isPortOpen('localhost', 9052)) {
+    // Check LOS testnet Tor
+    if (await _isPortOpen('localhost', testnetTorPort)) {
       return {
         'found': true,
         'type': 'LOS Testnet Tor',
-        'proxy': 'localhost:9052'
+        'proxy': 'localhost:$testnetTorPort'
       };
     }
 
-    // Check system Tor (port 9050)
-    if (await _isPortOpen('localhost', 9050)) {
-      return {'found': true, 'type': 'System Tor', 'proxy': 'localhost:9050'};
+    // Check system Tor
+    if (await _isPortOpen('localhost', systemTorPort)) {
+      return {
+        'found': true,
+        'type': 'System Tor',
+        'proxy': 'localhost:$systemTorPort'
+      };
     }
 
     return {'found': false};

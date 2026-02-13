@@ -7,6 +7,7 @@ import 'package:bip39/bip39.dart' as bip39;
 import 'package:pointycastle/digests/blake2b.dart';
 import 'package:cryptography/cryptography.dart' as ed_crypto;
 import 'dilithium_service.dart';
+import '../constants/blockchain.dart';
 
 /// Wallet Service for LOS Blockchain
 ///
@@ -457,7 +458,7 @@ class WalletService {
   /// 4. Base58(payload + checksum)
   /// 5. Prepend "LOS"
   static String _deriveAddressFromPublicKey(Uint8List publicKey) {
-    const versionByte = 0x4A; // 74 = "LOS" identifier
+    const versionByte = BlockchainConstants.addressVersionByte;
 
     // 1. BLAKE2b-512 hash → first 20 bytes
     final blake2b = Blake2bDigest(digestSize: 64);

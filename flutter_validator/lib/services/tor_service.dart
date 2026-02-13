@@ -15,9 +15,18 @@ import 'package:path/path.dart' as path;
 ///
 /// The user and their friend NEVER need to manually install anything.
 class TorService {
+  // ── Named constants (no magic numbers) ────────────────────────────
+  /// SOCKS port used when we start our own bundled Tor process.
+  static const int bundledSocksPort = 9250;
+
+  /// Well-known SOCKS ports to probe for existing Tor instances.
+  static const int torBrowserPort = 9150;
+  static const int testnetTorPort = 9052;
+  static const int systemTorPort = 9050;
+
   Process? _torProcess;
   String? _torDataDir;
-  int _socksPort = 9250;
+  int _socksPort = bundledSocksPort;
   bool _isRunning = false;
   String? _activeProxy; // "host:port" of the active SOCKS proxy
   String? _onionAddress; // Generated .onion address (hidden service mode)
@@ -713,32 +722,40 @@ UseBridges 0
 
   /// Detect existing Tor SOCKS proxies
   Future<Map<String, dynamic>> detectExistingTor() async {
-    // Check LOS bundled Tor (port 9250)
-    if (await _isPortOpen('localhost', 9250)) {
+    // Check LOS bundled Tor
+    if (await _isPortOpen('localhost', bundledSocksPort)) {
       return {
         'found': true,
         'type': 'LOS Bundled Tor',
-        'proxy': 'localhost:9250'
+        'proxy': 'localhost:$bundledSocksPort'
       };
     }
 
-    // Check Tor Browser (port 9150)
-    if (await _isPortOpen('localhost', 9150)) {
-      return {'found': true, 'type': 'Tor Browser', 'proxy': 'localhost:9150'};
+    // Check Tor Browser
+    if (await _isPortOpen('localhost', torBrowserPort)) {
+      return {
+        'found': true,
+        'type': 'Tor Browser',
+        'proxy': 'localhost:$torBrowserPort'
+      };
     }
 
-    // Check LOS testnet Tor (port 9052)
-    if (await _isPortOpen('localhost', 9052)) {
+    // Check LOS testnet Tor
+    if (await _isPortOpen('localhost', testnetTorPort)) {
       return {
         'found': true,
         'type': 'LOS Testnet Tor',
-        'proxy': 'localhost:9052'
+        'proxy': 'localhost:$testnetTorPort'
       };
     }
 
-    // Check system Tor (port 9050)
-    if (await _isPortOpen('localhost', 9050)) {
-      return {'found': true, 'type': 'System Tor', 'proxy': 'localhost:9050'};
+    // Check system Tor
+    if (await _isPortOpen('localhost', systemTorPort)) {
+      return {
+        'found': true,
+        'type': 'System Tor',
+        'proxy': 'localhost:$systemTorPort'
+      };
     }
 
     return {'found': false};

@@ -24,8 +24,8 @@ class BlockchainConstants {
   static const String addressPrefix = 'LOS';
 
   /// Convert CIL (smallest unit) to LOS (display unit)
-  static double cilToLos(int voidAmount) {
-    return voidAmount / cilPerLos.toDouble();
+  static double cilToLos(int cilAmount) {
+    return cilAmount / cilPerLos.toDouble();
   }
 
   /// Convert LOS string to CIL using integer-only math.

@@ -9,6 +9,9 @@ library;
 class BlockchainConstants {
   BlockchainConstants._();
 
+  /// Wallet version — synced with pubspec.yaml
+  static const String version = '1.0.9';
+
   /// Fixed total supply of LOS tokens
   static const int totalSupply = 21936236;
 
@@ -23,18 +26,13 @@ class BlockchainConstants {
   /// LOS address prefix
   static const String addressPrefix = 'LOS';
 
-  /// Convert CIL (smallest unit) to LOS (display unit)
-  static double cilToLos(int voidAmount) {
-    return voidAmount / cilPerLos.toDouble();
-  }
+  /// Address version byte (0x4A = 74 = 'LOS' identifier)
+  /// Used in address derivation: BLAKE2b → version+hash → checksum → Base58
+  static const int addressVersionByte = 0x4A;
 
-  /// Convert LOS (display unit) to CIL (smallest unit)
-  /// ⚠️ DEPRECATED: Uses f64 multiplication which causes off-by-1 CIL errors
-  /// on common decimals (0.3, 0.6, 0.7). Use losStringToCil() instead.
-  @Deprecated(
-      'Use losStringToCil() for precision. f64 causes off-by-1 CIL errors.')
-  static int losToCil(double losAmount) {
-    return (losAmount * cilPerLos).toInt();
+  /// Convert CIL (smallest unit) to LOS (display unit)
+  static double cilToLos(int cilAmount) {
+    return cilAmount / cilPerLos.toDouble();
   }
 
   /// Convert LOS string to CIL using integer-only math.
@@ -64,8 +62,8 @@ class BlockchainConstants {
       fracStr = fracStr.padRight(decimalPlaces, '0');
     }
 
-    final fracVoid = int.parse(fracStr);
-    return wholePart * cilPerLos + fracVoid;
+    final fracCil = int.parse(fracStr);
+    return wholePart * cilPerLos + fracCil;
   }
 
   /// Format LOS amount for display with appropriate precision
@@ -89,7 +87,7 @@ class BlockchainConstants {
   }
 
   /// Format CIL amount directly for display as LOS
-  static String formatCilAsLos(int voidAmount, {int maxDecimals = 6}) {
-    return formatLos(cilToLos(voidAmount), maxDecimals: maxDecimals);
+  static String formatCilAsLos(int cilAmount, {int maxDecimals = 6}) {
+    return formatLos(cilToLos(cilAmount), maxDecimals: maxDecimals);
   }
 }

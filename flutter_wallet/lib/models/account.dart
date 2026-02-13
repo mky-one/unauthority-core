@@ -32,11 +32,10 @@ class Account {
   factory Account.fromJson(Map<String, dynamic> json) {
     // FIX M-01: Use containsKey instead of != 0 so real zero balances
     // are not skipped. A zero balance from balance_cil is still valid data.
+    // FIX: Removed duplicate containsKey check that made json['balance'] unreachable.
     final int parsedBalance = json.containsKey('balance_cil')
         ? _parseIntField(json['balance_cil'])
-        : json.containsKey('balance_cil')
-            ? _parseIntField(json['balance_cil'])
-            : _parseIntField(json['balance']);
+        : _parseIntField(json['balance']);
 
     return Account(
       address: json['address'] ?? '',
@@ -57,7 +56,7 @@ class Account {
   /// Balance in LOS (1 LOS = 10^11 CIL)
   double get balanceLOS => BlockchainConstants.cilToLos(balance);
 
-  /// Void balance in LOS
+  /// CIL balance in LOS
   double get cilBalanceLOS => BlockchainConstants.cilToLos(cilBalance);
 }
 
@@ -86,7 +85,7 @@ class Transaction {
 
   /// Parse amount from backend which may be:
   /// - int (from /account endpoint: LOS integer, needs ×CIL_PER_LOS)
-  /// - double (rare but possible)
+  /// - double (rare but possible — convert via string to avoid f64 precision loss)
   /// - String like "10.00000000000" (from /history endpoint: formatted LOS)
   /// Returns value in CIL for internal consistency.
   static int _parseAmount(dynamic value) {
@@ -97,7 +96,8 @@ class Transaction {
       return value * BlockchainConstants.cilPerLos;
     }
     if (value is double) {
-      return (value * BlockchainConstants.cilPerLos).toInt();
+      // Convert via string to use integer-only math (avoids f64 off-by-1 CIL errors)
+      return BlockchainConstants.losStringToCil(value.toString());
     }
     if (value is String) {
       // /history endpoint returns "10.00000000000" (formatted LOS string)
@@ -149,7 +149,8 @@ class BlockInfo {
       height: json['height'] ?? 0,
       hash: json['hash'] ?? '',
       timestamp: json['timestamp'] ?? 0,
-      txCount: json['tx_count'] ?? 0,
+      // Backend /blocks/recent returns "transactions_count", legacy used "tx_count"
+      txCount: json['transactions_count'] ?? json['tx_count'] ?? 0,
     );
   }
 }
@@ -158,18 +159,34 @@ class ValidatorInfo {
   final String address;
   final int stake;
   final bool isActive;
+  final bool connected;
+  final bool isGenesis;
+  final double uptimePercentage;
+  final bool hasMinStake;
+  final String? onionAddress;
 
   ValidatorInfo({
     required this.address,
     required this.stake,
     required this.isActive,
+    this.connected = false,
+    this.isGenesis = false,
+    this.uptimePercentage = 0.0,
+    this.hasMinStake = false,
+    this.onionAddress,
   });
 
   factory ValidatorInfo.fromJson(Map<String, dynamic> json) {
     return ValidatorInfo(
       address: json['address'] ?? '',
       stake: json['stake'] ?? 0,
-      isActive: json['is_active'] ?? false,
+      // Backend sends both "is_active" and "active" — prefer "active" (computed field)
+      isActive: json['active'] ?? json['is_active'] ?? false,
+      connected: json['connected'] ?? false,
+      isGenesis: json['is_genesis'] ?? false,
+      uptimePercentage: (json['uptime_percentage'] as num?)?.toDouble() ?? 0.0,
+      hasMinStake: json['has_min_stake'] ?? false,
+      onionAddress: json['onion_address']?.toString(),
     );
   }
 

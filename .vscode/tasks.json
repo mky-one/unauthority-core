@@ -24,7 +24,7 @@
 		{
 			"label": "Check Services Status",
 			"type": "shell",
-			"command": "echo '=== Tor daemon ===' && cat ~/.uat-testnet-tor/tor.pid 2>/dev/null && echo '' && echo '=== Tor process ===' && pgrep -lf 'tor.*uat-testnet' && echo '' && echo '=== Node processes ===' && pgrep -lf los-node && echo '' && echo '=== Local health checks ===' && curl -s http://localhost:3030/health | head -c 200 && echo '' && curl -s http://localhost:3031/health | head -c 200 && echo '' && curl -s http://localhost:3032/health | head -c 200 && echo '' && curl -s http://localhost:3033/health | head -c 200 && echo ''"
+			"command": "echo '=== Tor daemon ===' && cat ~/.los-testnet-tor/tor.pid 2>/dev/null && echo '' && echo '=== Tor process ===' && pgrep -lf 'tor.*los-testnet' && echo '' && echo '=== Node processes ===' && pgrep -lf los-node && echo '' && echo '=== Local health checks ===' && curl -s http://localhost:3030/health | head -c 200 && echo '' && curl -s http://localhost:3031/health | head -c 200 && echo '' && curl -s http://localhost:3032/health | head -c 200 && echo '' && curl -s http://localhost:3033/health | head -c 200 && echo ''"
 		},
 		{
 			"label": "Test Tor Connectivity",
@@ -115,7 +115,7 @@
 		{
 			"label": "Metrics Rewards Slashing",
 			"type": "shell",
-			"command": "echo '=== METRICS ===' && curl -s http://localhost:3030/metrics | grep -E 'los_active_validators|los_accounts_total|los_blocks_total' && echo '' && echo '=== REWARD-INFO ===' && curl -s http://localhost:3030/reward-info | python3 -c 'import json,sys; d=json.load(sys.stdin); e=d[\"epoch\"]; p=d[\"pool\"]; v=d[\"validators\"]; print(f\"Epoch: {e[\"current_epoch\"]}, Rate: {e[\"epoch_reward_rate_los\"]} LOS/epoch\"); print(f\"Pool remaining: {p[\"remaining_los\"]} LOS, distributed: {p[\"total_distributed_uat\"]} LOS\"); print(f\"Validators: {v[\"eligible\"]}/{v[\"total\"]} eligible\")' && echo '' && echo '=== SLASHING STATUS ===' && curl -s http://localhost:3030/slashing | python3 -m json.tool | head -20 && echo '' && echo '=== CONSENSUS ===' && curl -s http://localhost:3030/consensus | python3 -c 'import json,sys; d=json.load(sys.stdin); s=d[\"safety\"]; print(f\"active_validators: {s[\"active_validators\"]}, byzantine_safe: {s[\"byzantine_safe\"]}\")' && echo '' && echo 'DONE'"
+			"command": "echo '=== METRICS ===' && curl -s http://localhost:3030/metrics | grep -E 'los_active_validators|los_accounts_total|los_blocks_total' && echo '' && echo '=== REWARD-INFO ===' && curl -s http://localhost:3030/reward-info | python3 -c 'import json,sys; d=json.load(sys.stdin); e=d[\"epoch\"]; p=d[\"pool\"]; v=d[\"validators\"]; print(f\"Epoch: {e[\"current_epoch\"]}, Rate: {e[\"epoch_reward_rate_los\"]} LOS/epoch\"); print(f\"Pool remaining: {p[\"remaining_los\"]} LOS, distributed: {p[\"total_distributed_los\"]} LOS\"); print(f\"Validators: {v[\"eligible\"]}/{v[\"total\"]} eligible\")' && echo '' && echo '=== SLASHING STATUS ===' && curl -s http://localhost:3030/slashing | python3 -m json.tool | head -20 && echo '' && echo '=== CONSENSUS ===' && curl -s http://localhost:3030/consensus | python3 -c 'import json,sys; d=json.load(sys.stdin); s=d[\"safety\"]; print(f\"active_validators: {s[\"active_validators\"]}, byzantine_safe: {s[\"byzantine_safe\"]}\")' && echo '' && echo 'DONE'"
 		}
 	]
 }

@@ -1,5 +1,5 @@
 /// LOS Blockchain Constants for Validator Dashboard
-/// Must be synchronized with backend: crates/uat-core/src/lib.rs
+/// Must be synchronized with backend: crates/los-core/src/lib.rs
 ///
 /// Backend definition:
 ///   pub const CIL_PER_LOS: u128 = 100_000_000_000; // 10^11
@@ -24,8 +24,8 @@ class BlockchainConstants {
   static const String addressPrefix = 'LOS';
 
   /// Convert CIL (smallest unit) to LOS (display unit)
-  static double cilToLos(int voidAmount) {
-    return voidAmount / cilPerLos.toDouble();
+  static double cilToLos(int cilAmount) {
+    return cilAmount / cilPerLos.toDouble();
   }
 
   /// Convert LOS string to CIL using integer-only math.

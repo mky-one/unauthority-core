@@ -1,221 +1,158 @@
-# Tor Setup Guide
-
-Configure Tor hidden services for LOS validator nodes. All network traffic routes through Tor — no public IP addresses are exposed.
-
-**Version:** v1.0.6-testnet
-
----
+# Tor Network Setup — Unauthority (LOS) v1.0.9
 
 ## Overview
 
-LOS validators run as Tor hidden services (`.onion` addresses). This provides:
+Unauthority runs **exclusively** on the Tor network. Both mainnet and testnet validators expose their services as `.onion` hidden services. No clearnet (DNS/IP) connectivity is used in production.
 
-- **No public IP** — validators are reachable only via .onion
-- **Censorship resistance** — Tor circuits bypass network blocks
-- **Privacy** — validator operators are anonymous
-- **DDoS protection** — .onion addresses can't be targeted by IP
+## Prerequisites
 
----
+### Install Tor
 
-## Automated Setup
-
-The fastest way to set up Tor for a 4-node testnet:
-
+**macOS:**
 ```bash
-./setup_tor_testnet.sh
-```
-
-This script:
-1. Installs Tor if not present (via `brew` on macOS, `apt` on Linux)
-2. Generates dedicated `torrc` with 4 hidden service directories
-3. Creates hidden service keys for each validator
-4. Starts Tor and waits for `.onion` addresses
-5. Outputs all addresses to `testnet-tor-info.json`
-
-After running, your `.onion` addresses are in `testnet-tor-info.json`:
-
-```json
-{
-  "validators": [
-    {
-      "id": 1,
-      "onion": "abc123...xyz.onion",
-      "rest_url": "http://abc123...xyz.onion",
-      "p2p": "abc123...xyz.onion:4001"
-    }
-  ]
-}
-```
-
-### Stop Tor
-
-```bash
-./stop_tor_testnet.sh
-```
-
----
-
-## Manual Setup
-
-### 1. Install Tor
-
-```bash
-# macOS
 brew install tor
-
-# Ubuntu/Debian
-sudo apt install tor
-
-# Verify
-tor --version
+brew services start tor
 ```
 
-### 2. Create Hidden Service Directory
+**Ubuntu/Debian:**
+```bash
+sudo apt install tor
+sudo systemctl enable tor
+sudo systemctl start tor
+```
+
+**Verify Tor is running:**
+```bash
+curl --socks5-hostname 127.0.0.1:9050 https://check.torproject.org/api/ip
+```
+
+## Hidden Service Configuration
+
+### 1. Create a Hidden Service for Your Validator
+
+Edit `/etc/tor/torrc` (Linux) or `/opt/homebrew/etc/tor/torrc` (macOS Homebrew):
+
+```
+# LOS Validator Hidden Service
+HiddenServiceDir /var/lib/tor/los-validator/
+HiddenServicePort 3030 127.0.0.1:3030    # REST API
+HiddenServicePort 4001 127.0.0.1:4001    # P2P gossip
+HiddenServicePort 23030 127.0.0.1:23030  # gRPC
+```
+
+### 2. Restart Tor
 
 ```bash
-mkdir -p /var/lib/tor/los-validator-1
-chmod 700 /var/lib/tor/los-validator-1
+sudo systemctl restart tor
+# or on macOS:
+brew services restart tor
 ```
 
-### 3. Configure torrc
+### 3. Get Your .onion Address
 
-Add to `/etc/tor/torrc` (or custom torrc):
-
-```
-# LOS Validator 1
-HiddenServiceDir /var/lib/tor/los-validator-1
-HiddenServicePort 80 127.0.0.1:3030    # REST API
-HiddenServicePort 4001 127.0.0.1:4001  # P2P
+```bash
+sudo cat /var/lib/tor/los-validator/hostname
+# Output: abc123def456xyz.onion
 ```
 
-For multiple validators:
+### 4. Configure the Node
+
+```bash
+export LOS_ONION_ADDRESS='abc123def456xyz.onion'
+export LOS_SOCKS5_PROXY='socks5h://127.0.0.1:9050'
+```
+
+The node will:
+- Announce its `.onion` address to peers during handshake
+- Use the SOCKS5 proxy for all outbound connections to other `.onion` peers
+- Register the onion address when joining the validator set
+
+## Multi-Validator Local Testnet with Tor
+
+For testing, you can run multiple hidden services on one machine:
 
 ```
 # Validator 1
-HiddenServiceDir /var/lib/tor/los-validator-1
-HiddenServicePort 80 127.0.0.1:3030
+HiddenServiceDir /var/lib/tor/los-v1/
+HiddenServicePort 3030 127.0.0.1:3030
 HiddenServicePort 4001 127.0.0.1:4001
 
 # Validator 2
-HiddenServiceDir /var/lib/tor/los-validator-2
-HiddenServicePort 80 127.0.0.1:3031
-HiddenServicePort 4001 127.0.0.1:4002
+HiddenServiceDir /var/lib/tor/los-v2/
+HiddenServicePort 3031 127.0.0.1:3031
+HiddenServicePort 4002 127.0.0.1:4002
 
 # Validator 3
-HiddenServiceDir /var/lib/tor/los-validator-3
-HiddenServicePort 80 127.0.0.1:3032
-HiddenServicePort 4001 127.0.0.1:4003
+HiddenServiceDir /var/lib/tor/los-v3/
+HiddenServicePort 3032 127.0.0.1:3032
+HiddenServicePort 4003 127.0.0.1:4003
 
 # Validator 4
-HiddenServiceDir /var/lib/tor/los-validator-4
-HiddenServicePort 80 127.0.0.1:3033
-HiddenServicePort 4001 127.0.0.1:4004
-
-# SOCKS5 proxy for outbound connections
-SocksPort 9052
+HiddenServiceDir /var/lib/tor/los-v4/
+HiddenServicePort 3033 127.0.0.1:3033
+HiddenServicePort 4004 127.0.0.1:4004
 ```
 
-### 4. Start Tor
+## Peer Discovery
+
+### Bootstrap Nodes
+
+Set the initial peer list via environment variable:
 
 ```bash
-tor -f /path/to/torrc &
+export LOS_BOOTSTRAP_NODES='abc123.onion:4001,def456.onion:4001,ghi789.onion:4001'
 ```
 
-### 5. Get Your .onion Address
+Format: comma-separated `address:port` pairs.
 
-```bash
-cat /var/lib/tor/los-validator-1/hostname
-# abc123...xyz.onion
-```
+### Dynamic Discovery
 
-### 6. Start Node with Tor
+Once connected, nodes exchange peer tables automatically:
+1. The node sends `ID:address:supply:burned:timestamp` on connection
+2. Peers respond with their known peer lists
+3. The node maintains a dynamic peer table sorted by latency/uptime
 
-```bash
-./target/release/los-node \
-  --dev \
-  --port 3030 \
-  --p2p-port 4001 \
-  --tor-socks 127.0.0.1:9052 \
-  --tor-onion abc123...xyz.onion
-```
+## Flutter App Tor Connectivity
 
----
+Both `flutter_wallet` and `flutter_validator` bundle Tor via `flutter_rust_bridge`:
 
-## Connecting to Tor Nodes
+1. **Fetch Peers:** Download the list of available `.onion` nodes
+2. **Latency Check:** Ping available peers through SOCKS5
+3. **Select Best Host:** Connect to the most stable external peer
 
-### From curl
-
-```bash
-# Requires Tor running with SOCKS5 proxy
-curl --socks5-hostname 127.0.0.1:9052 \
-  http://ll22j45prmu3oymratallztx74peen4gsxudzbgf5qvybezobitvywyd.onion/health
-```
-
-### From Tor Browser
-
-Navigate directly to:
-```
-http://ll22j45prmu3oymratallztx74peen4gsxudzbgf5qvybezobitvywyd.onion/node-info
-```
-
-### From Flutter Wallet/Validator
-
-The Flutter apps include **bundled Tor** — they handle .onion connectivity automatically:
-
-- Bundled Tor port: 9250
-- Tor Browser port: 9150
-- Auto-detection sequence: detect existing → find system binary → check cache → install
-
-No manual Tor configuration is needed for end users.
-
----
-
-## Current Testnet Bootstrap Nodes
-
-| Node | .onion Address | REST | P2P |
-|------|---------------|------|-----|
-| Validator 1 | `ll22j45prmu3oymratallztx74peen4gsxudzbgf5qvybezobitvywyd.onion` | `:80` | `:4001` |
-| Validator 2 | `5yvqf4sdbif4pegxgrgfq5ksv3gqqpt27x2xzx5nvrmdqmsrk4mnkgad.onion` | `:80` | `:4001` |
-| Validator 3 | `3e3vi6ealajwangzmiz2ec7b5gqahnysk3tjs7yol7rptmsrthrpjvad.onion` | `:80` | `:4001` |
-| Validator 4 | `yapub6hgjr3eyxnxzvgd4yejt7rkhwlmaivdpy6757o3tr5iicckgjyd.onion` | `:80` | `:4001` |
-
-These addresses are defined in `testnet-tor-info.json`.
-
----
-
-## Security Best Practices
-
-| Practice | Description |
-|----------|-------------|
-| Bind `127.0.0.1` | LOS node binds localhost by default — never expose to `0.0.0.0` in production |
-| mDNS disabled | Auto-disabled when Tor is detected to prevent DNS leaks |
-| Hidden service keys | Store in `chmod 700` directories — these ARE your node identity |
-| Separate SOCKS ports | Use dedicated SOCKS port (9052) — don't share with browser (9150) |
-| No DNS lookups | All peer resolution goes through Tor SOCKS5 (`--socks5-hostname`) |
-
----
+**Important:** The Flutter validator app MUST connect to **external** peers, never its own local node. This ensures it verifies network consensus integrity from an outside perspective.
 
 ## Troubleshooting
 
-| Issue | Solution |
-|-------|----------|
-| "Connection refused" on .onion | Ensure Tor is running and SOCKS5 port matches |
-| Slow connections | Normal — Tor adds 2-5 seconds latency per hop |
-| "Hostname not found" | Use `--socks5-hostname` (not `--socks5`) to resolve via Tor |
-| Hidden service not generating | Check `torrc` syntax and directory permissions (must be `700`) |
-| Flutter app can't connect | Check if another Tor instance is using port 9250 |
+### Tor Not Connecting
+```bash
+# Check if Tor is running
+systemctl status tor
 
----
+# Check SOCKS5 proxy
+curl --socks5-hostname 127.0.0.1:9050 http://check.torproject.org
 
-## Port Reference
+# Check hidden service directory permissions
+ls -la /var/lib/tor/los-validator/
+```
 
-| Port | Service | Protocol |
-|------|---------|----------|
-| 3030–3033 | REST API (local) | HTTP |
-| 4001–4004 | P2P (local) | libp2p |
-| 9052 | Tor SOCKS5 (setup_tor_testnet.sh) | SOCKS5 |
-| 9050 | Tor SOCKS5 (system default) | SOCKS5 |
-| 9150 | Tor Browser SOCKS5 | SOCKS5 |
-| 9250 | Flutter bundled Tor | SOCKS5 |
-| 80 | REST API (via .onion) | HTTP |
-| 4001 | P2P (via .onion) | libp2p |
+### Peer Connection Issues
+```bash
+# Test connectivity to a peer
+curl --socks5-hostname 127.0.0.1:9050 http://PEER_ONION_ADDRESS.onion:3030/health
+
+# Check your node's peer list
+curl http://localhost:3030/peers
+```
+
+### Hidden Service Not Accessible
+- Ensure `HiddenServiceDir` has correct permissions (Tor user ownership)
+- Ensure port mappings match your `--port` configuration
+- Wait 30-60 seconds after restart for the hidden service to propagate
+
+## Security Notes
+
+1. **Never expose REST API ports** to the public internet — Tor handles all external routing
+2. **Bind to localhost** by default (127.0.0.1) — set `LOS_BIND_ALL=1` only if needed behind a reverse proxy
+3. **Each validator gets a unique `.onion`** — this is its network identity
+4. **SOCKS5 proxy** routes all outbound traffic through Tor, preventing IP leaks

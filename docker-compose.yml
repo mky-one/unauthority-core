@@ -1,243 +1,126 @@
 version: '3.8'
 
+# Unauthority (LOS) — 4-Validator Testnet via Docker
+#
+# Ports per container:
+#   REST API:  --port (3030, 3031, 3032, 3033)
+#   gRPC:      REST + 20000 (23030, 23031, 23032, 23033)
+#   P2P:       libp2p gossip over internal network
+#
+# Usage:
+#   docker compose up --build -d
+#   docker compose logs -f
+#   docker compose down
+
 services:
-  # Bootstrap Validator 1
   validator-1:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    container_name: los-validator-1
+    build: .
+    container_name: los-v1
     hostname: validator-1
     networks:
-      uat-network:
+      los-net:
         ipv4_address: 172.20.0.11
     ports:
-      - "8080:8080"   # REST API
-      - "50051:50051" # gRPC
-      - "9000:9000"   # P2P
-      - "9090:9090"   # Prometheus
+      - "3030:3030"
+      - "23030:23030"
     volumes:
-      - ./node_data/validator-1:/data
-      - ./validator.toml:/config/validator.toml:ro
+      - v1-data:/data
+      - ./genesis_config.json:/app/genesis_config.json:ro
     environment:
-      - RUST_LOG=info
-      - LOS_NODE_NAME=validator-1
-      - LOS_VALIDATOR_MODE=true
-      # FIX C11-08: Explicit testnet level and network config
+      - LOS_NODE_ID=validator-1
       - LOS_TESTNET_LEVEL=consensus
-      - LOS_NETWORK=testnet
-    command: >
-      --config /config/validator.toml
-      --data-dir /data
-      --p2p-listen 0.0.0.0:9000
-      --api-listen 0.0.0.0:8080
-      --grpc-listen 0.0.0.0:50051
-      --metrics-listen 0.0.0.0:9090
+      - LOS_BIND_ALL=1
+      - LOS_BOOTSTRAP_NODES=/ip4/172.20.0.12/tcp/4001,/ip4/172.20.0.13/tcp/4001,/ip4/172.20.0.14/tcp/4001
+    command: ["./los-node", "--port", "3030", "--data-dir", "/data"]
     restart: unless-stopped
-    # FIX C12-03: Use los-cli instead of curl (curl not installed in image)
     healthcheck:
-      test: ["CMD", "/usr/local/bin/los-cli", "node-info"]
+      test: ["CMD", "curl", "-sf", "http://localhost:3030/health"]
       interval: 30s
-      timeout: 10s
+      timeout: 5s
       retries: 3
-      start_period: 60s
+      start_period: 30s
 
-  # Bootstrap Validator 2
   validator-2:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    container_name: los-validator-2
+    build: .
+    container_name: los-v2
     hostname: validator-2
     networks:
-      uat-network:
+      los-net:
         ipv4_address: 172.20.0.12
     ports:
-      - "8081:8080"
-      - "50052:50051"
-      - "9001:9000"
-      - "9091:9090"
+      - "3031:3030"
+      - "23031:23030"
     volumes:
-      - ./node_data/validator-2:/data
-      - ./validator.toml:/config/validator.toml:ro
+      - v2-data:/data
+      - ./genesis_config.json:/app/genesis_config.json:ro
     environment:
-      - RUST_LOG=info
-      - LOS_NODE_NAME=validator-2
-      - LOS_VALIDATOR_MODE=true
+      - LOS_NODE_ID=validator-2
       - LOS_TESTNET_LEVEL=consensus
-      - LOS_NETWORK=testnet
-      - LOS_BOOTSTRAP_PEER=172.20.0.11:9000
-    command: >
-      --config /config/validator.toml
-      --data-dir /data
-      --p2p-listen 0.0.0.0:9000
-      --api-listen 0.0.0.0:8080
-      --grpc-listen 0.0.0.0:50051
-      --metrics-listen 0.0.0.0:9090
-      --bootstrap-peer validator-1:9000
+      - LOS_BIND_ALL=1
+      - LOS_BOOTSTRAP_NODES=/ip4/172.20.0.11/tcp/4001,/ip4/172.20.0.13/tcp/4001,/ip4/172.20.0.14/tcp/4001
+    command: ["./los-node", "--port", "3030", "--data-dir", "/data"]
+    restart: unless-stopped
     depends_on:
       validator-1:
         condition: service_healthy
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "/usr/local/bin/los-cli", "node-info"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 60s
 
-  # Bootstrap Validator 3
   validator-3:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    container_name: los-validator-3
+    build: .
+    container_name: los-v3
     hostname: validator-3
     networks:
-      uat-network:
+      los-net:
         ipv4_address: 172.20.0.13
     ports:
-      - "8082:8080"
-      - "50053:50051"
-      - "9002:9000"
-      - "9092:9090"
+      - "3032:3030"
+      - "23032:23030"
     volumes:
-      - ./node_data/validator-3:/data
-      - ./validator.toml:/config/validator.toml:ro
+      - v3-data:/data
+      - ./genesis_config.json:/app/genesis_config.json:ro
     environment:
-      - RUST_LOG=info
-      - LOS_NODE_NAME=validator-3
-      - LOS_VALIDATOR_MODE=true
+      - LOS_NODE_ID=validator-3
       - LOS_TESTNET_LEVEL=consensus
-      - LOS_NETWORK=testnet
-      - LOS_BOOTSTRAP_PEER=172.20.0.11:9000,172.20.0.12:9000
-    command: >
-      --config /config/validator.toml
-      --data-dir /data
-      --p2p-listen 0.0.0.0:9000
-      --api-listen 0.0.0.0:8080
-      --grpc-listen 0.0.0.0:50051
-      --metrics-listen 0.0.0.0:9090
-      --bootstrap-peer validator-1:9000
-      --bootstrap-peer validator-2:9000
+      - LOS_BIND_ALL=1
+      - LOS_BOOTSTRAP_NODES=/ip4/172.20.0.11/tcp/4001,/ip4/172.20.0.12/tcp/4001,/ip4/172.20.0.14/tcp/4001
+    command: ["./los-node", "--port", "3030", "--data-dir", "/data"]
+    restart: unless-stopped
     depends_on:
       validator-1:
         condition: service_healthy
-      validator-2:
-        condition: service_healthy
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "/usr/local/bin/los-cli", "node-info"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 60s
 
-  # Bootstrap Validator 4 (genesis defines 4 bootstrap nodes; aBFT n=4,f=1)
   validator-4:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    container_name: los-validator-4
+    build: .
+    container_name: los-v4
     hostname: validator-4
     networks:
-      uat-network:
+      los-net:
         ipv4_address: 172.20.0.14
     ports:
-      - "8083:8080"
-      - "50054:50051"
-      - "9003:9000"
-      - "9093:9090"
+      - "3033:3030"
+      - "23033:23030"
     volumes:
-      - ./node_data/validator-4:/data
-      - ./validator.toml:/config/validator.toml:ro
+      - v4-data:/data
+      - ./genesis_config.json:/app/genesis_config.json:ro
     environment:
-      - RUST_LOG=info
-      - LOS_NODE_NAME=validator-4
-      - LOS_VALIDATOR_MODE=true
+      - LOS_NODE_ID=validator-4
       - LOS_TESTNET_LEVEL=consensus
-      - LOS_NETWORK=testnet
-      - LOS_BOOTSTRAP_PEER=172.20.0.11:9000,172.20.0.12:9000,172.20.0.13:9000
-    command: >
-      --config /config/validator.toml
-      --data-dir /data
-      --p2p-listen 0.0.0.0:9000
-      --api-listen 0.0.0.0:8080
-      --grpc-listen 0.0.0.0:50051
-      --metrics-listen 0.0.0.0:9090
-      --bootstrap-peer validator-1:9000
-      --bootstrap-peer validator-2:9000
-      --bootstrap-peer validator-3:9000
+      - LOS_BIND_ALL=1
+      - LOS_BOOTSTRAP_NODES=/ip4/172.20.0.11/tcp/4001,/ip4/172.20.0.12/tcp/4001,/ip4/172.20.0.13/tcp/4001
+    command: ["./los-node", "--port", "3030", "--data-dir", "/data"]
+    restart: unless-stopped
     depends_on:
       validator-1:
         condition: service_healthy
-      validator-2:
-        condition: service_healthy
-      validator-3:
-        condition: service_healthy
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "/usr/local/bin/los-cli", "node-info"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 60s
-
-  # Prometheus (Monitoring)
-  prometheus:
-    image: prom/prometheus:latest
-    container_name: uat-prometheus
-    hostname: prometheus
-    networks:
-      uat-network:
-        ipv4_address: 172.20.0.20
-    ports:
-      - "9094:9090"
-    volumes:
-      - ./docs/prometheus.yml:/etc/prometheus/prometheus.yml:ro
-      - ./docs/prometheus-alerts.yml:/etc/prometheus/alerts.yml:ro
-      - prometheus-data:/prometheus
-    command:
-      - '--config.file=/etc/prometheus/prometheus.yml'
-      - '--storage.tsdb.path=/prometheus'
-      - '--web.console.libraries=/usr/share/prometheus/console_libraries'
-      - '--web.console.templates=/usr/share/prometheus/consoles'
-    depends_on:
-      - validator-1
-      - validator-2
-      - validator-3
-      - validator-4
-    restart: unless-stopped
-
-  # Grafana (Visualization)
-  grafana:
-    image: grafana/grafana:latest
-    container_name: uat-grafana
-    hostname: grafana
-    networks:
-      uat-network:
-        ipv4_address: 172.20.0.21
-    ports:
-      - "3000:3000"
-    volumes:
-      - ./docs/grafana-dashboard.json:/etc/grafana/provisioning/dashboards/uat-dashboard.json:ro
-      - grafana-data:/var/lib/grafana
-    environment:
-      - GF_SECURITY_ADMIN_USER=admin
-      # FIX C11-11: Use env var instead of hardcoded password
-      - GF_SECURITY_ADMIN_PASSWORD=${GF_ADMIN_PASSWORD:-changeme}
-      - GF_INSTALL_PLUGINS=grafana-piechart-panel
-    depends_on:
-      - prometheus
-    restart: unless-stopped
 
 networks:
-  uat-network:
+  los-net:
     driver: bridge
     ipam:
       config:
         - subnet: 172.20.0.0/24
 
 volumes:
-  prometheus-data:
-  grafana-data:
+  v1-data:
+  v2-data:
+  v3-data:
+  v4-data:

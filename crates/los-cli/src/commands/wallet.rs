@@ -32,14 +32,19 @@ fn create_new_wallet(name: &str, config_dir: &Path) -> Result<(), Box<dyn std::e
     println!("{}", "Creating new wallet...".yellow());
     println!();
 
-    // Prompt for password
-    let password = rpassword::prompt_password("Enter password for encryption: ")?;
-    let password_confirm = rpassword::prompt_password("Confirm password: ")?;
-
-    if password != password_confirm {
-        print_error("Passwords do not match!");
-        return Ok(());
-    }
+    // Password from env var (for automation/scripting) or interactive prompt
+    let password = match std::env::var("LOS_WALLET_PASSWORD") {
+        Ok(p) if !p.is_empty() => p,
+        _ => {
+            let pw = rpassword::prompt_password("Enter password for encryption: ")?;
+            let pw_confirm = rpassword::prompt_password("Confirm password: ")?;
+            if pw != pw_confirm {
+                print_error("Passwords do not match!");
+                return Ok(());
+            }
+            pw
+        }
+    };
 
     if password.len() < 12 {
         print_error("Password must be at least 12 characters!");

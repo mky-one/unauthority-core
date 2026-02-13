@@ -90,15 +90,12 @@ target/
 **/mutants.out*/
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# FRONTEND (Node.js/React)
+# NODE.JS (legacy, not used)
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-# Dependencies
 node_modules/
+package.json
+package-lock.json
 npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-pnpm-debug.log*
 
 # Build outputs
 dist/
@@ -106,8 +103,14 @@ build/
 .vite/
 .cache/
 
-# Frontend wallets (sensitive!)
-frontend-wallet/wallets/
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# DEVELOPMENT ARTIFACTS
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+*.bak
+*.migrated
+backups/
+ledger_state.json*
+testnet-tor-info.json
 frontend-validator/keys/
 
 # Electron build

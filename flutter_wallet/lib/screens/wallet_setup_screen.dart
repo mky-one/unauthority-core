@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../services/wallet_service.dart';
+import '../utils/address_validator.dart';
 import 'home_screen.dart';
 
 class WalletSetupScreen extends StatefulWidget {
@@ -317,13 +318,9 @@ class _WalletSetupScreenState extends State<WalletSetupScreen> {
               if (value == null || value.trim().isEmpty) {
                 return 'Please enter LOS address';
               }
-              if (!value.trim().startsWith('LOS')) {
-                return 'Address must start with LOS';
-              }
-              if (value.trim().length < 40) {
-                return 'Address too short';
-              }
-              return null;
+              // FIX: Use AddressValidator for consistent validation
+              // across all screens (supports both hex and Base58 formats).
+              return AddressValidator.getValidationError(value.trim());
             },
           ),
         ),

@@ -1,7 +1,6 @@
-# Multi-stage build for minimal final image
-FROM rust:1.75-slim as builder
+# Multi-stage build for Unauthority (LOS) validator node
+FROM rust:1.75-slim AS builder
 
-# Install build dependencies
 RUN apt-get update && apt-get install -y \
     pkg-config \
     libssl-dev \
@@ -11,66 +10,52 @@ RUN apt-get update && apt-get install -y \
 
 WORKDIR /build
 
-# Copy manifests
 COPY Cargo.toml Cargo.lock ./
 COPY crates ./crates
 COPY genesis ./genesis
 COPY genesis_config.json ./
-COPY uat.proto ./
+COPY los.proto ./
+COPY pqcrypto-internals-seeded ./pqcrypto-internals-seeded
 
 # Build release binaries
-RUN cargo build --release --workspace
+RUN cargo build --release -p los-node -p los-cli
 
-# Strip private keys and seed phrases from genesis config for the Docker image
-# Only addresses, public keys, balances and stakes are needed at runtime
+# Strip private keys from genesis config for runtime image
 RUN jq 'del(.bootstrap_nodes[].private_key, .bootstrap_nodes[].seed_phrase, .dev_accounts[].private_key, .dev_accounts[].seed_phrase)' \
     genesis_config.json > genesis_config_stripped.json
 
 # Final minimal image
 FROM debian:bookworm-slim
 
-# Install runtime dependencies
 RUN apt-get update && apt-get install -y \
     ca-certificates \
     libssl3 \
+    curl \
     && rm -rf /var/lib/apt/lists/*
 
-# Create non-root user
-RUN useradd -m -u 1000 uat && \
-    mkdir -p /data /config && \
-    chown -R uat:uat /data /config
+RUN useradd -m -u 1000 los && \
+    mkdir -p /data /app && \
+    chown -R los:los /data /app
 
 WORKDIR /app
 
-# Copy binaries from builder
-COPY --from=builder /build/target/release/los-node /usr/local/bin/
-COPY --from=builder /build/target/release/uat-cli /usr/local/bin/
-COPY --from=builder /build/target/release/genesis_generator /usr/local/bin/
+# Copy binaries
+COPY --from=builder /build/target/release/los-node ./los-node
+COPY --from=builder /build/target/release/los-cli ./los-cli
 
-# Copy configuration template
-COPY validator.toml /config/validator.toml.template
+# Copy genesis config (stripped of secrets)
+COPY --from=builder /build/genesis_config_stripped.json ./genesis_config.json
+COPY testnet-genesis/ ./testnet-genesis/
 
-# Copy genesis configuration files (required for node startup)
-# SECURITY: Use stripped version without private keys / seed phrases
-COPY --from=builder /build/genesis_config_stripped.json /opt/uat/genesis_config.json
-COPY testnet-genesis/ /opt/uat/testnet-genesis/
+USER los
 
-USER uat
+VOLUME ["/data"]
 
-# Data directory for blockchain state
-VOLUME ["/data", "/config"]
+# REST API (default 3030), gRPC (REST + 20000)
+EXPOSE 3030 23030
 
-# Expose ports (single container binds)
-# FIX C11-12: Only expose ports this single container binds (not multi-container)
-# 8080: REST API
-# 50051: gRPC
-# 9000: P2P
-# 9090: Prometheus metrics
-EXPOSE 8080 50051 9000 9090
+HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
+    CMD curl -sf http://localhost:3030/health || exit 1
 
-# Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
-    CMD /usr/local/bin/uat-cli node-info || exit 1
-
-ENTRYPOINT ["/usr/local/bin/los-node"]
-CMD ["--config", "/config/validator.toml", "--data-dir", "/data"]
+ENTRYPOINT ["./los-node"]
+CMD ["--port", "3030", "--data-dir", "/data"]

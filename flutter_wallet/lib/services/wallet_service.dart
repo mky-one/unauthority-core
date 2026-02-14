@@ -133,10 +133,21 @@ class WalletService {
       // Ed25519 + BLAKE2b fallback (TESTNET ONLY — matches los-crypto address format)
       final seed = bip39.mnemonicToSeed(mnemonic);
       try {
-        address = await _deriveAddressEd25519(seed);
+        // FIX: Also store Ed25519 public key hex so sendTransaction() has it
+        final privateSeed = Uint8List.fromList(seed.sublist(0, 32));
+        final algorithm = ed_crypto.Ed25519();
+        final keyPair =
+            await algorithm.newKeyPairFromSeed(privateSeed.toList());
+        final pubKey = await keyPair.extractPublicKey();
+        final pubKeyHex = pubKey.bytes
+            .map((b) => b.toRadixString(16).padLeft(2, '0'))
+            .join('');
+
+        address = _deriveAddressFromPublicKey(Uint8List.fromList(pubKey.bytes));
         cryptoMode = 'ed25519';
 
         await _secureStorage.write(key: _seedKey, value: mnemonic);
+        await _secureStorage.write(key: _publicKeyKey, value: pubKeyHex);
 
         final prefs = await SharedPreferences.getInstance();
         await prefs.setString(_addressKey, address);
@@ -219,10 +230,21 @@ class WalletService {
 
       final seed = bip39.mnemonicToSeed(mnemonic);
       try {
-        address = await _deriveAddressEd25519(seed);
+        // FIX: Also store Ed25519 public key hex so sendTransaction() has it
+        final privateSeed = Uint8List.fromList(seed.sublist(0, 32));
+        final algorithm = ed_crypto.Ed25519();
+        final keyPair =
+            await algorithm.newKeyPairFromSeed(privateSeed.toList());
+        final pubKey = await keyPair.extractPublicKey();
+        final pubKeyHex = pubKey.bytes
+            .map((b) => b.toRadixString(16).padLeft(2, '0'))
+            .join('');
+
+        address = _deriveAddressFromPublicKey(Uint8List.fromList(pubKey.bytes));
         cryptoMode = 'ed25519';
 
         await _secureStorage.write(key: _seedKey, value: mnemonic);
+        await _secureStorage.write(key: _publicKeyKey, value: pubKeyHex);
 
         final prefs = await SharedPreferences.getInstance();
         await prefs.setString(_addressKey, address);
@@ -254,10 +276,14 @@ class WalletService {
     await prefs.setString(_addressKey, address);
     await prefs.setString(_importModeKey, 'address');
     await prefs.setString(_cryptoModeKey, 'address_only');
-    // Clear any secrets
-    await _secureStorage.delete(key: _seedKey);
-    await _secureStorage.delete(key: _publicKeyKey);
-    await _secureStorage.delete(key: _secretKeyKey);
+    // Clear any secrets (with try-catch for macOS Keychain issues)
+    for (final key in [_seedKey, _publicKeyKey, _secretKeyKey]) {
+      try {
+        await _secureStorage.delete(key: key);
+      } catch (e) {
+        debugPrint('⚠️ SecureStorage.delete($key) failed during import: $e');
+      }
+    }
 
     debugPrint(
         '💰 [WalletService.importByAddress] Address-only import success');
@@ -310,9 +336,30 @@ class WalletService {
     await prefs.remove(_importModeKey);
     await prefs.remove(_cryptoModeKey);
     // Wipe secrets from secure storage
-    await _secureStorage.delete(key: _seedKey);
-    await _secureStorage.delete(key: _publicKeyKey);
-    await _secureStorage.delete(key: _secretKeyKey);
+    // FIX F4: Wrap each delete in try-catch — macOS Keychain can throw
+    // PlatformException -25244 (errSecInvalidOwner) when app bundle ID changes
+    // between debug runs. We must not let this silently abort the logout flow.
+    for (final key in [_seedKey, _publicKeyKey, _secretKeyKey]) {
+      try {
+        await _secureStorage.delete(key: key);
+      } catch (e) {
+        debugPrint(
+            '⚠️ [WalletService.deleteWallet] SecureStorage.delete($key) failed: $e');
+        // On macOS, try deleteAll as nuclear fallback
+        try {
+          await _secureStorage.deleteAll();
+          debugPrint(
+              '⚠️ [WalletService.deleteWallet] deleteAll() succeeded as fallback');
+          break; // All keys wiped — no need to continue the loop
+        } catch (e2) {
+          debugPrint(
+              '⚠️ [WalletService.deleteWallet] deleteAll() also failed: $e2');
+          // Continue — prefs are cleared, wallet state is reset even if
+          // Keychain items are orphaned. They won't be readable without
+          // the matching bundle ID anyway.
+        }
+      }
+    }
     debugPrint('💰 [WalletService.deleteWallet] Wallet deleted');
   }
 

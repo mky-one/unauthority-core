@@ -91,6 +91,9 @@ class Transaction {
   static int _parseAmount(dynamic value) {
     if (value == null) return 0;
     if (value is int) {
+      // Guard: If the value exceeds total LOS supply (21,936,236), it's already
+      // in CIL (e.g. from amount_cil field parsed as dynamic). Don't multiply again.
+      if (value > BlockchainConstants.totalSupply) return value;
       // /account endpoint returns amount as LOS integer (block.amount / CIL_PER_LOS)
       // Convert to CIL for consistent internal representation
       return value * BlockchainConstants.cilPerLos;
@@ -107,13 +110,24 @@ class Transaction {
   }
 
   factory Transaction.fromJson(Map<String, dynamic> json) {
+    // Determine amount in CIL:
+    // - /transaction/{hash} and /block/{hash} return 'amount_cil' (raw CIL integer)
+    // - /history and /account return 'amount' (formatted LOS string like "10.00000000000")
+    final int parsedAmount;
+    if (json.containsKey('amount_cil') && json['amount_cil'] != null) {
+      // Raw CIL integer — use directly (no conversion needed)
+      parsedAmount = Account._parseIntField(json['amount_cil']);
+    } else {
+      // Formatted LOS string or legacy integer — convert via _parseAmount
+      parsedAmount = _parseAmount(json['amount']);
+    }
+
     return Transaction(
       // FIX C11-06: Backend returns "hash" not "txid" — map both
       txid: json['txid'] ?? json['hash'] ?? '',
       from: json['from'] ?? json['account'] ?? '',
       to: json['to'] ?? json['link'] ?? '',
-      // FIX C11-05: Robust amount parsing for int/String/double
-      amount: _parseAmount(json['amount']),
+      amount: parsedAmount,
       timestamp: json['timestamp'] ?? 0,
       type: (json['type'] ?? 'transfer').toString().toLowerCase(),
       memo: json['memo'],

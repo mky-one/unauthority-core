@@ -149,8 +149,27 @@ pub fn sign_message(message: &[u8], secret_key_bytes: &[u8]) -> Result<Vec<u8>, 
     Ok(signature.as_bytes().to_vec())
 }
 
-/// Verify signature
+/// Verify signature — supports both Dilithium5 (post-quantum) and Ed25519 (testnet fallback).
+///
+/// Detection is by key/signature length:
+/// - Dilithium5: public_key = 2592 bytes, signature = 4627 bytes
+/// - Ed25519:    public_key = 32 bytes,   signature = 64 bytes
+///
+/// MAINNET NOTE: On mainnet, the Flutter native library MUST be available,
+/// so all signatures will be Dilithium5. Ed25519 is testnet-only fallback.
 pub fn verify_signature(message: &[u8], signature_bytes: &[u8], public_key_bytes: &[u8]) -> bool {
+    // Route by key length — unambiguous detection
+    if public_key_bytes.len() == 32 && signature_bytes.len() == 64 {
+        // Ed25519 verification (TESTNET fallback for Flutter desktop)
+        return verify_ed25519(message, signature_bytes, public_key_bytes);
+    }
+
+    // Default: Dilithium5 post-quantum verification
+    verify_dilithium5(message, signature_bytes, public_key_bytes)
+}
+
+/// Dilithium5 signature verification (primary, post-quantum)
+fn verify_dilithium5(message: &[u8], signature_bytes: &[u8], public_key_bytes: &[u8]) -> bool {
     let pk = match DilithiumPublicKey::from_bytes(public_key_bytes) {
         Ok(k) => k,
         Err(_) => return false,
@@ -164,6 +183,27 @@ pub fn verify_signature(message: &[u8], signature_bytes: &[u8], public_key_bytes
     };
 
     verify_detached_signature(&sig, message, &pk).is_ok()
+}
+
+/// Ed25519 signature verification (TESTNET fallback for Flutter desktop)
+/// Uses ed25519-dalek which follows RFC 8032 — compatible with Dart `cryptography` package.
+fn verify_ed25519(message: &[u8], signature_bytes: &[u8], public_key_bytes: &[u8]) -> bool {
+    use ed25519_dalek::{Signature, VerifyingKey, Verifier};
+
+    let pk_array: [u8; 32] = match public_key_bytes.try_into() {
+        Ok(a) => a,
+        Err(_) => return false,
+    };
+    let vk = match VerifyingKey::from_bytes(&pk_array) {
+        Ok(k) => k,
+        Err(_) => return false,
+    };
+    let sig = match Signature::from_slice(signature_bytes) {
+        Ok(s) => s,
+        Err(_) => return false,
+    };
+
+    vk.verify(message, &sig).is_ok()
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

@@ -427,6 +427,12 @@ impl SlashingManager {
         self.current_block_height = height;
     }
 
+    /// Fully remove a validator from the SlashingManager (on unregister).
+    /// Unlike set_unstaking which preserves the record, this removes all traces.
+    pub fn remove_validator(&mut self, validator_address: &str) -> bool {
+        self.validators.remove(validator_address).is_some()
+    }
+
     /// Get all registered validator addresses (genesis + dynamically registered)
     pub fn get_all_validator_addresses(&self) -> Vec<String> {
         self.validators.keys().cloned().collect()

@@ -84,13 +84,12 @@ class PeerDiscoveryService {
 
       // Cap at max peers (keep most-recently-seen)
       final sorted = merged.values.toList()
-        ..sort((a, b) =>
-            (b['last_seen'] as int? ?? 0).compareTo(a['last_seen'] as int? ?? 0));
+        ..sort((a, b) => (b['last_seen'] as int? ?? 0)
+            .compareTo(a['last_seen'] as int? ?? 0));
       final capped = sorted.take(_maxSavedPeers).toList();
 
       await prefs.setString(_storageKey, json.encode(capped));
-      debugPrint(
-          '💾 PeerDiscovery: saved ${capped.length} peer(s) to storage');
+      debugPrint('💾 PeerDiscovery: saved ${capped.length} peer(s) to storage');
     } catch (e) {
       debugPrint('⚠️ PeerDiscovery: failed to save peers: $e');
     }
@@ -104,7 +103,8 @@ class PeerDiscoveryService {
       if (raw == null || raw.isEmpty) return 0;
       final List<dynamic> decoded = json.decode(raw);
       return decoded.length;
-    } catch (_) {
+    } catch (e) {
+      debugPrint('⚠️ PeerDiscovery: getSavedPeerCount failed: $e');
       return 0;
     }
   }

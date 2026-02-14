@@ -160,6 +160,24 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bcc35a38544a891a5f7c865aca548a982ccb3b8650a5b06d0fd33a10283c56fc"
 
 [[package]]
+name = "los-crypto-ffi"
+version = "0.1.0"
+dependencies = [
+ "blake2",
+ "bs58",
+ "digest",
+ "hex",
+ "pqcrypto-dilithium",
+ "pqcrypto-internals",
+ "pqcrypto-traits",
+ "rand",
+ "rand_chacha",
+ "sha2",
+ "sha3",
+ "zeroize",
+]
+
+[[package]]
 name = "ppv-lite86"
 version = "0.2.21"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -317,24 +335,6 @@ name = "typenum"
 version = "1.19.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "562d481066bde0658276a35467c4af00bdc6ee726305698a55b86e61d7ad82bb"
-
-[[package]]
-name = "uat-crypto-ffi"
-version = "0.1.0"
-dependencies = [
- "blake2",
- "bs58",
- "digest",
- "hex",
- "pqcrypto-dilithium",
- "pqcrypto-internals",
- "pqcrypto-traits",
- "rand",
- "rand_chacha",
- "sha2",
- "sha3",
- "zeroize",
-]
 
 [[package]]
 name = "unicode-ident"

@@ -27,6 +27,7 @@ class _NetworkInfoScreenState extends State<NetworkInfoScreen> {
   }
 
   Future<void> _loadAll() async {
+    debugPrint('🌐 [NetworkInfo] Loading all network data...');
     setState(() {
       _isLoading = true;
       _error = null;
@@ -35,13 +36,26 @@ class _NetworkInfoScreenState extends State<NetworkInfoScreen> {
     try {
       final api = context.read<ApiService>();
       final results = await Future.wait([
-        api.getSupply().catchError((_) => <String, dynamic>{}),
-        api.getConsensus().catchError((_) => <String, dynamic>{}),
-        api.getRewardInfo().catchError((_) => <String, dynamic>{}),
-        api.getNodeInfo().catchError((_) => <String, dynamic>{}),
+        api.getSupply().catchError((e) {
+          debugPrint('⚠️ [NetworkInfo] getSupply failed: $e');
+          return <String, dynamic>{};
+        }),
+        api.getConsensus().catchError((e) {
+          debugPrint('⚠️ [NetworkInfo] getConsensus failed: $e');
+          return <String, dynamic>{};
+        }),
+        api.getRewardInfo().catchError((e) {
+          debugPrint('⚠️ [NetworkInfo] getRewardInfo failed: $e');
+          return <String, dynamic>{};
+        }),
+        api.getNodeInfo().catchError((e) {
+          debugPrint('⚠️ [NetworkInfo] getNodeInfo failed: $e');
+          return <String, dynamic>{};
+        }),
       ]);
 
       if (!mounted) return;
+      debugPrint('🌐 [NetworkInfo] All data loaded successfully');
       setState(() {
         _supply = results[0];
         _consensus = results[1];
@@ -50,6 +64,7 @@ class _NetworkInfoScreenState extends State<NetworkInfoScreen> {
         _isLoading = false;
       });
     } catch (e) {
+      debugPrint('❌ [NetworkInfo] _loadAll error: $e');
       if (!mounted) return;
       setState(() {
         _error = e.toString();
@@ -138,14 +153,30 @@ class _NetworkInfoScreenState extends State<NetworkInfoScreen> {
     );
   }
 
+  /// Safely convert a CIL value from JSON to a display LOS string.
+  /// JSON numbers > 2^53 may lose precision as double; we prefer int parsing.
+  /// Falls back to the raw _los string field if CIL is unavailable.
+  String _cilToDisplay(dynamic cilValue, [String? losStringFallback]) {
+    if (cilValue != null) {
+      int? parsed;
+      if (cilValue is int) {
+        parsed = cilValue;
+      } else {
+        parsed = int.tryParse(cilValue.toString());
+      }
+      if (parsed != null) {
+        return BlockchainConstants.cilToLosString(parsed);
+      }
+    }
+    // Fallback: use the _los string from backend (may have f64 drift)
+    return losStringFallback ?? 'N/A';
+  }
+
   Widget _buildSupplyCard() {
     if (_supply == null || _supply!.isEmpty) return const SizedBox.shrink();
 
-    final remainingCil = _supply!['remaining_supply_cil'];
-    final remainingLos = remainingCil != null
-        ? BlockchainConstants.formatLos(BlockchainConstants.cilToLos(
-            remainingCil is int ? remainingCil : 0))
-        : _supply!['remaining_supply']?.toString() ?? 'N/A';
+    final remainingLos = _cilToDisplay(_supply!['remaining_supply_cil'],
+        _supply!['remaining_supply']?.toString());
 
     return Card(
       child: Padding(
@@ -245,10 +276,11 @@ class _NetworkInfoScreenState extends State<NetworkInfoScreen> {
             _infoRow(
                 'Current Epoch', epoch['current_epoch']?.toString() ?? '0'),
             _infoRow('Epoch Reward Rate',
-                '${epoch['epoch_reward_rate_los'] ?? 'N/A'} LOS/epoch'),
-            _infoRow('Pool Remaining', '${pool['remaining_los'] ?? 'N/A'} LOS'),
+                '${_cilToDisplay(epoch['epoch_reward_rate_cil'], epoch['epoch_reward_rate_los']?.toString())} LOS/epoch'),
+            _infoRow('Pool Remaining',
+                '${_cilToDisplay(pool['remaining_cil'], pool['remaining_los']?.toString())} LOS'),
             _infoRow('Total Distributed',
-                '${pool['total_distributed_los'] ?? '0'} LOS'),
+                '${_cilToDisplay(pool['total_distributed_cil'], pool['total_distributed_los']?.toString())} LOS'),
             _infoRow('Eligible Validators',
                 '${validators['eligible'] ?? 0}/${validators['total'] ?? 0}'),
           ],

@@ -268,7 +268,17 @@ impl BlockBurnState {
         self.remaining_capacity == 0
     }
 
-    /// Get fill percentage (0-100)
+    /// Get fill percentage in basis points (0-10000 = 0%-100%)
+    /// MAINNET SAFETY: Integer-only. No f64 in production code.
+    pub fn get_capacity_percentage_bps(&self) -> u32 {
+        let used = BURN_LIMIT_PER_BLOCK_CIL - self.remaining_capacity;
+        // (used * 10000) / total gives basis points (0.01% precision)
+        ((used as u128 * 10_000) / BURN_LIMIT_PER_BLOCK_CIL as u128) as u32
+    }
+
+    /// Get fill percentage (0-100) — DEPRECATED: use get_capacity_percentage_bps() instead
+    /// Kept for backward compatibility during migration. Will be removed before mainnet.
+    #[deprecated(note = "Uses f64. Migrate to get_capacity_percentage_bps() for mainnet.")]
     pub fn get_capacity_percentage(&self) -> f64 {
         let used = (BURN_LIMIT_PER_BLOCK_CIL - self.remaining_capacity) as f64;
         let total = BURN_LIMIT_PER_BLOCK_CIL as f64;

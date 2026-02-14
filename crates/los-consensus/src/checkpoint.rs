@@ -99,9 +99,48 @@ pub struct CheckpointManager {
 }
 
 impl CheckpointManager {
-    /// Create new checkpoint manager
+    /// Create new checkpoint manager.
+    ///
+    /// Retries up to 3 times with exponential backoff if the database lock
+    /// is held by a stale/zombie process (common after SIGKILL on macOS).
     pub fn new<P: AsRef<Path>>(db_path: P) -> Result<Self, Box<dyn std::error::Error>> {
-        let db = sled::open(db_path)?;
+        let path_ref = db_path.as_ref();
+        let retry_delays_ms: [u64; 3] = [500, 1000, 2000];
+
+        // First attempt — fast path
+        match Self::try_open(path_ref) {
+            Ok(mgr) => return Ok(mgr),
+            Err(e) if Self::is_lock_error(&*e) => {
+                eprintln!(
+                    "⚠️  Checkpoint DB lock held at {} — retrying ({} attempts remain)",
+                    path_ref.display(),
+                    retry_delays_ms.len()
+                );
+            }
+            Err(e) => return Err(e),
+        }
+
+        // Retry with backoff — only for lock errors
+        for (i, delay_ms) in retry_delays_ms.iter().enumerate() {
+            std::thread::sleep(std::time::Duration::from_millis(*delay_ms));
+            match Self::try_open(path_ref) {
+                Ok(mgr) => {
+                    eprintln!("✅ Checkpoint DB lock acquired on retry {}", i + 1);
+                    return Ok(mgr);
+                }
+                Err(e) if Self::is_lock_error(&*e) && i + 1 < retry_delays_ms.len() => {
+                    continue;
+                }
+                Err(e) => return Err(e),
+            }
+        }
+
+        Err("Checkpoint DB lock acquisition timed out".into())
+    }
+
+    /// Attempt to open the checkpoint sled database.
+    fn try_open(path: &Path) -> Result<Self, Box<dyn std::error::Error>> {
+        let db = sled::open(path)?;
 
         // Load latest checkpoint from DB
         let latest_checkpoint_height = db
@@ -116,6 +155,16 @@ impl CheckpointManager {
             db,
             latest_checkpoint_height,
         })
+    }
+
+    /// Check if an error is a lock/resource-busy error.
+    fn is_lock_error(e: &dyn std::error::Error) -> bool {
+        let msg = e.to_string();
+        msg.contains("Resource temporarily unavailable")
+            || msg.contains("WouldBlock")
+            || msg.contains("Would block")
+            || msg.contains("lock")
+            || msg.contains("EAGAIN")
     }
 
     /// Store checkpoint in database (immutable)

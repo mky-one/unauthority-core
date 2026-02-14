@@ -182,8 +182,9 @@ class BlockConstructionService {
     // like 0.3, 0.6, 0.7 due to IEEE 754. Convert via string → integer math.
     final amountCil = BigInt.from(
         BlockchainConstants.losStringToCil(amountLosDouble.toString()));
-    final amountLos =
-        amountLosDouble.floor(); // Integer LOS for API backward compat
+    // Integer LOS for API backward compat — only included if > 0.
+    // Sub-LOS amounts (e.g. 0.5 LOS) rely solely on amount_cil.
+    final amountLos = amountLosDouble.floor();
 
     // 4. Current timestamp
     final timestamp = DateTime.now().millisecondsSinceEpoch ~/ 1000;
@@ -237,7 +238,7 @@ class BlockConstructionService {
       work: work,
       timestamp: timestamp,
       fee: fee,
-      amountCil: amountCil.toString(),
+      amountCil: amountCil.toInt(),
     );
     debugPrint(
         '📦 [BlockConstruction.sendTransaction] SUCCESS txid=${txResult['tx_hash'] ?? txResult['txid']}');
@@ -361,7 +362,17 @@ class BlockConstructionService {
       'diffBits': _powDifficultyBits,
     };
 
-    return await Isolate.run(() => _minePoWSync(params));
+    // FIX F1: Wrap Isolate.run in try-catch to handle "Computation ended without result"
+    // which can occur when the isolate is killed (e.g., during hot restart).
+    try {
+      final result = await Isolate.run(() => _minePoWSync(params));
+      return result;
+    } catch (e) {
+      debugPrint('⚠️ [PoW] Isolate.run failed: $e');
+      debugPrint('⚠️ [PoW] Falling back to main-thread PoW (will block UI)...');
+      // Last-resort fallback: run in main thread rather than lose the transaction
+      return _minePoWSync(params);
+    }
   }
 
   /// Static synchronous PoW mining — runs inside an isolate.

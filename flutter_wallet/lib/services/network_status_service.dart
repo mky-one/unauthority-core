@@ -75,9 +75,9 @@ class NetworkStatusService extends ChangeNotifier {
     // Check immediately
     _checkNetworkStatus();
 
-    // Then check every 15 seconds (reduced frequency to avoid polling noise)
+    // FIX I-04: 60s is sufficient for wallet status display over Tor.
     _statusCheckTimer = Timer.periodic(
-      const Duration(seconds: 15),
+      const Duration(seconds: 60),
       (_) => _checkNetworkStatus(),
     );
   }

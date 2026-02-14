@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../services/wallet_service.dart';
 import '../services/api_service.dart';
@@ -98,31 +99,79 @@ class _SendScreenState extends State<SendScreen> {
             '💸 [Send] No signing keys — node-signed (functional testnet)...');
         // FIX: Use amountCil for sub-LOS precision (0.5 LOS = 50_000_000_000 CIL).
         // floor() alone truncates sub-LOS amounts to 0 which the backend rejects.
-        final amountCilStr =
-            BlockchainConstants.losStringToCil(_amountController.text.trim())
-                .toString();
+        final amountCilInt =
+            BlockchainConstants.losStringToCil(_amountController.text.trim());
         result = await apiService.sendTransaction(
           from: wallet['address']!,
           to: toAddress,
           amount: amountLosDouble.floor(),
-          amountCil: amountCilStr,
+          amountCil: amountCilInt,
         );
       }
 
       if (!mounted) return;
-      debugPrint(
-          '💸 [Send] SUCCESS: ${result['tx_hash'] ?? result['txid'] ?? 'N/A'}');
+      final txHash = result['tx_hash'] ?? result['txid'] ?? 'N/A';
+      debugPrint('💸 [Send] SUCCESS: $txHash');
 
       Navigator.pop(context);
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-              'Transaction sent! TXID: ${result['tx_hash'] ?? result['txid'] ?? 'N/A'}'),
-          backgroundColor: Colors.green,
-          duration: const Duration(seconds: 5),
-        ),
-      );
+      // Show success dialog with copyable TX hash
+      if (context.mounted) {
+        showDialog(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            title: const Row(
+              children: [
+                Icon(Icons.check_circle, color: Colors.green, size: 28),
+                SizedBox(width: 8),
+                Text('Transaction Sent!'),
+              ],
+            ),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text('TX Hash:',
+                    style: TextStyle(fontSize: 12, color: Colors.grey)),
+                const SizedBox(height: 4),
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.grey.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: SelectableText(
+                    txHash,
+                    style: const TextStyle(
+                      fontSize: 11,
+                      fontFamily: 'monospace',
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            actions: [
+              TextButton.icon(
+                icon: const Icon(Icons.copy, size: 18),
+                label: const Text('Copy TX Hash'),
+                onPressed: () {
+                  Clipboard.setData(ClipboardData(text: txHash));
+                  ScaffoldMessenger.of(ctx).showSnackBar(
+                    const SnackBar(
+                      content: Text('TX Hash copied to clipboard'),
+                      duration: Duration(seconds: 2),
+                    ),
+                  );
+                },
+              ),
+              TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('OK'),
+              ),
+            ],
+          ),
+        );
+      }
     } catch (e) {
       if (!mounted) return;
       debugPrint('💸 [Send] ERROR: $e');

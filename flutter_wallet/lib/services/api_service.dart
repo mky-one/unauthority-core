@@ -65,14 +65,20 @@ class ApiService {
   /// Tor-specific probe timeout (Tor circuits need more time)
   static const Duration _torProbeTimeout = Duration(seconds: 30);
 
+  /// Max latency (ms) before current host is considered "slow" and triggers re-probe.
+  /// If a health check takes longer than this, the host is degraded.
+  static const int _slowThresholdMs = 15000;
+
   /// Max retry attempts across bootstrap nodes before giving up
   static const int _maxRetries = 4;
 
   /// Interval between periodic peer re-discovery runs
   static const Duration _rediscoveryInterval = Duration(minutes: 5);
 
-  /// Interval between background latency probes
-  static const Duration _latencyProbeInterval = Duration(minutes: 3);
+  /// Interval between current-host health checks.
+  /// Only pings the CURRENT host — does NOT probe all nodes.
+  /// If current host is down/error/slow → triggers full probe to find replacement.
+  static const Duration _healthCheckInterval = Duration(minutes: 2);
 
   late String baseUrl;
   // Initialize with safe default to prevent LateInitializationError.
@@ -108,7 +114,7 @@ class ApiService {
 
   /// Periodic timers for background maintenance
   Timer? _rediscoveryTimer;
-  Timer? _latencyProbeTimer;
+  Timer? _healthCheckTimer;
 
   /// Callback for external health monitor integration (e.g. NetworkStatusService).
   /// When set, this is called whenever a proactive failover occurs.
@@ -191,50 +197,113 @@ class ApiService {
   }
 
   // ══════════════════════════════════════════════════════════════════
-  //  LATENCY-BASED PEER SELECTION
+  //  HOST SELECTION & HEALTH
   // ══════════════════════════════════════════════════════════════════
 
+  /// Check ONLY the current host's health. Called periodically.
+  ///
+  /// Strategy: "Stick with what works."
+  /// - If current host responds OK and fast enough → do nothing.
+  /// - If current host is down/error/slow → trigger full probe to find replacement.
+  ///
+  /// This avoids probing ALL nodes every few minutes (which wastes 30s+ per
+  /// dead Tor node and causes unnecessary host switching).
+  Future<void> _checkCurrentHostHealth() async {
+    if (_disposed || baseUrl.isEmpty) return;
+
+    try {
+      final timeout =
+          baseUrl.contains('.onion') ? _torProbeTimeout : _probeTimeout;
+      final sw = Stopwatch()..start();
+      final response =
+          await _client.get(Uri.parse('$baseUrl/health')).timeout(timeout);
+      sw.stop();
+      final rtt = sw.elapsedMilliseconds;
+
+      if (response.statusCode >= 200 && response.statusCode < 300) {
+        _getHealth(baseUrl).recordSuccess(rtt);
+
+        // Check if host is too slow (degraded)
+        if (rtt > _slowThresholdMs) {
+          debugPrint(
+              '🔌 [HealthCheck] Current host $baseUrl is SLOW (${rtt}ms > ${_slowThresholdMs}ms) '
+              '— searching for faster host...');
+          _triggerFullProbe();
+        } else {
+          debugPrint('🔌 [HealthCheck] Current host $baseUrl OK (${rtt}ms) ✓');
+        }
+      } else {
+        // HTTP error (4xx/5xx) → host unhealthy
+        _getHealth(baseUrl).recordFailure();
+        debugPrint(
+            '🔌 [HealthCheck] Current host $baseUrl returned HTTP ${response.statusCode} '
+            '— searching for new host...');
+        _triggerFullProbe();
+      }
+    } catch (e) {
+      // Timeout or connection error → host is DOWN
+      _getHealth(baseUrl).recordFailure();
+      debugPrint('🔌 [HealthCheck] Current host $baseUrl UNREACHABLE ($e) '
+          '— searching for new host...');
+      _triggerFullProbe();
+    }
+  }
+
+  /// Trigger a full probe of all nodes to find a replacement host.
+  /// Called only when current host is down/error/slow.
+  void _triggerFullProbe() {
+    if (_disposed) return;
+    Future.microtask(() => probeAndSelectBestNode());
+  }
+
   /// Probe all known peers for latency, then select the fastest responsive one.
-  /// Called on startup and periodically in the background.
+  /// Called on startup (initial discovery) and when current host is degraded.
+  /// NOT called periodically — only triggered when needed.
   Future<void> probeAndSelectBestNode() async {
     if (_disposed || _bootstrapUrls.isEmpty) return;
     debugPrint(
-        '📡 [Probe] Starting latency probe across ${_bootstrapUrls.length} node(s)...');
+        '📡 [Probe] Searching for best host across ${_bootstrapUrls.length} node(s)...');
 
     final results = <String, int>{};
 
-    // Probe all nodes in parallel
-    final futures = _bootstrapUrls.map((url) async {
-      // Skip nodes in cooldown
+    // FIX I-01: Limit concurrent probes to avoid saturating SOCKS5 proxy.
+    const maxConcurrent = 2;
+    final nodesToProbe = _bootstrapUrls.where((url) {
       final health = _nodeHealthMap[url];
       if (health != null && health.isInCooldown) {
         debugPrint(
             '📡 [Probe] $url — skipped (cooldown, ${health.consecutiveFailures} failures)');
-        return;
+        return false;
       }
-      try {
-        final timeout =
-            url.contains('.onion') ? _torProbeTimeout : _probeTimeout;
-        final sw = Stopwatch()..start();
-        final response =
-            await _client.get(Uri.parse('$url/health')).timeout(timeout);
-        sw.stop();
+      return true;
+    }).toList();
 
-        if (response.statusCode == 200) {
-          results[url] = sw.elapsedMilliseconds;
-          _getHealth(url).recordSuccess(sw.elapsedMilliseconds);
-          debugPrint('📡 [Probe] $url — ${sw.elapsedMilliseconds}ms ✓');
-        } else {
+    for (var i = 0; i < nodesToProbe.length; i += maxConcurrent) {
+      final batch = nodesToProbe.skip(i).take(maxConcurrent);
+      final futures = batch.map((url) async {
+        try {
+          final timeout =
+              url.contains('.onion') ? _torProbeTimeout : _probeTimeout;
+          final sw = Stopwatch()..start();
+          final response =
+              await _client.get(Uri.parse('$url/health')).timeout(timeout);
+          sw.stop();
+
+          if (response.statusCode >= 200 && response.statusCode < 300) {
+            results[url] = sw.elapsedMilliseconds;
+            _getHealth(url).recordSuccess(sw.elapsedMilliseconds);
+            debugPrint('📡 [Probe] $url — ${sw.elapsedMilliseconds}ms ✓');
+          } else {
+            _getHealth(url).recordFailure();
+            debugPrint('📡 [Probe] $url — HTTP ${response.statusCode} ✗');
+          }
+        } catch (e) {
           _getHealth(url).recordFailure();
-          debugPrint('📡 [Probe] $url — HTTP ${response.statusCode} ✗');
+          debugPrint('📡 [Probe] $url — unreachable ($e) ✗');
         }
-      } catch (e) {
-        _getHealth(url).recordFailure();
-        debugPrint('📡 [Probe] $url — unreachable ($e) ✗');
-      }
-    });
-
-    await Future.wait(futures);
+      });
+      await Future.wait(futures);
+    }
 
     if (results.isEmpty) {
       debugPrint(
@@ -255,7 +324,7 @@ class ApiService {
       _currentNodeIndex =
           _bootstrapUrls.indexOf(bestUrl).clamp(0, _bootstrapUrls.length - 1);
       debugPrint(
-          '🏆 [Probe] Best node: $bestUrl (${bestLatency}ms) — switched from $oldUrl');
+          '🏆 [Probe] Switched to $bestUrl (${bestLatency}ms) from $oldUrl');
       onNodeSwitched?.call(baseUrl);
     } else {
       debugPrint(
@@ -404,49 +473,54 @@ class ApiService {
 
   /// Start recurring background tasks:
   /// - Re-discover peers every 5 minutes
-  /// - Re-probe latency every 3 minutes
+  /// - Health-check current host every 2 minutes (NOT full probe)
   void _startBackgroundTimers() {
     _rediscoveryTimer?.cancel();
-    _latencyProbeTimer?.cancel();
+    _healthCheckTimer?.cancel();
 
     _rediscoveryTimer = Timer.periodic(_rediscoveryInterval, (_) {
       if (!_disposed) discoverAndSavePeers();
     });
 
-    _latencyProbeTimer = Timer.periodic(_latencyProbeInterval, (_) {
-      if (!_disposed) probeAndSelectBestNode();
+    _healthCheckTimer = Timer.periodic(_healthCheckInterval, (_) {
+      if (!_disposed) _checkCurrentHostHealth();
     });
 
     debugPrint('⏰ Background timers started: '
         'discovery every ${_rediscoveryInterval.inMinutes}m, '
-        'latency probe every ${_latencyProbeInterval.inMinutes}m');
+        'current-host health check every ${_healthCheckInterval.inMinutes}m');
   }
 
   /// Called by NetworkStatusService when health check detects degradation.
-  /// Proactively switches to a better node before the user's next request fails.
+  /// Triggers a full probe to find a better node.
   void onHealthDegraded() {
     if (_disposed) return;
-    debugPrint('🔌 Health degraded — proactively switching node...');
+    debugPrint('🔌 Health degraded — searching for new host...');
     _getHealth(baseUrl).recordFailure();
-    _switchToNextNode();
-    // Trigger a fresh latency probe in background
-    Future.microtask(() => probeAndSelectBestNode());
+    _triggerFullProbe();
   }
 
   /// Get appropriate timeout based on whether using Tor
   Duration get _timeout =>
       baseUrl.contains('.onion') ? _torTimeout : _defaultTimeout;
 
-  /// Initialize HTTP client — tries bundled Tor first, then existing Tor, then direct
+  /// Initialize HTTP client — ALWAYS attempts Tor first (even for localhost),
+  /// so we can reach .onion bootstrap peers during failover.
+  /// FIX B-02: Previously only created Tor client if initial baseUrl was .onion,
+  /// which meant starting on localhost = no Tor ever = .onion peers unreachable.
   Future<void> _initializeClient() async {
-    if (baseUrl.contains('.onion')) {
+    try {
       _client = await _createTorClient();
-      _hasTor = true;
-    } else {
-      // Local/direct connection — no SOCKS proxy needed
+      if (_hasTor) {
+        debugPrint('✅ Tor SOCKS5 client ready (can reach .onion peers)');
+      }
+    } catch (e) {
+      debugPrint('⚠️ Tor init failed ($e) — falling back to direct HTTP');
       _client = http.Client();
       _hasTor = false;
-      debugPrint('✅ Direct HTTP client (no Tor proxy needed for $baseUrl)');
+    }
+    if (!_hasTor && !baseUrl.contains('.onion')) {
+      debugPrint('✅ Direct HTTP client for $baseUrl (Tor unavailable)');
     }
     // After client is ready, load saved peers into bootstrap list
     await _loadSavedPeers();
@@ -454,19 +528,22 @@ class ApiService {
 
   /// Create Tor-enabled HTTP client.
   /// Uses the shared TorService.start() so _isRunning is properly synced.
+  ///
+  /// If Tor is unavailable or broken, returns a plain HTTP client
+  /// with _hasTor=false so failover can skip .onion URLs gracefully.
   Future<http.Client> _createTorClient() async {
-    final httpClient = HttpClient();
-
-    // Always go through start() — it detects existing Tor internally
+    // Always go through start() — it detects existing SOCKS5 proxy internally
     // AND sets _isRunning=true, which is critical for shared TorService state.
     final started = await _torService.start();
-    final socksPort = started
-        ? _torService.activeSocksPort
-        : TorService.torBrowserPort; // Last-resort fallback
     if (!started) {
-      debugPrint(
-          '⚠️ TorService.start() failed, trying Tor Browser on port $socksPort');
+      debugPrint('⚠️ Tor unavailable — no SOCKS5 proxy detected on any port. '
+          'Falling back to direct HTTP (cannot reach .onion addresses).');
+      _hasTor = false;
+      return http.Client();
     }
+
+    final socksPort = _torService.activeSocksPort;
+    final httpClient = HttpClient();
 
     SocksTCPClient.assignToHttpClient(
       httpClient,
@@ -478,6 +555,7 @@ class ApiService {
     httpClient.connectionTimeout = const Duration(seconds: 30);
     httpClient.idleTimeout = const Duration(seconds: 30);
 
+    _hasTor = true;
     debugPrint('✅ Tor SOCKS5 proxy configured (localhost:$socksPort)');
     return IOClient(httpClient);
   }
@@ -503,7 +581,7 @@ class ApiService {
     _nodeHealthMap.clear();
     _initialDiscoveryDone = false;
     _rediscoveryTimer?.cancel();
-    _latencyProbeTimer?.cancel();
+    _healthCheckTimer?.cancel();
     baseUrl =
         _bootstrapUrls.isNotEmpty ? _bootstrapUrls.first : _getBaseUrl(newEnv);
     _clientReady = _initializeClient();
@@ -519,7 +597,7 @@ class ApiService {
         (url) => _client.get(Uri.parse('$url/node-info')),
         '/node-info',
       );
-      if (response.statusCode == 200) {
+      if (response.statusCode >= 200 && response.statusCode < 300) {
         final data = json.decode(response.body);
         debugPrint(
             '🌐 [ApiService.getNodeInfo] SUCCESS block_height=${data['block_height'] ?? data['protocol']?['block_height'] ?? 'N/A'}');
@@ -543,7 +621,7 @@ class ApiService {
         (url) => _client.get(Uri.parse('$url/fee-estimate/$address')),
         '/fee-estimate/$address',
       );
-      if (response.statusCode == 200) {
+      if (response.statusCode >= 200 && response.statusCode < 300) {
         final data = json.decode(response.body);
         debugPrint(
             '🌐 [ApiService.getFeeEstimate] SUCCESS fee=${data['estimated_fee_cil']} CIL');
@@ -566,7 +644,7 @@ class ApiService {
         (url) => _client.get(Uri.parse('$url/health')),
         '/health',
       );
-      if (response.statusCode == 200) {
+      if (response.statusCode >= 200 && response.statusCode < 300) {
         final data = json.decode(response.body);
         debugPrint('🌐 [ApiService.getHealth] SUCCESS');
         return data;
@@ -586,13 +664,21 @@ class ApiService {
         (url) => _client.get(Uri.parse('$url/bal/$address')),
         '/bal/$address',
       );
-      if (response.statusCode == 200) {
+      if (response.statusCode >= 200 && response.statusCode < 300) {
         final data = json.decode(response.body);
         debugPrint(
             '🌐 [ApiService.getBalance] SUCCESS balance=${data['balance_cil'] ?? 0} CIL');
+        // Prefer balance_cil_str (string) over balance_cil (number) for
+        // JSON precision safety: numbers > 2^53 may lose precision in JSON parsing.
+        int balanceCil;
+        if (data['balance_cil_str'] != null) {
+          balanceCil = int.tryParse(data['balance_cil_str'].toString()) ?? 0;
+        } else {
+          balanceCil = data['balance_cil'] ?? 0;
+        }
         return Account(
           address: address,
-          balance: data['balance_cil'] ?? 0,
+          balance: balanceCil,
           cilBalance: 0,
           history: [],
           headBlock: data['head']?.toString(),
@@ -614,7 +700,7 @@ class ApiService {
         (url) => _client.get(Uri.parse('$url/account/$address')),
         '/account/$address',
       );
-      if (response.statusCode == 200) {
+      if (response.statusCode >= 200 && response.statusCode < 300) {
         final data = json.decode(response.body);
         // Backend /account/:address may not include 'address' field — inject it
         if (data is Map<String, dynamic> && !data.containsKey('address')) {
@@ -646,7 +732,8 @@ class ApiService {
       final data = json.decode(response.body);
 
       // Critical: Check BOTH status code AND response body status
-      if (response.statusCode != 200 || data['status'] == 'error') {
+      // Backend returns 200 on success, >= 400 on errors (400 for validation, 429 for rate limit)
+      if (response.statusCode >= 400 || data['status'] == 'error') {
         debugPrint('🚠 [API] faucet FAILED: ${data['msg']}');
         throw Exception(data['msg'] ?? 'Faucet request failed');
       }
@@ -672,8 +759,8 @@ class ApiService {
     int? work,
     int? timestamp,
     int? fee,
-    String?
-        amountCil, // Amount already in CIL (for sub-LOS precision), as string to avoid overflow
+    int?
+        amountCil, // Amount already in CIL (for sub-LOS precision). Backend expects u128 integer.
   }) async {
     debugPrint(
         '💸 [API] sendTransaction -> $baseUrl/send  from=$from to=$to amount=$amount sig=${signature != null}');
@@ -683,9 +770,11 @@ class ApiService {
         'target': to,
         'amount': amount,
       };
-      // If amount_cil is provided, backend uses it directly (skips ×CIL_PER_LOS)
+      // If amount_cil is provided, send as integer.
+      // Backend deserializes as u128 — Dart int (2^63-1 max) is sufficient
+      // since total supply CIL = 2.19e18 < 9.22e18 (i64 max).
       if (amountCil != null) {
-        body['amount_cil'] = int.parse(amountCil);
+        body['amount_cil'] = amountCil;
       }
       // Attach Dilithium5 signature + public key if available (L2+/mainnet)
       if (signature != null && publicKey != null) {
@@ -719,7 +808,8 @@ class ApiService {
       final data = json.decode(response.body);
 
       // Critical: Check BOTH status code AND response body status
-      if (response.statusCode != 200 || data['status'] == 'error') {
+      // Backend returns 200 on success, >= 400 on errors
+      if (response.statusCode >= 400 || data['status'] == 'error') {
         debugPrint('💸 [API] send FAILED: ${data['msg']}');
         throw Exception(data['msg'] ?? 'Transaction failed');
       }
@@ -732,11 +822,13 @@ class ApiService {
     }
   }
 
-  // Proof-of-Burn — matches backend BurnRequest { coin_type, txid, recipient_address }
+  // Proof-of-Burn — matches backend BurnRequest { coin_type, txid, recipient_address, signature, public_key }
   Future<Map<String, dynamic>> submitBurn({
     required String coinType, // "btc" or "eth"
     required String txid,
     String? recipientAddress,
+    String? signature,
+    String? publicKey,
   }) async {
     debugPrint(
         '🔥 [API] submitBurn -> $baseUrl/burn  coin=$coinType txid=$txid');
@@ -747,6 +839,13 @@ class ApiService {
       };
       if (recipientAddress != null) {
         body['recipient_address'] = recipientAddress;
+      }
+      // FIX F3: Include signature + public_key for authenticated burns
+      if (signature != null) {
+        body['signature'] = signature;
+      }
+      if (publicKey != null) {
+        body['public_key'] = publicKey;
       }
 
       final response = await _requestWithFailover(
@@ -761,7 +860,8 @@ class ApiService {
       final data = json.decode(response.body);
 
       // Critical: Check BOTH status code AND response body status
-      if (response.statusCode != 200 || data['status'] == 'error') {
+      // Backend returns 200 on success, >= 400 on errors
+      if (response.statusCode >= 400 || data['status'] == 'error') {
         debugPrint('🔥 [API] burn FAILED: ${data['msg']}');
         throw Exception(data['msg'] ?? 'Burn submission failed');
       }
@@ -782,7 +882,7 @@ class ApiService {
         (url) => _client.get(Uri.parse('$url/validators')),
         '/validators',
       );
-      if (response.statusCode == 200) {
+      if (response.statusCode >= 200 && response.statusCode < 300) {
         final decoded = json.decode(response.body);
         // Handle both {"validators": [...]} wrapper and bare [...]
         final List<dynamic> data = decoded is List
@@ -808,7 +908,7 @@ class ApiService {
         (url) => _client.get(Uri.parse('$url/blocks/recent')),
         '/blocks/recent',
       );
-      if (response.statusCode == 200) {
+      if (response.statusCode >= 200 && response.statusCode < 300) {
         final decoded = json.decode(response.body);
         final List<dynamic> blocks = decoded is List
             ? decoded
@@ -837,7 +937,7 @@ class ApiService {
         (url) => _client.get(Uri.parse('$url/blocks/recent')),
         '/blocks/recent',
       );
-      if (response.statusCode == 200) {
+      if (response.statusCode >= 200 && response.statusCode < 300) {
         final decoded = json.decode(response.body);
         // Handle both {"blocks": [...]} wrapper and bare [...]
         final List<dynamic> data = decoded is List
@@ -864,7 +964,7 @@ class ApiService {
         (url) => _client.get(Uri.parse('$url/peers')),
         '/peers',
       );
-      if (response.statusCode == 200) {
+      if (response.statusCode >= 200 && response.statusCode < 300) {
         final decoded = json.decode(response.body);
         List<String> peers;
         if (decoded is Map) {
@@ -902,7 +1002,7 @@ class ApiService {
         (url) => _client.get(Uri.parse('$url/history/$address')),
         '/history/$address',
       );
-      if (response.statusCode == 200) {
+      if (response.statusCode >= 200 && response.statusCode < 300) {
         // FIX C11-04: Backend returns {"transactions": [...]} wrapper,
         // not a bare array. Handle both formats for resilience.
         final decoded = json.decode(response.body);
@@ -932,7 +1032,7 @@ class ApiService {
         (url) => _client.get(Uri.parse('$url/supply')),
         '/supply',
       );
-      if (response.statusCode == 200) {
+      if (response.statusCode >= 200 && response.statusCode < 300) {
         final data = json.decode(response.body);
         debugPrint('🌐 [ApiService.getSupply] SUCCESS');
         return data;
@@ -953,7 +1053,7 @@ class ApiService {
         (url) => _client.get(Uri.parse('$url/transaction/$hash')),
         '/transaction/$hash',
       );
-      if (response.statusCode == 200) {
+      if (response.statusCode >= 200 && response.statusCode < 300) {
         final data = json.decode(response.body);
         debugPrint('🌐 [ApiService.getTransaction] SUCCESS');
         return data;
@@ -974,7 +1074,7 @@ class ApiService {
         (url) => _client.get(Uri.parse('$url/block/$hash')),
         '/block/$hash',
       );
-      if (response.statusCode == 200) {
+      if (response.statusCode >= 200 && response.statusCode < 300) {
         final data = json.decode(response.body);
         debugPrint('🌐 [ApiService.getBlock] SUCCESS');
         return data;
@@ -995,7 +1095,7 @@ class ApiService {
         (url) => _client.get(Uri.parse('$url/search/$query')),
         '/search/$query',
       );
-      if (response.statusCode == 200) {
+      if (response.statusCode >= 200 && response.statusCode < 300) {
         final data = json.decode(response.body);
         debugPrint(
             '🌐 [ApiService.search] SUCCESS count=${data['count'] ?? 0}');
@@ -1016,7 +1116,7 @@ class ApiService {
         (url) => _client.get(Uri.parse('$url/consensus')),
         '/consensus',
       );
-      if (response.statusCode == 200) {
+      if (response.statusCode >= 200 && response.statusCode < 300) {
         final data = json.decode(response.body);
         debugPrint('🌐 [ApiService.getConsensus] SUCCESS');
         return data;
@@ -1036,7 +1136,7 @@ class ApiService {
         (url) => _client.get(Uri.parse('$url/reward-info')),
         '/reward-info',
       );
-      if (response.statusCode == 200) {
+      if (response.statusCode >= 200 && response.statusCode < 300) {
         final data = json.decode(response.body);
         debugPrint('🌐 [ApiService.getRewardInfo] SUCCESS');
         return data;
@@ -1053,7 +1153,7 @@ class ApiService {
     debugPrint('🌐 [ApiService.dispose] Disposing...');
     _disposed = true;
     _rediscoveryTimer?.cancel();
-    _latencyProbeTimer?.cancel();
+    _healthCheckTimer?.cancel();
     _client.close();
     await _torService.stop();
     debugPrint('🌐 [ApiService.dispose] Disposed');
@@ -1069,7 +1169,7 @@ class ApiService {
         (url) => _client.get(Uri.parse('$url/network/peers')),
         '/network/peers',
       );
-      if (response.statusCode == 200) {
+      if (response.statusCode >= 200 && response.statusCode < 300) {
         final data = json.decode(response.body);
         final endpoints = (data['endpoints'] as List<dynamic>?)
                 ?.map((e) => e as Map<String, dynamic>)

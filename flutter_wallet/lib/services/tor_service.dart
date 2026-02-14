@@ -558,7 +558,7 @@ UseBridges 0
   /// Detect existing Tor SOCKS proxies
   Future<Map<String, dynamic>> detectExistingTor() async {
     // Check LOS bundled Tor
-    if (await _isPortOpen('localhost', bundledSocksPort)) {
+    if (await _isSocks5Proxy('localhost', bundledSocksPort)) {
       return {
         'found': true,
         'type': 'LOS Bundled Tor',
@@ -567,7 +567,7 @@ UseBridges 0
     }
 
     // Check Tor Browser
-    if (await _isPortOpen('localhost', torBrowserPort)) {
+    if (await _isSocks5Proxy('localhost', torBrowserPort)) {
       return {
         'found': true,
         'type': 'Tor Browser',
@@ -576,7 +576,7 @@ UseBridges 0
     }
 
     // Check LOS testnet Tor
-    if (await _isPortOpen('localhost', testnetTorPort)) {
+    if (await _isSocks5Proxy('localhost', testnetTorPort)) {
       return {
         'found': true,
         'type': 'LOS Testnet Tor',
@@ -585,7 +585,7 @@ UseBridges 0
     }
 
     // Check system Tor
-    if (await _isPortOpen('localhost', systemTorPort)) {
+    if (await _isSocks5Proxy('localhost', systemTorPort)) {
       return {
         'found': true,
         'type': 'System Tor',
@@ -596,17 +596,42 @@ UseBridges 0
     return {'found': false};
   }
 
-  /// Check if a port is open (for detecting existing Tor)
-  Future<bool> _isPortOpen(String host, int port) async {
+  /// Verify a port is running a SOCKS5 proxy (not just TCP open).
+  ///
+  /// Sends SOCKS5 handshake: [0x05, 0x01, 0x00] (version 5, 1 auth method, no-auth)
+  /// Expects response: [0x05, 0x00] (version 5, no-auth accepted)
+  /// This prevents RangeError crashes from connecting to non-SOCKS5 services.
+  Future<bool> _isSocks5Proxy(String host, int port) async {
+    Socket? socket;
     try {
-      final socket = await Socket.connect(
+      socket = await Socket.connect(
         host,
         port,
-        timeout: const Duration(seconds: 2),
+        timeout: const Duration(seconds: 3),
       );
+
+      // Send SOCKS5 greeting: version=5, 1 auth method, method=0 (no auth)
+      socket.add([0x05, 0x01, 0x00]);
+      await socket.flush();
+
+      // Read response with timeout
+      final response = await socket.first.timeout(
+        const Duration(seconds: 3),
+        onTimeout: () => Uint8List(0),
+      );
+
       socket.destroy();
-      return true;
+
+      // Valid SOCKS5 response: [0x05, 0x00] (version 5, auth accepted)
+      if (response.length >= 2 && response[0] == 0x05) {
+        debugPrint('✅ SOCKS5 verified on $host:$port');
+        return true;
+      }
+
+      debugPrint('⚠️ Port $host:$port open but NOT SOCKS5 (got: $response)');
+      return false;
     } catch (e) {
+      socket?.destroy();
       return false;
     }
   }

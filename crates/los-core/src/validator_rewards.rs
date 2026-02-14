@@ -29,10 +29,16 @@ pub struct ValidatorRewardState {
     pub expected_heartbeats: u64,
     /// Cumulative rewards received (CIL units)
     pub cumulative_rewards_cil: u128,
-    /// Whether this is a genesis bootstrap validator (excluded from rewards)
+    /// Whether this is a genesis bootstrap validator
+    /// On mainnet: genesis validators are EXCLUDED from rewards (they are infrastructure).
+    /// On testnet: genesis validators participate normally (same rules as any validator).
     pub is_genesis: bool,
-    /// Current stake snapshot ( CIL) — updated each epoch from ledger
+    /// Current stake snapshot (CIL) — updated each epoch from ledger
     pub stake_cil: u128,
+    /// Last completed epoch's uptime percentage (0–100)
+    /// Used for API display so uptime doesn't show 0% at epoch start.
+    #[serde(default)]
+    pub last_epoch_uptime_pct: u64,
 }
 
 impl ValidatorRewardState {
@@ -44,6 +50,7 @@ impl ValidatorRewardState {
             cumulative_rewards_cil: 0,
             is_genesis,
             stake_cil,
+            last_epoch_uptime_pct: 0,
         }
     }
 
@@ -58,18 +65,31 @@ impl ValidatorRewardState {
         pct.min(100)
     }
 
+    /// Best-effort uptime for API display.
+    /// Returns the HIGHER of current epoch progress and last completed epoch uptime.
+    /// This prevents misleading 0% at epoch start when the validator had 100% last epoch.
+    pub fn display_uptime_pct(&self) -> u64 {
+        let current = self.uptime_pct();
+        current.max(self.last_epoch_uptime_pct)
+    }
+
     /// Returns true if this validator is eligible for rewards this epoch.
-    /// Requirements:
-    /// 1. NOT a genesis bootstrap validator (mainnet only — testnet allows genesis)
-    /// 2. Past probation period (at least 1 epoch since join)
+    /// Requirements (identical on testnet AND mainnet — no shortcuts):
+    /// 1. NOT a genesis bootstrap validator on mainnet (they are infrastructure, not profit)
+    ///    On testnet: genesis validators ARE eligible (same rules as everyone)
+    /// 2. Past probation period: must have completed at least 1 full epoch
     /// 3. Meets minimum uptime (95%)
     /// 4. Meets minimum stake (1000 LOS)
     pub fn is_eligible(&self, current_epoch: u64) -> bool {
-        // Mainnet: genesis bootstrap validators never earn rewards
-        // Testnet: genesis validators ARE eligible (otherwise no one can test rewards)
+        // Genesis bootstrap validators never earn rewards on mainnet.
+        // On testnet they participate like any other validator.
         if self.is_genesis && !crate::is_testnet_build() {
             return false;
         }
+        // Probation: must complete at least 1 full epoch before earning rewards.
+        // A validator joining at epoch N is eligible starting at epoch N + PROBATION_EPOCHS.
+        // This applies to ALL validators equally — genesis and non-genesis.
+        // Epoch 0 is the bootstrap epoch; no validator earns rewards in their join epoch.
         if current_epoch < self.join_epoch + REWARD_PROBATION_EPOCHS {
             return false;
         }
@@ -158,10 +178,32 @@ impl ValidatorRewardPool {
     }
 
     /// Record a heartbeat from a validator (proving liveness).
+    /// Can be called multiple times per tick from different sources;
+    /// each call increments the counter. Use `record_heartbeat_once()` with
+    /// a per-tick dedup set to ensure exactly 1 heartbeat per validator per tick.
     pub fn record_heartbeat(&mut self, address: &str) {
         if let Some(state) = self.validators.get_mut(address) {
             state.heartbeats_current_epoch += 1;
         }
+    }
+
+    /// Record exactly ONE heartbeat per validator per tick.
+    /// Uses the caller-provided `seen` set for deduplication.
+    /// Returns true if a heartbeat was recorded (first call for this address this tick).
+    pub fn record_heartbeat_once(
+        &mut self,
+        address: &str,
+        seen_this_tick: &mut std::collections::HashSet<String>,
+    ) -> bool {
+        if seen_this_tick.contains(address) {
+            return false; // Already counted this tick
+        }
+        if let Some(state) = self.validators.get_mut(address) {
+            state.heartbeats_current_epoch += 1;
+            seen_this_tick.insert(address.to_string());
+            return true;
+        }
+        false
     }
 
     /// Calculate the reward rate for the current epoch (with halving).
@@ -213,14 +255,37 @@ impl ValidatorRewardPool {
 
     /// Set expected heartbeats for all validators at the start of an epoch.
     /// `heartbeat_interval_secs` = time between heartbeats (e.g., 60s).
+    ///
+    /// **PRORATING FIX:** When called at epoch END (before distribution),
+    /// validators that already have heartbeats get `expected` prorated
+    /// to match their actual participation window, preventing unfair
+    /// penalization of mid-epoch joins or restarts.
+    ///
+    /// When called at epoch START (after advance_epoch reset counters),
+    /// all validators have heartbeats=0 so they get the full expected count.
     pub fn set_expected_heartbeats(&mut self, heartbeat_interval_secs: u64) {
-        let expected = if heartbeat_interval_secs > 0 {
+        let full_expected = if heartbeat_interval_secs > 0 {
             self.epoch_duration_secs / heartbeat_interval_secs
         } else {
             0
         };
         for state in self.validators.values_mut() {
-            state.expected_heartbeats = expected;
+            if state.heartbeats_current_epoch == 0 {
+                // Epoch start or no heartbeats yet: set full expected
+                state.expected_heartbeats = full_expected;
+            } else if state.expected_heartbeats == 0 && full_expected > 0 {
+                // Epoch end, validator joined mid-epoch (expected was never set):
+                // Prorate expected to match what they could have actually sent.
+                // Cap at their actual heartbeats to give benefit of the doubt
+                // (they sent as many as they could since joining).
+                // This prevents uptime_pct from being unfairly low.
+                let prorated = state.heartbeats_current_epoch.min(full_expected);
+                state.expected_heartbeats = prorated;
+            } else {
+                // Normal epoch-end call: expected was already set at epoch start.
+                // Just ensure it's the full epoch value.
+                state.expected_heartbeats = full_expected;
+            }
         }
     }
 
@@ -301,10 +366,30 @@ impl ValidatorRewardPool {
         self.epoch_start_timestamp += self.epoch_duration_secs;
         self.halvings_occurred = self.current_epoch / REWARD_HALVING_INTERVAL_EPOCHS;
 
-        // Reset heartbeat counters for the new epoch
+        // Save last epoch uptime before resetting counters
         for state in self.validators.values_mut() {
+            state.last_epoch_uptime_pct = state.uptime_pct();
             state.heartbeats_current_epoch = 0;
             state.expected_heartbeats = 0;
+        }
+    }
+
+    /// Public version of advance_epoch for non-leader nodes.
+    /// Advances to next epoch WITHOUT distributing rewards.
+    /// Non-leaders use this to stay in sync with the epoch counter
+    /// while waiting for the leader's reward blocks via gossip.
+    pub fn advance_epoch_only(&mut self) {
+        self.advance_epoch();
+    }
+
+    /// Sync pool accounting when a REWARD:EPOCH:N mint block is received from
+    /// the leader via gossip/sync. This keeps the non-leader's pool stats
+    /// consistent with the actual ledger state.
+    pub fn sync_reward_from_gossip(&mut self, recipient: &str, amount_cil: u128) {
+        self.remaining_cil = self.remaining_cil.saturating_sub(amount_cil);
+        self.total_distributed_cil += amount_cil;
+        if let Some(state) = self.validators.get_mut(recipient) {
+            state.cumulative_rewards_cil += amount_cil;
         }
     }
 
@@ -434,7 +519,10 @@ mod tests {
     }
 
     #[test]
-    fn test_genesis_validators_excluded() {
+    fn test_genesis_validators_excluded_mainnet() {
+        // This test validates the genesis exclusion rule.
+        // On testnet: genesis validators are eligible (same rules as any validator).
+        // On mainnet: genesis validators are excluded from rewards.
         let mut pool = ValidatorRewardPool::new(GENESIS_TS);
         let genesis_addr = "LOSgenesis1";
         let normal_addr = "LOSnormal1";
@@ -452,16 +540,61 @@ mod tests {
         }
 
         let genesis_state = pool.validators.get(genesis_addr).unwrap();
-        // Testnet: genesis validators ARE eligible (for testing rewards)
-        // Mainnet: genesis validators are excluded from rewards
         if crate::is_testnet_build() {
+            // Testnet: genesis validators participate like everyone else
             assert!(genesis_state.is_eligible(pool.current_epoch));
         } else {
+            // Mainnet: genesis validators are infrastructure, excluded
             assert!(!genesis_state.is_eligible(pool.current_epoch));
         }
 
         let normal_state = pool.validators.get(normal_addr).unwrap();
         assert!(normal_state.is_eligible(pool.current_epoch));
+    }
+
+    #[test]
+    fn test_genesis_validators_obey_probation() {
+        // Genesis validators must ALSO pass probation — no shortcuts.
+        // Epoch 0 = join epoch. They should NOT be eligible at epoch 0.
+        let mut pool = ValidatorRewardPool::new(GENESIS_TS);
+        let genesis_addr = "LOSgenesis_prob";
+        pool.register_validator(genesis_addr, true, 1000 * CIL_PER_LOS);
+        pool.set_expected_heartbeats(60);
+        for v in pool.validators.values_mut() {
+            v.heartbeats_current_epoch = v.expected_heartbeats;
+        }
+
+        // Epoch 0: in probation, NOT eligible (even on testnet)
+        assert!(!pool.validators.get(genesis_addr).unwrap().is_eligible(0));
+
+        // Epoch 1: past probation, eligible (on testnet)
+        pool.current_epoch = 1;
+        if crate::is_testnet_build() {
+            assert!(pool.validators.get(genesis_addr).unwrap().is_eligible(1));
+        }
+    }
+
+    #[test]
+    fn test_heartbeat_once_dedup() {
+        use std::collections::HashSet;
+        let mut pool = ValidatorRewardPool::new(GENESIS_TS);
+        pool.register_validator("LOSval1", false, 1000 * CIL_PER_LOS);
+
+        let mut seen = HashSet::new();
+        // First call: recorded
+        assert!(pool.record_heartbeat_once("LOSval1", &mut seen));
+        // Second call same tick: deduplicated
+        assert!(!pool.record_heartbeat_once("LOSval1", &mut seen));
+        // Third call same tick: still deduplicated
+        assert!(!pool.record_heartbeat_once("LOSval1", &mut seen));
+
+        // Only 1 heartbeat recorded
+        assert_eq!(pool.validators.get("LOSval1").unwrap().heartbeats_current_epoch, 1);
+
+        // New tick (new seen set) — can record again
+        let mut seen2 = HashSet::new();
+        assert!(pool.record_heartbeat_once("LOSval1", &mut seen2));
+        assert_eq!(pool.validators.get("LOSval1").unwrap().heartbeats_current_epoch, 2);
     }
 
     #[test]
@@ -531,7 +664,7 @@ mod tests {
     fn test_distribute_epoch_rewards() {
         let mut pool = ValidatorRewardPool::new(GENESIS_TS);
 
-        // Register 3 validators: 1 genesis (excluded), 2 normal
+        // Register 3 validators: 1 genesis, 2 normal
         pool.register_validator("LOSgenesis_v1", true, 1000 * CIL_PER_LOS);
         pool.register_validator("LOSnormal_v1", false, 1000 * CIL_PER_LOS);
         pool.register_validator("LOSnormal_v2", false, 4000 * CIL_PER_LOS);
@@ -546,8 +679,8 @@ mod tests {
         let initial_remaining = pool.remaining_cil;
         let rewards = pool.distribute_epoch_rewards();
 
-        // Testnet: all 3 validators eligible (genesis included)
-        // Mainnet: only 2 non-genesis validators
+        // On testnet: all 3 eligible (genesis participates normally, past probation)
+        // On mainnet: only 2 non-genesis validators eligible
         if crate::is_testnet_build() {
             assert_eq!(rewards.len(), 3);
         } else {
@@ -555,9 +688,6 @@ mod tests {
             assert!(!rewards.iter().any(|(addr, _)| addr == "LOSgenesis_v1"));
         }
 
-        // √1000 ≈ 31, √4000 ≈ 63 → total = 94
-        // v1 gets ~31/94 of 5000 LOS ≈ 1648 LOS
-        // v2 gets ~63/94 of 5000 LOS ≈ 3351 LOS
         let total_rewarded: u128 = rewards.iter().map(|(_, r)| r).sum();
         assert!(total_rewarded > 0);
         assert!(total_rewarded <= 5_000 * CIL_PER_LOS);
@@ -586,12 +716,12 @@ mod tests {
         let rewards = pool.distribute_epoch_rewards();
 
         if crate::is_testnet_build() {
-            // Testnet: genesis validators CAN earn rewards
+            // Testnet: genesis validators participate normally
             assert_eq!(rewards.len(), 1);
         } else {
-            // Mainnet: genesis validators excluded → no eligible → no rewards
+            // Mainnet: genesis excluded → no eligible → no rewards
             assert!(rewards.is_empty());
-            assert_eq!(pool.remaining_cil, initial_remaining); // Nothing deducted
+            assert_eq!(pool.remaining_cil, initial_remaining);
         }
         assert_eq!(pool.current_epoch, 6); // Epoch still advances
     }
@@ -667,10 +797,10 @@ mod tests {
         let summary = pool.pool_summary();
         assert_eq!(summary.total_validators, 2);
         if crate::is_testnet_build() {
-            // On testnet, genesis validators ARE eligible
+            // Testnet: both eligible (genesis participates normally, past probation)
             assert_eq!(summary.eligible_validators, 2);
         } else {
-            // On mainnet, genesis validators are excluded
+            // Mainnet: genesis excluded
             assert_eq!(summary.eligible_validators, 1);
         }
         assert_eq!(summary.current_epoch, 2);

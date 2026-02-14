@@ -32,14 +32,34 @@ class _BurnScreenState extends State<BurnScreen> {
       final wallet = await walletService.getCurrentWallet();
 
       if (wallet == null) throw Exception('No wallet found');
-      debugPrint(
-          '🔥 [Burn] Coin: $_selectedCoin, TXID: ${_txidController.text.trim()}');
-      debugPrint('🔥 [Burn] Recipient: ${wallet['address']}');
+      final recipientAddress = wallet['address']!;
+      final publicKeyHex = await walletService.getPublicKeyHex();
+      // Sanitize TXID — must match backend: trim, strip 0x, lowercase
+      var cleanTxid = _txidController.text.trim();
+      if (cleanTxid.startsWith('0x') || cleanTxid.startsWith('0X')) {
+        cleanTxid = cleanTxid.substring(2);
+      }
+      cleanTxid = cleanTxid.toLowerCase();
+
+      debugPrint('🔥 [Burn] Coin: $_selectedCoin, TXID: $cleanTxid');
+      debugPrint('🔥 [Burn] Recipient: $recipientAddress');
+
+      // FIX F3: Sign burn message for authenticated burns.
+      // Backend expects: "BURN:{coin_type}:{txid}:{recipient}"
+      String? signature;
+      if (publicKeyHex != null) {
+        final burnMessage = 'BURN:$_selectedCoin:$cleanTxid:$recipientAddress';
+        debugPrint('🔥 [Burn] Signing message: $burnMessage');
+        signature = await walletService.signTransaction(burnMessage);
+        debugPrint('🔥 [Burn] Signature: ${signature.length} hex chars');
+      }
 
       final result = await apiService.submitBurn(
         coinType: _selectedCoin,
-        txid: _txidController.text.trim(),
-        recipientAddress: wallet['address']!,
+        txid: cleanTxid,
+        recipientAddress: recipientAddress,
+        signature: signature,
+        publicKey: publicKeyHex,
       );
 
       if (!mounted) return;

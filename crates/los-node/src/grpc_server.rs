@@ -133,6 +133,8 @@ impl LosNode for LosGrpcService {
         let response = GetBalanceResponse {
             address: full_addr,
             balance_cil: account.balance as u64, // Legacy field: may truncate >184 LOS
+            // PROTO BOUNDARY: `double balance_los` required by los.proto.
+            // Integer `balance_cil_str` below is authoritative. This f64 is display-only.
             balance_los: balance_los as f64 + (balance_remainder as f64 / CIL_PER_LOS as f64),
             block_count: account.block_count,
             head_block: account.head.clone(),
@@ -177,7 +179,10 @@ impl LosNode for LosGrpcService {
         let response = GetAccountResponse {
             address: full_addr.clone(),
             balance_cil: account.balance as u64,
-            balance_los: account.balance as f64 / CIL_PER_LOS as f64,
+            // PROTO BOUNDARY: `double balance_los` required by los.proto.
+            // Integer `balance_cil_str` below is authoritative. This f64 is display-only.
+            balance_los: (account.balance / CIL_PER_LOS) as f64
+                + (account.balance % CIL_PER_LOS) as f64 / CIL_PER_LOS as f64,
             block_count: account.block_count,
             head_block: account.head.clone(),
             is_validator,
@@ -385,6 +390,8 @@ impl LosNode for LosGrpcService {
 
         // Oracle prices not available in gRPC context (use REST /oracle endpoint)
         // Return 0 to indicate no data rather than misleading hardcoded values
+        // PROTO BOUNDARY: `double eth_price_usd/btc_price_usd` required by los.proto.
+        // Placeholder — oracle prices are available via REST /oracle endpoint.
         let eth_price = 0.0_f64;
         let btc_price = 0.0_f64;
 
@@ -457,6 +464,8 @@ impl LosNode for LosGrpcService {
                 // Quadratic voting power: deterministic integer sqrt
                 // SECURITY FIX: Use consensus isqrt() instead of f64 sqrt()
                 // to ensure gRPC API returns same values as consensus engine.
+                // PROTO BOUNDARY: `double voting_power` required by los.proto.
+                // Integer isqrt is authoritative; cast to f64 only for proto serialization.
                 let voting_power = calculate_voting_power(acc.balance) as f64;
 
                 // Active = is self OR is in address book (has live P2P connection)

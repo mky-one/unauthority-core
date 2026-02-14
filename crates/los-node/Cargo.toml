@@ -29,6 +29,10 @@ sled = "0.34.7"
 prometheus = { version = "0.14.0", features = ["process"] }
 rand = "0.8"  # For faucet rate limiting
 zeroize = "1.7"  # FIX C12-03: Zeroize secret key clones in async tasks
+bip39 = "2.0"  # BIP39 mnemonic → seed for deterministic validator keypairs
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"  # Non-blocking flock() to prevent UE zombie cascade
 
 [features]
 default = ["vm"]

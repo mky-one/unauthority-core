@@ -9,7 +9,7 @@
 		{
 			"label": "Start Tor Validators",
 			"type": "shell",
-			"command": "cd /Users/moonkey-code/Documents/monkey-one/project/unauthority-core && pkill -f los-node; sleep 1; echo 'Starting V1...' && LOS_TESTNET_LEVEL=consensus LOS_TOR_SOCKS5=127.0.0.1:9052 LOS_ONION_ADDRESS=u3kilz7tv3ffhl2rafrzarbmiiojfcjz3eg527td5ocmibq44gj4htqd.onion LOS_NODE_ID=validator-1 LOS_P2P_PORT=4001 LOS_BOOTSTRAP_NODES=/ip4/127.0.0.1/tcp/4002,/ip4/127.0.0.1/tcp/4003,/ip4/127.0.0.1/tcp/4004 ./target/release/los-node --port 3030 --data-dir node_data/validator-1 > node_data/validator-1/logs/node.log 2>&1 & echo \"V1 PID=$!\" && echo 'Starting V2...' && LOS_TESTNET_LEVEL=consensus LOS_TOR_SOCKS5=127.0.0.1:9052 LOS_ONION_ADDRESS=5yvqf4sdbif4pegxgrgfq5ksv3gqqpt27x2xzx5nvrmdqmsrk4mnkgad.onion LOS_NODE_ID=validator-2 LOS_P2P_PORT=4002 LOS_BOOTSTRAP_NODES=/ip4/127.0.0.1/tcp/4001,/ip4/127.0.0.1/tcp/4003,/ip4/127.0.0.1/tcp/4004 ./target/release/los-node --port 3031 --data-dir node_data/validator-2 > node_data/validator-2/logs/node.log 2>&1 & echo \"V2 PID=$!\" && echo 'Starting V3...' && LOS_TESTNET_LEVEL=consensus LOS_TOR_SOCKS5=127.0.0.1:9052 LOS_ONION_ADDRESS=3e3vi6ealajwangzmiz2ec7b5gqahnysk3tjs7yol7rptmsrthrpjvad.onion LOS_NODE_ID=validator-3 LOS_P2P_PORT=4003 LOS_BOOTSTRAP_NODES=/ip4/127.0.0.1/tcp/4001,/ip4/127.0.0.1/tcp/4002,/ip4/127.0.0.1/tcp/4004 ./target/release/los-node --port 3032 --data-dir node_data/validator-3 > node_data/validator-3/logs/node.log 2>&1 & echo \"V3 PID=$!\" && echo 'Starting V4...' && LOS_TESTNET_LEVEL=consensus LOS_TOR_SOCKS5=127.0.0.1:9052 LOS_ONION_ADDRESS=yapub6hgjr3eyxnxzvgd4yejt7rkhwlmaivdpy6757o3tr5iicckgjyd.onion LOS_NODE_ID=validator-4 LOS_P2P_PORT=4004 LOS_BOOTSTRAP_NODES=/ip4/127.0.0.1/tcp/4001,/ip4/127.0.0.1/tcp/4002,/ip4/127.0.0.1/tcp/4003 ./target/release/los-node --port 3033 --data-dir node_data/validator-4 > node_data/validator-4/logs/node.log 2>&1 & echo \"V4 PID=$!\" && sleep 8 && echo 'All started, checking health...' && curl -s http://localhost:3030/whoami && echo '' && curl -s http://localhost:3031/whoami && echo '' && curl -s http://localhost:3032/whoami && echo '' && curl -s http://localhost:3033/whoami && echo '' && echo 'DONE'"
+			"command": "cd /Users/moonkey-code/Documents/monkey-one/project/unauthority-core && pkill -f los-node; sleep 1; echo 'Starting V1...' && LOS_TESTNET_LEVEL=consensus LOS_TOR_SOCKS5=127.0.0.1:9052 LOS_ONION_ADDRESS=drnqiaqi5vvqpubem6qzptptijygbf7ggjheri6k5yn4qbeezhgjweyd.onion LOS_SEED_PHRASE='hurt shuffle ring barely want stock neither siren vapor stomach desert design antenna spread envelope remove joy faith veteran dinosaur they spin guess various' LOS_NODE_ID=validator-1 LOS_P2P_PORT=4001 LOS_BOOTSTRAP_NODES=/ip4/127.0.0.1/tcp/4002,/ip4/127.0.0.1/tcp/4003,/ip4/127.0.0.1/tcp/4004 ./target/release/los-node --port 3030 --data-dir node_data/validator-1 > node_data/validator-1/logs/node.log 2>&1 & echo \"V1 PID=$!\" && echo 'Starting V2...' && LOS_TESTNET_LEVEL=consensus LOS_TOR_SOCKS5=127.0.0.1:9052 LOS_ONION_ADDRESS=kpjv64bpekzqvnls2d5ss4sqhjdgi7maypfvceekxty2cfutjr4vgqid.onion LOS_SEED_PHRASE='material toy scissors input illness sadness dignity tenant verb pond fashion beef grant swear elbow jacket embrace rather wolf quote own genuine junior junk' LOS_NODE_ID=validator-2 LOS_P2P_PORT=4002 LOS_BOOTSTRAP_NODES=/ip4/127.0.0.1/tcp/4001,/ip4/127.0.0.1/tcp/4003,/ip4/127.0.0.1/tcp/4004 ./target/release/los-node --port 3031 --data-dir node_data/validator-2 > node_data/validator-2/logs/node.log 2>&1 & echo \"V2 PID=$!\" && echo 'Starting V3...' && LOS_TESTNET_LEVEL=consensus LOS_TOR_SOCKS5=127.0.0.1:9052 LOS_ONION_ADDRESS=w3x7wqb7267mfgcxsqjuinxuijvdswg4j2zwcdl2fr5mohbaywomdbad.onion LOS_SEED_PHRASE='index load clarify exhibit about moral chef phone beyond canoe asset timber pear sample boil motion flag slush range exhibit fossil lock toe cute' LOS_NODE_ID=validator-3 LOS_P2P_PORT=4003 LOS_BOOTSTRAP_NODES=/ip4/127.0.0.1/tcp/4001,/ip4/127.0.0.1/tcp/4002,/ip4/127.0.0.1/tcp/4004 ./target/release/los-node --port 3032 --data-dir node_data/validator-3 > node_data/validator-3/logs/node.log 2>&1 & echo \"V3 PID=$!\" && echo 'Starting V4...' && LOS_TESTNET_LEVEL=consensus LOS_TOR_SOCKS5=127.0.0.1:9052 LOS_ONION_ADDRESS=xvulzhd5ekfmturmz7jdy3yguggyqwyx7jrysods7njvvzaicx72lwad.onion LOS_SEED_PHRASE='electric social attract amount powder ramp drop mixed cup unique witness ramp execute pelican circle fuel evolve domain west nothing wrist salt nasty crowd' LOS_NODE_ID=validator-4 LOS_P2P_PORT=4004 LOS_BOOTSTRAP_NODES=/ip4/127.0.0.1/tcp/4001,/ip4/127.0.0.1/tcp/4002,/ip4/127.0.0.1/tcp/4003 ./target/release/los-node --port 3033 --data-dir node_data/validator-4 > node_data/validator-4/logs/node.log 2>&1 & echo \"V4 PID=$!\" && sleep 8 && echo 'All started, checking health...' && curl -s http://localhost:3030/whoami && echo '' && curl -s http://localhost:3031/whoami && echo '' && curl -s http://localhost:3032/whoami && echo '' && curl -s http://localhost:3033/whoami && echo '' && echo 'DONE'"
 		},
 		{
 			"label": "Check Node Identities",
@@ -19,7 +19,7 @@
 		{
 			"label": "Test Send Consensus",
 			"type": "shell",
-			"command": "echo '=== Fund V1 via faucet ===' && curl -s --connect-timeout 30 --socks5-hostname 127.0.0.1:9052 -X POST -H 'Content-Type: application/json' -d '{\"address\":\"LOSX1YFTHpMNEDH8hRku2XDkVhCtG28ZiM1s9\"}' http://u3kilz7tv3ffhl2rafrzarbmiiojfcjz3eg527td5ocmibq44gj4htqd.onion/faucet && echo '' && echo '=== SEND 50 LOS V1 -> Dev2 ===' && curl -s --connect-timeout 60 --socks5-hostname 127.0.0.1:9052 -X POST -H 'Content-Type: application/json' -d '{\"target\":\"LOSWoGEJEHwYA8am7sjspaPCDEQeyPFdzUu7e\",\"amount\":50}' http://u3kilz7tv3ffhl2rafrzarbmiiojfcjz3eg527td5ocmibq44gj4htqd.onion/send && echo '' && echo '--- Waiting 15s for consensus ---' && sleep 15 && echo '=== V1 balance after send ===' && curl -s --connect-timeout 30 --socks5-hostname 127.0.0.1:9052 http://u3kilz7tv3ffhl2rafrzarbmiiojfcjz3eg527td5ocmibq44gj4htqd.onion/balance/LOSX1YFTHpMNEDH8hRku2XDkVhCtG28ZiM1s9 && echo '' && echo '=== Dev2 balance ===' && curl -s --connect-timeout 30 --socks5-hostname 127.0.0.1:9052 http://u3kilz7tv3ffhl2rafrzarbmiiojfcjz3eg527td5ocmibq44gj4htqd.onion/balance/LOSWoGEJEHwYA8am7sjspaPCDEQeyPFdzUu7e && echo ''"
+			"command": "echo '=== Fund V1 via faucet ===' && curl -s --connect-timeout 30 --socks5-hostname 127.0.0.1:9052 -X POST -H 'Content-Type: application/json' -d '{\"address\":\"LOSX1YFTHpMNEDH8hRku2XDkVhCtG28ZiM1s9\"}' http://drnqiaqi5vvqpubem6qzptptijygbf7ggjheri6k5yn4qbeezhgjweyd.onion/faucet && echo '' && echo '=== SEND 50 LOS V1 -> Dev2 ===' && curl -s --connect-timeout 60 --socks5-hostname 127.0.0.1:9052 -X POST -H 'Content-Type: application/json' -d '{\"target\":\"LOSWoGEJEHwYA8am7sjspaPCDEQeyPFdzUu7e\",\"amount\":50}' http://drnqiaqi5vvqpubem6qzptptijygbf7ggjheri6k5yn4qbeezhgjweyd.onion/send && echo '' && echo '--- Waiting 15s for consensus ---' && sleep 15 && echo '=== V1 balance after send ===' && curl -s --connect-timeout 30 --socks5-hostname 127.0.0.1:9052 http://drnqiaqi5vvqpubem6qzptptijygbf7ggjheri6k5yn4qbeezhgjweyd.onion/balance/LOSX1YFTHpMNEDH8hRku2XDkVhCtG28ZiM1s9 && echo '' && echo '=== Dev2 balance ===' && curl -s --connect-timeout 30 --socks5-hostname 127.0.0.1:9052 http://drnqiaqi5vvqpubem6qzptptijygbf7ggjheri6k5yn4qbeezhgjweyd.onion/balance/LOSWoGEJEHwYA8am7sjspaPCDEQeyPFdzUu7e && echo ''"
 		},
 		{
 			"label": "Check Services Status",
@@ -29,12 +29,12 @@
 		{
 			"label": "Test Tor Connectivity",
 			"type": "shell",
-			"command": "echo '=== Tor SOCKS check ===' && curl -s --connect-timeout 15 --socks5-hostname 127.0.0.1:9052 http://u3kilz7tv3ffhl2rafrzarbmiiojfcjz3eg527td5ocmibq44gj4htqd.onion/whoami && echo '' && echo '=== V2 via Tor ===' && curl -s --connect-timeout 15 --socks5-hostname 127.0.0.1:9052 http://5yvqf4sdbif4pegxgrgfq5ksv3gqqpt27x2xzx5nvrmdqmsrk4mnkgad.onion/whoami && echo ''"
+			"command": "echo '=== Tor SOCKS check ===' && curl -s --connect-timeout 15 --socks5-hostname 127.0.0.1:9052 http://drnqiaqi5vvqpubem6qzptptijygbf7ggjheri6k5yn4qbeezhgjweyd.onion/whoami && echo '' && echo '=== V2 via Tor ===' && curl -s --connect-timeout 15 --socks5-hostname 127.0.0.1:9052 http://kpjv64bpekzqvnls2d5ss4sqhjdgi7maypfvceekxty2cfutjr4vgqid.onion/whoami && echo ''"
 		},
 		{
 			"label": "Test Send Consensus V2",
 			"type": "shell",
-			"command": "echo '=== V1 Balance before ===' && curl -s --connect-timeout 30 --socks5-hostname 127.0.0.1:9052 http://u3kilz7tv3ffhl2rafrzarbmiiojfcjz3eg527td5ocmibq44gj4htqd.onion/balance/LOSX1YFTHpMNEDH8hRku2XDkVhCtG28ZiM1s9 && echo '' && echo '=== Dev2 Balance before ===' && curl -s --connect-timeout 30 --socks5-hostname 127.0.0.1:9052 http://u3kilz7tv3ffhl2rafrzarbmiiojfcjz3eg527td5ocmibq44gj4htqd.onion/balance/LOSWoGEJEHwYA8am7sjspaPCDEQeyPFdzUu7e && echo '' && echo '=== SEND 50 LOS: V1 -> Dev2 ===' && curl -s --connect-timeout 60 --socks5-hostname 127.0.0.1:9052 -X POST -H 'Content-Type: application/json' -d '{\"target\":\"LOSWoGEJEHwYA8am7sjspaPCDEQeyPFdzUu7e\",\"amount\":50}' http://u3kilz7tv3ffhl2rafrzarbmiiojfcjz3eg527td5ocmibq44gj4htqd.onion/send && echo '' && echo 'Waiting 20s for consensus...' && sleep 20 && echo '=== V1 after ===' && curl -s --connect-timeout 30 --socks5-hostname 127.0.0.1:9052 http://u3kilz7tv3ffhl2rafrzarbmiiojfcjz3eg527td5ocmibq44gj4htqd.onion/balance/LOSX1YFTHpMNEDH8hRku2XDkVhCtG28ZiM1s9 && echo '' && echo '=== Dev2 after ===' && curl -s --connect-timeout 30 --socks5-hostname 127.0.0.1:9052 http://u3kilz7tv3ffhl2rafrzarbmiiojfcjz3eg527td5ocmibq44gj4htqd.onion/balance/LOSWoGEJEHwYA8am7sjspaPCDEQeyPFdzUu7e && echo '' && echo '=== V1 LOG (last 30 lines) ===' && tail -30 node_data/validator-1/logs/node.log && echo 'DONE'"
+			"command": "echo '=== V1 Balance before ===' && curl -s --connect-timeout 30 --socks5-hostname 127.0.0.1:9052 http://drnqiaqi5vvqpubem6qzptptijygbf7ggjheri6k5yn4qbeezhgjweyd.onion/balance/LOSX1YFTHpMNEDH8hRku2XDkVhCtG28ZiM1s9 && echo '' && echo '=== Dev2 Balance before ===' && curl -s --connect-timeout 30 --socks5-hostname 127.0.0.1:9052 http://drnqiaqi5vvqpubem6qzptptijygbf7ggjheri6k5yn4qbeezhgjweyd.onion/balance/LOSWoGEJEHwYA8am7sjspaPCDEQeyPFdzUu7e && echo '' && echo '=== SEND 50 LOS: V1 -> Dev2 ===' && curl -s --connect-timeout 60 --socks5-hostname 127.0.0.1:9052 -X POST -H 'Content-Type: application/json' -d '{\"target\":\"LOSWoGEJEHwYA8am7sjspaPCDEQeyPFdzUu7e\",\"amount\":50}' http://drnqiaqi5vvqpubem6qzptptijygbf7ggjheri6k5yn4qbeezhgjweyd.onion/send && echo '' && echo 'Waiting 20s for consensus...' && sleep 20 && echo '=== V1 after ===' && curl -s --connect-timeout 30 --socks5-hostname 127.0.0.1:9052 http://drnqiaqi5vvqpubem6qzptptijygbf7ggjheri6k5yn4qbeezhgjweyd.onion/balance/LOSX1YFTHpMNEDH8hRku2XDkVhCtG28ZiM1s9 && echo '' && echo '=== Dev2 after ===' && curl -s --connect-timeout 30 --socks5-hostname 127.0.0.1:9052 http://drnqiaqi5vvqpubem6qzptptijygbf7ggjheri6k5yn4qbeezhgjweyd.onion/balance/LOSWoGEJEHwYA8am7sjspaPCDEQeyPFdzUu7e && echo '' && echo '=== V1 LOG (last 30 lines) ===' && tail -30 node_data/validator-1/logs/node.log && echo 'DONE'"
 		},
 		{
 			"label": "Check V1 Logs",
@@ -44,27 +44,27 @@
 		{
 			"label": "Verify Send Results",
 			"type": "shell",
-			"command": "echo '=== V1 balance ===' && curl -s --connect-timeout 30 --socks5-hostname 127.0.0.1:9052 http://u3kilz7tv3ffhl2rafrzarbmiiojfcjz3eg527td5ocmibq44gj4htqd.onion/balance/LOSX1YFTHpMNEDH8hRku2XDkVhCtG28ZiM1s9 && echo '' && echo '=== Dev2 balance ===' && curl -s --connect-timeout 30 --socks5-hostname 127.0.0.1:9052 http://u3kilz7tv3ffhl2rafrzarbmiiojfcjz3eg527td5ocmibq44gj4htqd.onion/balance/LOSWoGEJEHwYA8am7sjspaPCDEQeyPFdzUu7e && echo '' && echo '=== V1 history (last 3 txs) ===' && curl -s --connect-timeout 30 --socks5-hostname 127.0.0.1:9052 http://u3kilz7tv3ffhl2rafrzarbmiiojfcjz3eg527td5ocmibq44gj4htqd.onion/history/LOSX1YFTHpMNEDH8hRku2XDkVhCtG28ZiM1s9 | python3 -c 'import json,sys; d=json.load(sys.stdin); [print(json.dumps(t,indent=2)) for t in d[\"transactions\"][:3]]' && echo '' && echo '=== Dev2 history ===' && curl -s --connect-timeout 30 --socks5-hostname 127.0.0.1:9052 http://u3kilz7tv3ffhl2rafrzarbmiiojfcjz3eg527td5ocmibq44gj4htqd.onion/history/LOSWoGEJEHwYA8am7sjspaPCDEQeyPFdzUu7e"
+			"command": "echo '=== V1 balance ===' && curl -s --connect-timeout 30 --socks5-hostname 127.0.0.1:9052 http://drnqiaqi5vvqpubem6qzptptijygbf7ggjheri6k5yn4qbeezhgjweyd.onion/balance/LOSX1YFTHpMNEDH8hRku2XDkVhCtG28ZiM1s9 && echo '' && echo '=== Dev2 balance ===' && curl -s --connect-timeout 30 --socks5-hostname 127.0.0.1:9052 http://drnqiaqi5vvqpubem6qzptptijygbf7ggjheri6k5yn4qbeezhgjweyd.onion/balance/LOSWoGEJEHwYA8am7sjspaPCDEQeyPFdzUu7e && echo '' && echo '=== V1 history (last 3 txs) ===' && curl -s --connect-timeout 30 --socks5-hostname 127.0.0.1:9052 http://drnqiaqi5vvqpubem6qzptptijygbf7ggjheri6k5yn4qbeezhgjweyd.onion/history/LOSX1YFTHpMNEDH8hRku2XDkVhCtG28ZiM1s9 | python3 -c 'import json,sys; d=json.load(sys.stdin); [print(json.dumps(t,indent=2)) for t in d[\"transactions\"][:3]]' && echo '' && echo '=== Dev2 history ===' && curl -s --connect-timeout 30 --socks5-hostname 127.0.0.1:9052 http://drnqiaqi5vvqpubem6qzptptijygbf7ggjheri6k5yn4qbeezhgjweyd.onion/history/LOSWoGEJEHwYA8am7sjspaPCDEQeyPFdzUu7e"
 		},
 		{
 			"label": "Check Dev2 Balance",
 			"type": "shell",
-			"command": "echo '=== Dev2 balance ===' && curl -s --connect-timeout 30 --socks5-hostname 127.0.0.1:9052 http://u3kilz7tv3ffhl2rafrzarbmiiojfcjz3eg527td5ocmibq44gj4htqd.onion/balance/LOSWoGEJEHwYA8am7sjspaPCDEQeyPFdzUu7e && echo '' && echo '=== Dev2 history ===' && curl -s --connect-timeout 30 --socks5-hostname 127.0.0.1:9052 http://u3kilz7tv3ffhl2rafrzarbmiiojfcjz3eg527td5ocmibq44gj4htqd.onion/history/LOSWoGEJEHwYA8am7sjspaPCDEQeyPFdzUu7e && echo '' && echo '=== Check on V2 node ===' && curl -s --connect-timeout 30 --socks5-hostname 127.0.0.1:9052 http://5yvqf4sdbif4pegxgrgfq5ksv3gqqpt27x2xzx5nvrmdqmsrk4mnkgad.onion/balance/LOSWoGEJEHwYA8am7sjspaPCDEQeyPFdzUu7e && echo ''"
+			"command": "echo '=== Dev2 balance ===' && curl -s --connect-timeout 30 --socks5-hostname 127.0.0.1:9052 http://drnqiaqi5vvqpubem6qzptptijygbf7ggjheri6k5yn4qbeezhgjweyd.onion/balance/LOSWoGEJEHwYA8am7sjspaPCDEQeyPFdzUu7e && echo '' && echo '=== Dev2 history ===' && curl -s --connect-timeout 30 --socks5-hostname 127.0.0.1:9052 http://drnqiaqi5vvqpubem6qzptptijygbf7ggjheri6k5yn4qbeezhgjweyd.onion/history/LOSWoGEJEHwYA8am7sjspaPCDEQeyPFdzUu7e && echo '' && echo '=== Check on V2 node ===' && curl -s --connect-timeout 30 --socks5-hostname 127.0.0.1:9052 http://kpjv64bpekzqvnls2d5ss4sqhjdgi7maypfvceekxty2cfutjr4vgqid.onion/balance/LOSWoGEJEHwYA8am7sjspaPCDEQeyPFdzUu7e && echo ''"
 		},
 		{
 			"label": "Test Burn and CrossNode",
 			"type": "shell",
-			"command": "echo '=== BURN TEST: Burn ETH for V1 ===' && curl -s --connect-timeout 60 --socks5-hostname 127.0.0.1:9052 -X POST -H 'Content-Type: application/json' -d '{\"coin_type\":\"eth\",\"txid\":\"0xabc123def456789012345678901234567890abcdef1234567890abcdef12345678\"}' http://u3kilz7tv3ffhl2rafrzarbmiiojfcjz3eg527td5ocmibq44gj4htqd.onion/burn && echo '' && echo 'Waiting 20s for consensus...' && sleep 20 && echo '=== Check balance on V1 ===' && curl -s --connect-timeout 30 --socks5-hostname 127.0.0.1:9052 http://u3kilz7tv3ffhl2rafrzarbmiiojfcjz3eg527td5ocmibq44gj4htqd.onion/balance/LOSX1YFTHpMNEDH8hRku2XDkVhCtG28ZiM1s9 && echo '' && echo '=== CROSS-NODE: Dev2 balance on V3 ===' && curl -s --connect-timeout 30 --socks5-hostname 127.0.0.1:9052 http://3e3vi6ealajwangzmiz2ec7b5gqahnysk3tjs7yol7rptmsrthrpjvad.onion/balance/LOSWoGEJEHwYA8am7sjspaPCDEQeyPFdzUu7e && echo '' && echo '=== CROSS-NODE: V1 balance on V4 ===' && curl -s --connect-timeout 30 --socks5-hostname 127.0.0.1:9052 http://yapub6hgjr3eyxnxzvgd4yejt7rkhwlmaivdpy6757o3tr5iicckgjyd.onion/balance/LOSX1YFTHpMNEDH8hRku2XDkVhCtG28ZiM1s9 && echo '' && echo 'DONE'"
+			"command": "echo '=== BURN TEST: Burn ETH for V1 ===' && curl -s --connect-timeout 60 --socks5-hostname 127.0.0.1:9052 -X POST -H 'Content-Type: application/json' -d '{\"coin_type\":\"eth\",\"txid\":\"0xabc123def456789012345678901234567890abcdef1234567890abcdef12345678\"}' http://drnqiaqi5vvqpubem6qzptptijygbf7ggjheri6k5yn4qbeezhgjweyd.onion/burn && echo '' && echo 'Waiting 20s for consensus...' && sleep 20 && echo '=== Check balance on V1 ===' && curl -s --connect-timeout 30 --socks5-hostname 127.0.0.1:9052 http://drnqiaqi5vvqpubem6qzptptijygbf7ggjheri6k5yn4qbeezhgjweyd.onion/balance/LOSX1YFTHpMNEDH8hRku2XDkVhCtG28ZiM1s9 && echo '' && echo '=== CROSS-NODE: Dev2 balance on V3 ===' && curl -s --connect-timeout 30 --socks5-hostname 127.0.0.1:9052 http://w3x7wqb7267mfgcxsqjuinxuijvdswg4j2zwcdl2fr5mohbaywomdbad.onion/balance/LOSWoGEJEHwYA8am7sjspaPCDEQeyPFdzUu7e && echo '' && echo '=== CROSS-NODE: V1 balance on V4 ===' && curl -s --connect-timeout 30 --socks5-hostname 127.0.0.1:9052 http://xvulzhd5ekfmturmz7jdy3yguggyqwyx7jrysods7njvvzaicx72lwad.onion/balance/LOSX1YFTHpMNEDH8hRku2XDkVhCtG28ZiM1s9 && echo '' && echo 'DONE'"
 		},
 		{
 			"label": "Cross Node Check",
 			"type": "shell",
-			"command": "echo '=== CROSS-NODE: Dev2 balance on V3 ===' && curl -s --connect-timeout 30 --socks5-hostname 127.0.0.1:9052 http://3e3vi6ealajwangzmiz2ec7b5gqahnysk3tjs7yol7rptmsrthrpjvad.onion/balance/LOSWoGEJEHwYA8am7sjspaPCDEQeyPFdzUu7e && echo '' && echo '=== CROSS-NODE: V1 bal on V4 ===' && curl -s --connect-timeout 30 --socks5-hostname 127.0.0.1:9052 http://yapub6hgjr3eyxnxzvgd4yejt7rkhwlmaivdpy6757o3tr5iicckgjyd.onion/balance/LOSX1YFTHpMNEDH8hRku2XDkVhCtG28ZiM1s9 && echo '' && echo '=== CROSS-NODE: V1 bal on V2 ===' && curl -s --connect-timeout 30 --socks5-hostname 127.0.0.1:9052 http://5yvqf4sdbif4pegxgrgfq5ksv3gqqpt27x2xzx5nvrmdqmsrk4mnkgad.onion/balance/LOSX1YFTHpMNEDH8hRku2XDkVhCtG28ZiM1s9 && echo '' && echo 'DONE'"
+			"command": "echo '=== CROSS-NODE: Dev2 balance on V3 ===' && curl -s --connect-timeout 30 --socks5-hostname 127.0.0.1:9052 http://w3x7wqb7267mfgcxsqjuinxuijvdswg4j2zwcdl2fr5mohbaywomdbad.onion/balance/LOSWoGEJEHwYA8am7sjspaPCDEQeyPFdzUu7e && echo '' && echo '=== CROSS-NODE: V1 bal on V4 ===' && curl -s --connect-timeout 30 --socks5-hostname 127.0.0.1:9052 http://xvulzhd5ekfmturmz7jdy3yguggyqwyx7jrysods7njvvzaicx72lwad.onion/balance/LOSX1YFTHpMNEDH8hRku2XDkVhCtG28ZiM1s9 && echo '' && echo '=== CROSS-NODE: V1 bal on V2 ===' && curl -s --connect-timeout 30 --socks5-hostname 127.0.0.1:9052 http://kpjv64bpekzqvnls2d5ss4sqhjdgi7maypfvceekxty2cfutjr4vgqid.onion/balance/LOSX1YFTHpMNEDH8hRku2XDkVhCtG28ZiM1s9 && echo '' && echo 'DONE'"
 		},
 		{
 			"label": "Node Kill Recovery Test",
 			"type": "shell",
-			"command": "echo '=== STEP 1: Kill V3 (PID 30640) ===' && kill 30640 && sleep 2 && echo 'V3 killed. Verify:' && pgrep -lf 'los-node.*3032' || echo 'V3 DOWN confirmed' && echo '' && echo '=== STEP 2: Send 25 LOS V1->Dev1 while V3 is dead ===' && curl -s --connect-timeout 60 --socks5-hostname 127.0.0.1:9052 -X POST -H 'Content-Type: application/json' -d '{\"target\":\"LOSX48Joabv6fKAdQLhe4H8UNe4ABk3ppqPo8\",\"amount\":25}' http://u3kilz7tv3ffhl2rafrzarbmiiojfcjz3eg527td5ocmibq44gj4htqd.onion/send && echo '' && echo 'Waiting 15s for consensus with 3 nodes...' && sleep 15 && echo '=== STEP 3: Verify tx on V1 ===' && curl -s --connect-timeout 30 --socks5-hostname 127.0.0.1:9052 http://u3kilz7tv3ffhl2rafrzarbmiiojfcjz3eg527td5ocmibq44gj4htqd.onion/balance/LOSX48Joabv6fKAdQLhe4H8UNe4ABk3ppqPo8 && echo '' && echo '=== STEP 4: Restart V3 ===' && cd /Users/moonkey-code/Documents/monkey-one/project/unauthority-core && LOS_TESTNET_LEVEL=consensus LOS_TOR_SOCKS5=127.0.0.1:9052 LOS_ONION_ADDRESS=3e3vi6ealajwangzmiz2ec7b5gqahnysk3tjs7yol7rptmsrthrpjvad.onion LOS_NODE_ID=validator-3 LOS_P2P_PORT=4003 LOS_BOOTSTRAP_NODES=/ip4/127.0.0.1/tcp/4001,/ip4/127.0.0.1/tcp/4002,/ip4/127.0.0.1/tcp/4004 ./target/release/los-node --port 3032 --data-dir node_data/validator-3 > node_data/validator-3/logs/node.log 2>&1 & echo \"V3 restarted PID=$!\" && sleep 15 && echo '=== STEP 5: V3 synced? Dev1 balance on V3 ===' && curl -s --connect-timeout 30 --socks5-hostname 127.0.0.1:9052 http://3e3vi6ealajwangzmiz2ec7b5gqahnysk3tjs7yol7rptmsrthrpjvad.onion/balance/LOSX48Joabv6fKAdQLhe4H8UNe4ABk3ppqPo8 && echo '' && echo '=== V3 health ===' && curl -s --connect-timeout 30 --socks5-hostname 127.0.0.1:9052 http://3e3vi6ealajwangzmiz2ec7b5gqahnysk3tjs7yol7rptmsrthrpjvad.onion/health && echo '' && echo 'NODE RECOVERY TEST DONE'"
+			"command": "echo '=== STEP 1: Kill V3 (PID 30640) ===' && kill 30640 && sleep 2 && echo 'V3 killed. Verify:' && pgrep -lf 'los-node.*3032' || echo 'V3 DOWN confirmed' && echo '' && echo '=== STEP 2: Send 25 LOS V1->Dev1 while V3 is dead ===' && curl -s --connect-timeout 60 --socks5-hostname 127.0.0.1:9052 -X POST -H 'Content-Type: application/json' -d '{\"target\":\"LOSX48Joabv6fKAdQLhe4H8UNe4ABk3ppqPo8\",\"amount\":25}' http://drnqiaqi5vvqpubem6qzptptijygbf7ggjheri6k5yn4qbeezhgjweyd.onion/send && echo '' && echo 'Waiting 15s for consensus with 3 nodes...' && sleep 15 && echo '=== STEP 3: Verify tx on V1 ===' && curl -s --connect-timeout 30 --socks5-hostname 127.0.0.1:9052 http://drnqiaqi5vvqpubem6qzptptijygbf7ggjheri6k5yn4qbeezhgjweyd.onion/balance/LOSX48Joabv6fKAdQLhe4H8UNe4ABk3ppqPo8 && echo '' && echo '=== STEP 4: Restart V3 ===' && cd /Users/moonkey-code/Documents/monkey-one/project/unauthority-core && LOS_TESTNET_LEVEL=consensus LOS_TOR_SOCKS5=127.0.0.1:9052 LOS_ONION_ADDRESS=w3x7wqb7267mfgcxsqjuinxuijvdswg4j2zwcdl2fr5mohbaywomdbad.onion LOS_SEED_PHRASE='index load clarify exhibit about moral chef phone beyond canoe asset timber pear sample boil motion flag slush range exhibit fossil lock toe cute' LOS_NODE_ID=validator-3 LOS_P2P_PORT=4003 LOS_BOOTSTRAP_NODES=/ip4/127.0.0.1/tcp/4001,/ip4/127.0.0.1/tcp/4002,/ip4/127.0.0.1/tcp/4004 ./target/release/los-node --port 3032 --data-dir node_data/validator-3 > node_data/validator-3/logs/node.log 2>&1 & echo \"V3 restarted PID=$!\" && sleep 15 && echo '=== STEP 5: V3 synced? Dev1 balance on V3 ===' && curl -s --connect-timeout 30 --socks5-hostname 127.0.0.1:9052 http://w3x7wqb7267mfgcxsqjuinxuijvdswg4j2zwcdl2fr5mohbaywomdbad.onion/balance/LOSX48Joabv6fKAdQLhe4H8UNe4ABk3ppqPo8 && echo '' && echo '=== V3 health ===' && curl -s --connect-timeout 30 --socks5-hostname 127.0.0.1:9052 http://w3x7wqb7267mfgcxsqjuinxuijvdswg4j2zwcdl2fr5mohbaywomdbad.onion/health && echo '' && echo 'NODE RECOVERY TEST DONE'"
 		},
 		{
 			"label": "Wait for Recovery",
@@ -80,7 +80,7 @@
 		{
 			"label": "Test Rewards",
 			"type": "shell",
-			"command": "echo '=== REWARD-INFO ===' && curl -s --connect-timeout 30 --socks5-hostname 127.0.0.1:9052 http://u3kilz7tv3ffhl2rafrzarbmiiojfcjz3eg527td5ocmibq44gj4htqd.onion/reward-info | python3 -m json.tool && echo '' && echo '=== ALL VALIDATOR BALANCES ===' && for addr in LOSX1YFTHpMNEDH8hRku2XDkVhCtG28ZiM1s9 LOSWxv2FpWd4eBTdap6Kt2sPrG8bcgyCyMP7L LOSWtaknGVs5jvqwX6zS1XPNeEPooh61XaxG7 LOSWyvoJhUn1j9K5hTAKFcFhWPJiXUYQJWsnf; do echo \"--- $addr ---\" && curl -s http://localhost:3030/balance/$addr | python3 -c 'import json,sys; d=json.load(sys.stdin); print(f\"  balance={d[\\\"balance_los\\\"]}, blocks={d[\\\"block_count\\\"]}\")'; done && echo '' && echo '=== SUPPLY ===' && curl -s --connect-timeout 30 --socks5-hostname 127.0.0.1:9052 http://u3kilz7tv3ffhl2rafrzarbmiiojfcjz3eg527td5ocmibq44gj4htqd.onion/supply | python3 -m json.tool && echo 'DONE'"
+			"command": "echo '=== REWARD-INFO ===' && curl -s --connect-timeout 30 --socks5-hostname 127.0.0.1:9052 http://drnqiaqi5vvqpubem6qzptptijygbf7ggjheri6k5yn4qbeezhgjweyd.onion/reward-info | python3 -m json.tool && echo '' && echo '=== ALL VALIDATOR BALANCES ===' && for addr in LOSX1YFTHpMNEDH8hRku2XDkVhCtG28ZiM1s9 LOSWxv2FpWd4eBTdap6Kt2sPrG8bcgyCyMP7L LOSWtaknGVs5jvqwX6zS1XPNeEPooh61XaxG7 LOSWyvoJhUn1j9K5hTAKFcFhWPJiXUYQJWsnf; do echo \"--- $addr ---\" && curl -s http://localhost:3030/balance/$addr | python3 -c 'import json,sys; d=json.load(sys.stdin); print(f\"  balance={d[\\\"balance_los\\\"]}, blocks={d[\\\"block_count\\\"]}\")'; done && echo '' && echo '=== SUPPLY ===' && curl -s --connect-timeout 30 --socks5-hostname 127.0.0.1:9052 http://drnqiaqi5vvqpubem6qzptptijygbf7ggjheri6k5yn4qbeezhgjweyd.onion/supply | python3 -m json.tool && echo 'DONE'"
 		},
 		{
 			"label": "Check Balances Supply",
@@ -116,6 +116,183 @@
 			"label": "Metrics Rewards Slashing",
 			"type": "shell",
 			"command": "echo '=== METRICS ===' && curl -s http://localhost:3030/metrics | grep -E 'los_active_validators|los_accounts_total|los_blocks_total' && echo '' && echo '=== REWARD-INFO ===' && curl -s http://localhost:3030/reward-info | python3 -c 'import json,sys; d=json.load(sys.stdin); e=d[\"epoch\"]; p=d[\"pool\"]; v=d[\"validators\"]; print(f\"Epoch: {e[\"current_epoch\"]}, Rate: {e[\"epoch_reward_rate_los\"]} LOS/epoch\"); print(f\"Pool remaining: {p[\"remaining_los\"]} LOS, distributed: {p[\"total_distributed_los\"]} LOS\"); print(f\"Validators: {v[\"eligible\"]}/{v[\"total\"]} eligible\")' && echo '' && echo '=== SLASHING STATUS ===' && curl -s http://localhost:3030/slashing | python3 -m json.tool | head -20 && echo '' && echo '=== CONSENSUS ===' && curl -s http://localhost:3030/consensus | python3 -c 'import json,sys; d=json.load(sys.stdin); s=d[\"safety\"]; print(f\"active_validators: {s[\"active_validators\"]}, byzantine_safe: {s[\"byzantine_safe\"]}\")' && echo '' && echo 'DONE'"
+		},
+		{
+			"label": "Check Nodes After Fix",
+			"type": "shell",
+			"command": "for port in 3030 3031 3032 3033; do echo -n \"V$((port-3029)): \"; curl -s http://localhost:$port/health | python3 -c \"import json,sys; d=json.load(sys.stdin); print(d['status'],d['version'],d['chain']['blocks'])\" 2>/dev/null || echo DOWN; done"
+		},
+		{
+			"label": "V1 Node",
+			"type": "shell",
+			"command": "cd /Users/moonkey-code/Documents/monkey-one/project/unauthority-core && RUST_LOG=warn ./target/release/los-node --port 3030 --data-dir node_data/v1 --testnet",
+			"isBackground": true,
+			"problemMatcher": []
+		},
+		{
+			"label": "Kill All Nodes",
+			"type": "shell",
+			"command": "pkill -9 -f los-node; sleep 2; echo 'All los-node processes killed'; ps aux | grep los-node | grep -v grep || echo 'Confirmed: no los-node processes'"
+		},
+		{
+			"label": "Force Kill All",
+			"type": "shell",
+			"command": "pkill -9 -f los-node; pkill -9 -f 'cargo test'; sleep 3; ps aux | grep -E 'los-node|los_node' | grep -v grep | wc -l"
+		},
+		{
+			"label": "Kill Remaining",
+			"type": "shell",
+			"command": "ps aux | grep -E 'los-node|los_node' | grep -v grep | awk '{print $2}' | xargs kill -9 2>/dev/null; sleep 2; echo 'Remaining:'; ps aux | grep -E 'los-node|los_node' | grep -v grep || echo 'NONE'"
+		},
+		{
+			"label": "Check Clean",
+			"type": "shell",
+			"command": "ps aux | grep -E 'los-node|los_node|rustc.*los' | grep -v grep || echo 'ALL CLEAN'"
+		},
+		{
+			"label": "Kill PIDs",
+			"type": "shell",
+			"command": "kill -9 20241 70665 25607 2>/dev/null; sleep 2; lsof -i :3030 -i :3031 -i :3032 -i :3033 -i :3035 2>/dev/null || echo 'Ports 3030-3035 all free'"
+		},
+		{
+			"label": "Start All Nodes Fixed",
+			"type": "shell",
+			"command": "kill -9 20241 2>/dev/null; sleep 1; lsof -i :3030 -i :3031 -i :3032 -i :3033 2>/dev/null && echo 'PORTS IN USE' || echo 'All ports free'; echo '---'; echo 'Starting V1...'; cd /Users/moonkey-code/Documents/monkey-one/project/unauthority-core && nohup env RUST_LOG=warn ./target/release/los-node --port 3030 --data-dir node_data/v1 --testnet > /tmp/los_v1.log 2>&1 & sleep 2; echo 'Starting V2...'; nohup env RUST_LOG=warn ./target/release/los-node --port 3031 --data-dir node_data/v2 --testnet > /tmp/los_v2.log 2>&1 & sleep 2; echo 'Starting V3...'; nohup env RUST_LOG=warn ./target/release/los-node --port 3032 --data-dir node_data/v3 --testnet > /tmp/los_v3.log 2>&1 & sleep 2; echo 'Starting V4...'; nohup env LOS_WALLET_PASSWORD=los-node-validator-4-autokey RUST_LOG=warn ./target/release/los-node --port 3033 --data-dir node_data/v4 --testnet > /tmp/los_v4.log 2>&1 & sleep 5; echo 'Checking health...'; for port in 3030 3031 3032 3033; do echo -n \"V$((port-3029)): \"; curl -s http://localhost:$port/health 2>/dev/null | python3 -c \"import json,sys; d=json.load(sys.stdin); print(d['status'],d['version'],d['chain']['blocks'])\" 2>/dev/null || echo 'DOWN'; done"
+		},
+		{
+			"label": "Verify Nodes Health",
+			"type": "shell",
+			"command": "sleep 5; for port in 3030 3031 3032 3033; do echo -n \"V$((port-3029)): \"; curl -s http://localhost:$port/health 2>/dev/null | python3 -c \"import json,sys; d=json.load(sys.stdin); print(d['status'],d['version'],d['chain']['blocks'])\" 2>/dev/null || echo 'DOWN'; done"
+		},
+		{
+			"label": "Verify Fixes",
+			"type": "shell",
+			"command": "echo '=== REWARD-INFO ===' && curl -s http://localhost:3030/reward-info | python3 -c \"import json,sys; d=json.load(sys.stdin); p=d['pool']; print('remaining_los:', p['remaining_los']); print('distributed_los:', p['total_distributed_los']); e=d['epoch']; print('rate_los:', e['epoch_reward_rate_los']); print('epoch:', e['current_epoch'])\" && echo '' && echo '=== TOR CHECK ===' && curl -s --proxy socks5h://127.0.0.1:9050 http://ll22j45prmu3oymratallztx74peen4gsxudzbgf5qvybezobitvywyd.onion:3030/health | python3 -c \"import json,sys; d=json.load(sys.stdin); print('Tor OK:', d['status'], d['version'])\""
+		},
+		{
+			"label": "Check LOS Types",
+			"type": "shell",
+			"command": "curl -s http://localhost:3030/reward-info | python3 -c \"import json,sys; d=json.load(sys.stdin); p=d['pool']; print('remaining_los type:', type(p['remaining_los']).__name__, 'value:', repr(p['remaining_los'])); print('distributed_los type:', type(p['total_distributed_los']).__name__, 'value:', repr(p['total_distributed_los'])); e=d['epoch']; print('rate_los type:', type(e['epoch_reward_rate_los']).__name__, 'value:', repr(e['epoch_reward_rate_los']))\""
+		},
+		{
+			"label": "Rebuild Release",
+			"type": "shell",
+			"command": "cd /Users/moonkey-code/Documents/monkey-one/project/unauthority-core && cargo build --release 2>&1 | tail -5 && echo '---BUILD DONE---'"
+		},
+		{
+			"label": "Rebuild and Restart",
+			"type": "shell",
+			"command": "cd /Users/moonkey-code/Documents/monkey-one/project/unauthority-core && pkill -f los-node; sleep 2 && touch crates/los-node/src/main.rs && cargo build --release -p los-node 2>&1 | tail -5 && echo '---BUILD OK---' && echo 'Starting nodes...' && nohup env RUST_LOG=warn ./target/release/los-node --port 3030 --data-dir node_data/v1 --testnet > /tmp/los_v1.log 2>&1 & sleep 1 && nohup env RUST_LOG=warn ./target/release/los-node --port 3031 --data-dir node_data/v2 --testnet > /tmp/los_v2.log 2>&1 & sleep 1 && nohup env RUST_LOG=warn ./target/release/los-node --port 3032 --data-dir node_data/v3 --testnet > /tmp/los_v3.log 2>&1 & sleep 1 && nohup env LOS_WALLET_PASSWORD=los-node-validator-4-autokey RUST_LOG=warn ./target/release/los-node --port 3033 --data-dir node_data/v4 --testnet > /tmp/los_v4.log 2>&1 & sleep 5 && echo 'Testing reward-info fix...' && curl -s http://localhost:3030/reward-info | python3 -c \"import json,sys; d=json.load(sys.stdin); p=d['pool']; print('remaining_los:', type(p['remaining_los']).__name__, repr(p['remaining_los'])); print('distributed_los:', type(p['total_distributed_los']).__name__, repr(p['total_distributed_los']))\" && echo '===DONE==='"
+		},
+		{
+			"label": "Quick Check",
+			"type": "shell",
+			"command": "curl -s http://localhost:3030/reward-info 2>/dev/null | python3 -c \"import json,sys; d=json.load(sys.stdin); p=d['pool']; print('remaining_los:', type(p['remaining_los']).__name__, repr(p['remaining_los'])); print('distributed_los:', type(p['total_distributed_los']).__name__, repr(p['total_distributed_los']))\" 2>/dev/null || echo 'NOT READY YET'"
+		},
+		{
+			"label": "Wait and Check",
+			"type": "shell",
+			"command": "sleep 15 && for port in 3030 3031 3032 3033; do echo -n \"V$((port-3029)): \"; curl -s http://localhost:$port/health 2>/dev/null | python3 -c \"import json,sys; d=json.load(sys.stdin); print(d['status'],d['version'],d['chain']['blocks'])\" 2>/dev/null || echo DOWN; done && echo '---' && curl -s http://localhost:3030/reward-info | python3 -c \"import json,sys; d=json.load(sys.stdin); p=d['pool']; print('remaining_los:', type(p['remaining_los']).__name__, repr(p['remaining_los'])); e=d['epoch']; print('rate_los:', type(e['epoch_reward_rate_los']).__name__, repr(e['epoch_reward_rate_los']))\""
+		},
+		{
+			"label": "Delete v3 test",
+			"type": "shell",
+			"command": "rm -f /Users/moonkey-code/Documents/monkey-one/project/unauthority-core/test_comprehensive_tor_v3.py && echo DELETED"
+		},
+		{
+			"label": "Run v3.1 Tor Test",
+			"type": "shell",
+			"command": "cd /Users/moonkey-code/Documents/monkey-one/project/unauthority-core && python3 test_comprehensive_tor_v3.py 2>&1"
+		},
+		{
+			"label": "Wait 5min",
+			"type": "shell",
+			"command": "sleep 300 && echo 'TIMEOUT'"
+		},
+		{
+			"label": "Run v2 Tor Regression",
+			"type": "shell",
+			"command": "cd /Users/moonkey-code/Documents/monkey-one/project/unauthority-core && python3 test_comprehensive_tor.py 2>&1"
+		},
+		{
+			"label": "Check Warnings",
+			"type": "shell",
+			"command": "cd /Users/moonkey-code/Documents/monkey-one/project/unauthority-core && cargo build --release 2>&1 | grep -E 'warning|error' | head -60"
+		},
+		{
+			"label": "Build Release Clean",
+			"type": "shell",
+			"command": "cd /Users/moonkey-code/Documents/monkey-one/project/unauthority-core && cargo build --release 2>&1 | tail -20"
+		},
+		{
+			"label": "Rebuild After Fix",
+			"type": "shell",
+			"command": "cd /Users/moonkey-code/Documents/monkey-one/project/unauthority-core && touch crates/los-node/src/main.rs && cargo build --release 2>&1 | grep -E 'warning|error|Compiling|Finished' | head -30"
+		},
+		{
+			"label": "Verify Build",
+			"type": "shell",
+			"command": "cd /Users/moonkey-code/Documents/monkey-one/project/unauthority-core && cargo build --release -p los-node 2>&1 | grep -cE 'warning|error' && echo 'WARNINGS_COUNT_ABOVE' && cargo build --release 2>&1 | grep -cE 'warning' && echo 'ROOT_WARNINGS' && ls -la target/release/los-node | awk '{print $6, $7, $8, $9}'"
+		},
+		{
+			"label": "Check Node Warnings",
+			"type": "shell",
+			"command": "cd /Users/moonkey-code/Documents/monkey-one/project/unauthority-core && touch crates/los-node/src/main.rs && cargo build --release -p los-node 2>&1 | grep -E 'warning|error' | head -20"
+		},
+		{
+			"label": "Rebuild Final",
+			"type": "shell",
+			"command": "cd /Users/moonkey-code/Documents/monkey-one/project/unauthority-core && touch crates/los-node/src/main.rs && cargo build --release 2>&1 | grep -E 'warning|error|Compiling|Finished'"
+		},
+		{
+			"label": "Check Binary2",
+			"type": "shell",
+			"command": "ls -la /Users/moonkey-code/Documents/monkey-one/project/unauthority-core/target/release/uat-node 2>/dev/null || ls -la /Users/moonkey-code/Documents/monkey-one/project/unauthority-core/target/release/los-node 2>/dev/null || echo 'Binary not found, checking...' && ls /Users/moonkey-code/Documents/monkey-one/project/unauthority-core/target/release/ | grep -i 'node\\|los\\|uat' | head -10"
+		},
+		{
+			"label": "Force Rebuild Node",
+			"type": "shell",
+			"command": "cd /Users/moonkey-code/Documents/monkey-one/project/unauthority-core && cargo clean -p los-node --release && cargo build --release -p los-node 2>&1 | tail -5 && ls -la target/release/uat-node | awk '{print $6, $7, $8, $9}'"
+		},
+		{
+			"label": "Wait Build",
+			"type": "shell",
+			"command": "sleep 120 && ls -la /Users/moonkey-code/Documents/monkey-one/project/unauthority-core/target/release/uat-node | awk '{print $6, $7, $8, $9}'"
+		},
+		{
+			"label": "Verify Zero Warnings",
+			"type": "shell",
+			"command": "cd /Users/moonkey-code/Documents/monkey-one/project/unauthority-core && cargo build --release 2>&1 | grep -iE 'warning|error' | head -10 && echo '---DONE---'"
+		},
+		{
+			"label": "Run Unit Tests",
+			"type": "shell",
+			"command": "cd /Users/moonkey-code/Documents/monkey-one/project/unauthority-core && cargo test --release -p los-core -p los-consensus -p los-crypto -p los-network -p los-vm -p los-cli 2>&1 | tail -30"
+		},
+		{
+			"label": "Wait Tests",
+			"type": "shell",
+			"command": "sleep 180 && echo 'WAIT_DONE'"
+		},
+		{
+			"label": "Test Summary",
+			"type": "shell",
+			"command": "cd /Users/moonkey-code/Documents/monkey-one/project/unauthority-core && cargo test --release -p los-core -p los-consensus -p los-crypto -p los-network -p los-vm -p los-cli 2>&1 | grep -E 'test result:|running|FAILED'"
+		},
+		{
+			"label": "Test Totals",
+			"type": "shell",
+			"command": "cd /Users/moonkey-code/Documents/monkey-one/project/unauthority-core && cargo test --release -p los-core -p los-consensus -p los-crypto -p los-network -p los-vm -p los-cli 2>&1 | grep 'test result:' | awk '{s+=$4; f+=$6; i+=$8} END {printf \"Total: %d passed, %d failed, %d ignored\\n\", s, f, i}'"
+		},
+		{
+			"label": "Find Failed Test",
+			"type": "shell",
+			"command": "cd /Users/moonkey-code/Documents/monkey-one/project/unauthority-core && cargo test --release -p los-core -p los-consensus -p los-crypto -p los-network -p los-vm -p los-cli 2>&1 | grep -E 'FAILED|failures|test .* FAILED'"
+		},
+		{
+			"label": "Restart Validators",
+			"type": "shell",
+			"command": "cd /Users/moonkey-code/Documents/monkey-one/project/unauthority-core && chmod +x restart_fresh.sh && bash restart_fresh.sh"
 		}
 	]
 }

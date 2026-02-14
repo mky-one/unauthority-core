@@ -30,9 +30,35 @@ class BlockchainConstants {
   /// Used in address derivation: BLAKE2b → version+hash → checksum → Base58
   static const int addressVersionByte = 0x4A;
 
-  /// Convert CIL (smallest unit) to LOS (display unit)
+  /// Convert CIL (smallest unit) to LOS (display unit) — double precision.
+  /// NOTE: f64 has ~15-16 significant digits. For total supply (~2.2e18 CIL)
+  /// the last 1-3 CIL digits may be rounded. Acceptable for UI display only.
+  /// For financial comparisons, always use CIL integers directly.
   static double cilToLos(int cilAmount) {
     return cilAmount / cilPerLos.toDouble();
+  }
+
+  /// Convert CIL to LOS as an exact string using integer-only math.
+  /// No floating-point precision loss — safe for all display contexts.
+  /// Examples:
+  ///   0 → "0.00"
+  ///   100000000000 → "1.00"
+  ///   30000000000 → "0.30000000000"
+  static String cilToLosString(int cilAmount) {
+    if (cilAmount == 0) return '0.00';
+    final negative = cilAmount < 0;
+    final abs = negative ? -cilAmount : cilAmount;
+    final whole = abs ~/ cilPerLos;
+    final frac = abs % cilPerLos;
+    final sign = negative ? '-' : '';
+    if (frac == 0) return '$sign$whole.00';
+    // Pad fractional part to decimalPlaces digits, then trim trailing zeros
+    // but keep at least 2 decimal places.
+    var fracStr = frac.toString().padLeft(decimalPlaces, '0');
+    while (fracStr.length > 2 && fracStr.endsWith('0')) {
+      fracStr = fracStr.substring(0, fracStr.length - 1);
+    }
+    return '$sign$whole.$fracStr';
   }
 
   /// Convert LOS string to CIL using integer-only math.
@@ -66,10 +92,11 @@ class BlockchainConstants {
     return wholePart * cilPerLos + fracCil;
   }
 
-  /// Format LOS amount for display with appropriate precision
-  /// Shows up to 6 decimal places, trimming trailing zeros
+  /// Format LOS amount for display with appropriate precision.
+  /// Shows up to maxDecimals decimal places, trimming trailing zeros.
+  /// For sub-CIL amounts (< 0.00000000001 LOS), shows "~0.00".
   static String formatLos(double losAmount, {int maxDecimals = 6}) {
-    if (losAmount == 0) return '0.000000';
+    if (losAmount == 0) return '0.00';
 
     // Show up to maxDecimals places
     final formatted = losAmount.toStringAsFixed(maxDecimals);
@@ -86,8 +113,13 @@ class BlockchainConstants {
     return formatted;
   }
 
-  /// Format CIL amount directly for display as LOS
+  /// Format CIL amount directly for display as LOS.
+  /// Uses integer-only math for exact representation when possible.
   static String formatCilAsLos(int cilAmount, {int maxDecimals = 6}) {
+    // For precise display, use cilToLosString (no f64 precision loss)
+    if (maxDecimals >= decimalPlaces) {
+      return cilToLosString(cilAmount);
+    }
     return formatLos(cilToLos(cilAmount), maxDecimals: maxDecimals);
   }
 }

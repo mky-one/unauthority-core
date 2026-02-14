@@ -400,8 +400,14 @@ impl SlashingManager {
             .ok_or_else(|| format!("Validator {} not registered", validator_address))?;
 
         match profile.status {
-            ValidatorStatus::Banned => Err(format!("Validator {} is permanently banned", validator_address)),
-            ValidatorStatus::Unstaking => Err(format!("Validator {} is already unstaking", validator_address)),
+            ValidatorStatus::Banned => Err(format!(
+                "Validator {} is permanently banned",
+                validator_address
+            )),
+            ValidatorStatus::Unstaking => Err(format!(
+                "Validator {} is already unstaking",
+                validator_address
+            )),
             ValidatorStatus::Active | ValidatorStatus::Slashed => {
                 profile.status = ValidatorStatus::Unstaking;
                 Ok(())
@@ -419,6 +425,12 @@ impl SlashingManager {
     /// Update block height
     pub fn update_block_height(&mut self, height: u64) {
         self.current_block_height = height;
+    }
+
+    /// Fully remove a validator from the SlashingManager (on unregister).
+    /// Unlike set_unstaking which preserves the record, this removes all traces.
+    pub fn remove_validator(&mut self, validator_address: &str) -> bool {
+        self.validators.remove(validator_address).is_some()
     }
 
     /// Get all registered validator addresses (genesis + dynamically registered)

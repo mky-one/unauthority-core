@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../services/wallet_service.dart';
 import '../utils/address_validator.dart';
@@ -58,10 +59,38 @@ class _WalletSetupScreenState extends State<WalletSetupScreen> {
                     style: const TextStyle(fontSize: 14),
                   ),
                 ),
-                const SizedBox(height: 16),
-                Text(
-                  'Address: ${wallet['address']}',
-                  style: const TextStyle(fontSize: 12, color: Colors.grey),
+                const SizedBox(height: 8),
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: TextButton.icon(
+                    icon: const Icon(Icons.copy, size: 16),
+                    label: const Text('Copy Seed Phrase'),
+                    style: TextButton.styleFrom(
+                      foregroundColor: Colors.orangeAccent,
+                    ),
+                    onPressed: () {
+                      Clipboard.setData(
+                          ClipboardData(text: wallet['mnemonic']!));
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('Seed phrase copied to clipboard'),
+                          duration: Duration(seconds: 2),
+                        ),
+                      );
+                    },
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        'Address: ${wallet['address']}',
+                        style:
+                            const TextStyle(fontSize: 12, color: Colors.grey),
+                      ),
+                    ),
+                  ],
                 ),
               ],
             ),

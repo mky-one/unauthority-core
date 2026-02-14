@@ -36,13 +36,14 @@ class _SetupWizardScreenState extends State<SetupWizardScreen> {
       false; // Genesis bootstrap validator → monitor-only mode
   String? _error;
   String? _validatedAddress;
-  double? _validatedBalance;
+  int? _validatedBalanceCil; // Balance in CIL — integer precision
 
   // Launch progress
   String _launchStatus = '';
   double _launchProgress = 0.0;
 
-  static const double _minStakeLOS = 1000.0;
+  /// Minimum validator stake in CIL (1000 LOS * cilPerLos)
+  static final int _minStakeCil = 1000 * BlockchainConstants.cilPerLos;
 
   @override
   void dispose() {
@@ -106,10 +107,11 @@ class _SetupWizardScreenState extends State<SetupWizardScreen> {
       debugPrint('Checking balance for $walletAddress...');
       final account = await apiService.getBalance(walletAddress);
 
-      if (account.balanceLOS < _minStakeLOS) {
+      // Compare in CIL integers — no f64 precision loss
+      if (account.balance < _minStakeCil) {
         throw Exception(
-          'Insufficient balance: ${BlockchainConstants.formatLos(account.balanceLOS)} LOS.\n'
-          'Minimum validator stake is ${_minStakeLOS.toInt()} LOS.\n'
+          'Insufficient balance: ${BlockchainConstants.cilToLosString(account.balance)} LOS.\n'
+          'Minimum validator stake is 1,000 LOS.\n'
           'Fund your wallet first using the LOS Wallet app.',
         );
       }
@@ -122,12 +124,12 @@ class _SetupWizardScreenState extends State<SetupWizardScreen> {
       if (!mounted) return;
       setState(() {
         _validatedAddress = walletAddress;
-        _validatedBalance = account.balanceLOS;
+        _validatedBalanceCil = account.balance;
         _isGenesisMonitor = isGenesisActive;
         _currentStep = 1;
       });
       debugPrint(
-          '🛡️ [SetupWizardScreen._importAndValidate] Success: address=$walletAddress, balance=${account.balanceLOS} LOS');
+          '🛡️ [SetupWizardScreen._importAndValidate] Success: address=$walletAddress, balance=${account.balance} CIL');
     } catch (e) {
       debugPrint('🛡️ [SetupWizardScreen._importAndValidate] Error: $e');
       if (!mounted) return;
@@ -214,18 +216,26 @@ class _SetupWizardScreenState extends State<SetupWizardScreen> {
 
       if (!mounted) return;
       if (onionAddress == null) {
-        debugPrint('Tor hidden service failed, running localhost-only');
-        setState(() {
-          _launchStatus =
-              'Tor unavailable - running in local mode.\nStarting validator node...';
-          _launchProgress = 0.5;
-        });
-      } else {
-        setState(() {
-          _launchStatus = 'Tor ready!\nStarting validator node...';
-          _launchProgress = 0.5;
-        });
+        // MAINNET PARITY: Tor hidden service is MANDATORY.
+        // Without .onion, the validator cannot be reached by peers
+        // and cannot participate in consensus. Hard failure.
+        throw Exception(
+          'Tor hidden service failed to start.\n'
+          'A .onion address is required for validator operation.\n'
+          'Check Tor installation and retry.',
+        );
       }
+
+      // CRITICAL: Exclude own .onion from API failover peer list.
+      // Spec: "flutter_validator MUST NOT use its own local onion
+      // address for API consumption".
+      final apiService = context.read<ApiService>();
+      apiService.setExcludedOnion('http://$onionAddress');
+
+      setState(() {
+        _launchStatus = 'Tor ready!\nStarting validator node...';
+        _launchProgress = 0.5;
+      });
 
       // Step B: Start los-node
       if (!mounted) return;
@@ -233,11 +243,34 @@ class _SetupWizardScreenState extends State<SetupWizardScreen> {
         _launchProgress = 0.6;
       });
 
-      // Load bootstrap nodes so los-node can discover peers on the network
+      // Load bootstrap nodes so los-node can discover peers on the network.
+      // MAINNET PARITY: ALWAYS use .onion P2P addresses.
+      // No localhost/127.0.0.1 — Tor onion routing is mandatory.
       await NetworkConfig.load();
+      final testnetNodes = NetworkConfig.testnetNodes;
       final bootstrapAddresses =
-          NetworkConfig.testnetNodes.map((n) => n.p2pAddress).join(',');
-      debugPrint('🌐 Bootstrap nodes: $bootstrapAddresses');
+          testnetNodes.map((n) => n.p2pAddress).join(',');
+      debugPrint('\ud83c\udf10 Bootstrap nodes (.onion): $bootstrapAddresses');
+
+      // P2P port: auto-derived from API port + 1000 (matches los-node)
+      final p2pPort = nodePort + 1000;
+      debugPrint('📡 P2P port: $p2pPort');
+
+      // Tor SOCKS5 proxy: MANDATORY for dialing .onion bootstrap peers.
+      // MAINNET PARITY: Without SOCKS5, los-node cannot reach any peer.
+      if (!torService.isRunning) {
+        throw Exception(
+          'Tor SOCKS5 proxy is not running.\n'
+          'Cannot connect to .onion bootstrap peers without Tor.',
+        );
+      }
+      final torSocks5 = '127.0.0.1:${torService.activeSocksPort}';
+      debugPrint('🧅 Tor SOCKS5: $torSocks5');
+
+      // Retrieve mnemonic so los-node can derive the same Dilithium5 keypair
+      final walletWithMnemonic =
+          await walletService.getCurrentWallet(includeMnemonic: true);
+      final mnemonic = walletWithMnemonic?['mnemonic'];
 
       // If node is already running (e.g. survived hot-reload or previous session),
       // skip starting and proceed directly to registration.
@@ -254,6 +287,9 @@ class _SetupWizardScreenState extends State<SetupWizardScreen> {
           onionAddress: onionAddress,
           bootstrapNodes:
               bootstrapAddresses.isNotEmpty ? bootstrapAddresses : null,
+          seedPhrase: mnemonic,
+          p2pPort: p2pPort,
+          torSocks5: torSocks5,
         );
 
         if (!started) {
@@ -286,6 +322,9 @@ class _SetupWizardScreenState extends State<SetupWizardScreen> {
           final message = 'REGISTER_VALIDATOR:$address:$timestamp';
           final signature = await walletService.signTransaction(message);
 
+          // Include our onion address so peers can connect to us
+          final myOnion = torService.onionAddress;
+
           // Register on the LOCAL node (sets is_validator locally)
           final localApi = ApiService(
             customUrl: 'http://127.0.0.1:$activePort',
@@ -298,6 +337,7 @@ class _SetupWizardScreenState extends State<SetupWizardScreen> {
               publicKey: publicKey,
               signature: signature,
               timestamp: timestamp,
+              onionAddress: myOnion,
             );
             debugPrint('✅ Local registration: ${result['msg']}');
           } catch (e) {
@@ -316,6 +356,7 @@ class _SetupWizardScreenState extends State<SetupWizardScreen> {
                 publicKey: publicKey,
                 signature: signature,
                 timestamp: timestamp,
+                onionAddress: myOnion,
               );
               debugPrint('✅ Bootstrap registration: ${result['msg']}');
             } catch (e) {
@@ -375,7 +416,7 @@ class _SetupWizardScreenState extends State<SetupWizardScreen> {
               textAlign: TextAlign.center),
           const SizedBox(height: 8),
           Text(
-              'Import your wallet to register as a validator node.\nMinimum stake: ${_minStakeLOS.toInt()} LOS',
+              'Import your wallet to register as a validator node.\nMinimum stake: 1,000 LOS',
               style: TextStyle(fontSize: 14, color: Colors.grey[400]),
               textAlign: TextAlign.center),
           const SizedBox(height: 32),
@@ -451,9 +492,9 @@ class _SetupWizardScreenState extends State<SetupWizardScreen> {
                         '${_validatedAddress!.substring(0, 12)}...${_validatedAddress!.substring(_validatedAddress!.length - 8)}'),
                     const Divider(),
                     _infoRow('Balance',
-                        '${BlockchainConstants.formatLos(_validatedBalance!)} LOS'),
+                        '${BlockchainConstants.cilToLosString(_validatedBalanceCil!)} LOS'),
                     const Divider(),
-                    _infoRow('Min Stake', '${_minStakeLOS.toInt()} LOS'),
+                    _infoRow('Min Stake', '1,000 LOS'),
                     const Divider(),
                     _infoRow('Status', 'Eligible'),
                   ]))),

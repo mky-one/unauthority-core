@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'screens/dashboard_screen.dart';
@@ -12,24 +13,40 @@ import 'services/node_process_service.dart';
 import 'services/tor_service.dart';
 
 void main() async {
-  WidgetsFlutterBinding.ensureInitialized();
+  // Catch unhandled async exceptions (e.g. from SOCKS5 proxy failures)
+  // so they don't spam [ERROR:flutter/runtime/dart_vm_initializer.cc] to console.
+  runZonedGuarded(() async {
+    WidgetsFlutterBinding.ensureInitialized();
 
-  // Load bootstrap node addresses from assets/network_config.json
-  await NetworkConfig.load();
+    // Global Flutter error handler — log but don't crash
+    FlutterError.onError = (details) {
+      debugPrint('⚠️ FlutterError: ${details.exceptionAsString()}');
+      debugPrint(
+          '   ${details.stack?.toString().split('\n').take(3).join('\n   ')}');
+    };
 
-  // Initialize Dilithium5 post-quantum crypto (loads native lib if available)
-  await DilithiumService.initialize();
-  debugPrint(
-    DilithiumService.isAvailable
-        ? '🔐 Dilithium5 ready (PK: ${DilithiumService.publicKeyBytes}B, SK: ${DilithiumService.secretKeyBytes}B)'
-        : '⚠️  Dilithium5 not available — SHA256 fallback active',
-  );
+    // Load bootstrap node addresses from assets/network_config.json
+    await NetworkConfig.load();
 
-  // Migrate any plaintext secrets from SharedPreferences → SecureStorage
-  final walletService = WalletService();
-  await walletService.migrateFromSharedPreferences();
+    // Initialize Dilithium5 post-quantum crypto (loads native lib if available)
+    await DilithiumService.initialize();
+    debugPrint(
+      DilithiumService.isAvailable
+          ? '🔐 Dilithium5 ready (PK: ${DilithiumService.publicKeyBytes}B, SK: ${DilithiumService.secretKeyBytes}B)'
+          : '⚠️  Dilithium5 not available — SHA256 fallback active',
+    );
 
-  runApp(MyApp(walletService: walletService));
+    // Migrate any plaintext secrets from SharedPreferences → SecureStorage
+    final walletService = WalletService();
+    await walletService.migrateFromSharedPreferences();
+
+    runApp(MyApp(walletService: walletService));
+  }, (error, stackTrace) {
+    // Catches uncaught async exceptions from zones without error handlers
+    // (e.g. socks5_proxy RangeError from non-SOCKS5 port responses)
+    debugPrint('⚠️ Uncaught async error: $error');
+    debugPrint('   ${stackTrace.toString().split('\n').take(3).join('\n   ')}');
+  });
 }
 
 class MyApp extends StatefulWidget {
@@ -118,13 +135,24 @@ class _AppRouterState extends State<_AppRouter> {
   }
 
   Future<void> _checkWallet() async {
-    final walletService = context.read<WalletService>();
-    final wallet = await walletService.getCurrentWallet();
-    if (!mounted) return;
-    setState(() {
-      _hasWallet = wallet != null;
-      _loading = false;
-    });
+    debugPrint('🔄 [Validator] Checking wallet state...');
+    try {
+      final walletService = context.read<WalletService>();
+      final wallet = await walletService.getCurrentWallet();
+      if (!mounted) return;
+      debugPrint('🔄 [Validator] Wallet found: ${wallet != null}');
+      setState(() {
+        _hasWallet = wallet != null;
+        _loading = false;
+      });
+    } catch (e) {
+      debugPrint('❌ [Validator] _checkWallet error: $e');
+      if (!mounted) return;
+      setState(() {
+        _hasWallet = false;
+        _loading = false;
+      });
+    }
   }
 
   @override

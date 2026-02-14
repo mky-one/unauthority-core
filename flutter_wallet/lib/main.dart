@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'screens/home_screen.dart';
@@ -11,12 +12,29 @@ import 'services/dilithium_service.dart';
 import 'services/network_status_service.dart';
 
 void main() async {
-  WidgetsFlutterBinding.ensureInitialized();
-  // Load bootstrap node addresses from assets/network_config.json
-  await NetworkConfig.load();
-  // Initialize Dilithium5 native library (non-blocking, graceful fallback)
-  await DilithiumService.initialize();
-  runApp(const MyApp());
+  // Catch unhandled async exceptions (e.g. from SOCKS5 proxy failures)
+  // so they don't spam [ERROR:flutter/runtime/dart_vm_initializer.cc] to console.
+  runZonedGuarded(() async {
+    WidgetsFlutterBinding.ensureInitialized();
+
+    // Global Flutter error handler — log but don't crash
+    FlutterError.onError = (details) {
+      debugPrint('⚠️ FlutterError: ${details.exceptionAsString()}');
+      debugPrint(
+          '   ${details.stack?.toString().split('\n').take(3).join('\n   ')}');
+    };
+
+    // Load bootstrap node addresses from assets/network_config.json
+    await NetworkConfig.load();
+    // Initialize Dilithium5 native library (non-blocking, graceful fallback)
+    await DilithiumService.initialize();
+    runApp(const MyApp());
+  }, (error, stackTrace) {
+    // Catches uncaught async exceptions from zones without error handlers
+    // (e.g. socks5_proxy RangeError from non-SOCKS5 port responses)
+    debugPrint('⚠️ Uncaught async error: $error');
+    debugPrint('   ${stackTrace.toString().split('\n').take(3).join('\n   ')}');
+  });
 }
 
 class MyApp extends StatelessWidget {

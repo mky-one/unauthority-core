@@ -75,6 +75,16 @@ pub struct LosMetrics {
     pub contracts_deployed_total: IntCounter,
     pub contract_executions_total: IntCounter,
     pub contract_gas_used_total: Counter,
+
+    // Tor Hidden Service Health metrics
+    /// 1 = own .onion address is reachable via Tor SOCKS5, 0 = unreachable
+    pub tor_onion_reachable: IntGauge,
+    /// Consecutive self-ping failures (resets to 0 on success)
+    pub tor_consecutive_failures: IntGauge,
+    /// Total self-ping attempts
+    pub tor_self_ping_total: IntCounter,
+    /// Total self-ping failures
+    pub tor_self_ping_failures_total: IntCounter,
 }
 
 impl LosMetrics {
@@ -356,6 +366,31 @@ impl LosMetrics {
         ))?;
         registry.register(Box::new(contract_gas_used_total.clone()))?;
 
+        // Tor Hidden Service Health metrics
+        let tor_onion_reachable = IntGauge::with_opts(Opts::new(
+            "los_tor_onion_reachable",
+            "Whether this node's own .onion hidden service is reachable (1=yes, 0=no)",
+        ))?;
+        registry.register(Box::new(tor_onion_reachable.clone()))?;
+
+        let tor_consecutive_failures = IntGauge::with_opts(Opts::new(
+            "los_tor_consecutive_failures",
+            "Consecutive Tor self-ping failures (resets to 0 on success)",
+        ))?;
+        registry.register(Box::new(tor_consecutive_failures.clone()))?;
+
+        let tor_self_ping_total = IntCounter::with_opts(Opts::new(
+            "los_tor_self_ping_total",
+            "Total Tor self-ping attempts",
+        ))?;
+        registry.register(Box::new(tor_self_ping_total.clone()))?;
+
+        let tor_self_ping_failures_total = IntCounter::with_opts(Opts::new(
+            "los_tor_self_ping_failures_total",
+            "Total Tor self-ping failures",
+        ))?;
+        registry.register(Box::new(tor_self_ping_failures_total.clone()))?;
+
         Ok(Arc::new(Self {
             registry,
             blocks_total,
@@ -403,6 +438,10 @@ impl LosMetrics {
             contracts_deployed_total,
             contract_executions_total,
             contract_gas_used_total,
+            tor_onion_reachable,
+            tor_consecutive_failures,
+            tor_self_ping_total,
+            tor_self_ping_failures_total,
         }))
     }
 

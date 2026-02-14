@@ -35,6 +35,12 @@ class TorService {
   bool get isRunning => _isRunning;
   String? get onionAddress => _onionAddress;
   String get proxyAddress => _activeProxy ?? 'localhost:$_socksPort';
+
+  /// FIX B-03: Callback fired after Tor restarts with a new SOCKS port.
+  /// ApiService subscribes to this to recreate its HTTP client,
+  /// preventing a 30-120s dead window during hidden service startup.
+  VoidCallback? onSocksPortChanged;
+
   int get activeSocksPort {
     if (_activeProxy != null) {
       return int.tryParse(_activeProxy!.split(':').last) ?? _socksPort;
@@ -90,9 +96,58 @@ class TorService {
       await Future.delayed(const Duration(milliseconds: 500));
       _torProcess = null;
     }
+
+    // Also kill any orphaned Tor using our data directory (from previous runs)
+    await _killOrphanedTor();
+
     _isRunning = false;
     _activeProxy = null;
     debugPrint('✅ Tor state reset');
+  }
+
+  /// Kill any Tor process that is using the validator's data directory.
+  /// This handles the case where the app was restarted but the old Tor
+  /// process from the previous run is still alive, holding the lock file.
+  Future<void> _killOrphanedTor() async {
+    if (Platform.isWindows) return;
+    try {
+      // Find Tor processes using our data directory
+      final appDir = await getApplicationSupportDirectory();
+      final dataDir = path.join(appDir.path, 'tor_validator_data');
+      final lockFile = File(path.join(dataDir, 'lock'));
+
+      // If lock file exists, there's likely an orphaned process
+      if (await lockFile.exists()) {
+        debugPrint('🔒 Found Tor lock file — killing orphaned processes...');
+
+        // Find PIDs of tor processes matching our config
+        final result = await Process.run('pgrep', ['-f', 'tor_validator_data']);
+        if (result.exitCode == 0) {
+          final pids = result.stdout
+              .toString()
+              .trim()
+              .split('\n')
+              .where((s) => s.isNotEmpty);
+          for (final pid in pids) {
+            final pidNum = int.tryParse(pid.trim());
+            if (pidNum != null) {
+              debugPrint('🛑 Killing orphaned Tor PID: $pidNum');
+              Process.killPid(pidNum, ProcessSignal.sigterm);
+            }
+          }
+          // Wait for processes to die
+          await Future.delayed(const Duration(seconds: 1));
+        }
+
+        // Remove stale lock file if it still exists
+        if (await lockFile.exists()) {
+          await lockFile.delete();
+          debugPrint('🗑️ Removed stale Tor lock file');
+        }
+      }
+    } catch (e) {
+      debugPrint('⚠️ _killOrphanedTor: $e');
+    }
   }
 
   // ════════════════════════════════════════════════════════════════════════
@@ -255,6 +310,10 @@ ExitPolicy reject *:*
         await stop();
         return null;
       }
+
+      // FIX B-03: Notify listeners (ApiService) that the SOCKS port may have changed
+      // so they can recreate their HTTP client pointing to the new port.
+      onSocksPortChanged?.call();
 
       // Read the generated .onion address
       // Tor creates the hostname file after bootstrapping
@@ -722,46 +781,27 @@ UseBridges 0
 
   /// Detect existing Tor SOCKS proxies
   Future<Map<String, dynamic>> detectExistingTor() async {
-    // Check LOS bundled Tor
-    if (await _isPortOpen('localhost', bundledSocksPort)) {
-      return {
-        'found': true,
-        'type': 'LOS Bundled Tor',
-        'proxy': 'localhost:$bundledSocksPort'
-      };
-    }
+    // Detection order: LOS bundled → LOS testnet → system Tor → Tor Browser
+    // Tor Browser is checked LAST because it may have DisableNetwork=1
+    // (networking disabled by default), which passes SOCKS5 handshake but
+    // can't actually route traffic.
+    final candidates = [
+      (bundledSocksPort, 'LOS Bundled Tor'),
+      (testnetTorPort, 'LOS Testnet Tor'),
+      (systemTorPort, 'System Tor'),
+      (torBrowserPort, 'Tor Browser'),
+    ];
 
-    // Check Tor Browser
-    if (await _isPortOpen('localhost', torBrowserPort)) {
-      return {
-        'found': true,
-        'type': 'Tor Browser',
-        'proxy': 'localhost:$torBrowserPort'
-      };
-    }
-
-    // Check LOS testnet Tor
-    if (await _isPortOpen('localhost', testnetTorPort)) {
-      return {
-        'found': true,
-        'type': 'LOS Testnet Tor',
-        'proxy': 'localhost:$testnetTorPort'
-      };
-    }
-
-    // Check system Tor
-    if (await _isPortOpen('localhost', systemTorPort)) {
-      return {
-        'found': true,
-        'type': 'System Tor',
-        'proxy': 'localhost:$systemTorPort'
-      };
+    for (final (port, label) in candidates) {
+      if (await _isSocks5Proxy('localhost', port)) {
+        return {'found': true, 'type': label, 'proxy': 'localhost:$port'};
+      }
     }
 
     return {'found': false};
   }
 
-  /// Check if a port is open (for detecting existing Tor)
+  /// Check if a port is open (TCP-only, for port availability checks)
   Future<bool> _isPortOpen(String host, int port) async {
     try {
       final socket = await Socket.connect(
@@ -772,6 +812,46 @@ UseBridges 0
       socket.destroy();
       return true;
     } catch (e) {
+      return false;
+    }
+  }
+
+  /// Verify a port is running a SOCKS5 proxy (not just TCP open).
+  ///
+  /// Sends SOCKS5 handshake: [0x05, 0x01, 0x00] (version 5, 1 auth method, no-auth)
+  /// Expects response: [0x05, 0x00] (version 5, no-auth accepted)
+  /// This prevents RangeError crashes from connecting to non-SOCKS5 services.
+  Future<bool> _isSocks5Proxy(String host, int port) async {
+    Socket? socket;
+    try {
+      socket = await Socket.connect(
+        host,
+        port,
+        timeout: const Duration(seconds: 3),
+      );
+
+      // Send SOCKS5 greeting: version=5, 1 auth method, method=0 (no auth)
+      socket.add([0x05, 0x01, 0x00]);
+      await socket.flush();
+
+      // Read response with timeout
+      final response = await socket.first.timeout(
+        const Duration(seconds: 3),
+        onTimeout: () => Uint8List(0),
+      );
+
+      socket.destroy();
+
+      // Valid SOCKS5 response: [0x05, 0x00] (version 5, auth accepted)
+      if (response.length >= 2 && response[0] == 0x05) {
+        debugPrint('✅ SOCKS5 verified on $host:$port');
+        return true;
+      }
+
+      debugPrint('⚠️ Port $host:$port open but NOT SOCKS5 (got: $response)');
+      return false;
+    } catch (e) {
+      socket?.destroy();
       return false;
     }
   }

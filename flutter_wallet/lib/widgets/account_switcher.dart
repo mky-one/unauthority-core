@@ -62,6 +62,7 @@ class _AccountSwitcherState extends State<AccountSwitcher> {
         );
       }
     } catch (e) {
+      debugPrint('⚠️ [AccountSwitcher] Switch failed: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Error: $e')),

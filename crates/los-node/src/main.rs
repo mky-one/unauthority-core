@@ -62,6 +62,7 @@ mod mempool; // NEW: Mempool for transaction management
 mod metrics; // NEW: Prometheus metrics module
 mod rate_limiter; // NEW: Rate limiter module
 mod testnet_config;
+mod validator_api; // Validator key management (generate, import)
 mod validator_rewards; // Testnet configuration module (graduated levels)
                        // --- TAMBAHAN: HTTP API MODULE ---
 use db::LosDatabase;
@@ -77,6 +78,61 @@ const BURN_ADDRESS_BTC: &str = "1BitcoinEaterAddressDontSendf59kuE";
 // Race condition protection: Atomic flags for save state
 static SAVE_IN_PROGRESS: AtomicBool = AtomicBool::new(false);
 static SAVE_DIRTY: AtomicBool = AtomicBool::new(false);
+
+/// Create a JSON API reply with automatic HTTP status code based on body content.
+///
+/// Rules:
+/// - If body has `"code": N` → uses N as HTTP status code
+/// - If body has `"status": "error"` without code → HTTP 400
+/// - If body has `"error"` key → HTTP 400
+/// - Otherwise → HTTP 200
+///
+/// This replaces bare `warp::reply::json()` calls that always return HTTP 200,
+/// ensuring error responses get proper HTTP 4xx/5xx status codes.
+fn api_json(body: serde_json::Value) -> warp::reply::WithStatus<warp::reply::Json> {
+    let code = body
+        .get("code")
+        .and_then(|c| c.as_u64())
+        .map(|c| c as u16)
+        .unwrap_or_else(|| {
+            if body.get("status").and_then(|s| s.as_str()) == Some("error")
+                || body.get("error").is_some()
+            {
+                400
+            } else {
+                200
+            }
+        });
+    let status = warp::http::StatusCode::from_u16(code)
+        .unwrap_or(warp::http::StatusCode::INTERNAL_SERVER_ERROR);
+    warp::reply::with_status(warp::reply::json(&body), status)
+}
+
+/// Insert a validator endpoint, deduplicating by .onion address.
+/// One .onion can only map to ONE current LOS address — if a validator
+/// restarts with a new keypair, the old stale entry is removed.
+fn insert_validator_endpoint(
+    ve: &mut HashMap<String, String>,
+    address: String,
+    onion: String,
+) {
+    // Remove any existing entry that maps to the same onion
+    // (stale address from previous restart of the same node)
+    ve.retain(|existing_addr, existing_onion| {
+        if existing_onion == &onion && existing_addr != &address {
+            println!(
+                "🧹 Replacing stale endpoint: {} → {} (new: {})",
+                get_short_addr(existing_addr),
+                onion,
+                get_short_addr(&address)
+            );
+            false
+        } else {
+            true
+        }
+    });
+    ve.insert(address, onion);
+}
 
 /// Bootstrap nodes loaded from LOS_BOOTSTRAP_NODES environment variable
 /// Format: comma-separated multiaddresses or .onion:port addresses
@@ -130,8 +186,8 @@ struct BurnRequest {
     // MAINNET SECURITY: signature proves caller owns the recipient_address
     // Required on mainnet and consensus testnet when recipient_address is provided.
     // On functional testnet, these are optional (node signs the Mint block).
-    signature: Option<String>,   // Dilithium5 signature over "BURN:{coin_type}:{txid}:{recipient}"
-    public_key: Option<String>,  // Sender's Dilithium5 public key (hex)
+    signature: Option<String>, // Dilithium5 signature over "BURN:{coin_type}:{txid}:{recipient}"
+    public_key: Option<String>, // Sender's Dilithium5 public key (hex)
 }
 
 #[cfg(feature = "vm")]
@@ -304,6 +360,9 @@ pub struct ApiServerConfig {
     pub mempool_pool: Arc<Mutex<mempool::Mempool>>,
     /// aBFT Consensus Engine — shared between API server and main event loop
     pub abft_consensus: Arc<Mutex<ABFTConsensus>>,
+    /// Tracks wallet addresses registered as validators through this node's API.
+    /// Heartbeat loop records heartbeats for these addresses so they earn rewards.
+    pub local_registered_validators: Arc<Mutex<HashSet<String>>>,
 }
 
 #[allow(clippy::type_complexity)]
@@ -329,6 +388,7 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
         validator_endpoints,
         mempool_pool,
         abft_consensus,
+        local_registered_validators,
     } = cfg;
     // Rate Limiter: 100 req/sec per IP, burst 200
     let limiter = RateLimiter::new(100, Some(200));
@@ -389,7 +449,7 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
             let bal = acct.map(|a| a.balance).unwrap_or(0);
             let head = acct.map(|a| a.head.as_str()).unwrap_or("0");
             let block_count = acct.map(|a| a.block_count).unwrap_or(0);
-            warp::reply::json(&serde_json::json!({
+            api_json(serde_json::json!({
                 "address": full_addr,
                 "balance_los": format_balance_precise(bal),
                 "balance_cil": bal,
@@ -406,9 +466,16 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
         .and(with_state(l_sup))
         .map(|l: Arc<Mutex<Ledger>>| {
             let l_guard = safe_lock(&l);
-            warp::reply::json(&serde_json::json!({
-                "remaining_supply": format_balance_precise(l_guard.distribution.remaining_supply),
-                "remaining_supply_cil": l_guard.distribution.remaining_supply,
+            let total_supply_cil = TOTAL_SUPPLY_CIL;
+            let remaining_cil = l_guard.distribution.remaining_supply;
+            let circulating_cil = total_supply_cil.saturating_sub(remaining_cil);
+            api_json(serde_json::json!({
+                "total_supply": format_balance_precise(total_supply_cil),
+                "total_supply_cil": total_supply_cil,
+                "circulating_supply": format_balance_precise(circulating_cil),
+                "circulating_supply_cil": circulating_cil,
+                "remaining_supply": format_balance_precise(remaining_cil),
+                "remaining_supply_cil": remaining_cil,
                 "total_burned_usd": l_guard.distribution.total_burned_usd
             }))
         });
@@ -465,17 +532,19 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
                     }
                 }
             }
-            warp::reply::json(&serde_json::json!({"transactions": history}))
+            api_json(serde_json::json!({"transactions": history}))
         });
 
     // 4. GET /peers — enhanced with validator endpoint discovery
     let ab_peer = address_book.clone();
     let ve_peer = validator_endpoints.clone();
     let l_peer = ledger.clone();
+    let bv_peer = bootstrap_validators.clone();
+    let my_addr_peer = my_address.clone();
     let peers_route = warp::path("peers")
         .and(with_state((ab_peer, ve_peer, l_peer)))
         .map(
-            |(ab, ve, l): (
+            move |(ab, ve, l): (
                 Arc<Mutex<HashMap<String, String>>>,
                 Arc<Mutex<HashMap<String, String>>>,
                 Arc<Mutex<Ledger>>,
@@ -484,15 +553,17 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
                 let ve_guard = safe_lock(&ve);
                 let l_guard = safe_lock(&l);
 
-                // Build enriched peer list
-                let peers: Vec<serde_json::Value> = ab_guard
+                // Build enriched peer list from address_book (remote peers)
+                let mut peers: Vec<serde_json::Value> = ab_guard
                     .iter()
                     .map(|(short, full)| {
                         let is_validator = l_guard
                             .accounts
                             .get(full)
                             .map(|a| a.is_validator)
-                            .unwrap_or(false);
+                            .unwrap_or(false)
+                            || bv_peer.contains(full)
+                            || ve_guard.contains_key(full);
                         let onion = ve_guard.get(full).cloned();
                         let mut entry = serde_json::json!({
                             "short_address": short,
@@ -506,6 +577,32 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
                     })
                     .collect();
 
+                // Include THIS node (self) in the peers list so the operator
+                // can see their own node listed alongside remote peers.
+                {
+                    let self_addr = &my_addr_peer;
+                    let self_short = get_short_addr(self_addr);
+                    let self_is_validator = l_guard
+                        .accounts
+                        .get(self_addr)
+                        .map(|a| a.is_validator)
+                        .unwrap_or(false)
+                        || bv_peer.contains(self_addr)
+                        || ve_guard.contains_key(self_addr);
+                    let self_onion = ve_guard.get(self_addr).cloned();
+                    let mut self_entry = serde_json::json!({
+                        "short_address": self_short,
+                        "address": self_addr,
+                        "is_validator": self_is_validator,
+                        "self": true,
+                    });
+                    if let Some(o) = self_onion {
+                        self_entry["onion_address"] = serde_json::json!(o);
+                    }
+                    // Insert self at the beginning of the list
+                    peers.insert(0, self_entry);
+                }
+
                 // Collect all known validator endpoints for discovery
                 let validator_endpoints: Vec<serde_json::Value> = ve_guard
                     .iter()
@@ -517,7 +614,7 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
                     })
                     .collect();
 
-                warp::reply::json(&serde_json::json!({
+                api_json(serde_json::json!({
                     "peers": peers,
                     "peer_count": peers.len(),
                     "validator_endpoints": validator_endpoints,
@@ -543,7 +640,7 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
             let req: SendRequest = match serde_json::from_slice(&body) {
                 Ok(r) => r,
                 Err(e) => {
-                    return warp::reply::json(&serde_json::json!({
+                    return api_json(serde_json::json!({
                         "status": "error",
                         "code": 400,
                         "msg": format!("Invalid request body: {}", e)
@@ -555,7 +652,7 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
 
             // RATE LIMIT: 10 transactions per minute per sender address
             if let Err(wait_secs) = rate_lim.check_and_record(&sender_addr) {
-                return warp::reply::json(&serde_json::json!({
+                return api_json(serde_json::json!({
                     "status": "error",
                     "code": 429,
                     "msg": format!("Rate limit exceeded: max 10 transactions per minute. Try again in {} seconds.", wait_secs)
@@ -564,7 +661,7 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
 
             // CRITICAL: Validate sender address format (Base58Check)
             if !los_crypto::validate_address(&sender_addr) {
-                return warp::reply::json(&serde_json::json!({
+                return api_json(serde_json::json!({
                     "status": "error",
                     "msg": "Invalid sender address format. Must be Base58Check with LOS prefix."
                 }));
@@ -572,7 +669,7 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
 
             // Validate target address format (Base58Check)
             if !los_crypto::validate_address(&req.target) {
-                return warp::reply::json(&serde_json::json!({
+                return api_json(serde_json::json!({
                     "status": "error",
                     "msg": "Invalid target address format. Must be Base58Check with LOS prefix."
                 }));
@@ -581,7 +678,7 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
             // SECURITY: Reject zero-amount transactions (spam prevention)
             let effective_amount = req.amount_cil.unwrap_or(req.amount * CIL_PER_LOS);
             if effective_amount == 0 {
-                return warp::reply::json(&serde_json::json!({
+                return api_json(serde_json::json!({
                     "status": "error",
                     "msg": "Amount must be greater than 0."
                 }));
@@ -589,7 +686,7 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
 
             // SECURITY: Reject self-sends (no economic purpose, wastes consensus)
             if req.target == sender_addr {
-                return warp::reply::json(&serde_json::json!({
+                return api_json(serde_json::json!({
                     "status": "error",
                     "msg": "Cannot send to your own address."
                 }));
@@ -623,7 +720,7 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
                     match req.amount.checked_mul(CIL_PER_LOS) {
                         Some(v) => v,
                         None => {
-                            return warp::reply::json(&serde_json::json!({
+                            return api_json(serde_json::json!({
                                 "status": "error",
                                 "msg": "Amount overflow: value too large"
                             }));
@@ -636,7 +733,7 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
                     if let Some(pk) = req.public_key.clone() {
                         pk
                     } else {
-                        return warp::reply::json(&serde_json::json!({
+                        return api_json(serde_json::json!({
                             "status": "error",
                             "msg": "public_key field is REQUIRED when providing signature"
                         }));
@@ -693,7 +790,7 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
                                 }
                             }
                             Err(e) => {
-                                return warp::reply::json(&serde_json::json!({
+                                return api_json(serde_json::json!({
                                     "status": "error",
                                     "msg": format!("Anti-whale fee calculation failed: {}", e)
                                 }));
@@ -710,14 +807,14 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
                             .sum()
                     };
                     if st.balance < amt + final_fee + pending_total {
-                        return warp::reply::json(&serde_json::json!({
+                        return api_json(serde_json::json!({
                             "status":"error",
                             "msg": format!("Insufficient balance (need {} CIL for tx + {} CIL fee + {} CIL pending)", amt, final_fee, pending_total)
                         }));
                     }
                     initial_power = st.balance / CIL_PER_LOS;
                 } else {
-                    return warp::reply::json(&serde_json::json!({"status":"error","msg":"Sender account not found"}));
+                    return api_json(serde_json::json!({"status":"error","msg":"Sender account not found"}));
                 }
 
                 // Set fee on block BEFORE PoW/signing (fee is part of signing_hash)
@@ -725,7 +822,7 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
                 if client_signed {
                     let client_fee = blk.fee;
                     if client_fee < final_fee {
-                        return warp::reply::json(&serde_json::json!({
+                        return api_json(serde_json::json!({
                             "status": "error",
                             "msg": format!("Client fee {} CIL is below minimum required fee {} CIL", client_fee, final_fee)
                         }));
@@ -746,7 +843,7 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
                     if let Some(sig) = req.signature {
                         blk.signature = sig;
                     } else {
-                        return warp::reply::json(&serde_json::json!({
+                        return api_json(serde_json::json!({
                             "status": "error",
                             "msg": "Internal error: client_signed=true but signature missing"
                         }));
@@ -755,9 +852,11 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
                     // CRITICAL: Verify signature with public key (not address!)
                     if !blk.verify_signature() {
                         let sh = blk.signing_hash();
-                        return warp::reply::json(&serde_json::json!({
+                        let sig_len = blk.signature.len() / 2; // hex → bytes
+                        let pk_len = blk.public_key.len() / 2;
+                        return api_json(serde_json::json!({
                             "status": "error",
-                            "msg": format!("Invalid signature: Dilithium5 verification failed. signing_hash={}", sh)
+                            "msg": format!("Invalid signature: verification failed (sig={} bytes, pk={} bytes). signing_hash={}", sig_len, pk_len, sh)
                         }));
                     }
                     println!("✅ Client signature verified successfully");
@@ -766,7 +865,7 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
                     // Node auto-signing (even for its own address) is a testnet convenience only.
                     // On mainnet, the API caller must prove key ownership via signature.
                     if los_core::is_mainnet_build() {
-                        return warp::reply::json(&serde_json::json!({
+                        return api_json(serde_json::json!({
                             "status": "error",
                             "msg": "Mainnet requires client-side signature. Provide signature + public_key fields."
                         }));
@@ -775,7 +874,7 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
                     // TESTNET: Node signs with its own key
                     // On consensus/production testnet, only allow node to sign for its OWN address
                     if sender_addr != my_addr && testnet_config::get_testnet_config().should_validate_signatures() {
-                        return warp::reply::json(&serde_json::json!({
+                        return api_json(serde_json::json!({
                             "status": "error",
                             "msg": "External address requires client-side Dilithium5 signature. Provide signature + public_key fields."
                         }));
@@ -787,7 +886,7 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
                     }
                     blk.signature = match try_sign_hex(blk.signing_hash().as_bytes(), &key) {
                         Ok(sig) => sig,
-                        Err(e) => return warp::reply::json(&serde_json::json!({"status": "error", "msg": e})),
+                        Err(e) => return api_json(serde_json::json!({"status": "error", "msg": e})),
                     };
                 }
 
@@ -821,7 +920,7 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
                         if let Some(sender_state) = l_guard.accounts.get_mut(&sender_addr) {
                             let total_debit = amt + actual_fee;
                             if sender_state.balance < total_debit {
-                                return warp::reply::json(&serde_json::json!({
+                                return api_json(serde_json::json!({
                                     "status": "error",
                                     "msg": "Insufficient balance for amount + fee"
                                 }));
@@ -830,7 +929,7 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
                             sender_state.head = hash.clone();
                             sender_state.block_count += 1;
                         } else {
-                            return warp::reply::json(&serde_json::json!({
+                            return api_json(serde_json::json!({
                                 "status":"error","msg":"Sender account not found"
                             }));
                         }
@@ -893,7 +992,7 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
                             solve_pow(&mut recv_blk);
                             recv_blk.signature = match try_sign_hex(recv_blk.signing_hash().as_bytes(), &key) {
                                 Ok(sig) => sig,
-                                Err(e) => { eprintln!("❌ Auto-Receive signing failed: {}", e); return warp::reply::json(&serde_json::json!({"status": "error", "msg": e})); }
+                                Err(e) => { eprintln!("❌ Auto-Receive signing failed: {}", e); return api_json(serde_json::json!({"status": "error", "msg": e})); }
                             };
                             // Direct ledger manipulation for Receive block — bypass process_block()
                             // because the node's public_key doesn't match the target's account address.
@@ -919,12 +1018,12 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
                         let _ = tx.send(confirmed_msg).await;
                     }
 
-                    return warp::reply::json(&serde_json::json!({
+                    return api_json(serde_json::json!({
                         "status":"success",
                         "tx_hash":hash,
                         "initial_power": initial_power,
                         "fee_paid_cil": blk.fee,
-                        "fee_multiplier": blk.fee as f64 / base_fee as f64
+                        "fee_multiplier_bps": if base_fee > 0 { blk.fee * 10_000 / base_fee } else { 10_000 }
                     }));
                 }
 
@@ -949,15 +1048,15 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
 
                 let ts = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_millis();
                 let _ = tx.send(format!("CONFIRM_REQ:{}:{}:{}:{}:{}", hash, sender_addr, amt, ts, block_b64)).await;
-                warp::reply::json(&serde_json::json!({
+                api_json(serde_json::json!({
                     "status":"success",
                     "tx_hash":hash,
                     "initial_power": initial_power,
                     "fee_paid_cil": final_fee,
-                    "fee_multiplier": final_fee as f64 / base_fee as f64
+                    "fee_multiplier_bps": if base_fee > 0 { final_fee * 10_000 / base_fee } else { 10_000 }
                 }))
             } else {
-                warp::reply::json(&serde_json::json!({"status":"error","msg":"Address not found"}))
+                api_json(serde_json::json!({"status":"error","msg":"Address not found"}))
             }
         });
 
@@ -981,7 +1080,7 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
             let req: BurnRequest = match serde_json::from_slice(&body) {
                 Ok(r) => r,
                 Err(e) => {
-                    return warp::reply::json(&serde_json::json!({
+                    return api_json(serde_json::json!({
                         "status": "error",
                         "code": 400,
                         "msg": format!("Invalid request body: {}", e)
@@ -995,7 +1094,7 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
             // FIX: Validate coin_type — only "eth" and "btc" are supported
             let coin_lower = req.coin_type.to_lowercase();
             if coin_lower != "eth" && coin_lower != "btc" {
-                return warp::reply::json(&serde_json::json!({
+                return api_json(serde_json::json!({
                     "status": "error",
                     "msg": format!("Unsupported coin type: '{}'. Only 'eth' and 'btc' are supported.", req.coin_type)
                 }));
@@ -1004,7 +1103,7 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
             // FIX: Validate recipient_address format if provided
             if let Some(ref addr) = req.recipient_address {
                 if !los_crypto::validate_address(addr) {
-                    return warp::reply::json(&serde_json::json!({
+                    return api_json(serde_json::json!({
                         "status": "error",
                         "msg": "Invalid recipient address format. Must be Base58Check with LOS prefix."
                     }));
@@ -1024,14 +1123,14 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
                         // Verify that public_key maps to the claimed recipient_address
                         let pk_bytes = match hex::decode(pk_hex) {
                             Ok(b) => b,
-                            Err(_) => return warp::reply::json(&serde_json::json!({
+                            Err(_) => return api_json(serde_json::json!({
                                 "status": "error",
                                 "msg": "Invalid public_key hex encoding"
                             })),
                         };
                         let derived_addr = los_crypto::public_key_to_address(&pk_bytes);
                         if derived_addr != *recipient {
-                            return warp::reply::json(&serde_json::json!({
+                            return api_json(serde_json::json!({
                                 "status": "error",
                                 "msg": "public_key does not match recipient_address"
                             }));
@@ -1040,13 +1139,13 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
                         let burn_msg = format!("BURN:{}:{}:{}", coin_lower, clean_txid, recipient);
                         let sig_bytes = match hex::decode(sig_hex) {
                             Ok(b) => b,
-                            Err(_) => return warp::reply::json(&serde_json::json!({
+                            Err(_) => return api_json(serde_json::json!({
                                 "status": "error",
                                 "msg": "Invalid signature hex encoding"
                             })),
                         };
                         if !los_crypto::verify_signature(burn_msg.as_bytes(), &sig_bytes, &pk_bytes) {
-                            return warp::reply::json(&serde_json::json!({
+                            return api_json(serde_json::json!({
                                 "status": "error",
                                 "msg": "Invalid burn signature: Dilithium5 verification failed"
                             }));
@@ -1054,7 +1153,7 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
                         println!("✅ Burn signature verified for recipient {}", get_short_addr(recipient));
                     }
                     _ => {
-                        return warp::reply::json(&serde_json::json!({
+                        return api_json(serde_json::json!({
                             "status": "error",
                             "msg": "Custom recipient_address requires signature + public_key fields for authentication"
                         }));
@@ -1065,7 +1164,7 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
             // RATE LIMIT: 1 burn per 60 seconds per recipient address
             // Only CHECK here — record only after successful burn (not on failures like duplicate TXID)
             if let Err(wait_secs) = rate_lim.check_only(recipient) {
-                return warp::reply::json(&serde_json::json!({
+                return api_json(serde_json::json!({
                     "status": "error",
                     "code": 429,
                     "msg": format!("Rate limit exceeded: max 1 burn per 60 seconds. Try again in {} seconds.", wait_secs)
@@ -1088,7 +1187,7 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
             let is_pending = safe_lock(&p).contains_key(&clean_txid);
 
             if in_ledger || is_pending {
-                return warp::reply::json(&serde_json::json!({
+                return api_json(serde_json::json!({
                     "status": "error",
                     "msg": "This TXID has already been used or is currently being verified!"
                 }));
@@ -1122,13 +1221,13 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
                 let los_to_mint = match calculate_mint_cil(amt, prc, sym) {
                     Ok(v) => v,
                     Err(e) => {
-                        return warp::reply::json(&serde_json::json!({"error": format!("Mint calculation overflow: {}", e)}));
+                        return api_json(serde_json::json!({"error": format!("Mint calculation overflow: {}", e)}));
                     }
                 };
                 let los_to_mint_display = los_to_mint / CIL_PER_LOS;
 
                 if los_to_mint == 0 {
-                    return warp::reply::json(&serde_json::json!({"error": "Burn amount too small or overflow"}));
+                    return api_json(serde_json::json!({"error": "Burn amount too small or overflow"}));
                 }
 
                 // Anti-Whale: Check burn limit per block
@@ -1192,7 +1291,7 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
                             solve_pow(&mut mint_blk);
                             mint_blk.signature = match try_sign_hex(mint_blk.signing_hash().as_bytes(), &node_sk) {
                                 Ok(sig) => sig,
-                                Err(e) => return warp::reply::json(&serde_json::json!({"status": "error", "msg": e})),
+                                Err(e) => return api_json(serde_json::json!({"status": "error", "msg": e})),
                             };
 
                             match l_guard.process_block(&mint_blk) {
@@ -1209,7 +1308,7 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
 
                     match mint_result {
                         Err(msg) => {
-                            return warp::reply::json(&serde_json::json!({
+                            return api_json(serde_json::json!({
                                 "status": "error",
                                 "msg": msg
                             }));
@@ -1223,7 +1322,7 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
                             let base_div: u128 = if sym == "ETH" { 1_000_000_000_000_000_000 } else { 100_000_000 };
                             let usd_micro = amt.saturating_mul(prc) / base_div;
                             let usd_value_str = format!("{}.{:02}", usd_micro / 1_000_000, (usd_micro % 1_000_000) / 10_000);
-                            return warp::reply::json(&serde_json::json!({
+                            return api_json(serde_json::json!({
                                 "status":"success",
                                 "msg":"Burn finalized instantly (Functional Testnet)",
                                 "los_minted": los_to_mint / CIL_PER_LOS,
@@ -1241,7 +1340,7 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
                 if !testnet_config::get_testnet_config().enable_faucet {
                     let mut aw_guard = safe_lock(&aw);
                     if let Err(e) = aw_guard.register_burn(recipient.clone(), los_to_mint_display as u64) {
-                        return warp::reply::json(&serde_json::json!({
+                        return api_json(serde_json::json!({
                             "status": "error",
                             "msg": format!("Anti-whale burn limit: {}", e)
                         }));
@@ -1313,7 +1412,7 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
                         let signing_hash = mint_blk.signing_hash();
                         mint_blk.signature = match try_sign_hex(signing_hash.as_bytes(), &node_sk) {
                             Ok(sig) => sig,
-                            Err(e) => return warp::reply::json(&serde_json::json!({"status": "error", "msg": e})),
+                            Err(e) => return api_json(serde_json::json!({"status": "error", "msg": e})),
                         };
 
                         match l_guard.process_block(&mint_blk) {
@@ -1340,7 +1439,7 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
                             let base_div: u128 = if sym == "ETH" { 1_000_000_000_000_000_000 } else { 100_000_000 };
                             let usd_micro = amt.saturating_mul(prc) / base_div;
                             let usd_value_str = format!("{}.{:02}", usd_micro / 1_000_000, (usd_micro % 1_000_000) / 10_000);
-                            return warp::reply::json(&serde_json::json!({
+                            return api_json(serde_json::json!({
                                 "status": "success",
                                 "msg": "Burn finalized (consensus reached)",
                                 "los_minted": minted / CIL_PER_LOS,
@@ -1349,7 +1448,7 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
                             }));
                         }
                         Err(e) => {
-                            return warp::reply::json(&serde_json::json!({
+                            return api_json(serde_json::json!({
                                 "status": "error",
                                 "msg": e
                             }));
@@ -1366,14 +1465,14 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
                 println!("📡 Broadcasting VOTE_REQ: {} (Initial Power: {})", &vote_msg[..50], my_power);
                 let _ = tx.send(vote_msg).await;
 
-                warp::reply::json(&serde_json::json!({
+                api_json(serde_json::json!({
                     "status":"success",
                     "msg":"Verification started — waiting for peer consensus",
                     "initial_power": my_power,
                     "threshold": threshold
                 }))
             } else {
-                warp::reply::json(&serde_json::json!({"status":"error","msg":"Invalid TXID or Oracle data failed"}))
+                api_json(serde_json::json!({"status":"error","msg":"Invalid TXID or Oracle data failed"}))
             }
         });
 
@@ -1391,7 +1490,7 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
                 let req: DeployContractRequest = match serde_json::from_slice(&body) {
                     Ok(r) => r,
                     Err(e) => {
-                        return warp::reply::json(&serde_json::json!({
+                        return api_json(serde_json::json!({
                             "status": "error",
                             "code": 400,
                             "msg": format!("Invalid request body: {}", e)
@@ -1403,7 +1502,7 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
                 {
                     Ok(bytes) => bytes,
                     Err(_) => {
-                        return warp::reply::json(&serde_json::json!({
+                        return api_json(serde_json::json!({
                             "status": "error",
                             "msg": "Invalid base64 bytecode"
                         }))
@@ -1422,13 +1521,13 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
                     req.initial_state.unwrap_or_default(),
                     block_number,
                 ) {
-                    Ok(contract_addr) => warp::reply::json(&serde_json::json!({
+                    Ok(contract_addr) => api_json(serde_json::json!({
                         "status": "success",
                         "contract_address": contract_addr,
                         "owner": req.owner,
                         "deployed_at_block": block_number
                     })),
-                    Err(e) => warp::reply::json(&serde_json::json!({
+                    Err(e) => api_json(serde_json::json!({
                         "status": "error",
                         "msg": e
                     })),
@@ -1446,7 +1545,7 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
                 let req: CallContractRequest = match serde_json::from_slice(&body) {
                     Ok(r) => r,
                     Err(e) => {
-                        return warp::reply::json(&serde_json::json!({
+                        return api_json(serde_json::json!({
                             "status": "error",
                             "code": 400,
                             "msg": format!("Invalid request body: {}", e)
@@ -1461,11 +1560,11 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
                 };
 
                 match engine.call_contract(call) {
-                    Ok(result) => warp::reply::json(&serde_json::json!({
+                    Ok(result) => api_json(serde_json::json!({
                         "status": "success",
                         "result": result
                     })),
-                    Err(e) => warp::reply::json(&serde_json::json!({
+                    Err(e) => api_json(serde_json::json!({
                         "status": "error",
                         "msg": e
                     })),
@@ -1478,7 +1577,7 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
             .and(with_state(wasm_get))
             .map(
                 |addr: String, engine: Arc<WasmEngine>| match engine.get_contract(&addr) {
-                    Ok(contract) => warp::reply::json(&serde_json::json!({
+                    Ok(contract) => api_json(serde_json::json!({
                         "status": "success",
                         "contract": {
                             "address": contract.address,
@@ -1489,7 +1588,7 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
                             "state": contract.state
                         }
                     })),
-                    Err(e) => warp::reply::json(&serde_json::json!({
+                    Err(e) => api_json(serde_json::json!({
                         "status": "error",
                         "msg": e
                     })),
@@ -1506,13 +1605,13 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
     #[cfg(not(feature = "vm"))]
     let deploy_route = {
         let deploy = warp::path("deploy-contract").and(warp::post()).map(|| {
-            warp::reply::json(&serde_json::json!({"status":"error","msg":"VM feature not enabled"}))
+            api_json(serde_json::json!({"status":"error","msg":"VM feature not enabled"}))
         });
         let call = warp::path("call-contract").and(warp::post()).map(|| {
-            warp::reply::json(&serde_json::json!({"status":"error","msg":"VM feature not enabled"}))
+            api_json(serde_json::json!({"status":"error","msg":"VM feature not enabled"}))
         });
         let get_contract = warp::path!("contract" / String).map(|_: String| {
-            warp::reply::json(&serde_json::json!({"status":"error","msg":"VM feature not enabled"}))
+            api_json(serde_json::json!({"status":"error","msg":"VM feature not enabled"}))
         });
         deploy
             .boxed()
@@ -1586,7 +1685,7 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
                     "los-testnet"
                 };
 
-                warp::reply::json(&serde_json::json!({
+                api_json(serde_json::json!({
                     "chain_id": network,
                     "network": network,
                     "address": my_addr_info,
@@ -1629,11 +1728,19 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
                 let l_guard = safe_lock(&l);
                 let ab_guard = safe_lock(&ab);
 
-                // Collect ALL validator addresses: genesis bootstrap + slashing + ledger is_validator
+                // Collect ALL validator addresses: genesis bootstrap + slashing (active only) + ledger is_validator
                 let mut all_validator_addrs: Vec<String> = bv_validators.clone();
                 {
                     let sm_guard = safe_lock(&sm_validators);
                     for addr in sm_guard.get_all_validator_addresses() {
+                        // Skip validators that have been unstaked or banned — they should not appear
+                        if let Some(status) = sm_guard.get_status(&addr) {
+                            if status == los_consensus::slashing::ValidatorStatus::Unstaking
+                                || status == los_consensus::slashing::ValidatorStatus::Banned
+                            {
+                                continue;
+                            }
+                        }
                         if !all_validator_addrs.contains(&addr) {
                             all_validator_addrs.push(addr);
                         }
@@ -1663,9 +1770,13 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
                             // ACTIVE = verified validator with sufficient stake
                             let is_self = addr == &my_addr_validators;
                             let in_peers = ab_guard.values().any(|v| v.contains(addr.as_str()));
+                            // Also consider validator as connected if their address is
+                            // known in validator_endpoints (announced via VALIDATOR_REG
+                            // or seeded from genesis onion data)
+                            let in_endpoints = ve_guard.contains_key(addr.as_str());
                             let has_min_stake = acc.balance >= MIN_VALIDATOR_STAKE_CIL;
                             // Connected = evidence of P2P liveness (online indicator)
-                            let connected = is_self || in_peers;
+                            let connected = is_self || in_peers || in_endpoints;
                             // in_reward_pool = registered via verified Dilithium5 signature
                             // (registration checks: valid sig + address match + min stake)
                             let in_reward_pool = rp_guard.validators.contains_key(addr.as_str());
@@ -1678,11 +1789,14 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
                                 && (connected || is_genesis || in_reward_pool);
 
                             // Real uptime from heartbeat data (not hardcoded)
-                            let uptime_pct = rp_guard
+                            // Uses display_uptime_pct() which shows max(current_epoch, last_epoch)
+                            // to avoid misleading 0% at epoch start.
+                            // MAINNET SAFETY: Integer only (u64 percent)
+                            let uptime_pct: u64 = rp_guard
                                 .validators
                                 .get(addr.as_str())
-                                .map(|vs| vs.uptime_pct() as f64)
-                                .unwrap_or(if is_self { 100.0 } else { 0.0 });
+                                .map(|vs| vs.display_uptime_pct())
+                                .unwrap_or(if is_self { 100 } else { 0 });
 
                             // Include onion endpoint if known (for peer discovery)
                             let onion = ve_guard.get(addr.as_str()).cloned();
@@ -1705,7 +1819,7 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
                     })
                     .collect();
 
-                warp::reply::json(&serde_json::json!({
+                api_json(serde_json::json!({
                     "validators": validators
                 }))
             },
@@ -1727,7 +1841,7 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
             let bal = acct.map(|a| a.balance).unwrap_or(0);
             let head = acct.map(|a| a.head.as_str()).unwrap_or("0");
             let block_count = acct.map(|a| a.block_count).unwrap_or(0);
-            warp::reply::json(&serde_json::json!({
+            api_json(serde_json::json!({
                 "address": full_addr,
                 "balance": format_balance_precise(bal),
                 "balance_los": format_balance_precise(bal),
@@ -1745,6 +1859,14 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
     let fee_estimate_route = warp::path!("fee-estimate" / String)
         .and(with_state(aw_fee_estimate))
         .map(|addr: String, aw: Arc<Mutex<AntiWhaleEngine>>| {
+            // Validate address format (Base58Check with LOS prefix)
+            if !los_crypto::validate_address(&addr) {
+                return api_json(serde_json::json!({
+                    "status": "error",
+                    "code": 400,
+                    "msg": "Invalid address format. Must be Base58Check with LOS prefix."
+                }));
+            }
             let aw_guard = safe_lock(&aw);
             let base_fee = los_core::BASE_FEE_CIL;
             let estimated_fee = aw_guard.estimate_fee(&addr, base_fee as u64);
@@ -1764,11 +1886,12 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
                 }
                 None => (0, 0),
             };
-            warp::reply::json(&serde_json::json!({
+            api_json(serde_json::json!({
                 "address": addr,
                 "base_fee_cil": base_fee,
                 "estimated_fee_cil": estimated_fee,
                 "fee_multiplier": multiplier,
+                "fee_multiplier_bps": if (base_fee as u64) > 0 { estimated_fee * 10_000 / (base_fee as u64) } else { 10_000 },
                 "tx_count_in_window": tx_count,
                 "max_tx_per_window": max_tx,
                 "window_remaining_secs": window_remaining,
@@ -1786,7 +1909,7 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
             // Get latest block by timestamp (HashMap has no guaranteed order)
             let latest = l_guard.blocks.values().max_by_key(|b| b.timestamp);
             if let Some(b) = latest {
-                warp::reply::json(&serde_json::json!({
+                api_json(serde_json::json!({
                     "height": l_guard.blocks.len(),
                     "hash": b.calculate_hash(),
                     "account": b.account,
@@ -1795,7 +1918,7 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
                     "block_type": format!("{:?}", b.block_type)
                 }))
             } else {
-                warp::reply::json(&serde_json::json!({"error": "No blocks yet"}))
+                api_json(serde_json::json!({"error": "No blocks yet"}))
             }
         });
 
@@ -1814,11 +1937,11 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
         .and(warp::body::bytes())
         .and(with_state((l_faucet, db_faucet, fl_faucet, pk_faucet, sk_faucet, tx_faucet)))
         .then(#[allow(clippy::type_complexity)] |body: bytes::Bytes, (l, db, rate_lim, node_pk, node_sk, tx): (Arc<Mutex<Ledger>>, Arc<LosDatabase>, Arc<EndpointRateLimiter>, Vec<u8>, Zeroizing<Vec<u8>>, mpsc::Sender<String>)| async move {
-            // FIX: Parse JSON manually to return proper 400 instead of 500
+            // FIX: Parse JSON manually to return proper error instead of 500
             let req: serde_json::Value = match serde_json::from_slice(&body) {
                 Ok(r) => r,
                 Err(e) => {
-                    return warp::reply::json(&serde_json::json!({
+                    return api_json(serde_json::json!({
                         "status": "error",
                         "code": 400,
                         "msg": format!("Invalid request body: {}", e)
@@ -1826,35 +1949,36 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
                 }
             };
             // BELT-AND-SUSPENDERS: Explicit compile-time mainnet guard.
-            // Even if testnet_config has a bug, this hard check ensures the faucet
-            // is DEAD CODE on mainnet builds (LLVM will eliminate this entire branch).
             if los_core::is_mainnet_build() {
-                return warp::reply::json(&serde_json::json!({
+                return api_json(serde_json::json!({
                     "status": "error",
+                    "code": 403,
                     "msg": "Faucet is permanently disabled on mainnet"
                 }));
             }
 
             if !testnet_config::get_testnet_config().should_enable_faucet() {
-                return warp::reply::json(&serde_json::json!({
+                return api_json(serde_json::json!({
                     "status": "error",
+                    "code": 403,
                     "msg": "Faucet only available in Functional/Consensus testnet modes"
                 }));
             }
 
             let address = req["address"].as_str().unwrap_or("");
             if address.is_empty() {
-                return warp::reply::json(&serde_json::json!({
+                return api_json(serde_json::json!({
                     "status": "error",
+                    "code": 400,
                     "msg": "Address required"
                 }));
             }
 
             // FIX: Validate address format (Base58Check with LOS prefix)
-            // Prevents minting to arbitrary strings like "FAKEADDR" or XSS payloads.
             if !los_crypto::validate_address(address) {
-                return warp::reply::json(&serde_json::json!({
+                return api_json(serde_json::json!({
                     "status": "error",
+                    "code": 400,
                     "msg": "Invalid address format. Must be Base58Check with LOS prefix."
                 }));
             }
@@ -1862,7 +1986,7 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
             // PERSISTENT cooldown: 1 faucet claim per 2 minutes per address (survives restart)
             const FAUCET_COOLDOWN_SECS: u64 = 120; // 2 minutes (testnet-friendly)
             if let Err(remaining) = db.check_faucet_cooldown(address, FAUCET_COOLDOWN_SECS) {
-                return warp::reply::json(&serde_json::json!({
+                return api_json(serde_json::json!({
                     "status": "error",
                     "code": 429,
                     "msg": format!("Faucet cooldown active: try again in {} seconds", remaining)
@@ -1871,7 +1995,7 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
 
             // In-memory rate limit as secondary protection
             if let Err(wait_secs) = rate_lim.check_and_record(address) {
-                return warp::reply::json(&serde_json::json!({
+                return api_json(serde_json::json!({
                     "status": "error",
                     "code": 429,
                     "msg": format!("Rate limit exceeded: max 1 faucet claim per 2 minutes. Try again in {} seconds.", wait_secs)
@@ -1921,13 +2045,8 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
                 faucet_block.signature = match try_sign_hex(faucet_block.signing_hash().as_bytes(), &node_sk) {
                     Ok(sig) => sig,
                     Err(e) => {
-                        // Cannot use `return Err(...)` — would exit the .then() handler.
-                        // Instead, set a dummy signature and let process_block reject it,
-                        // or short-circuit via the faucet_result.
-                        // Simplest: convert to block-level Err
                         let _err_msg = format!("Faucet signing failed: {}", e);
-                        // Fall through to Err path below
-                        return warp::reply::json(&serde_json::json!({"status": "error", "msg": _err_msg}));
+                        return api_json(serde_json::json!({"status": "error", "code": 500, "msg": _err_msg}));
                     }
                 };
 
@@ -1949,7 +2068,7 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
                     // GOSSIP: Broadcast faucet Mint block to all peers
                     let _ = tx.send(gossip_msg).await;
 
-                    warp::reply::json(&serde_json::json!({
+                    api_json(serde_json::json!({
                         "status": "success",
                         "msg": "Faucet claim successful",
                         "amount": amount_los,
@@ -1958,8 +2077,9 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
                     }))
                 }
                 Err(e) => {
-                    warp::reply::json(&serde_json::json!({
+                    api_json(serde_json::json!({
                         "status": "error",
+                        "code": 500,
                         "msg": e
                     }))
                 }
@@ -1979,7 +2099,7 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
             let req: serde_json::Value = match serde_json::from_slice(&body) {
                 Ok(r) => r,
                 Err(e) => {
-                    return warp::reply::json(&serde_json::json!({
+                    return api_json(serde_json::json!({
                         "status": "error",
                         "code": 400,
                         "msg": format!("Invalid request body: {}", e)
@@ -1988,7 +2108,7 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
             };
             // HARD GUARD: Only available on testnet builds
             if !los_core::is_testnet_build() {
-                return warp::reply::json(&serde_json::json!({
+                return api_json(serde_json::json!({
                     "status": "error",
                     "msg": "This endpoint is only available on testnet"
                 }));
@@ -1999,7 +2119,7 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
                     arr.iter().filter_map(|v| v.as_str().map(|s| s.trim().trim_start_matches("0x").to_lowercase())).collect()
                 }
                 _ => {
-                    return warp::reply::json(&serde_json::json!({
+                    return api_json(serde_json::json!({
                         "status": "error",
                         "msg": "Provide { \"txids\": [\"txid1\", \"txid2\"] }"
                     }));
@@ -2007,7 +2127,7 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
             };
 
             if txids.is_empty() {
-                return warp::reply::json(&serde_json::json!({
+                return api_json(serde_json::json!({
                     "status": "error",
                     "msg": "No TXIDs provided"
                 }));
@@ -2048,7 +2168,7 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
                 SAVE_DIRTY.store(true, Ordering::Relaxed);
             }
 
-            warp::reply::json(&serde_json::json!({
+            api_json(serde_json::json!({
                 "status": "success",
                 "msg": format!("Cleared {} Mint block(s) for {} TXID(s)", removed_count, txids.len()),
                 "removed": removed_count,
@@ -2075,11 +2195,12 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
                         "timestamp": b.timestamp,
                         "transactions_count": 1,
                         "account": b.account,
-                        "amount": b.amount / CIL_PER_LOS
+                        "amount": b.amount / CIL_PER_LOS,
+                        "block_type": format!("{:?}", b.block_type).to_lowercase()
                     })
                 })
                 .collect();
-            warp::reply::json(&serde_json::json!({
+            api_json(serde_json::json!({
                 "blocks": blocks
             }))
         });
@@ -2088,7 +2209,7 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
     let whoami_route = warp::path("whoami")
         .and(with_state(my_address.clone()))
         .map(|addr: String| {
-            warp::reply::json(&serde_json::json!({
+            api_json(serde_json::json!({
                 "address": addr,
                 "short": get_short_addr(&addr),
                 "format": "hex-encoded"
@@ -2149,7 +2270,7 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
                 }
             }
 
-            warp::reply::json(&serde_json::json!({
+            api_json(serde_json::json!({
                 "address": addr,
                 "balance": format_balance_precise(state.balance),
                 "balance_los": format_balance_precise(state.balance),
@@ -2167,7 +2288,7 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
     let root_route = warp::path::end()
         .map(|| {
             let network_label = if los_core::is_mainnet_build() { "mainnet" } else { "testnet" };
-            warp::reply::json(&serde_json::json!({
+            api_json(serde_json::json!({
                 "name": "Unauthority (LOS) Blockchain API",
                 "version": env!("CARGO_PKG_VERSION"),
                 "network": network_label,
@@ -2175,21 +2296,37 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
                 "endpoints": {
                     "health": "GET /health - Health check",
                     "node_info": "GET /node-info - Node information",
+                    "bal": "GET /bal/{address} - Account balance (short alias)",
                     "balance": "GET /balance/{address} - Account balance",
+                    "supply": "GET /supply - Total supply, burned, remaining",
                     "fee_estimate": "GET /fee-estimate/{address} - Dynamic fee estimate (anti-whale)",
                     "account": "GET /account/{address} - Account details + history",
                     "history": "GET /history/{address} - Transaction history",
                     "validators": "GET /validators - Active validators",
-                    "peers": "GET /peers - Connected peers",
+                    "peers": "GET /peers - Connected peers + validator endpoints",
+                    "network_peers": "GET /network/peers - Validator .onion endpoint discovery",
                     "block": "GET /block - Latest block",
-                    "block_height": "GET /block/{height} - Block at height",
+                    "block_by_hash": "GET /block/{hash} - Block by hash",
+                    "blocks_recent": "GET /blocks/recent - Recent blocks",
+                    "transaction": "GET /transaction/{hash} - Transaction by hash",
+                    "search": "GET /search/{query} - Search addresses, blocks, transactions",
                     "whoami": "GET /whoami - Node's signing address",
-                    "faucet": "POST /faucet {address} - Claim testnet tokens (Functional/Consensus testnet)",
-                    "send": "POST /send {from, target, amount} - Send transaction",
-                    "burn": "POST /burn {chain, tx_hash} - Proof-of-burn mint",
                     "consensus": "GET /consensus - aBFT consensus parameters and safety status",
                     "reward_info": "GET /reward-info - Validator reward pool status and epoch info",
-                    "mempool_stats": "GET /mempool/stats - Mempool statistics (pending, accepted, rejected)"
+                    "slashing": "GET /slashing - Slashing statistics",
+                    "slashing_profile": "GET /slashing/{address} - Validator slashing profile",
+                    "sync": "GET /sync - Node sync status",
+                    "metrics": "GET /metrics - Prometheus metrics",
+                    "mempool_stats": "GET /mempool/stats - Mempool statistics",
+                    "send": "POST /send {from, target, amount} - Send transaction",
+                    "burn": "POST /burn {chain, tx_hash} - Proof-of-burn mint",
+                    "faucet": "POST /faucet {address} - Claim testnet tokens",
+                    "register_validator": "POST /register-validator - Register as validator",
+                    "unregister_validator": "POST /unregister-validator - Unregister validator",
+                    "reset_burn_txid": "POST /reset-burn-txid - Reset stuck burn TXID",
+                    "deploy_contract": "POST /deploy-contract - Deploy WASM smart contract",
+                    "call_contract": "POST /call-contract - Call smart contract method",
+                    "contract": "GET /contract/{address} - Contract info and state"
                 },
                 "docs": "https://github.com/unauthoritymky-6236/unauthority-core",
                 "status": "operational"
@@ -2222,7 +2359,7 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
                     })
                     .collect();
 
-                warp::reply::json(&serde_json::json!({
+                api_json(serde_json::json!({
                     "safety_stats": {
                         "total_validators": stats.total_validators,
                         "active_validators": stats.active_validators,
@@ -2258,7 +2395,7 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
                     })
                     .collect();
 
-                warp::reply::json(&serde_json::json!({
+                api_json(serde_json::json!({
                     "address": addr,
                     "status": format!("{:?}", profile.status),
                     "uptime_percent": profile.get_uptime_percent(),
@@ -2269,7 +2406,7 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
                     "slash_history": history
                 }))
             } else {
-                warp::reply::json(&serde_json::json!({
+                api_json(serde_json::json!({
                     "error": "Validator not found in slashing manager",
                     "address": addr
                 }))
@@ -2289,7 +2426,7 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
             let is_healthy = !l_guard.accounts.is_empty() && db_stats.accounts_count > 0;
             let status = if is_healthy { "healthy" } else { "degraded" };
 
-            warp::reply::json(&serde_json::json!({
+            api_json(serde_json::json!({
                 "status": status,
                 "uptime_seconds": start_time.elapsed().as_secs(),
                 "chain": {
@@ -2310,6 +2447,37 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
             }))
         });
 
+    // 22b. GET /tor-health (Tor Hidden Service reachability status)
+    let tor_health_m = metrics.clone();
+    let tor_health_route = warp::path("tor-health")
+        .and(with_state(tor_health_m))
+        .map(move |m: Arc<LosMetrics>| {
+            let reachable = m.tor_onion_reachable.get();
+            let consecutive_failures = m.tor_consecutive_failures.get();
+            let total_pings = m.tor_self_ping_total.get();
+            let total_failures = m.tor_self_ping_failures_total.get();
+            let onion_addr = std::env::var("LOS_ONION_ADDRESS").unwrap_or_default();
+
+            let status = match reachable {
+                1 => "reachable",
+                0 => "unreachable",
+                _ => "not_configured",
+            };
+
+            api_json(serde_json::json!({
+                "status": status,
+                "onion_address": onion_addr,
+                "reachable": reachable == 1,
+                "consecutive_failures": consecutive_failures,
+                "total_pings": total_pings,
+                "total_failures": total_failures,
+                "timestamp": std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_secs()
+            }))
+        });
+
     // 23. GET /block/:hash (Block explorer - get block by hash)
     let l_block_hash = ledger.clone();
     let block_by_hash_route = warp::path!("block" / String)
@@ -2317,7 +2485,7 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
         .map(|hash: String, l: Arc<Mutex<Ledger>>| {
             let l_guard = safe_lock(&l);
             if let Some(block) = l_guard.blocks.get(&hash) {
-                warp::reply::json(&serde_json::json!({
+                api_json(serde_json::json!({
                     "status": "success",
                     "block": {
                         "hash": hash,
@@ -2334,7 +2502,7 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
                     }
                 }))
             } else {
-                warp::reply::json(&serde_json::json!({
+                api_json(serde_json::json!({
                     "status": "error",
                     "msg": format!("Block not found: {}", hash)
                 }))
@@ -2348,7 +2516,7 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
         .map(|hash: String, l: Arc<Mutex<Ledger>>| {
             let l_guard = safe_lock(&l);
             if let Some(block) = l_guard.blocks.get(&hash) {
-                warp::reply::json(&serde_json::json!({
+                api_json(serde_json::json!({
                     "status": "success",
                     "transaction": {
                         "hash": hash,
@@ -2363,7 +2531,7 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
                     }
                 }))
             } else {
-                warp::reply::json(&serde_json::json!({
+                api_json(serde_json::json!({
                     "status": "error",
                     "msg": format!("Transaction not found: {}", hash)
                 }))
@@ -2432,7 +2600,7 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
                     }
                 }
 
-                warp::reply::json(&serde_json::json!({
+                api_json(serde_json::json!({
                     "query": query,
                     "results": results,
                     "count": results.len()
@@ -2474,7 +2642,7 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
 
                 // Only send state if we have more blocks
                 if our_blocks <= their_blocks {
-                    return warp::reply::json(&serde_json::json!({
+                    return api_json(serde_json::json!({
                         "status": "up_to_date",
                         "blocks": our_blocks
                     }));
@@ -2492,7 +2660,7 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
                 let accounts_snapshot: std::collections::HashMap<&String, &AccountState> =
                     l_guard.accounts.iter().collect();
 
-                warp::reply::json(&serde_json::json!({
+                api_json(serde_json::json!({
                     "status": "sync",
                     "blocks": sync_blocks,
                     "accounts": accounts_snapshot,
@@ -2521,7 +2689,7 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
                     .filter(|(_, a)| a.is_validator && a.balance >= MIN_VALIDATOR_STAKE_CIL)
                     .count();
 
-                warp::reply::json(&serde_json::json!({
+                api_json(serde_json::json!({
                     "protocol": "aBFT (Weighted Confirmation)",
                     "safety": {
                         "byzantine_safe": abft_guard.is_byzantine_safe(0),
@@ -2560,14 +2728,18 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
             let remaining_secs = pool.epoch_remaining_secs(now);
 
             // Per-validator reward details
+            let epoch_elapsed_secs = now.saturating_sub(pool.epoch_start_timestamp);
             let validators_json: Vec<serde_json::Value> = pool
                 .validators
                 .iter()
                 .map(|(addr, v)| {
+                    // Show whether this validator joined mid-epoch
+                    let joined_this_epoch = v.join_epoch == pool.current_epoch;
                     serde_json::json!({
                         "address": addr,
                         "is_genesis": v.is_genesis,
                         "join_epoch": v.join_epoch,
+                        "joined_this_epoch": joined_this_epoch,
                         "stake_cil": v.stake_cil,
                         "uptime_pct": v.uptime_pct(),
                         "cumulative_rewards_cil": v.cumulative_rewards_cil,
@@ -2578,19 +2750,20 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
                 })
                 .collect();
 
-            warp::reply::json(&serde_json::json!({
+            api_json(serde_json::json!({
                 "pool": {
                     "remaining_cil": summary.remaining_cil,
-                    "remaining_los": summary.remaining_cil / CIL_PER_LOS,
+                    "remaining_los": format_balance_precise(summary.remaining_cil),
                     "total_distributed_cil": summary.total_distributed_cil,
-                    "total_distributed_los": summary.total_distributed_cil / CIL_PER_LOS,
+                    "total_distributed_los": format_balance_precise(summary.total_distributed_cil),
                     "pool_exhaustion_bps": summary.pool_exhaustion_bps,
                 },
                 "epoch": {
                     "current_epoch": summary.current_epoch,
                     "epoch_reward_rate_cil": summary.epoch_reward_rate_cil,
-                    "epoch_reward_rate_los": summary.epoch_reward_rate_cil / CIL_PER_LOS,
+                    "epoch_reward_rate_los": format_balance_precise(summary.epoch_reward_rate_cil),
                     "halvings_occurred": summary.halvings_occurred,
+                    "epoch_elapsed_secs": epoch_elapsed_secs,
                     "epoch_remaining_secs": remaining_secs,
                     "epoch_duration_secs": pool.epoch_duration_secs,
                 },
@@ -2621,6 +2794,8 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
     let bv_regval = bootstrap_validators.clone();
     let db_regval = database.clone();
     let abft_regval = abft_consensus.clone();
+    let ve_regval = validator_endpoints.clone();
+    let lrv_regval = local_registered_validators.clone();
     let register_validator_route = warp::path("register-validator")
         .and(warp::post())
         .and(warp::body::bytes())
@@ -2628,12 +2803,14 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
         .then(#[allow(clippy::type_complexity)] move |body: bytes::Bytes, (l, sm, rp, tx, db): (Arc<Mutex<Ledger>>, Arc<Mutex<SlashingManager>>, Arc<Mutex<ValidatorRewardPool>>, mpsc::Sender<String>, Arc<LosDatabase>)| {
             let bv_inner = bv_regval.clone();
             let abft_inner = abft_regval.clone();
+            let ve_inner = ve_regval.clone();
+            let lrv_inner = lrv_regval.clone();
             async move {
             // FIX: Parse JSON manually to return proper 400 instead of 500
             let req: serde_json::Value = match serde_json::from_slice(&body) {
                 Ok(r) => r,
                 Err(e) => {
-                    return warp::reply::json(&serde_json::json!({
+                    return api_json(serde_json::json!({
                         "status": "error",
                         "code": 400,
                         "msg": format!("Invalid request body: {}", e)
@@ -2643,21 +2820,21 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
             // Parse required fields
             let address = match req["address"].as_str() {
                 Some(a) if !a.is_empty() => a.to_string(),
-                _ => return warp::reply::json(&serde_json::json!({
+                _ => return api_json(serde_json::json!({
                     "status": "error",
                     "msg": "Missing 'address' field"
                 })),
             };
             let public_key = match req["public_key"].as_str() {
                 Some(pk) if !pk.is_empty() => pk.to_string(),
-                _ => return warp::reply::json(&serde_json::json!({
+                _ => return api_json(serde_json::json!({
                     "status": "error",
                     "msg": "Missing 'public_key' field"
                 })),
             };
             let signature = match req["signature"].as_str() {
                 Some(s) if !s.is_empty() => s.to_string(),
-                _ => return warp::reply::json(&serde_json::json!({
+                _ => return api_json(serde_json::json!({
                     "status": "error",
                     "msg": "Missing 'signature' field"
                 })),
@@ -2666,7 +2843,7 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
 
             // 1. Validate address format
             if !los_crypto::validate_address(&address) {
-                return warp::reply::json(&serde_json::json!({
+                return api_json(serde_json::json!({
                     "status": "error",
                     "msg": "Invalid address format"
                 }));
@@ -2675,14 +2852,14 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
             // 2. Verify public_key derives to address (proves key ownership)
             let pk_bytes = match hex::decode(&public_key) {
                 Ok(b) => b,
-                Err(_) => return warp::reply::json(&serde_json::json!({
+                Err(_) => return api_json(serde_json::json!({
                     "status": "error",
                     "msg": "Invalid public_key hex encoding"
                 })),
             };
             let derived_addr = los_crypto::public_key_to_address(&pk_bytes);
             if derived_addr != address {
-                return warp::reply::json(&serde_json::json!({
+                return api_json(serde_json::json!({
                     "status": "error",
                     "msg": "public_key does not match address"
                 }));
@@ -2692,13 +2869,13 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
             let message = format!("REGISTER_VALIDATOR:{}:{}", address, timestamp);
             let sig_bytes = match hex::decode(&signature) {
                 Ok(b) => b,
-                Err(_) => return warp::reply::json(&serde_json::json!({
+                Err(_) => return api_json(serde_json::json!({
                     "status": "error",
                     "msg": "Invalid signature hex encoding"
                 })),
             };
             if !los_crypto::verify_signature(message.as_bytes(), &sig_bytes, &pk_bytes) {
-                return warp::reply::json(&serde_json::json!({
+                return api_json(serde_json::json!({
                     "status": "error",
                     "msg": "Signature verification failed"
                 }));
@@ -2710,7 +2887,7 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
                 .unwrap_or_default()
                 .as_secs();
             if timestamp == 0 || now.abs_diff(timestamp) > 300 {
-                return warp::reply::json(&serde_json::json!({
+                return api_json(serde_json::json!({
                     "status": "error",
                     "msg": "Timestamp too old or missing (max 5 minute window)"
                 }));
@@ -2726,7 +2903,7 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
             };
 
             if already_validator || bv_inner.contains(&address) {
-                return warp::reply::json(&serde_json::json!({
+                return api_json(serde_json::json!({
                     "status": "ok",
                     "msg": "Already registered as validator",
                     "address": address,
@@ -2738,7 +2915,7 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
             if balance < MIN_VALIDATOR_STAKE_CIL {
                 let min_los = MIN_VALIDATOR_STAKE_CIL / CIL_PER_LOS;
                 let current_los = balance / CIL_PER_LOS;
-                return warp::reply::json(&serde_json::json!({
+                return api_json(serde_json::json!({
                     "status": "error",
                     "msg": format!("Insufficient stake: need {} LOS, have {} LOS", min_los, current_los)
                 }));
@@ -2766,6 +2943,14 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
                 rp_guard.register_validator(&address, false, balance);
             }
 
+            // 8b. Track as locally-registered validator for heartbeat forwarding.
+            // This node's liveness proves the registered wallet's liveness,
+            // so the heartbeat loop will record heartbeats for this address.
+            {
+                let mut lrv: std::sync::MutexGuard<'_, HashSet<String>> = safe_lock(&lrv_inner);
+                lrv.insert(address.clone());
+            }
+
             // 9. Mark ledger dirty for persistence
             SAVE_DIRTY.store(true, Ordering::Relaxed);
 
@@ -2784,8 +2969,12 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
             }
 
             // 10. Broadcast to peers so they also register this validator
-            // Include this node's onion_address if known, so peers can connect directly
-            let onion_addr = std::env::var("LOS_ONION_ADDRESS").ok();
+            // Use the registering validator's onion_address if provided in the request,
+            // otherwise fall back to this node's own LOS_ONION_ADDRESS.
+            let onion_addr = req["onion_address"]
+                .as_str()
+                .map(|s| s.to_string())
+                .or_else(|| std::env::var("LOS_ONION_ADDRESS").ok());
             let reg_msg = serde_json::json!({
                 "type": "VALIDATOR_REG",
                 "address": address,
@@ -2796,12 +2985,20 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
             });
             let _ = tx.send(format!("VALIDATOR_REG:{}", reg_msg)).await;
 
+            // 10b. Store the validator's onion address in our own endpoint map
+            if let Some(ref onion) = onion_addr {
+                if !onion.is_empty() && onion.ends_with(".onion") {
+                    insert_validator_endpoint(&mut safe_lock(&ve_inner), address.clone(), onion.clone());
+                    println!("🧅 Stored validator endpoint: {} → {}", get_short_addr(&address), onion);
+                }
+            }
+
             println!("✅ New validator registered: {} (stake: {} LOS)", get_short_addr(&address), balance / CIL_PER_LOS);
 
             // Persist immediately
             let _ = db.save_ledger(&safe_lock(&l));
 
-            warp::reply::json(&serde_json::json!({
+            api_json(serde_json::json!({
                 "status": "ok",
                 "msg": "Validator registered successfully",
                 "address": address,
@@ -2818,15 +3015,26 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
     // Also available as /unregister_validator (underscore) for CLI compatibility.
     let bv_unregval = bootstrap_validators.clone();
     let abft_unregval = abft_consensus.clone();
-    let unregister_handler = move |body: bytes::Bytes, (l, sm, rp, tx, db): (Arc<Mutex<Ledger>>, Arc<Mutex<SlashingManager>>, Arc<Mutex<ValidatorRewardPool>>, mpsc::Sender<String>, Arc<LosDatabase>)| {
+    let lrv_unregval = local_registered_validators.clone();
+    let ve_unregval = validator_endpoints.clone();
+    let unregister_handler = move |body: bytes::Bytes,
+                                   (l, sm, rp, tx, db): (
+        Arc<Mutex<Ledger>>,
+        Arc<Mutex<SlashingManager>>,
+        Arc<Mutex<ValidatorRewardPool>>,
+        mpsc::Sender<String>,
+        Arc<LosDatabase>,
+    )| {
         let bv_inner = bv_unregval.clone();
         let abft_inner = abft_unregval.clone();
+        let lrv_inner = lrv_unregval.clone();
+        let ve_inner = ve_unregval.clone();
         async move {
             // Parse JSON
             let req: serde_json::Value = match serde_json::from_slice(&body) {
                 Ok(r) => r,
                 Err(e) => {
-                    return warp::reply::json(&serde_json::json!({
+                    return api_json(serde_json::json!({
                         "status": "error",
                         "code": 400,
                         "msg": format!("Invalid request body: {}", e)
@@ -2836,30 +3044,36 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
 
             let address = match req["address"].as_str() {
                 Some(a) if !a.is_empty() => a.to_string(),
-                _ => return warp::reply::json(&serde_json::json!({
-                    "status": "error",
-                    "msg": "Missing 'address' field"
-                })),
+                _ => {
+                    return api_json(serde_json::json!({
+                        "status": "error",
+                        "msg": "Missing 'address' field"
+                    }))
+                }
             };
             let public_key = match req["public_key"].as_str() {
                 Some(pk) if !pk.is_empty() => pk.to_string(),
-                _ => return warp::reply::json(&serde_json::json!({
-                    "status": "error",
-                    "msg": "Missing 'public_key' field"
-                })),
+                _ => {
+                    return api_json(serde_json::json!({
+                        "status": "error",
+                        "msg": "Missing 'public_key' field"
+                    }))
+                }
             };
             let signature = match req["signature"].as_str() {
                 Some(s) if !s.is_empty() => s.to_string(),
-                _ => return warp::reply::json(&serde_json::json!({
-                    "status": "error",
-                    "msg": "Missing 'signature' field"
-                })),
+                _ => {
+                    return api_json(serde_json::json!({
+                        "status": "error",
+                        "msg": "Missing 'signature' field"
+                    }))
+                }
             };
             let timestamp = req["timestamp"].as_u64().unwrap_or(0);
 
             // 1. Validate address format
             if !los_crypto::validate_address(&address) {
-                return warp::reply::json(&serde_json::json!({
+                return api_json(serde_json::json!({
                     "status": "error",
                     "msg": "Invalid address format"
                 }));
@@ -2868,14 +3082,16 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
             // 2. Verify public_key derives to address
             let pk_bytes = match hex::decode(&public_key) {
                 Ok(b) => b,
-                Err(_) => return warp::reply::json(&serde_json::json!({
-                    "status": "error",
-                    "msg": "Invalid public_key hex encoding"
-                })),
+                Err(_) => {
+                    return api_json(serde_json::json!({
+                        "status": "error",
+                        "msg": "Invalid public_key hex encoding"
+                    }))
+                }
             };
             let derived_addr = los_crypto::public_key_to_address(&pk_bytes);
             if derived_addr != address {
-                return warp::reply::json(&serde_json::json!({
+                return api_json(serde_json::json!({
                     "status": "error",
                     "msg": "public_key does not match address"
                 }));
@@ -2885,13 +3101,15 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
             let message = format!("UNREGISTER_VALIDATOR:{}:{}", address, timestamp);
             let sig_bytes = match hex::decode(&signature) {
                 Ok(b) => b,
-                Err(_) => return warp::reply::json(&serde_json::json!({
-                    "status": "error",
-                    "msg": "Invalid signature hex encoding"
-                })),
+                Err(_) => {
+                    return api_json(serde_json::json!({
+                        "status": "error",
+                        "msg": "Invalid signature hex encoding"
+                    }))
+                }
             };
             if !los_crypto::verify_signature(message.as_bytes(), &sig_bytes, &pk_bytes) {
-                return warp::reply::json(&serde_json::json!({
+                return api_json(serde_json::json!({
                     "status": "error",
                     "msg": "Signature verification failed"
                 }));
@@ -2903,7 +3121,7 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
                 .unwrap_or_default()
                 .as_secs();
             if timestamp == 0 || now.abs_diff(timestamp) > 300 {
-                return warp::reply::json(&serde_json::json!({
+                return api_json(serde_json::json!({
                     "status": "error",
                     "msg": "Timestamp too old or missing (max 5 minute window)"
                 }));
@@ -2911,7 +3129,7 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
 
             // 5. Prevent genesis/bootstrap validators from unregistering
             if bv_inner.contains(&address) {
-                return warp::reply::json(&serde_json::json!({
+                return api_json(serde_json::json!({
                     "status": "error",
                     "msg": "Bootstrap validators cannot unregister"
                 }));
@@ -2927,7 +3145,7 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
             };
 
             if !is_validator {
-                return warp::reply::json(&serde_json::json!({
+                return api_json(serde_json::json!({
                     "status": "error",
                     "msg": "Address is not a registered validator"
                 }));
@@ -2941,16 +3159,28 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
                 }
             }
 
-            // 8. Mark Unstaking in SlashingManager
+            // 8. Remove from SlashingManager (full cleanup, not just unstaking)
             {
                 let mut sm_guard = safe_lock(&sm);
-                let _ = sm_guard.set_unstaking(&address);
+                sm_guard.remove_validator(&address);
             }
 
             // 9. Remove from RewardPool
             {
                 let mut rp_guard = safe_lock(&rp);
                 rp_guard.unregister_validator(&address);
+            }
+
+            // 9b. Remove from local registered validators (stop heartbeat forwarding)
+            {
+                let mut lrv: std::sync::MutexGuard<'_, HashSet<String>> = safe_lock(&lrv_inner);
+                lrv.remove(&address);
+            }
+
+            // 9c. Remove from validator_endpoints (so /peers and /validators stop showing it)
+            {
+                let mut ve = safe_lock(&ve_inner);
+                ve.remove(&address);
             }
 
             // 10. Update aBFT validator set
@@ -2978,12 +3208,16 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
             });
             let _ = tx.send(format!("VALIDATOR_UNREG:{}", unreg_msg)).await;
 
-            println!("🔻 Validator unregistered: {} (balance: {} LOS)", get_short_addr(&address), balance / CIL_PER_LOS);
+            println!(
+                "🔻 Validator unregistered: {} (balance: {} LOS)",
+                get_short_addr(&address),
+                balance / CIL_PER_LOS
+            );
 
             // Persist immediately
             let _ = db.save_ledger(&safe_lock(&l));
 
-            warp::reply::json(&serde_json::json!({
+            api_json(serde_json::json!({
                 "status": "ok",
                 "msg": "Validator unregistered successfully",
                 "address": address,
@@ -3003,7 +3237,13 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
     let unregister_validator_route = warp::path("unregister-validator")
         .and(warp::post())
         .and(warp::body::bytes())
-        .and(with_state((l_unregval1, sm_unregval1, rp_unregval1, tx_unregval1, db_unregval1)))
+        .and(with_state((
+            l_unregval1,
+            sm_unregval1,
+            rp_unregval1,
+            tx_unregval1,
+            db_unregval1,
+        )))
         .then(handler1);
 
     // Route 2: /unregister_validator (underscore — CLI compatibility)
@@ -3015,7 +3255,13 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
     let unregister_validator_underscore_route = warp::path("unregister_validator")
         .and(warp::post())
         .and(warp::body::bytes())
-        .and(with_state((l_unregval2, sm_unregval2, rp_unregval2, tx_unregval2, db_unregval2)))
+        .and(with_state((
+            l_unregval2,
+            sm_unregval2,
+            rp_unregval2,
+            tx_unregval2,
+            db_unregval2,
+        )))
         .then(unregister_handler);
 
     // 30. GET /network/peers — Lightweight endpoint for Flutter peer discovery.
@@ -3033,8 +3279,10 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
                 Arc<Mutex<HashMap<String, String>>>,
                 Arc<Mutex<Ledger>>,
             )| {
-                let ve_guard = safe_lock(&ve);
+                // DEADLOCK FIX: Lock order MUST be ab → ve → l (same as /peers route).
+                // Previously was ve → ab → l which caused ABBA deadlock with /peers.
                 let ab_guard = safe_lock(&ab);
+                let ve_guard = safe_lock(&ve);
                 let l_guard = safe_lock(&l);
 
                 // All known validator onion endpoints
@@ -3057,7 +3305,7 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
                     })
                     .collect();
 
-                warp::reply::json(&serde_json::json!({
+                api_json(serde_json::json!({
                     "version": 1,
                     "endpoints": endpoints,
                     "total": endpoints.len(),
@@ -3078,7 +3326,7 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
             // Expire old transactions while we're here
             let expired = mp.remove_expired();
             let stats = mp.stats();
-            warp::reply::json(&serde_json::json!({
+            api_json(serde_json::json!({
                 "status": "ok",
                 "mempool": {
                     "pending": stats.size,
@@ -3125,6 +3373,7 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
     let group4 = account_route
         .boxed()
         .or(health_route.boxed())
+        .or(tor_health_route.boxed())
         .or(slashing_route.boxed())
         .or(slashing_profile_route.boxed())
         .or(block_by_hash_route.boxed())
@@ -3138,6 +3387,7 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
         .or(unregister_validator_underscore_route.boxed())
         .or(network_peers_route.boxed())
         .or(mempool_stats_route.boxed())
+        .or(validator_api::validator_routes().boxed())
         .boxed();
 
     let routes = group1
@@ -3399,22 +3649,24 @@ async fn get_crypto_prices() -> (u128, u128) {
 
     // SECURITY FIX #15: Sanity bounds to reject manipulated oracle prices (micro-USD)
     // ETH reasonable range: $10 - $100,000 | BTC reasonable range: $100 - $10,000,000
-    const ETH_MIN_MICRO: u128 = 10 * MICRO;            // $10
-    const ETH_MAX_MICRO: u128 = 100_000 * MICRO;       // $100,000
-    const BTC_MIN_MICRO: u128 = 100 * MICRO;            // $100
-    const BTC_MAX_MICRO: u128 = 10_000_000 * MICRO;     // $10,000,000
+    const ETH_MIN_MICRO: u128 = 10 * MICRO; // $10
+    const ETH_MAX_MICRO: u128 = 100_000 * MICRO; // $100,000
+    const BTC_MIN_MICRO: u128 = 100 * MICRO; // $100
+    const BTC_MAX_MICRO: u128 = 10_000_000 * MICRO; // $10,000,000
 
     let final_eth = if !(ETH_MIN_MICRO..=ETH_MAX_MICRO).contains(&final_eth) {
         if is_production_level || final_eth == 0 {
             println!(
                 "🛑 Oracle ETH price ${}.{:02} out of sanity bounds — fail-closed",
-                final_eth / MICRO, (final_eth % MICRO) / 10_000
+                final_eth / MICRO,
+                (final_eth % MICRO) / 10_000
             );
             0
         } else {
             println!(
                 "⚠️ Oracle ETH price ${}.{:02} out of sanity bounds, using fallback $2500",
-                final_eth / MICRO, (final_eth % MICRO) / 10_000
+                final_eth / MICRO,
+                (final_eth % MICRO) / 10_000
             );
             FALLBACK_ETH_MICRO
         }
@@ -3426,13 +3678,15 @@ async fn get_crypto_prices() -> (u128, u128) {
         if is_production_level || final_btc == 0 {
             println!(
                 "🛑 Oracle BTC price ${}.{:02} out of sanity bounds — fail-closed",
-                final_btc / MICRO, (final_btc % MICRO) / 10_000
+                final_btc / MICRO,
+                (final_btc % MICRO) / 10_000
             );
             0
         } else {
             println!(
                 "⚠️ Oracle BTC price ${}.{:02} out of sanity bounds, using fallback $83000",
-                final_btc / MICRO, (final_btc % MICRO) / 10_000
+                final_btc / MICRO,
+                (final_btc % MICRO) / 10_000
             );
             FALLBACK_BTC_MICRO
         }
@@ -3444,8 +3698,10 @@ async fn get_crypto_prices() -> (u128, u128) {
     println!(
         "📊 Oracle Prices ({} APIs): ETH ${}.{:02}, BTC ${}.{:02}",
         eth_prices.len(),
-        final_eth / MICRO, (final_eth % MICRO) / 10_000,
-        final_btc / MICRO, (final_btc % MICRO) / 10_000
+        final_eth / MICRO,
+        (final_eth % MICRO) / 10_000,
+        final_btc / MICRO,
+        (final_btc % MICRO) / 10_000
     );
 
     (final_eth, final_btc)
@@ -3491,9 +3747,12 @@ async fn verify_eth_burn_tx(txid: &str) -> Option<u128> {
                             if a.as_str().unwrap_or("").to_lowercase() == target {
                                 // BlockCypher returns value in wei (integer)
                                 // Try u64 first (covers < 18.4 ETH), fallback to f64→u128
-                                let wei = out["value"].as_u64().map(|v| v as u128)
-                                    .unwrap_or_else(|| {
-                                        out["value"].as_f64().map(|v| v.round() as u128).unwrap_or(0)
+                                let wei =
+                                    out["value"].as_u64().map(|v| v as u128).unwrap_or_else(|| {
+                                        out["value"]
+                                            .as_f64()
+                                            .map(|v| v.round() as u128)
+                                            .unwrap_or(0)
                                     });
                                 return Some(wei);
                             }
@@ -3544,9 +3803,12 @@ async fn verify_btc_burn_tx(txid: &str) -> Option<u128> {
                     for out in vout.iter() {
                         if out.to_string().contains(BURN_ADDRESS_BTC) {
                             // mempool.space returns value in satoshi (integer)
-                            let satoshi = out["value"].as_u64().map(|v| v as u128)
-                                .unwrap_or_else(|| {
-                                    out["value"].as_f64().map(|v| v.round() as u128).unwrap_or(0)
+                            let satoshi =
+                                out["value"].as_u64().map(|v| v as u128).unwrap_or_else(|| {
+                                    out["value"]
+                                        .as_f64()
+                                        .map(|v| v.round() as u128)
+                                        .unwrap_or(0)
                                 });
                             return Some(satoshi);
                         }
@@ -3753,12 +4015,19 @@ fn solve_pow(block: &mut los_core::Block) {
 /// so it doesn't stall tokio worker threads during concurrent API handling.
 #[allow(dead_code)]
 async fn solve_pow_async(mut block: los_core::Block) -> los_core::Block {
-    tokio::task::spawn_blocking(move || {
+    let fallback = block.clone();
+    match tokio::task::spawn_blocking(move || {
         solve_pow(&mut block);
         block
     })
     .await
-    .expect("PoW spawn_blocking task panicked")
+    {
+        Ok(solved) => solved,
+        Err(e) => {
+            eprintln!("[ERROR] PoW spawn_blocking task failed: {e}. Returning unsolved block.");
+            fallback
+        }
+    }
 }
 
 /// Quiet PoW computation for system-generated blocks (rewards, etc.)
@@ -3980,10 +4249,27 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
         Err(e) => {
             eprintln!("❌ Failed to open database at {}: {}", db_path, e);
-            eprintln!("⚠️  Falling back to JSON mode (not recommended for production)");
+            eprintln!("   Possible causes:");
+            eprintln!("   1. Another los-node instance is still running with the same data-dir");
+            eprintln!("   2. A previous instance was killed and the OS hasn't released the lock");
+            eprintln!("   Fix: kill all los-node processes → pkill -9 -f los-node");
+            json_event!("fatal", "error" => "database_lock_failed", "path" => &db_path);
             return Err(e.into());
         }
     };
+
+    // ── PID LOCKFILE ────────────────────────────────────────────────────
+    // Write our PID so Flutter (and future starts) can detect stale instances.
+    // Cleaned up by the SIGTERM handler on graceful shutdown.
+    {
+        let pid = std::process::id();
+        let pid_path = format!("{}/.los-node.pid", base_data_dir);
+        if let Err(e) = std::fs::write(&pid_path, pid.to_string()) {
+            eprintln!("⚠️ Could not write PID lockfile: {}", e);
+        } else {
+            println!("🔒 PID lockfile: {} (PID {})", pid_path, pid);
+        }
+    }
 
     // --- NEW: INITIALIZE METRICS ---
     println!("📊 Initializing Prometheus metrics...");
@@ -4032,7 +4318,28 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             auto
         }
     };
-    let keys: los_crypto::KeyPair = if let Ok(data) = fs::read_to_string(&wallet_path) {
+    let keys: los_crypto::KeyPair = if let Ok(seed_phrase) = std::env::var("LOS_SEED_PHRASE") {
+        // DETERMINISTIC KEYPAIR: Derive from BIP39 mnemonic (genesis validator identity)
+        // This ensures the node's runtime address matches its genesis address.
+        let mnemonic = match bip39::Mnemonic::parse_normalized(&seed_phrase) {
+            Ok(m) => m,
+            Err(e) => {
+                eprintln!("FATAL: LOS_SEED_PHRASE contains invalid BIP39 mnemonic: {e}");
+                eprintln!("Please check the environment variable and try again.");
+                std::process::exit(1);
+            }
+        };
+        let bip39_seed = mnemonic.to_seed("");
+        let kp = los_crypto::generate_keypair_from_seed(&bip39_seed);
+        let derived_addr = los_crypto::public_key_to_address(&kp.public_key);
+        println!("🔑 Derived keypair from LOS_SEED_PHRASE → {}", get_short_addr(&derived_addr));
+        // Save/overwrite wallet.json so subsequent restarts without seed phrase still work
+        fs::create_dir_all(&base_data_dir).ok();
+        if let Ok(encrypted) = los_crypto::migrate_to_encrypted(&kp, &wallet_password) {
+            let _ = fs::write(&wallet_path, serde_json::to_string(&encrypted).unwrap_or_default());
+        }
+        kp
+    } else if let Ok(data) = fs::read_to_string(&wallet_path) {
         // Try parsing as encrypted key first, fall back to legacy plaintext
         if let Ok(encrypted) = serde_json::from_str::<los_crypto::EncryptedKey>(&data) {
             let sk =
@@ -4080,6 +4387,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // FIX: Load ledger and genesis BEFORE wrapping in Arc to prevent race condition
     let mut ledger_state = load_from_disk(&database);
+
+    // Collect genesis validator → onion_address mappings during genesis loading.
+    // Used to seed validator_endpoints AFTER it's created downstream.
+    let mut genesis_onion_map: Vec<(String, String)> = Vec::new();
 
     // ══════════════════════════════════════════════════════════════════════
     // GENESIS LOADING — Network-aware with validation
@@ -4142,6 +4453,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         if let Some(ref nodes) = genesis_config.bootstrap_nodes {
                             for node in nodes {
                                 bootstrap_validators.push(node.address.clone());
+                                // Collect onion_address if present in genesis bootstrap_nodes
+                                if let Some(ref onion) = node.onion_address {
+                                    if !onion.is_empty() && onion.ends_with(".onion") {
+                                        genesis_onion_map.push((node.address.clone(), onion.clone()));
+                                    }
+                                }
                             }
                             println!(
                                 "🔍 Loaded {} bootstrap validators from genesis",
@@ -4227,6 +4544,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                         || wallet["role"].as_str() == Some("validator");
                                     if is_validator {
                                         bootstrap_validators.push(address.to_string());
+                                        // Collect onion_address for validator endpoint discovery
+                                        if let Some(onion) = wallet["onion_address"].as_str() {
+                                            if !onion.is_empty() && onion.ends_with(".onion") {
+                                                genesis_onion_map.push((address.to_string(), onion.to_string()));
+                                            }
+                                        }
                                     }
                                     if !ledger_state.accounts.contains_key(address) {
                                         ledger_state.accounts.insert(
@@ -4374,6 +4697,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
     let address_book = Arc::new(Mutex::new(initial_peers));
 
+    // SECURITY FIX: live_peers tracks validators that PROVED liveness via gossipsub.
+    // Key = full address, Value = Unix timestamp of last received gossipsub message.
+    // Only peers in this map with recent timestamps receive heartbeats for rewards.
+    // This prevents dead validators from earning rewards via stale address_book entries.
+    let live_peers: Arc<Mutex<HashMap<String, u64>>> = Arc::new(Mutex::new(HashMap::new()));
+
+    // LOCAL REGISTERED VALIDATORS — Tracks wallet addresses registered as validators
+    // through THIS node's API. The heartbeat loop records heartbeats for these addresses
+    // because this node's liveness proves the registered validator's liveness.
+    // Without this, a user who registers a different wallet address than the node's keypair
+    // would get 0 heartbeats → 0% uptime → no rewards.
+    let local_registered_validators: Arc<Mutex<HashSet<String>>> = Arc::new(Mutex::new(HashSet::new()));
+
     let pending_burns = Arc::new(Mutex::new(HashMap::<
         String,
         (u128, u128, String, u128, u64, String),
@@ -4396,8 +4732,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Enables Flutter apps and other nodes to discover validator .onion endpoints
     // beyond the hardcoded bootstrap list. Populated from:
     // 1. This node's own LOS_ONION_ADDRESS
-    // 2. VALIDATOR_REG gossip messages (includes onion_address)
-    // 3. PEER_LIST exchange messages
+    // 2. Genesis validator onion_address fields
+    // 3. VALIDATOR_REG gossip messages (includes onion_address)
+    // 4. PEER_LIST exchange messages
     let mut initial_endpoints = HashMap::<String, String>::new();
     // Register this node's own onion address
     if let Ok(our_onion) = std::env::var("LOS_ONION_ADDRESS") {
@@ -4405,6 +4742,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             initial_endpoints.insert(my_address.clone(), our_onion.clone());
             println!("🧅 Registered own onion endpoint: {}", our_onion);
         }
+    }
+    // Seed from genesis validator onion addresses (collected during genesis loading)
+    for (addr, onion) in &genesis_onion_map {
+        initial_endpoints.entry(addr.clone()).or_insert_with(|| onion.clone());
+    }
+    if !genesis_onion_map.is_empty() {
+        println!("🧅 Seeded {} genesis validator endpoints for discovery", genesis_onion_map.len());
     }
     let validator_endpoints = Arc::new(Mutex::new(initial_endpoints));
 
@@ -4443,7 +4787,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     // NEW: Finality Checkpoint Manager (prevents long-range attacks)
-    let checkpoint_db_path = format!("node_data/{}/checkpoints", node_id);
+    // CRITICAL FIX: Use --data-dir path, NOT hardcoded node_data/{node_id}/.
+    // The old path was shared across all flutter-validator instances regardless
+    // of --data-dir, causing lock conflicts from zombie (UE) processes.
+    let checkpoint_db_path = format!("{}/checkpoints", base_data_dir);
     let checkpoint_manager = match CheckpointManager::new(&checkpoint_db_path) {
         Ok(cm) => {
             let latest = cm.get_latest_checkpoint().ok().flatten();
@@ -4462,8 +4809,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
         Err(e) => {
             eprintln!("⚠️ Failed to open checkpoint DB: {} — trying fallback", e);
-            // Create a fallback checkpoint manager with temp path
-            let fallback_path = format!("node_data/{}/checkpoints_fallback", node_id);
+            // Fallback: temp directory that's guaranteed to have no stale locks
+            let fallback_path = format!("{}/checkpoints_fallback", base_data_dir);
             match CheckpointManager::new(&fallback_path) {
                 Ok(cm) => Arc::new(Mutex::new(cm)),
                 Err(e2) => {
@@ -4471,7 +4818,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         "FATAL: Both checkpoint DBs failed: {} — node cannot start safely",
                         e2
                     );
-                    std::process::exit(1);
+                    eprintln!("   Fix: kill all los-node processes → pkill -9 -f los-node");
+                    json_event!("fatal", "error" => "checkpoint_db_lock_failed", "path" => &checkpoint_db_path);
+                    return Err(Box::<dyn std::error::Error>::from(e2.to_string()));
                 }
             }
         }
@@ -4694,6 +5043,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     });
 
+    // Dynamic P2P port: API port + 1000 (e.g. 3030→4030, 3031→4031)
+    // Can still be overridden via LOS_P2P_PORT env var.
+    if std::env::var("LOS_P2P_PORT").is_err() {
+        let p2p_port = api_port + 1000;
+        std::env::set_var("LOS_P2P_PORT", p2p_port.to_string());
+        println!("📡 P2P port auto-derived: {} (API {} + 1000)", p2p_port, api_port);
+    }
+
     let (tx_out, rx_out) = mpsc::channel(32);
     let (tx_in, mut rx_in) = mpsc::channel(32);
 
@@ -4724,6 +5081,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let api_burn_voters = Arc::clone(&burn_voters);
     let api_validator_endpoints = Arc::clone(&validator_endpoints);
     let api_mempool = Arc::clone(&mempool_pool);
+    let api_local_validators = Arc::clone(&local_registered_validators);
 
     // Create aBFT Consensus Engine in main() so it's shared with both API server and event loop
     let abft_consensus = {
@@ -4764,6 +5122,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             validator_endpoints: api_validator_endpoints,
             mempool_pool: api_mempool,
             abft_consensus: api_abft,
+            local_registered_validators: api_local_validators,
         })
         .await;
     });
@@ -4844,8 +5203,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
                 println!(
                     "📊 Broadcasting signed oracle prices: ETH=${}.{:02}, BTC=${}.{:02}",
-                    eth_price / 1_000_000, (eth_price % 1_000_000) / 10_000,
-                    btc_price / 1_000_000, (btc_price % 1_000_000) / 10_000
+                    eth_price / 1_000_000,
+                    (eth_price % 1_000_000) / 10_000,
+                    btc_price / 1_000_000,
+                    (btc_price % 1_000_000) / 10_000
                 );
             }
         }
@@ -4854,329 +5215,574 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // ══════════════════════════════════════════════════════════════════════
     // VALIDATOR REWARD SYSTEM — Heartbeat recording + Epoch distribution
     // ══════════════════════════════════════════════════════════════════════
-    // - Records heartbeats every 60s for all known validators
-    // - Checks epoch completion and distributes rewards
-    // - Credits reward amounts to validator balances in the ledger
+    // Liveness proof via VALIDATOR_HEARTBEAT gossip messages:
+    // 1. Each node broadcasts VALIDATOR_HEARTBEAT:<addr>:<sig>:<ts> every tick
+    // 2. Receiving nodes verify the Dilithium5 signature + timestamp freshness
+    // 3. Verified heartbeats update live_peers with the sender's last-seen time
+    // 4. Only peers in live_peers with recent timestamps get heartbeat credit
+    //
+    // This works identically on testnet AND mainnet — no shortcuts, no bypasses.
+    // If gossipsub delivers messages, validators get heartbeats. If not, they don't.
+    // ══════════════════════════════════════════════════════════════════════
     let reward_ledger = Arc::clone(&ledger);
     let reward_pool_bg = Arc::clone(&reward_pool);
     let reward_my_addr = my_address.clone();
-    let reward_address_book = Arc::clone(&address_book);
-    let reward_bootstrap_addrs = bootstrap_validators.clone();
+    let reward_live_peers = Arc::clone(&live_peers);
+    let reward_local_validators = Arc::clone(&local_registered_validators);
     let reward_sk = Zeroizing::new(keys.secret_key.clone());
     let reward_pk = keys.public_key.clone();
-    let reward_tx = tx_out.clone(); // For gossiping reward/fee Mint blocks to peers
+    let reward_tx = tx_out.clone(); // For gossiping reward/fee Mint blocks + heartbeat broadcasts
+    let reward_ve = Arc::clone(&validator_endpoints); // For HTTP heartbeat fallback
     tokio::spawn(async move {
         // Testnet: shorter heartbeat interval (10s) for 2-minute epochs
         // Mainnet: 60s heartbeat for 30-day epochs
         let heartbeat_secs = if los_core::is_testnet_build() { 10 } else { 60 };
         let mut interval = tokio::time::interval(Duration::from_secs(heartbeat_secs));
+
+        // HTTP heartbeat fallback: when gossipsub is down, directly ping
+        // validator .onion endpoints via Tor to verify liveness.
+        // Runs every 6 ticks (60s on testnet) to avoid overwhelming Tor.
+        let http_check_interval: u64 = 6; // every 6 × heartbeat_secs
+        let mut tick_counter: u64 = 0;
+        let socks_proxy = std::env::var("LOS_SOCKS5_PROXY").ok();
+
         loop {
             interval.tick().await;
+            tick_counter += 1;
 
             let now = std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .unwrap_or_default()
                 .as_secs();
 
-            // All pool + ledger work inside a scope block so MutexGuards drop before .await
-            let (gossip_queue, fee_gossip_queue) = {
+            // ── BROADCAST: Send our VALIDATOR_HEARTBEAT to the network ──
+            // This proves OUR liveness to all other nodes. They will verify
+            // the signature and update their live_peers map accordingly.
+            // Format: VALIDATOR_HEARTBEAT:<address>:<timestamp>:<pk_hex>:<sig_hex>
+            {
+                let message = format!("VALIDATOR_HEARTBEAT:{}:{}", reward_my_addr, now);
+                if let Ok(sig) = los_crypto::sign_message(message.as_bytes(), &reward_sk) {
+                    let sig_hex = hex::encode(&sig);
+                    let pk_hex = hex::encode(&reward_pk);
+                    let hb_msg = format!("VALIDATOR_HEARTBEAT:{}:{}:{}:{}", reward_my_addr, now, pk_hex, sig_hex);
+                    let _ = reward_tx.send(hb_msg).await;
+                }
+            }
+
+            // Also broadcast heartbeats for locally-registered validator wallets.
+            // The node operator registered a wallet address → our node's liveness
+            // proves the wallet's participation. We sign with the NODE key but
+            // include the wallet address. Other nodes verify this via the
+            // VALIDATOR_HEARTBEAT_PROXY variant.
+            {
+                let local_addrs: Vec<String> = {
+                    let lrv = safe_lock(&reward_local_validators);
+                    lrv.iter().filter(|a| **a != reward_my_addr).cloned().collect()
+                }; // lrv dropped here before .await
+                for addr in &local_addrs {
+                    let message = format!("VALIDATOR_HEARTBEAT_PROXY:{}:{}:{}", addr, reward_my_addr, now);
+                    if let Ok(sig) = los_crypto::sign_message(message.as_bytes(), &reward_sk) {
+                        let sig_hex = hex::encode(&sig);
+                        let proxy_msg = format!(
+                            "VALIDATOR_HEARTBEAT_PROXY:{}:{}:{}:{}:{}",
+                            addr, reward_my_addr, now, hex::encode(&reward_pk), sig_hex
+                        );
+                        let _ = reward_tx.send(proxy_msg).await;
+                    }
+                }
+            }
+
+            // All pool + ledger work inside scope blocks so MutexGuards drop before .await
+            // Phase A: Heartbeat recording (pool lock → release → HTTP fallback → re-lock)
+            let mut seen_this_tick = {
                 let mut pool = safe_lock(&reward_pool_bg);
 
-                // Record heartbeat for this node (proving liveness)
-                pool.record_heartbeat(&reward_my_addr);
+                // ── HEARTBEAT RECORDING (idempotent per tick) ──
+                // Uses record_heartbeat_once() so each validator gets exactly
+                // 1 heartbeat per tick, regardless of how many sources report them.
+                let mut seen_this_tick = std::collections::HashSet::<String>::new();
 
-                // Record heartbeats for connected peers (proving network liveness)
+                // 1. Record heartbeat for THIS node (we are running = proven liveness)
+                pool.record_heartbeat_once(&reward_my_addr, &mut seen_this_tick);
+
+                // 2. Record heartbeats for wallet addresses registered through THIS node's API.
+                //    The node's liveness proves the registered wallet's liveness.
                 {
-                    let ab = safe_lock(&reward_address_book);
-                    for peer_addr in ab.values() {
-                        pool.record_heartbeat(peer_addr);
+                    let lrv = safe_lock(&reward_local_validators);
+                    for addr in lrv.iter() {
+                        pool.record_heartbeat_once(addr, &mut seen_this_tick);
                     }
                 }
 
-                // Record heartbeats for ALL bootstrap/genesis validators
-                // They run critical infrastructure and are assumed always active
-                for bv_addr in &reward_bootstrap_addrs {
-                    pool.record_heartbeat(bv_addr);
+                // 3. Record heartbeats for peers that PROVED liveness by sending
+                //    gossipsub messages (VALIDATOR_HEARTBEAT, ID:, BLOCK_CONFIRMED:, etc.)
+                //    within the last liveness window.
+                //    Only recent entries count — stale peers get ZERO heartbeats.
+                {
+                    let mut lp = safe_lock(&reward_live_peers);
+                    // Liveness window: 2× heartbeat interval to allow for Tor network jitter
+                    let liveness_window = (heartbeat_secs * 2) as u64;
+                    let cutoff = now.saturating_sub(liveness_window);
+                    for (peer_addr, last_seen) in lp.iter() {
+                        if *last_seen >= cutoff {
+                            pool.record_heartbeat_once(peer_addr, &mut seen_this_tick);
+                        }
+                    }
+
+                    // GC: Evict stale entries older than 10× heartbeat to prevent memory leak.
+                    let stale_cutoff = now.saturating_sub(liveness_window * 5);
+                    lp.retain(|_, ts| *ts >= stale_cutoff);
                 }
 
-                // Check if the current epoch has ended
-                let mut gossip_queue: Vec<String> = Vec::new();
-                let mut fee_gossip_queue: Vec<String> = Vec::new();
-                if pool.is_epoch_complete(now) {
-                    // LEADER ELECTION: Only one node per epoch creates reward blocks
-                    // to prevent all nodes independently minting (causing ledger forks).
-                    // Leader = node with lexicographically smallest address among online peers.
-                    let is_leader = {
-                        let ab = safe_lock(&reward_address_book);
-                        let mut online: Vec<&str> = vec![reward_my_addr.as_str()];
-                        for addr in ab.values() {
-                            online.push(addr.as_str());
+                seen_this_tick
+            }; // pool dropped here — safe for .await below
+
+            // 4. HTTP HEARTBEAT FALLBACK: If gossipsub failed to deliver heartbeats
+            //    from most validators, directly ping their .onion /health endpoints.
+            //    This runs every `http_check_interval` ticks to avoid overwhelming Tor.
+            //    It compensates for gossipsub mesh collapse (broken Tor circuits).
+            if tick_counter % http_check_interval == 0 && socks_proxy.is_some() {
+                let proxy_url = socks_proxy.as_deref().unwrap_or("socks5h://127.0.0.1:9050");
+                // Collect endpoints for validators NOT yet seen this tick
+                let endpoints_to_check: Vec<(String, String)> = {
+                    let ve = safe_lock(&reward_ve);
+                    let pool = safe_lock(&reward_pool_bg);
+                    pool.validators.keys()
+                        .filter(|addr| !seen_this_tick.contains(*addr) && **addr != reward_my_addr)
+                        .filter_map(|addr| {
+                            ve.get(addr).map(|onion| (addr.clone(), onion.clone()))
+                        })
+                        .collect()
+                };
+
+                if !endpoints_to_check.is_empty() {
+                    // Concurrent HTTP checks using JoinSet (with timeout per check)
+                    let mut check_set = tokio::task::JoinSet::new();
+                    for (addr, onion) in endpoints_to_check {
+                        let proxy = proxy_url.to_string();
+                        check_set.spawn(async move {
+                            let url = format!("http://{}:80/health", onion);
+                            let ok = tokio::time::timeout(
+                                Duration::from_secs(8),
+                                async {
+                                    let proxy_obj = match reqwest::Proxy::all(&proxy) {
+                                        Ok(p) => p,
+                                        Err(_) => return false,
+                                    };
+                                    let client = match reqwest::Client::builder()
+                                        .proxy(proxy_obj)
+                                        .timeout(Duration::from_secs(6))
+                                        .build() {
+                                        Ok(c) => c,
+                                        Err(_) => return false,
+                                    };
+                                    match client.get(&url).send().await {
+                                        Ok(resp) => resp.status().is_success(),
+                                        Err(_) => false,
+                                    }
+                                }
+                            ).await.unwrap_or(false);
+                            (addr, ok)
+                        });
+                    }
+
+                    // Collect results first (no locks held across await)
+                    let mut http_results: Vec<(String, bool)> = Vec::new();
+                    while let Some(result) = check_set.join_next().await {
+                        if let Ok(pair) = result {
+                            http_results.push(pair);
                         }
-                        online.sort();
-                        online
-                            .first()
-                            .is_some_and(|a| *a == reward_my_addr.as_str())
-                    };
+                    }
 
-                    // Set expected heartbeats for CURRENT (completing) epoch before eligibility check
-                    pool.set_expected_heartbeats(heartbeat_secs);
-
-                    // Refresh stake weights from current ledger balances before distribution.
-                    // This ensures reward proportions reflect actual balances (including
-                    // rewards received in previous epochs or additional deposits).
-                    {
-                        let l = safe_lock(&reward_ledger);
-                        let addrs: Vec<String> = pool.validators.keys().cloned().collect();
-                        for addr in &addrs {
-                            if let Some(acct) = l.accounts.get(addr) {
-                                pool.update_stake(addr, acct.balance);
+                    // Now lock and apply results
+                    let reachable_count = http_results.iter().filter(|(_, ok)| *ok).count();
+                    let total_checked = http_results.len();
+                    if reachable_count > 0 {
+                        let mut pool = safe_lock(&reward_pool_bg);
+                        let mut lp = safe_lock(&reward_live_peers);
+                        for (addr, is_alive) in &http_results {
+                            if *is_alive {
+                                pool.record_heartbeat_once(addr, &mut seen_this_tick);
+                                lp.insert(addr.clone(), now);
                             }
                         }
                     }
+                    if total_checked > 0 {
+                        println!("📡 HTTP heartbeat fallback: {}/{} validators reachable",
+                            reachable_count, total_checked);
+                    }
+                }
+            }
 
-                    // Distribute rewards for the completed epoch
-                    // (this calls advance_epoch() internally which resets counters)
-                    let rewards = pool.distribute_epoch_rewards();
+            // Re-acquire pool lock for epoch check
+            // DEADLOCK FIX: Split epoch processing into phases to minimize lock hold time.
+            // Previously held reward_pool for ~280 lines including CPU-intensive PoW + signing,
+            // blocking ALL HTTP routes that touch ledger or reward_pool for seconds.
+            // NEW: Phase 1 (pool lock) → Phase 2 (no lock, CPU work) → Phase 3 (ledger lock, write)
+            let (gossip_queue, fee_gossip_queue) = {
 
-                    // Set expected heartbeats for the NEW epoch (after advance_epoch reset them)
-                    pool.set_expected_heartbeats(heartbeat_secs);
+                // ═══════════════════════════════════════════════════════════════════
+                // PHASE 1: Epoch check + reward calculation (pool lock only, fast)
+                // ═══════════════════════════════════════════════════════════════════
+                let (rewards, is_leader, completed_epoch, fee_data) = {
+                    let mut pool = safe_lock(&reward_pool_bg);
 
-                    if !rewards.is_empty() && is_leader {
-                        println!("👑 This node is the epoch leader — creating reward blocks");
-                        // SI-01 FIX: Credit rewards via proper Mint blocks for full audit trail.
-                        // Each reward creates a block in the ledger with link=REWARD:epoch:N,
-                        // deducting from remaining_supply to maintain supply integrity.
-                        {
-                            let mut l = safe_lock(&reward_ledger);
-                            let mut total_credited: u128 = 0;
+                    if !pool.is_epoch_complete(now) {
+                        // Not epoch boundary — nothing to do
+                        (Vec::new(), false, 0u64, None)
+                    } else {
+                        // DETERMINISTIC LEADER ELECTION (CONSENSUS FIX)
+                        // Previously used volatile HTTP heartbeat data (reward_live_peers)
+                        // which differs per node on Tor → ALL nodes thought they were leader
+                        // → conflicting reward blocks → chain divergence → blacklisting.
+                        //
+                        // Fix: Use deterministic round-robin over the sorted registered
+                        // validator list. All nodes share the same pool.validators (registered
+                        // at genesis), so they ALL agree on who the leader is.
+                        // If the elected leader is offline, rewards for that epoch are simply
+                        // not distributed — the pool retains the budget for future epochs.
+                        let is_leader = {
+                            let mut registered: Vec<&String> = pool.validators.keys().collect();
+                            registered.sort();
+                            if registered.is_empty() {
+                                false
+                            } else {
+                                let leader_idx = (pool.current_epoch as usize) % registered.len();
+                                let leader_addr = registered[leader_idx].as_str();
+                                let am_leader = leader_addr == reward_my_addr.as_str();
+                                if am_leader {
+                                    println!("👑 Epoch {} leader election: I am the leader (slot {}/{})",
+                                        pool.current_epoch, leader_idx, registered.len());
+                                } else {
+                                    println!("⏳ Epoch {} leader election: leader is {} (slot {}/{})",
+                                        pool.current_epoch,
+                                        &leader_addr[..leader_addr.len().min(15)],
+                                        leader_idx, registered.len());
+                                }
+                                am_leader
+                            }
+                        };
+
+                        pool.set_expected_heartbeats(heartbeat_secs);
+
+                        // CONSENSUS FIX: Only the leader distributes rewards.
+                        // Non-leaders just advance the epoch (reset heartbeats, increment counter)
+                        // without deducting from the pool. They will receive the leader's
+                        // reward blocks via gossip/sync and process them normally through
+                        // process_block() which credits the recipient's account.
+                        //
+                        // Previously ALL nodes called distribute_epoch_rewards() independently,
+                        // causing each to deduct different amounts (based on local heartbeat data)
+                        // and create conflicting reward blocks → chain divergence → blacklisting.
+                        let (rewards, completed_epoch, fee_data) = if is_leader {
+                            // Refresh stake weights (brief ledger lock)
+                            {
+                                let l = safe_lock(&reward_ledger);
+                                let addrs: Vec<String> = pool.validators.keys().cloned().collect();
+                                for addr in &addrs {
+                                    if let Some(acct) = l.accounts.get(addr) {
+                                        pool.update_stake(addr, acct.balance);
+                                    }
+                                }
+                            } // ledger released
+
+                            let rewards = pool.distribute_epoch_rewards();
+                            pool.set_expected_heartbeats(heartbeat_secs);
                             let completed_epoch = pool.current_epoch.saturating_sub(1);
-                            let now_ts = std::time::SystemTime::now()
-                                .duration_since(std::time::UNIX_EPOCH)
-                                .unwrap_or_default()
-                                .as_secs();
 
-                            for (addr, reward_cil) in &rewards {
-                                // Check remaining supply before minting
-                                if l.distribution.remaining_supply < *reward_cil {
+                            // Collect fee distribution data
+                            let fee_data = {
+                                let l = safe_lock(&reward_ledger);
+                                let fees = l.accumulated_fees_cil;
+                                if fees > 0 {
+                                    let eligible: Vec<(String, u128)> = l
+                                        .accounts
+                                        .iter()
+                                        .filter(|(_, s)| {
+                                            s.is_validator && s.balance >= MIN_VALIDATOR_STAKE_CIL
+                                        })
+                                        .map(|(addr, s)| {
+                                            let weight = calculate_voting_power(s.balance);
+                                            (addr.clone(), weight)
+                                        })
+                                        .collect();
+                                    let total_weight: u128 = eligible.iter().map(|(_, w)| *w).sum();
+                                    if total_weight > 0 && !eligible.is_empty() {
+                                        Some((fees, eligible, total_weight))
+                                    } else {
+                                        None
+                                    }
+                                } else {
+                                    None
+                                }
+                            };
+
+                            if rewards.is_empty() {
+                                println!(
+                                    "🏆 Epoch {} complete: no eligible validators for rewards",
+                                    completed_epoch
+                                );
+                            }
+
+                            (rewards, completed_epoch, fee_data)
+                        } else {
+                            // NON-LEADER: Just advance epoch, don't distribute
+                            let completed_epoch = pool.current_epoch;
+                            pool.advance_epoch_only();
+                            pool.set_expected_heartbeats(heartbeat_secs);
+                            println!(
+                                "🏆 Epoch {} complete: not leader, waiting for reward gossip",
+                                completed_epoch
+                            );
+                            (Vec::new(), completed_epoch, None)
+                        };
+
+                        (rewards, is_leader, completed_epoch, fee_data)
+                    }
+                }; // pool lock RELEASED here — all HTTP routes unblocked
+
+                let mut gossip_queue: Vec<String> = Vec::new();
+                let mut fee_gossip_queue: Vec<String> = Vec::new();
+
+                if !rewards.is_empty() && is_leader {
+                    println!("👑 This node is the epoch leader — creating reward blocks");
+
+                    // ═══════════════════════════════════════════════════════════
+                    // PHASE 2a: Collect account states (brief ledger lock)
+                    // ═══════════════════════════════════════════════════════════
+                    let now_ts = std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap_or_default()
+                        .as_secs();
+
+                    let mut block_templates: Vec<(String, u128, Block)> = Vec::new();
+                    {
+                        let l = safe_lock(&reward_ledger);
+                        for (addr, reward_cil) in &rewards {
+                            if l.distribution.remaining_supply < *reward_cil {
+                                eprintln!(
+                                    "⚠️ Reward skipped for {}: insufficient remaining supply",
+                                    get_short_addr(addr)
+                                );
+                                continue;
+                            }
+                            let state = l.accounts.get(addr).cloned().unwrap_or(AccountState {
+                                head: "0".to_string(),
+                                balance: 0,
+                                block_count: 0,
+                                is_validator: false,
+                            });
+                            block_templates.push((addr.clone(), *reward_cil, Block {
+                                block_type: BlockType::Mint,
+                                account: addr.clone(),
+                                previous: state.head.clone(),
+                                link: format!("REWARD:EPOCH:{}", completed_epoch),
+                                amount: *reward_cil,
+                                fee: 0,
+                                timestamp: now_ts,
+                                public_key: hex::encode(&reward_pk),
+                                signature: String::new(),
+                                work: 0,
+                            }));
+                        }
+                    } // ledger released — HTTP routes unblocked during CPU work
+
+                    // ═══════════════════════════════════════════════════════════
+                    // PHASE 2b: PoW + Signing (NO LOCKS HELD — CPU intensive)
+                    // ═══════════════════════════════════════════════════════════
+                    let mut signed_blocks: Vec<(String, u128, Block)> = Vec::new();
+                    for (addr, reward_cil, mut blk) in block_templates {
+                        compute_pow_inline(&mut blk, 0);
+                        let signing_hash = blk.signing_hash();
+                        blk.signature =
+                            match try_sign_hex(signing_hash.as_bytes(), &reward_sk) {
+                                Ok(sig) => sig,
+                                Err(e) => {
                                     eprintln!(
-                                        "⚠️ Reward skipped for {}: insufficient remaining supply",
+                                        "❌ Failed to sign reward block for {}: {}",
+                                        get_short_addr(&addr),
+                                        e
+                                    );
+                                    continue;
+                                }
+                            };
+                        signed_blocks.push((addr, reward_cil, blk));
+                    }
+
+                    // ═══════════════════════════════════════════════════════════
+                    // PHASE 3a: Process signed reward blocks (ledger lock, fast)
+                    // ═══════════════════════════════════════════════════════════
+                    {
+                        let mut l = safe_lock(&reward_ledger);
+                        let mut total_credited: u128 = 0;
+                        for (addr, reward_cil, reward_blk) in &signed_blocks {
+                            // Re-check previous hash in case ledger changed during signing
+                            // (another block may have been processed for this account).
+                            // If the previous hash is stale, skip — next epoch will retry.
+                            if let Some(acct) = l.accounts.get(addr) {
+                                if acct.head != reward_blk.previous {
+                                    eprintln!(
+                                        "⚠️ Reward block stale for {} (head changed) — will retry next epoch",
                                         get_short_addr(addr)
                                     );
                                     continue;
                                 }
+                            }
+                            match l.process_block(reward_blk) {
+                                Ok(hash) => {
+                                    total_credited += reward_cil;
+                                    gossip_queue.push(
+                                        serde_json::to_string(reward_blk).unwrap_or_default(),
+                                    );
+                                    println!(
+                                        "💰 Reward Mint: {} → {} LOS (block: {})",
+                                        get_short_addr(addr),
+                                        reward_cil / CIL_PER_LOS,
+                                        &hash[..12]
+                                    );
+                                }
+                                Err(e) => {
+                                    eprintln!(
+                                        "❌ Reward block failed for {}: {}",
+                                        get_short_addr(addr),
+                                        e
+                                    );
+                                }
+                            }
+                        }
+                        if total_credited > 0 {
+                            SAVE_DIRTY.store(true, Ordering::Relaxed);
+                            println!(
+                                "🏆 Epoch {} rewards: {} LOS distributed to {} validators",
+                                completed_epoch,
+                                total_credited / CIL_PER_LOS,
+                                rewards.len()
+                            );
+                        }
+                    } // ledger released
+                }
 
-                                let state = l.accounts.get(addr).cloned().unwrap_or(AccountState {
-                                    head: "0".to_string(),
-                                    balance: 0,
-                                    block_count: 0,
-                                    is_validator: false,
-                                });
+                // ═══════════════════════════════════════════════════════════════════
+                // FEE DISTRIBUTION (same phase split: collect → sign → write)
+                // ═══════════════════════════════════════════════════════════════════
+                if is_leader {
+                    if let Some((fees_to_distribute, eligible, total_weight)) = fee_data {
+                        let now_ts = std::time::SystemTime::now()
+                            .duration_since(std::time::UNIX_EPOCH)
+                            .unwrap_or_default()
+                            .as_secs();
 
-                                let mut reward_blk = Block {
+                        // Phase A: Collect account states (brief lock)
+                        let mut fee_templates: Vec<(String, u128, Block)> = Vec::new();
+                        {
+                            let l = safe_lock(&reward_ledger);
+                            for (addr, weight) in &eligible {
+                                let fee_share =
+                                    fees_to_distribute.checked_mul(*weight).unwrap_or(0)
+                                        / total_weight;
+                                if fee_share == 0 {
+                                    continue;
+                                }
+                                let state =
+                                    l.accounts.get(addr).cloned().unwrap_or(AccountState {
+                                        head: "0".to_string(),
+                                        balance: 0,
+                                        block_count: 0,
+                                        is_validator: false,
+                                    });
+                                fee_templates.push((addr.clone(), fee_share, Block {
                                     block_type: BlockType::Mint,
                                     account: addr.clone(),
                                     previous: state.head.clone(),
-                                    link: format!("REWARD:EPOCH:{}", completed_epoch),
-                                    amount: *reward_cil,
+                                    link: format!("FEE_REWARD:EPOCH:{}", completed_epoch),
+                                    amount: fee_share,
                                     fee: 0,
                                     timestamp: now_ts,
                                     public_key: hex::encode(&reward_pk),
                                     signature: String::new(),
                                     work: 0,
+                                }));
+                            }
+                        } // ledger released
+
+                        // Phase B: PoW + Sign (NO LOCKS)
+                        let mut signed_fee_blocks: Vec<(String, u128, Block)> = Vec::new();
+                        for (addr, fee_share, mut blk) in fee_templates {
+                            compute_pow_inline(&mut blk, 0);
+                            let signing_hash = blk.signing_hash();
+                            blk.signature =
+                                match try_sign_hex(signing_hash.as_bytes(), &reward_sk) {
+                                    Ok(sig) => sig,
+                                    Err(e) => {
+                                        eprintln!(
+                                            "❌ Fee reward sign failed for {}: {}",
+                                            get_short_addr(&addr),
+                                            e
+                                        );
+                                        continue;
+                                    }
                                 };
+                            signed_fee_blocks.push((addr, fee_share, blk));
+                        }
 
-                                // PoW FIRST (work field is part of signing_hash)
-                                compute_pow_inline(&mut reward_blk, 0);
-
-                                // Sign AFTER PoW (signing_hash includes work)
-                                let signing_hash = reward_blk.signing_hash();
-                                reward_blk.signature =
-                                    match try_sign_hex(signing_hash.as_bytes(), &reward_sk) {
-                                        Ok(sig) => sig,
-                                        Err(e) => {
-                                            eprintln!(
-                                                "❌ Failed to sign reward block for {}: {}",
-                                                get_short_addr(addr),
-                                                e
-                                            );
-                                            continue;
-                                        }
-                                    };
-
-                                match l.process_block(&reward_blk) {
+                        // Phase C: Process signed fee blocks (brief lock)
+                        {
+                            let mut l = safe_lock(&reward_ledger);
+                            let mut total_fee_credited: u128 = 0;
+                            for (addr, fee_share, fee_blk) in &signed_fee_blocks {
+                                // Re-check previous hash for staleness
+                                if let Some(acct) = l.accounts.get(addr) {
+                                    if acct.head != fee_blk.previous {
+                                        eprintln!(
+                                            "⚠️ Fee block stale for {} — will retry next epoch",
+                                            get_short_addr(addr)
+                                        );
+                                        continue;
+                                    }
+                                }
+                                let supply_before = l.distribution.remaining_supply;
+                                match l.process_block(fee_blk) {
                                     Ok(hash) => {
-                                        total_credited += reward_cil;
-                                        // Queue gossip (sent after lock is released)
-                                        gossip_queue.push(
-                                            serde_json::to_string(&reward_blk).unwrap_or_default(),
+                                        // Restore supply: fee rewards are redistribution, not new minting
+                                        l.distribution.remaining_supply = supply_before;
+                                        total_fee_credited += fee_share;
+                                        fee_gossip_queue.push(
+                                            serde_json::to_string(fee_blk).unwrap_or_default(),
                                         );
                                         println!(
-                                            "💰 Reward Mint: {} → {} LOS (block: {})",
+                                            "💸 Fee Reward: {} → {} CIL (block: {})",
                                             get_short_addr(addr),
-                                            reward_cil / CIL_PER_LOS,
+                                            fee_share,
                                             &hash[..12]
                                         );
                                     }
                                     Err(e) => {
                                         eprintln!(
-                                            "❌ Reward block failed for {}: {}",
+                                            "❌ Fee reward block failed for {}: {}",
                                             get_short_addr(addr),
                                             e
                                         );
                                     }
                                 }
                             }
-                            if total_credited > 0 {
+                            if total_fee_credited > 0 {
+                                l.accumulated_fees_cil =
+                                    l.accumulated_fees_cil.saturating_sub(total_fee_credited);
                                 SAVE_DIRTY.store(true, Ordering::Relaxed);
                                 println!(
-                                    "🏆 Epoch {} rewards: {} LOS distributed to {} validators",
-                                    completed_epoch,
-                                    total_credited / CIL_PER_LOS,
-                                    rewards.len()
-                                );
-                            }
-                        } // l dropped
-                    } else if !is_leader {
-                        println!(
-                            "🏆 Epoch {} complete: not leader, waiting for reward gossip",
-                            pool.current_epoch.saturating_sub(1)
-                        );
-                    } else {
-                        println!(
-                            "🏆 Epoch {} complete: no eligible validators for rewards",
-                            pool.current_epoch.saturating_sub(1)
-                        );
-                    }
-
-                    // FEE DISTRIBUTION: Only leader creates fee reward blocks
-                    if is_leader {
-                        let mut l = safe_lock(&reward_ledger);
-                        let fees_to_distribute = l.accumulated_fees_cil;
-                        if fees_to_distribute > 0 {
-                            // Collect eligible validators and their weights
-                            let eligible: Vec<(String, u128)> = l
-                                .accounts
-                                .iter()
-                                .filter(|(_, s)| {
-                                    s.is_validator && s.balance >= MIN_VALIDATOR_STAKE_CIL
-                                })
-                                .map(|(addr, s)| {
-                                    let weight = calculate_voting_power(s.balance);
-                                    (addr.clone(), weight)
-                                })
-                                .collect();
-
-                            let total_weight: u128 = eligible.iter().map(|(_, w)| *w).sum();
-
-                            if total_weight > 0 && !eligible.is_empty() {
-                                let completed_epoch = pool.current_epoch.saturating_sub(1);
-                                let now_ts = std::time::SystemTime::now()
-                                    .duration_since(std::time::UNIX_EPOCH)
-                                    .unwrap_or_default()
-                                    .as_secs();
-                                let mut total_fee_credited: u128 = 0;
-
-                                for (addr, weight) in &eligible {
-                                    // Proportional fee share: fee_i = total_fees × (weight_i / total_weight)
-                                    let fee_share =
-                                        fees_to_distribute.checked_mul(*weight).unwrap_or(0)
-                                            / total_weight;
-
-                                    if fee_share == 0 {
-                                        continue;
-                                    }
-
-                                    let state =
-                                        l.accounts.get(addr).cloned().unwrap_or(AccountState {
-                                            head: "0".to_string(),
-                                            balance: 0,
-                                            block_count: 0,
-                                            is_validator: false,
-                                        });
-
-                                    let mut fee_blk = Block {
-                                        block_type: BlockType::Mint,
-                                        account: addr.clone(),
-                                        previous: state.head.clone(),
-                                        link: format!("FEE_REWARD:EPOCH:{}", completed_epoch),
-                                        amount: fee_share,
-                                        fee: 0,
-                                        timestamp: now_ts,
-                                        public_key: hex::encode(&reward_pk),
-                                        signature: String::new(),
-                                        work: 0,
-                                    };
-
-                                    // PoW FIRST (work field is part of signing_hash)
-                                    compute_pow_inline(&mut fee_blk, 0);
-
-                                    // Sign AFTER PoW (signing_hash includes work)
-                                    let signing_hash = fee_blk.signing_hash();
-                                    fee_blk.signature =
-                                        match try_sign_hex(signing_hash.as_bytes(), &reward_sk) {
-                                            Ok(sig) => sig,
-                                            Err(e) => {
-                                                eprintln!(
-                                                    "❌ Fee reward sign failed for {}: {}",
-                                                    get_short_addr(addr),
-                                                    e
-                                                );
-                                                continue;
-                                            }
-                                        };
-
-                                    // Fee rewards do NOT deduct from remaining_supply because
-                                    // fees were already taken from senders. We must credit the
-                                    // validator's balance directly without touching supply.
-                                    // Use process_block which handles Mint → state.balance += amount
-                                    // and remaining_supply -= amount. We compensate by adding back.
-                                    let supply_before = l.distribution.remaining_supply;
-                                    match l.process_block(&fee_blk) {
-                                        Ok(hash) => {
-                                            // Restore supply: fee rewards are redistribution, not new minting
-                                            l.distribution.remaining_supply = supply_before;
-                                            total_fee_credited += fee_share;
-                                            // Queue gossip (sent after lock release)
-                                            fee_gossip_queue.push(
-                                                serde_json::to_string(&fee_blk).unwrap_or_default(),
-                                            );
-                                            println!(
-                                                "💸 Fee Reward: {} → {} CIL (block: {})",
-                                                get_short_addr(addr),
-                                                fee_share,
-                                                &hash[..12]
-                                            );
-                                        }
-                                        Err(e) => {
-                                            eprintln!(
-                                                "❌ Fee reward block failed for {}: {}",
-                                                get_short_addr(addr),
-                                                e
-                                            );
-                                        }
-                                    }
-                                }
-
-                                if total_fee_credited > 0 {
-                                    // Drain the accumulated fees (only the amount we actually distributed)
-                                    l.accumulated_fees_cil =
-                                        l.accumulated_fees_cil.saturating_sub(total_fee_credited);
-                                    SAVE_DIRTY.store(true, Ordering::Relaxed);
-                                    println!(
                                     "💸 Epoch {} fee distribution: {} CIL ({} LOS) to {} validators",
                                     completed_epoch,
                                     total_fee_credited,
                                     total_fee_credited / CIL_PER_LOS,
                                     eligible.len()
                                 );
-                                }
                             }
-                        }
-                    } // end of is_leader (fee distribution) — l dropped
-                } // end of is_epoch_complete
+                        } // ledger released
+                    }
+                }
 
                 (gossip_queue, fee_gossip_queue)
-            }; // pool dropped — scope block ends
+            };
 
             // Send all queued gossip messages (reward + fee blocks) after all locks released
             for msg in &gossip_queue {
@@ -5333,6 +5939,122 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     });
 
+    // ══════════════════════════════════════════════════════════════════════
+    // TOR HIDDEN SERVICE HEALTH MONITOR
+    // ══════════════════════════════════════════════════════════════════════
+    // Periodically self-pings this node's own .onion address via the Tor
+    // SOCKS5 proxy to verify the hidden service is reachable from the
+    // outside. If unreachable, logs warnings and updates Prometheus metrics.
+    //
+    // Interval: 2 minutes (testnet: 60s). After 3 consecutive failures,
+    // the node logs a CRITICAL warning advising Tor restart.
+    //
+    // NOTE on testnet (shared Tor daemon, same machine):
+    //   Self-ping through SOCKS5 → Tor circuit → own hidden service
+    //   still validates the hidden service descriptor is published and
+    //   the Tor circuit can reach it. This is NOT a localhost loopback.
+    let tor_health_metrics = Arc::clone(&metrics);
+    if let Ok(my_onion) = std::env::var("LOS_ONION_ADDRESS") {
+        if !my_onion.is_empty() {
+            let tor_socks = std::env::var("LOS_SOCKS5_PROXY")
+                .or_else(|_| std::env::var("LOS_TOR_SOCKS5"))
+                .unwrap_or_else(|_| "socks5h://127.0.0.1:9050".to_string())
+                .trim_start_matches("socks5h://")
+                .trim_start_matches("socks5://")
+                .to_string();
+            tokio::spawn(async move {
+                // Wait for node to fully start before first self-ping
+                tokio::time::sleep(Duration::from_secs(60)).await;
+
+                let check_interval_secs: u64 = if los_core::is_testnet_build() { 60 } else { 120 };
+                let mut interval = tokio::time::interval(Duration::from_secs(check_interval_secs));
+                let mut consecutive_failures: u32 = 0;
+
+                // Build reqwest client with SOCKS5 proxy for Tor
+                let proxy = match reqwest::Proxy::all(format!("socks5h://{}", tor_socks)) {
+                    Ok(p) => p,
+                    Err(e) => {
+                        eprintln!("🧅❌ Tor Health Monitor: failed to create SOCKS5 proxy: {}", e);
+                        return;
+                    }
+                };
+                let client = match reqwest::Client::builder()
+                    .proxy(proxy)
+                    .timeout(Duration::from_secs(30))
+                    .build()
+                {
+                    Ok(c) => c,
+                    Err(e) => {
+                        eprintln!("🧅❌ Tor Health Monitor: failed to build HTTP client: {}", e);
+                        return;
+                    }
+                };
+
+                // Determine the health check URL.
+                // Tor hidden services expose port 80 → local API port.
+                // So we always use http://<onion>/health (port 80 default).
+                let health_url = format!("http://{}/health",
+                    my_onion.trim_end_matches('/'));
+
+                println!("🧅🏥 Tor Health Monitor started (checking {} every {}s)",
+                    health_url, check_interval_secs);
+
+                loop {
+                    interval.tick().await;
+                    tor_health_metrics.tor_self_ping_total.inc();
+
+                    match client.get(&health_url).send().await {
+                        Ok(resp) if resp.status().is_success() => {
+                            if consecutive_failures > 0 {
+                                println!("🧅✅ Tor Hidden Service RECOVERED after {} consecutive failures",
+                                    consecutive_failures);
+                            }
+                            consecutive_failures = 0;
+                            tor_health_metrics.tor_onion_reachable.set(1);
+                            tor_health_metrics.tor_consecutive_failures.set(0);
+                        }
+                        Ok(resp) => {
+                            // HTTP response but non-success status — service reachable but unhealthy
+                            consecutive_failures += 1;
+                            tor_health_metrics.tor_onion_reachable.set(0);
+                            tor_health_metrics.tor_consecutive_failures.set(consecutive_failures as i64);
+                            tor_health_metrics.tor_self_ping_failures_total.inc();
+                            eprintln!(
+                                "🧅⚠️ Tor self-ping: HTTP {} (failure #{}) — {}",
+                                resp.status(), consecutive_failures, health_url
+                            );
+                        }
+                        Err(e) => {
+                            consecutive_failures += 1;
+                            tor_health_metrics.tor_onion_reachable.set(0);
+                            tor_health_metrics.tor_consecutive_failures.set(consecutive_failures as i64);
+                            tor_health_metrics.tor_self_ping_failures_total.inc();
+
+                            if consecutive_failures >= 3 {
+                                eprintln!(
+                                    "🧅🚨 CRITICAL: Tor Hidden Service UNREACHABLE for {} consecutive checks! \
+                                     Error: {}. \
+                                     ACTION REQUIRED: Restart Tor daemon or check hidden service config. \
+                                     Command: sudo systemctl restart tor",
+                                    consecutive_failures, e
+                                );
+                            } else {
+                                eprintln!(
+                                    "🧅⚠️ Tor self-ping failed (attempt #{}/3): {} — {}",
+                                    consecutive_failures, e, health_url
+                                );
+                            }
+                        }
+                    }
+                }
+            });
+        }
+    } else {
+        // No onion address configured — set metric to -1 (not applicable)
+        tor_health_metrics.tor_onion_reachable.set(-1);
+        println!("🧅 Tor Health Monitor: skipped (no LOS_ONION_ADDRESS configured)");
+    }
+
     println!("\n==================================================================");
     println!("                 UNAUTHORITY (LOS) ORACLE NODE                   ");
     println!("==================================================================");
@@ -5377,6 +6099,63 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut stdin = BufReader::new(io::stdin()).lines();
     let mut stdin_closed = false; // Track EOF — prevents tokio::select! panic in headless mode
 
+    // ── GRACEFUL SHUTDOWN SIGNAL HANDLER ────────────────────────────────
+    // CRITICAL: Without this, SIGTERM triggers sled::Drop during process teardown,
+    // which may hang in kernel I/O (flock flush) → process enters macOS UE state
+    // (Uninterruptible Exit) → unkillable zombie holding the sled flock forever →
+    // next los-node also blocks on flock → cascading UE zombie chain.
+    //
+    // Solution: Intercept SIGTERM/SIGINT BEFORE the tokio runtime shuts down,
+    // explicitly flush the sled DB (non-blocking: just marks pages for write-back),
+    // remove the PID lockfile, then exit immediately via std::process::exit(0)
+    // which skips Drop destructors entirely — preventing the UE hang.
+    {
+        let db_for_signal = Arc::clone(&database);
+        let data_dir_for_signal = base_data_dir.clone();
+        let json_log_signal = json_log;
+        tokio::spawn(async move {
+            // Helper: perform graceful shutdown
+            let do_shutdown = |reason: &str| {
+                eprintln!("\n🛑 {} received — shutting down gracefully...", reason);
+                if json_log_signal {
+                    println!("{{\"event\":\"shutdown\",\"reason\":\"{}\"}}", reason);
+                    use std::io::Write;
+                    let _ = std::io::stdout().flush();
+                }
+                // Flush sled DB (schedules write-back, non-blocking)
+                if let Err(e) = db_for_signal.flush() {
+                    eprintln!("⚠️ DB flush error: {}", e);
+                }
+                // Remove PID lockfile so next startup knows we exited cleanly
+                let pid_path = format!("{}/.los-node.pid", data_dir_for_signal);
+                let _ = std::fs::remove_file(&pid_path);
+                eprintln!("✅ Clean shutdown complete");
+                // exit(0) skips Drop destructors — avoids sled::Drop hanging in flock
+                std::process::exit(0);
+            };
+
+            #[cfg(unix)]
+            {
+                use tokio::signal::unix::{signal, SignalKind};
+                let mut sigterm = signal(SignalKind::terminate())
+                    .expect("Failed to install SIGTERM handler");
+                let mut sigint = signal(SignalKind::interrupt())
+                    .expect("Failed to install SIGINT handler");
+
+                tokio::select! {
+                    _ = sigterm.recv() => do_shutdown("SIGTERM"),
+                    _ = sigint.recv() => do_shutdown("SIGINT"),
+                }
+            }
+
+            #[cfg(not(unix))]
+            {
+                let _ = tokio::signal::ctrl_c().await;
+                do_shutdown("Ctrl+C");
+            }
+        });
+    }
+
     // Clone database, metrics, and slashing_manager for event loop
     let db_clone = Arc::clone(&database);
     let _metrics_clone = Arc::clone(&metrics);
@@ -5385,6 +6164,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let send_voters_clone = Arc::clone(&send_voters);
     let ve_event = Arc::clone(&validator_endpoints);
     let abft_event = Arc::clone(&abft_consensus);
+    let live_peers = Arc::clone(&live_peers); // Shadow for event loop usage
+    let rp_sync = Arc::clone(&reward_pool); // For syncing reward pool on incoming REWARD Mint blocks
 
     loop {
         tokio::select! {
@@ -5671,6 +6452,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                             Some(is_new)
                                         }
                                     }; // ab dropped — no MutexGuard held past this point
+
+                                    // SECURITY: Mark this peer as LIVE (proven via gossipsub).
+                                    // The reward heartbeat system uses this to verify liveness.
+                                    {
+                                        let ts = std::time::SystemTime::now()
+                                            .duration_since(std::time::UNIX_EPOCH)
+                                            .unwrap_or_default()
+                                            .as_secs();
+                                        let mut lp = safe_lock(&live_peers);
+                                        lp.insert(full.clone(), ts);
+                                    }
+
                                     if let Some(is_new) = is_new {
 
                                     // Persist peer to database for recovery after restart
@@ -5831,6 +6624,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
                                                 match l.process_block(blk) {
                                                     Ok(_) => {
+                                                        // CONSENSUS FIX: Sync reward pool when receiving
+                                                        // REWARD:EPOCH or FEE_REWARD:EPOCH Mint blocks from leader.
+                                                        // This keeps non-leader pool stats consistent.
+                                                        if blk.block_type == BlockType::Mint
+                                                            && (blk.link.starts_with("REWARD:EPOCH:")
+                                                                || blk.link.starts_with("FEE_REWARD:EPOCH:"))
+                                                        {
+                                                            let mut pool = safe_lock(&rp_sync);
+                                                            pool.sync_reward_from_gossip(&blk.account, blk.amount);
+                                                        }
                                                         // 🛡️ SLASHING INTEGRATION: Record participation during sync
                                                         {
                                                             let mut sm = safe_lock(&slashing_clone);
@@ -6691,6 +7494,95 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     }
                                 }
                             }
+                        } else if let Some(rest) = data.strip_prefix("VALIDATOR_HEARTBEAT:") {
+                            // ── VALIDATOR_HEARTBEAT: Liveness proof from a peer ──
+                            // Format: VALIDATOR_HEARTBEAT:<address>:<timestamp>:<pk_hex>:<sig_hex>
+                            // The sender signs "VALIDATOR_HEARTBEAT:<address>:<timestamp>" with
+                            // their Dilithium5 key and includes their public key for verification.
+                            // We verify: pk derives to address, signature valid, timestamp fresh,
+                            // address is a registered validator. Only then update live_peers.
+                            let parts: Vec<&str> = rest.splitn(4, ':').collect();
+                            if parts.len() == 4 {
+                                let addr = parts[0];
+                                let ts_str = parts[1];
+                                let pk_hex = parts[2];
+                                let sig_hex = parts[3];
+
+                                // Skip our own heartbeats (we already record self-heartbeat locally)
+                                if addr != my_address && los_crypto::validate_address(addr) {
+                                    if let Ok(ts) = ts_str.parse::<u64>() {
+                                        // Timestamp freshness: within 2× heartbeat interval
+                                        let hb_interval = if los_core::is_testnet_build() { 10u64 } else { 60u64 };
+                                        let now_ts = std::time::SystemTime::now()
+                                            .duration_since(std::time::UNIX_EPOCH)
+                                            .unwrap_or_default()
+                                            .as_secs();
+                                        if now_ts.abs_diff(ts) <= hb_interval * 2 {
+                                            if let (Ok(pk_bytes), Ok(sig_bytes)) = (hex::decode(pk_hex), hex::decode(sig_hex)) {
+                                                // Verify public key derives to claimed address
+                                                if los_crypto::public_key_to_address(&pk_bytes) == addr {
+                                                    // Verify Dilithium5 signature
+                                                    let message = format!("VALIDATOR_HEARTBEAT:{}:{}", addr, ts);
+                                                    if los_crypto::verify_signature(message.as_bytes(), &sig_bytes, &pk_bytes) {
+                                                        // Signature valid — check if registered validator
+                                                        let is_registered = {
+                                                            let rp = safe_lock(&reward_pool);
+                                                            rp.validators.contains_key(addr)
+                                                        };
+                                                        if is_registered {
+                                                            let mut lp = safe_lock(&live_peers);
+                                                            lp.insert(addr.to_string(), now_ts);
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        } else if let Some(rest) = data.strip_prefix("VALIDATOR_HEARTBEAT_PROXY:") {
+                            // ── VALIDATOR_HEARTBEAT_PROXY: Node vouches for a registered wallet ──
+                            // Format: VALIDATOR_HEARTBEAT_PROXY:<wallet_addr>:<node_addr>:<timestamp>:<node_pk_hex>:<signature_hex>
+                            // The NODE signs "VALIDATOR_HEARTBEAT_PROXY:<wallet>:<node>:<ts>" with its key.
+                            // We verify the node's signature + that the node is a known validator.
+                            let parts: Vec<&str> = rest.splitn(5, ':').collect();
+                            if parts.len() == 5 {
+                                let wallet_addr = parts[0];
+                                let node_addr = parts[1];
+                                let ts_str = parts[2];
+                                let pk_hex = parts[3];
+                                let sig_hex = parts[4];
+
+                                if wallet_addr != my_address && los_crypto::validate_address(wallet_addr) && los_crypto::validate_address(node_addr) {
+                                    if let Ok(ts) = ts_str.parse::<u64>() {
+                                        let hb_interval = if los_core::is_testnet_build() { 10u64 } else { 60u64 };
+                                        let now_ts = std::time::SystemTime::now()
+                                            .duration_since(std::time::UNIX_EPOCH)
+                                            .unwrap_or_default()
+                                            .as_secs();
+                                        if now_ts.abs_diff(ts) <= hb_interval * 2 {
+                                            if let (Ok(pk_bytes), Ok(sig_bytes)) = (hex::decode(pk_hex), hex::decode(sig_hex)) {
+                                                // Verify the signing node's public key matches its claimed address
+                                                if los_crypto::public_key_to_address(&pk_bytes) == node_addr {
+                                                    let message = format!("VALIDATOR_HEARTBEAT_PROXY:{}:{}:{}", wallet_addr, node_addr, ts);
+                                                    if los_crypto::verify_signature(message.as_bytes(), &sig_bytes, &pk_bytes) {
+                                                        // Valid proxy heartbeat — node vouches for wallet
+                                                        // Only accept if the wallet is a registered validator
+                                                        let is_registered = {
+                                                            let rp = safe_lock(&reward_pool);
+                                                            rp.validators.contains_key(wallet_addr)
+                                                        };
+                                                        if is_registered {
+                                                            let mut lp = safe_lock(&live_peers);
+                                                            lp.insert(wallet_addr.to_string(), now_ts);
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
                         } else if let Some(json_str) = data.strip_prefix("VALIDATOR_REG:") {
                             // Handle validator registration broadcast from peers.
                             // Validates the same proof of ownership (Dilithium5 signature)
@@ -6803,7 +7695,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     // Extract and store onion_address for peer discovery
                                     if let Some(onion) = reg["onion_address"].as_str() {
                                         if !onion.is_empty() && onion.ends_with(".onion") {
-                                            safe_lock(&ve_event).insert(addr.clone(), onion.to_string());
+                                            insert_validator_endpoint(&mut safe_lock(&ve_event), addr.clone(), onion.to_string());
                                             println!("🧅 Discovered validator endpoint: {} → {}", get_short_addr(&addr), onion);
                                         }
                                     }
@@ -6879,11 +7771,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     }
                                     {
                                         let mut sm = safe_lock(&slashing_clone);
-                                        let _ = sm.set_unstaking(&addr);
+                                        sm.remove_validator(&addr);
                                     }
                                     {
                                         let mut rp = safe_lock(&reward_pool);
                                         rp.unregister_validator(&addr);
+                                    }
+                                    // Remove from validator_endpoints
+                                    {
+                                        let mut ve = safe_lock(&ve_event);
+                                        ve.remove(&addr);
                                     }
 
                                     // Update aBFT validator set
@@ -6921,10 +7818,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                         if !addr.is_empty() && !onion.is_empty()
                                             && onion.ends_with(".onion")
                                             && los_crypto::validate_address(addr)
-                                            && !ve.contains_key(addr)
                                         {
-                                            ve.insert(addr.to_string(), onion.to_string());
-                                            added += 1;
+                                            let is_new = !ve.contains_key(addr);
+                                            insert_validator_endpoint(&mut ve, addr.to_string(), onion.to_string());
+                                            if is_new { added += 1; }
                                         }
                                     }
                                     if added > 0 {

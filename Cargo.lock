@@ -2834,6 +2834,7 @@ dependencies = [
  "blake2",
  "bs58",
  "digest",
+ "ed25519-dalek",
  "hex",
  "pqcrypto-dilithium",
  "pqcrypto-internals",
@@ -2868,10 +2869,12 @@ name = "los-node"
 version = "1.0.9"
 dependencies = [
  "base64 0.22.1",
+ "bip39",
  "bytes",
  "chrono",
  "flate2",
  "hex",
+ "libc",
  "los-consensus",
  "los-core",
  "los-crypto",

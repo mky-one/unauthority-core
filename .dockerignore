@@ -13,8 +13,8 @@ node_data/
 node_a_data/
 node_b_data/
 node_c_data/
-uat_database/
-*/uat_database/
+los_database/
+*/los_database/
 
 # Documentation
 docs/internal/

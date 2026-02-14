@@ -73,8 +73,11 @@ class NetworkStatusService extends ChangeNotifier {
   void _startStatusChecking() {
     _checkNetworkStatus();
 
+    // FIX I-04: 15s was too aggressive for Tor — each health check opens a
+    // Tor circuit (2-5s RTT), and combined with ApiService's 2min + 5min polls,
+    // 3 overlapping loops saturated SOCKS5.  60s is sufficient for status display.
     _statusCheckTimer = Timer.periodic(
-      const Duration(seconds: 15),
+      const Duration(seconds: 60),
       (_) => _checkNetworkStatus(),
     );
   }

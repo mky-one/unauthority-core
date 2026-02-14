@@ -4,8 +4,10 @@ import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
 import '../services/api_service.dart';
 import '../services/network_status_service.dart';
+import '../services/node_process_service.dart';
 import '../services/wallet_service.dart';
 import '../models/account.dart';
+import '../constants/blockchain.dart';
 import '../widgets/network_status_bar.dart';
 import '../widgets/voting_power_card.dart';
 import '../widgets/uptime_card.dart';
@@ -36,6 +38,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   int _epochRemainingSecs = 0;
   Timer? _countdownTimer;
   Timer? _autoRefreshTimer;
+  bool _isDashboardLoading = false; // Prevent concurrent _loadDashboard calls
 
   @override
   void initState() {
@@ -43,9 +46,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
     _loadMyAddress();
     _loadDashboard();
     _startCountdownTimer();
-    // Auto-refresh dashboard every 30s to pick up new registrations & status changes
+    // Auto-refresh dashboard every 30s — but skip when node is stopped
+    // Also skip if a load is already in progress (Tor latency guard)
     _autoRefreshTimer = Timer.periodic(const Duration(seconds: 30), (_) {
-      if (mounted) _loadDashboard();
+      if (!mounted) return;
+      final nodeService = context.read<NodeProcessService>();
+      if (nodeService.isRunning && !_isDashboardLoading) _loadDashboard();
     });
   }
 
@@ -56,13 +62,52 @@ class _DashboardScreenState extends State<DashboardScreen> {
     super.dispose();
   }
 
-  /// Start a 1-second timer that decrements the countdown locally
+  /// Start a 1-second timer that decrements the countdown locally.
+  /// When it reaches 0, auto-refresh from the API to pick up the new epoch.
+  /// Pauses when node is stopped (no API to query).
+  ///
+  /// ANTI-STALL design:
+  /// - If `_epochRemainingSecs` sits at 0 for too long (API returned 0 or
+  ///   the `_loadDashboard` call failed), we force a re-fetch every 15s
+  ///   to recover the countdown automatically.
+  /// - We NEVER fire a re-fetch while a previous `_loadDashboard` is still
+  ///   in-flight, to avoid piling up concurrent API requests through the
+  ///   Tor SOCKS5 proxy (which saturates and causes 45s timeout cascades).
+  int _zeroTickCount = 0;
+
   void _startCountdownTimer() {
     debugPrint(
         '📊 [DashboardScreen._startCountdownTimer] Starting countdown timer');
     _countdownTimer = Timer.periodic(const Duration(seconds: 1), (_) {
-      if (_epochRemainingSecs > 0 && mounted) {
+      if (!mounted) return;
+
+      // Pause countdown when node is not running
+      final nodeService = context.read<NodeProcessService>();
+      if (!nodeService.isRunning) return;
+
+      if (_epochRemainingSecs > 1) {
+        _zeroTickCount = 0; // Reset stall counter
         setState(() => _epochRemainingSecs--);
+      } else if (_epochRemainingSecs == 1) {
+        // Epoch just ended — set to 0 then auto-refresh from API
+        // to get the new epoch's remaining_secs.
+        _zeroTickCount = 0;
+        setState(() => _epochRemainingSecs = 0);
+        if (!_isDashboardLoading) _loadDashboard();
+      } else {
+        // _epochRemainingSecs == 0: waiting for _loadDashboard to set a new value.
+        // ANTI-STALL: if stuck at 0 for 15+ seconds AND no load is in-flight,
+        // force a re-fetch.
+        // This handles: (1) API returned 0 during epoch boundary,
+        //               (2) _loadDashboard() failed/timed out,
+        //               (3) first load before any API response.
+        _zeroTickCount++;
+        if (_zeroTickCount >= 15 && !_isDashboardLoading) {
+          _zeroTickCount = 0;
+          debugPrint(
+              '📊 [DashboardScreen] Countdown stuck at 0 — force re-fetching epoch data');
+          _loadDashboard();
+        }
       }
     });
   }
@@ -79,6 +124,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 
   Future<void> _loadDashboard() async {
+    // Prevent concurrent loads — critical over Tor where each call takes 1-45s.
+    // Without this guard, the anti-stall timer + auto-refresh + epoch-end all
+    // pile up concurrent `Future.wait` batches that saturate the SOCKS5 proxy.
+    if (_isDashboardLoading) return;
+    _isDashboardLoading = true;
+
     debugPrint('📊 [DashboardScreen._loadDashboard] Loading dashboard...');
     // Only show full-screen spinner on first load.
     // Subsequent refreshes update data silently in the background
@@ -110,10 +161,18 @@ class _DashboardScreenState extends State<DashboardScreen> {
         _peers = results[4] as List<String>;
         _rewardInfo = rewardData.isNotEmpty ? rewardData : null;
         if (_rewardInfo != null && _rewardInfo!['epoch'] != null) {
-          _epochRemainingSecs =
+          final remaining =
               (_rewardInfo!['epoch']['epoch_remaining_secs'] as num?)
                       ?.toInt() ??
                   0;
+          // Only update countdown if API returned a positive value.
+          // If the API returns 0 (epoch boundary), keep the current countdown
+          // so the anti-stall timer will re-fetch in a few seconds when the
+          // new epoch has started and remaining_secs is positive again.
+          if (remaining > 0) {
+            _epochRemainingSecs = remaining;
+            _zeroTickCount = 0; // Reset stall counter on good data
+          }
         }
         _error = null;
         _isLoading = false;
@@ -122,7 +181,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
       debugPrint(
           '📊 [DashboardScreen._loadDashboard] Success: validators=${_validators.length}, block_height=${_nodeInfo?['block_height']}, peers=${_peers.length}');
     } catch (e) {
-      if (!mounted) return;
+      if (!mounted) {
+        _isDashboardLoading = false;
+        return;
+      }
       setState(() {
         // Only show error on first load. On subsequent refreshes,
         // keep showing the last known data instead of replacing with error screen.
@@ -132,6 +194,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
         _isLoading = false;
         _isFirstLoad = false;
       });
+    } finally {
+      _isDashboardLoading = false;
     }
   }
 
@@ -538,17 +602,54 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                     ),
                                     const Divider(),
                                     ..._peers.map(
-                                      (peer) => ListTile(
-                                        leading:
-                                            const Icon(Icons.router, size: 20),
-                                        title: Text(
-                                          peer,
-                                          style: const TextStyle(
-                                            fontSize: 12,
-                                            fontFamily: 'monospace',
+                                      (peer) {
+                                        final isPeerYou = _myAddress != null &&
+                                            peer == _myAddress;
+                                        return ListTile(
+                                          leading: Icon(
+                                            isPeerYou
+                                                ? Icons.star
+                                                : Icons.router,
+                                            size: 20,
+                                            color:
+                                                isPeerYou ? Colors.amber : null,
                                           ),
-                                        ),
-                                      ),
+                                          title: Text(
+                                            peer,
+                                            style: TextStyle(
+                                              fontSize: 12,
+                                              fontFamily: 'monospace',
+                                              color: isPeerYou
+                                                  ? Colors.amber
+                                                  : null,
+                                            ),
+                                          ),
+                                          trailing: isPeerYou
+                                              ? Container(
+                                                  padding: const EdgeInsets
+                                                      .symmetric(
+                                                    horizontal: 8,
+                                                    vertical: 2,
+                                                  ),
+                                                  decoration: BoxDecoration(
+                                                    color: Colors.amber,
+                                                    borderRadius:
+                                                        BorderRadius.circular(
+                                                            12),
+                                                  ),
+                                                  child: const Text(
+                                                    'YOU',
+                                                    style: TextStyle(
+                                                      color: Colors.black,
+                                                      fontSize: 10,
+                                                      fontWeight:
+                                                          FontWeight.bold,
+                                                    ),
+                                                  ),
+                                                )
+                                              : null,
+                                        );
+                                      },
                                     ),
                                   ],
                                 ),
@@ -608,10 +709,20 @@ class _DashboardScreenState extends State<DashboardScreen> {
         _rewardInfo?['validators'] as Map<String, dynamic>? ?? {};
     final currentEpoch = (epoch['current_epoch'] as num?)?.toInt() ?? 0;
     final epochDuration = (epoch['epoch_duration_secs'] as num?)?.toInt() ?? 0;
-    final rewardRateLos =
-        (epoch['epoch_reward_rate_los'] as num?)?.toInt() ?? 0;
+    // Use _cil fields for exact display (the _los fields are JSON strings with f64 drift)
+    final rewardRateCil = _safeInt(epoch['epoch_reward_rate_cil']);
+    final rewardRateDisplay = rewardRateCil > 0
+        ? BlockchainConstants.cilToLosString(rewardRateCil)
+        : epoch['epoch_reward_rate_los']?.toString() ?? '0';
     final eligibleCount = (validatorsInfo['eligible'] as num?)?.toInt() ?? 0;
-    final remainingLos = (pool['remaining_los'] as num?)?.toInt() ?? 0;
+    final remainingCil = _safeInt(pool['remaining_cil']);
+    final remainingDisplay = remainingCil > 0
+        ? BlockchainConstants.cilToLosString(remainingCil)
+        : pool['remaining_los']?.toString() ?? '0';
+
+    // Check node running state
+    final nodeService = context.read<NodeProcessService>();
+    final isNodeRunning = nodeService.isRunning;
 
     // Calculate progress (0.0 to 1.0)
     final elapsed =
@@ -689,19 +800,40 @@ class _DashboardScreenState extends State<DashboardScreen> {
             Center(
               child: Padding(
                 padding: const EdgeInsets.symmetric(vertical: 12),
-                child: Text(
-                  _formatCountdown(_epochRemainingSecs),
-                  style: TextStyle(
-                    fontSize: 36,
-                    fontWeight: FontWeight.bold,
-                    fontFamily: 'monospace',
-                    color: _epochRemainingSecs <= 30
-                        ? Colors.green
-                        : _epochRemainingSecs <= 60
-                            ? Colors.orange
-                            : Colors.white,
-                  ),
-                ),
+                child: isNodeRunning
+                    ? Text(
+                        _formatCountdown(_epochRemainingSecs),
+                        style: TextStyle(
+                          fontSize: 36,
+                          fontWeight: FontWeight.bold,
+                          fontFamily: 'monospace',
+                          color: _epochRemainingSecs <= 30
+                              ? Colors.green
+                              : _epochRemainingSecs <= 60
+                                  ? Colors.orange
+                                  : Colors.white,
+                        ),
+                      )
+                    : const Column(
+                        children: [
+                          Icon(Icons.pause_circle_outline,
+                              size: 36, color: Colors.grey),
+                          SizedBox(height: 4),
+                          Text(
+                            'PAUSED',
+                            style: TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.grey,
+                              letterSpacing: 2,
+                            ),
+                          ),
+                          Text(
+                            'Start node to resume countdown',
+                            style: TextStyle(color: Colors.grey, fontSize: 11),
+                          ),
+                        ],
+                      ),
               ),
             ),
 
@@ -709,25 +841,37 @@ class _DashboardScreenState extends State<DashboardScreen> {
             ClipRRect(
               borderRadius: BorderRadius.circular(8),
               child: LinearProgressIndicator(
-                value: progress,
+                value: isNodeRunning ? progress : 0.0,
                 minHeight: 8,
                 backgroundColor: Colors.grey.withValues(alpha: 0.2),
                 valueColor: AlwaysStoppedAnimation<Color>(
-                  _epochRemainingSecs <= 30 ? Colors.green : Colors.blue,
+                  !isNodeRunning
+                      ? Colors.grey
+                      : _epochRemainingSecs <= 30
+                          ? Colors.green
+                          : Colors.blue,
                 ),
               ),
             ),
             const SizedBox(height: 12),
 
             _buildInfoRow('Epoch Duration', _formatCountdown(epochDuration)),
-            _buildInfoRow('Reward/Epoch', '$rewardRateLos LOS'),
+            _buildInfoRow('Reward/Epoch', '$rewardRateDisplay LOS'),
             _buildInfoRow('Eligible Validators', '$eligibleCount'),
-            _buildInfoRow('Pool Remaining', '$remainingLos LOS'),
+            _buildInfoRow('Pool Remaining', '$remainingDisplay LOS'),
             _buildInfoRow('Your Status', myRewardStatus),
           ],
         ),
       ),
     );
+  }
+
+  /// Safely parse a JSON value (int, double, or string) to Dart int.
+  static int _safeInt(dynamic v, [int fallback = 0]) {
+    if (v == null) return fallback;
+    if (v is int) return v;
+    if (v is double) return v.toInt();
+    return int.tryParse(v.toString()) ?? fallback;
   }
 
   /// Format seconds into HH:MM:SS or Dd HH:MM:SS countdown string

@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'dart:math' as math;
 import '../constants/blockchain.dart';
 
 /// Type-safe int parser: handles int, double, String, null from JSON.
@@ -24,12 +23,12 @@ class Account {
   });
 
   factory Account.fromJson(Map<String, dynamic> json) {
-    // Backend returns balance_cil / balance_cil as integer CILD,
-    // and balance / balance_los as formatted strings.
+    // Backend returns balance_cil (integer) and balance_cil_str (string)
+    // as canonical CIL amounts. balance / balance_los are formatted strings.
     int parsedBalance;
-    if (json['balance_cil'] != null) {
-      final v = json['balance_cil'];
-      parsedBalance = v is int ? v : int.tryParse(v.toString()) ?? 0;
+    if (json['balance_cil_str'] != null) {
+      // Prefer string variant for JSON precision safety (numbers > 2^53)
+      parsedBalance = int.tryParse(json['balance_cil_str'].toString()) ?? 0;
     } else if (json['balance_cil'] != null) {
       final v = json['balance_cil'];
       parsedBalance = v is int ? v : int.tryParse(v.toString()) ?? 0;
@@ -82,15 +81,55 @@ class Transaction {
   });
 
   factory Transaction.fromJson(Map<String, dynamic> json) {
+    // Backend sends amount as:
+    // - /history, /account: formatted LOS string like "10.00000000000"
+    // - /transaction/{hash}, /block/{hash}: raw CIL integer in 'amount_cil'
+    // _parseIntField fails on decimal strings → use _parseAmount for correct handling.
+    final int parsedAmount;
+    if (json.containsKey('amount_cil') && json['amount_cil'] != null) {
+      // Raw CIL integer from /transaction or /block endpoint
+      parsedAmount = _parseIntField(json['amount_cil']);
+    } else {
+      parsedAmount = _parseAmount(json['amount']);
+    }
+
     return Transaction(
       txid: (json['txid'] ?? json['hash'] ?? '').toString(),
       from: (json['from'] ?? '').toString(),
       to: (json['to'] ?? json['target'] ?? '').toString(),
-      // FIX C11-03: Type-safe int parsing for amount & timestamp
-      amount: _parseIntField(json['amount']),
+      amount: parsedAmount,
       timestamp: _parseIntField(json['timestamp']),
       type: (json['type'] ?? 'transfer').toString(),
     );
+  }
+
+  /// Parse amount from backend which may be:
+  /// - int (LOS integer from older endpoints)
+  /// - String like "10.00000000000" (formatted LOS from /history, /account)
+  /// Returns value in CIL for internal consistency.
+  static int _parseAmount(dynamic value) {
+    if (value == null) return 0;
+    if (value is int) {
+      // Guard: values > total LOS supply are already in CIL
+      if (value > BlockchainConstants.totalSupply) return value;
+      return value * BlockchainConstants.cilPerLos;
+    }
+    if (value is double) {
+      return BlockchainConstants.losStringToCil(value.toString());
+    }
+    if (value is String) {
+      // Formatted LOS string like "10.00000000000" or plain integer string
+      if (value.contains('.')) {
+        return BlockchainConstants.losStringToCil(value);
+      }
+      // Plain integer string — try as CIL first
+      final parsed = int.tryParse(value);
+      if (parsed != null) {
+        if (parsed > BlockchainConstants.totalSupply) return parsed;
+        return parsed * BlockchainConstants.cilPerLos;
+      }
+    }
+    return 0;
   }
 
   /// Convert amount from CIL to LOS for display
@@ -168,12 +207,12 @@ class ValidatorInfo {
   /// FIX C-02: Do NOT divide again — value is already in LOS.
   double get stakeLOS => stake.toDouble();
 
-  /// Quadratic voting power: sqrt(stake in LOS)
-  /// Matches backend: calculate_voting_power() in anti_whale.rs
+  /// Quadratic voting power: isqrt(stake in LOS)
+  /// Matches backend: calculate_voting_power() using integer square root.
+  /// NEVER use float sqrt — must match backend's isqrt exactly.
   double get votingPower {
-    final stakeInLos = stakeLOS;
-    if (stakeInLos <= 0) return 0;
-    return math.sqrt(stakeInLos);
+    if (stake <= 0) return 0;
+    return BlockchainConstants.isqrt(stake).toDouble();
   }
 
   /// Get voting power percentage relative to all validators

@@ -78,11 +78,18 @@ class BootstrapNode {
   final int restPort;
   final int p2pPort;
 
+  /// Local ports for dev testnet (multiple nodes on same machine).
+  /// On production, each validator is on its own machine so these are unused.
+  final int? localRestPort;
+  final int? localP2pPort;
+
   const BootstrapNode({
     required this.name,
     required this.onion,
     this.restPort = 80,
     this.p2pPort = 4001,
+    this.localRestPort,
+    this.localP2pPort,
   });
 
   factory BootstrapNode.fromJson(Map<String, dynamic> json) {
@@ -91,6 +98,8 @@ class BootstrapNode {
       onion: json['onion'] as String,
       restPort: json['rest_port'] as int? ?? 80,
       p2pPort: json['p2p_port'] as int? ?? 4001,
+      localRestPort: json['local_rest_port'] as int?,
+      localP2pPort: json['local_p2p_port'] as int?,
     );
   }
 

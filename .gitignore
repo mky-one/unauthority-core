@@ -62,7 +62,8 @@ docs/internal/
 docs/developer/
 testnet-genesis/QUICKSTART_TESTING.md
 testnet-genesis/README_TESTNET.md
-uat_database/
+los_database/
+**/los_database/
 
 # Environment variables
 .env
@@ -250,4 +251,11 @@ dev_docs/
 **/copilot-instructions.md
 
 # Patched pqcrypto-internals build artifacts
-flutter_wallet/native/uat_crypto_ffi/pqcrypto-internals-seeded/target/
+flutter_wallet/native/los_crypto_ffi/pqcrypto-internals-seeded/target/
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# NATIVE LIBRARIES (built by CI from source — do NOT commit local copies)
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+**/macos/Runner/liblos_crypto_ffi.dylib
+**/linux/liblos_crypto_ffi.so
+**/windows/los_crypto_ffi.dll

@@ -103,6 +103,7 @@ impl LosNode {
 
                 Ok(LosBehaviour { gossipsub, mdns })
             })?
+            .with_swarm_config(|cfg| cfg.with_idle_connection_timeout(Duration::from_secs(300)))
             .build();
 
         let topic = gossipsub::IdentTopic::new("los-blocks");
@@ -144,13 +145,24 @@ impl LosNode {
                         }
                     } else {
                         eprintln!(
-                            "🧅 Cannot dial .onion {} — LOS_TOR_SOCKS5 not configured",
+                            "🧅 Cannot dial .onion {} — set LOS_SOCKS5_PROXY=socks5h://127.0.0.1:9050",
                             host
                         );
                     }
                 }
             }
         }
+
+        // ── RECONNECTION TIMER ──────────────────────────────────────
+        // Tor circuits break after ~10 minutes, killing gossipsub connections.
+        // Without reconnection, the mesh collapses and nodes become isolated:
+        // no heartbeats, no block gossip, no reward Mint propagation.
+        // This timer periodically re-dials bootstrap nodes to maintain the mesh.
+        let reconnect_interval_secs = if std::env::var("LOS_TESTNET_LEVEL").is_ok() { 60 } else { 180 };
+        let mut reconnect_timer = tokio::time::interval(Duration::from_secs(reconnect_interval_secs));
+        reconnect_timer.tick().await; // Consume the first immediate tick
+        let mut connected_peers: std::collections::HashSet<libp2p::PeerId> = std::collections::HashSet::new();
+        let min_peers: usize = bootstrap_nodes.len().max(1);
 
         loop {
             tokio::select! {
@@ -172,16 +184,56 @@ impl LosNode {
                                     }
                                 }
                             } else {
-                                eprintln!("🧅 Cannot dial .onion — set LOS_TOR_SOCKS5=127.0.0.1:9050");
+                                eprintln!("🧅 Cannot dial .onion — set LOS_SOCKS5_PROXY=socks5h://127.0.0.1:9050");
                             }
                         } else if let Ok(maddr) = addr_str.parse::<libp2p::Multiaddr>() {
                             println!("📡 Swarm: Dialing {}...", maddr);
                             let _ = swarm.dial(maddr);
                         }
                     } else if let Err(e) = swarm.behaviour_mut().gossipsub.publish(topic.clone(), msg_to_send.as_bytes()) {
-                        if !format!("{:?}", e).contains("InsufficientPeers") {
+                        let err_str = format!("{:?}", e);
+                        if err_str.contains("InsufficientPeers") {
+                            // Log periodically instead of silently swallowing
+                            static LAST_WARN: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+                            let now = std::time::SystemTime::now()
+                                .duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_secs();
+                            if now.saturating_sub(LAST_WARN.load(std::sync::atomic::Ordering::Relaxed)) >= 30 {
+                                LAST_WARN.store(now, std::sync::atomic::Ordering::Relaxed);
+                                eprintln!("⚠️ Gossipsub: InsufficientPeers — messages not being delivered (connected: {})", connected_peers.len());
+                            }
+                        } else {
                             eprintln!("⚠️ Broadcast Error: {:?}", e);
                         }
+                    }
+                },
+                // ── RECONNECTION: Re-dial bootstrap nodes when mesh is thin ──
+                _ = reconnect_timer.tick() => {
+                    let peer_count = connected_peers.len();
+                    if peer_count < min_peers {
+                        println!("🔄 P2P reconnect: only {}/{} peers connected, re-dialing bootstrap nodes...", peer_count, min_peers);
+                        for node in &bootstrap_nodes {
+                            match node {
+                                BootstrapNode::Multiaddr(addr) => {
+                                    if let Ok(maddr) = addr.parse::<libp2p::Multiaddr>() {
+                                        let _ = swarm.dial(maddr);
+                                    }
+                                }
+                                BootstrapNode::Onion { host, port } => {
+                                    if let Some(ref dialer) = tor_dialer {
+                                        match dialer.create_onion_proxy(host.clone(), *port).await {
+                                            Ok(local_addr) => {
+                                                if let Ok(maddr) = local_addr.parse::<libp2p::Multiaddr>() {
+                                                    let _ = swarm.dial(maddr);
+                                                }
+                                            }
+                                            Err(e) => eprintln!("🔄 Reconnect dial failed for {}: {}", host, e),
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    } else {
+                        println!("📡 P2P mesh healthy: {}/{} peers connected", peer_count, min_peers);
                     }
                 },
                 event = swarm.select_next_some() => match event {
@@ -199,7 +251,16 @@ impl LosNode {
                         println!("📍 P2P listening on: {:?}", address);
                     },
                     SwarmEvent::ConnectionEstablished { peer_id, .. } => {
-                        println!("🤝 Connected to peer: {:?}", peer_id);
+                        swarm.behaviour_mut().gossipsub.add_explicit_peer(&peer_id);
+                        connected_peers.insert(peer_id);
+                        println!("🤝 P2P connected: {:?} (total: {})", peer_id, connected_peers.len());
+                    },
+                    SwarmEvent::ConnectionClosed { peer_id, cause, .. } => {
+                        connected_peers.remove(&peer_id);
+                        println!("🔌 P2P disconnected: {:?} (reason: {:?}, remaining: {})", peer_id, cause, connected_peers.len());
+                    },
+                    SwarmEvent::OutgoingConnectionError { error, .. } => {
+                        eprintln!("❌ P2P dial error: {:?}", error);
                     },
                     _ => {}
                 }

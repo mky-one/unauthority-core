@@ -323,14 +323,17 @@ pub fn finalize_block_rewards(
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 /// Validator Reward Statistics
+/// MAINNET SAFETY: All fields are integer-only. Display formatting (LOS) done at API boundary.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ValidatorRewardStats {
     pub validator_address: String,
     pub total_rewards_cil: u128,
-    pub total_rewards_los: f64,
+    /// Integer LOS (truncated). For precise display: total_rewards_cil / CIL_PER_LOS
+    pub total_rewards_los: u128,
     pub pending_rewards_cil: u128,
     pub blocks_produced: u64,
-    pub average_fee_per_block: f64,
+    /// Average fee per block in CIL (integer division)
+    pub average_fee_per_block_cil: u128,
 }
 
 /// Get comprehensive statistics for a validator
@@ -342,12 +345,12 @@ pub fn get_validator_stats(
         .get(validator_address)
         .ok_or_else(|| "Validator not found".to_string())?;
 
-    // FIX C-3: Use correct CIL_PER_LOS (10^11), was 10^8 (1000x wrong)
-    let total_los = account.total_rewards_cil as f64 / 100_000_000_000.0;
-    let avg_fee = if account.blocks_produced > 0 {
-        account.total_rewards_cil as f64 / account.blocks_produced as f64
+    // MAINNET SAFETY: Integer-only math. No f64 in financial calculations.
+    let total_los = account.total_rewards_cil / 100_000_000_000; // CIL_PER_LOS = 10^11
+    let avg_fee_cil = if account.blocks_produced > 0 {
+        account.total_rewards_cil / account.blocks_produced as u128
     } else {
-        0.0
+        0
     };
 
     Ok(ValidatorRewardStats {
@@ -356,7 +359,7 @@ pub fn get_validator_stats(
         total_rewards_los: total_los,
         pending_rewards_cil: account.pending_rewards_cil,
         blocks_produced: account.blocks_produced,
-        average_fee_per_block: avg_fee,
+        average_fee_per_block_cil: avg_fee_cil,
     })
 }
 
@@ -367,12 +370,12 @@ pub fn get_all_validator_stats(
     rewards
         .iter()
         .map(|(address, account)| {
-            // FIX C-3: Use correct CIL_PER_LOS (10^11)
-            let total_los = account.total_rewards_cil as f64 / 100_000_000_000.0;
-            let avg_fee = if account.blocks_produced > 0 {
-                account.total_rewards_cil as f64 / account.blocks_produced as f64
+            // MAINNET SAFETY: Integer-only math. No f64 in financial calculations.
+            let total_los = account.total_rewards_cil / 100_000_000_000; // CIL_PER_LOS = 10^11
+            let avg_fee_cil = if account.blocks_produced > 0 {
+                account.total_rewards_cil / account.blocks_produced as u128
             } else {
-                0.0
+                0
             };
 
             ValidatorRewardStats {
@@ -381,7 +384,7 @@ pub fn get_all_validator_stats(
                 total_rewards_los: total_los,
                 pending_rewards_cil: account.pending_rewards_cil,
                 blocks_produced: account.blocks_produced,
-                average_fee_per_block: avg_fee,
+                average_fee_per_block_cil: avg_fee_cil,
             }
         })
         .collect()

@@ -68,15 +68,20 @@ async fn query_account(address: &str, rpc: &str) -> Result<(), Box<dyn std::erro
             if response.status().is_success() {
                 let data: serde_json::Value = response.json().await?;
 
-                let balance_cil = data["balance"].as_u64().unwrap_or(0);
-                let balance_los = balance_cil as f64 / CIL_PER_LOS as f64;
+                let balance_cil = data["balance"].as_u64().unwrap_or(0) as u128;
+                // Use precise string formatting to avoid f64 precision loss for large balances.
+                let balance_los_str = format!(
+                    "{}.{:011}",
+                    balance_cil / CIL_PER_LOS,
+                    balance_cil % CIL_PER_LOS
+                );
 
                 println!();
                 println!("{} {}", "Address:".bold(), address.green());
                 println!(
                     "{} {} LOS",
                     "Balance:".bold(),
-                    format!("{:.8}", balance_los).cyan().bold()
+                    balance_los_str.cyan().bold()
                 );
                 println!(
                     "{} {}",

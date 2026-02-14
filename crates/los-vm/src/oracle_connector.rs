@@ -1,39 +1,47 @@
 // Oracle Connector for External Price Feeds (Exchange Integration)
 // Allows smart contracts to fetch real-time LOS price from exchanges
+//
+// MAINNET SAFETY: All prices stored as integer micro-USD (u64).
+// 1 USD = 1_000_000 micro-USD. This ensures deterministic behavior
+// across all CPU architectures (no f64 rounding differences).
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
+/// Micro-USD per 1 USD (10^6 precision)
+pub const MICRO_USD: u64 = 1_000_000;
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ExchangePrice {
-    pub exchange: String, // "binance", "coinbase", "kraken"
-    pub pair: String,     // "LOS/USDT", "LOS/BTC"
-    pub price: f64,       // Current price
-    pub volume_24h: f64,  // 24h volume
-    pub timestamp: u64,   // Last update timestamp
+    pub exchange: String,       // "binance", "coinbase", "kraken"
+    pub pair: String,           // "LOS/USDT", "LOS/BTC"
+    pub price_micro_usd: u64,  // Price in micro-USD (1 USD = 1_000_000)
+    pub volume_24h_usd: u64,   // 24h volume in whole USD
+    pub timestamp: u64,         // Last update timestamp
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OracleConsensusPrice {
-    pub median_price: f64, // Byzantine-resistant median
+    pub median_price_micro_usd: u64, // Byzantine-resistant median in micro-USD
     pub sources: Vec<ExchangePrice>,
-    pub confidence: f64, // 0.0-1.0 (based on source agreement)
+    pub confidence_bps: u16,         // 0-10000 basis points (0.00%-100.00%)
 }
 
 /// Smart Contract Oracle Interface
 /// This is what payment smart contracts will call
 pub trait PriceOracle {
-    /// Get current LOS price in USD (median from multiple exchanges)
-    fn get_los_price_usd(&self) -> Result<f64, String>;
+    /// Get current LOS price in micro-USD (median from multiple exchanges)
+    fn get_los_price_micro_usd(&self) -> Result<u64, String>;
 
-    /// Get LOS price from specific exchange
-    fn get_los_price_from_exchange(&self, exchange: &str) -> Result<f64, String>;
+    /// Get LOS price from specific exchange in micro-USD
+    fn get_los_price_from_exchange(&self, exchange: &str) -> Result<u64, String>;
 
     /// Get full consensus data (all sources + median)
     fn get_oracle_consensus(&self) -> Result<OracleConsensusPrice, String>;
 
     /// Verify if price is within acceptable deviation (anti-manipulation)
-    fn verify_price_sanity(&self, price: f64) -> Result<bool, String>;
+    /// Returns true if price_micro_usd is within 10% of oracle consensus
+    fn verify_price_sanity(&self, price_micro_usd: u64) -> Result<bool, String>;
 }
 
 /// Implementation (used by UVM when contract calls oracle)
@@ -81,8 +89,8 @@ impl ExchangeOracle {
         Ok(ExchangePrice {
             exchange: "binance".to_string(),
             pair: "LOS/USDT".to_string(),
-            price: 0.01, // Testnet placeholder
-            volume_24h: 1_000_000.0,
+            price_micro_usd: 10_000, // 0.01 USD = 10,000 micro-USD
+            volume_24h_usd: 1_000_000,
             timestamp: chrono::Utc::now().timestamp() as u64,
         })
     }
@@ -95,8 +103,8 @@ impl ExchangeOracle {
         Ok(ExchangePrice {
             exchange: "coinbase".to_string(),
             pair: "LOS-USD".to_string(),
-            price: 0.0099, // Testnet placeholder
-            volume_24h: 500_000.0,
+            price_micro_usd: 9_900, // 0.0099 USD
+            volume_24h_usd: 500_000,
             timestamp: chrono::Utc::now().timestamp() as u64,
         })
     }
@@ -109,73 +117,88 @@ impl ExchangeOracle {
         Ok(ExchangePrice {
             exchange: "kraken".to_string(),
             pair: "LOSUSD".to_string(),
-            price: 0.0101, // Testnet placeholder
-            volume_24h: 750_000.0,
+            price_micro_usd: 10_100, // 0.0101 USD
+            volume_24h_usd: 750_000,
             timestamp: chrono::Utc::now().timestamp() as u64,
         })
     }
 }
 
 impl PriceOracle for ExchangeOracle {
-    fn get_los_price_usd(&self) -> Result<f64, String> {
+    fn get_los_price_micro_usd(&self) -> Result<u64, String> {
         if self.price_feeds.is_empty() {
             return Err("No price feeds available".to_string());
         }
 
-        // Calculate median price (Byzantine-resistant)
-        let mut prices: Vec<f64> = self.price_feeds.values().map(|p| p.price).collect();
+        // Calculate median price (Byzantine-resistant) — integer only
+        let mut prices: Vec<u64> = self.price_feeds.values()
+            .map(|p| p.price_micro_usd)
+            .filter(|p| *p > 0) // Filter zero prices
+            .collect();
 
-        // Filter NaN and sort safely (NaN-safe comparison)
-        prices.retain(|p| p.is_finite());
         if prices.is_empty() {
-            return Err("No valid (finite) prices available".to_string());
+            return Err("No valid prices available".to_string());
         }
-        prices.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+        prices.sort_unstable();
         let median = prices[prices.len() / 2];
 
         Ok(median)
     }
 
-    fn get_los_price_from_exchange(&self, exchange: &str) -> Result<f64, String> {
+    fn get_los_price_from_exchange(&self, exchange: &str) -> Result<u64, String> {
         self.price_feeds
             .get(exchange)
-            .map(|p| p.price)
+            .map(|p| p.price_micro_usd)
             .ok_or_else(|| format!("Exchange {} not found", exchange))
     }
 
     fn get_oracle_consensus(&self) -> Result<OracleConsensusPrice, String> {
-        let median = self.get_los_price_usd()?;
+        let median = self.get_los_price_micro_usd()?;
 
-        // FIX C11-M3: Guard against zero/negative median price
-        if median <= 0.0 {
-            return Err("Invalid median price: zero or negative".to_string());
+        if median == 0 {
+            return Err("Invalid median price: zero".to_string());
         }
 
-        // Calculate confidence (how close are prices to each other?)
-        let prices: Vec<f64> = self.price_feeds.values().map(|p| p.price).collect();
-        let max_price = prices.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
-        let min_price = prices.iter().cloned().fold(f64::INFINITY, f64::min);
+        // Calculate confidence — integer math with basis points
+        let prices: Vec<u64> = self.price_feeds.values()
+            .map(|p| p.price_micro_usd)
+            .filter(|p| *p > 0)
+            .collect();
+        let max_price = prices.iter().copied().max().unwrap_or(0);
+        let min_price = prices.iter().copied().min().unwrap_or(0);
 
-        let deviation = (max_price - min_price) / median;
-        let confidence = 1.0 - deviation.min(1.0); // High confidence if prices agree
+        // deviation_bps = ((max - min) * 10000) / median
+        let deviation_bps = if median > 0 {
+            ((max_price.saturating_sub(min_price) as u128 * 10_000) / median as u128) as u16
+        } else {
+            10_000 // 100% deviation if median is 0
+        };
+        // confidence = 10000 - deviation (capped at 0)
+        let confidence_bps = 10_000u16.saturating_sub(deviation_bps);
 
         Ok(OracleConsensusPrice {
-            median_price: median,
+            median_price_micro_usd: median,
             sources: self.price_feeds.values().cloned().collect(),
-            confidence,
+            confidence_bps,
         })
     }
 
-    fn verify_price_sanity(&self, price: f64) -> Result<bool, String> {
-        let median = self.get_los_price_usd()?;
-        // FIX C11-M3: Guard against zero/negative median price
-        if median <= 0.0 {
-            return Err("Invalid median price: zero or negative".to_string());
+    fn verify_price_sanity(&self, price_micro_usd: u64) -> Result<bool, String> {
+        let median = self.get_los_price_micro_usd()?;
+        if median == 0 {
+            return Err("Invalid median price: zero".to_string());
         }
-        let deviation = ((price - median).abs() / median) * 100.0;
 
-        // Reject if price deviates more than 10% from oracle consensus
-        if deviation > 10.0 {
+        // Calculate deviation in basis points (integer math)
+        let diff = if price_micro_usd > median {
+            price_micro_usd - median
+        } else {
+            median - price_micro_usd
+        };
+        let deviation_bps = (diff as u128 * 10_000 / median as u128) as u64;
+
+        // Reject if price deviates more than 10% (1000 bps) from oracle consensus
+        if deviation_bps > 1_000 {
             return Ok(false);
         }
 
@@ -202,8 +225,8 @@ mod tests {
             ExchangePrice {
                 exchange: "binance".to_string(),
                 pair: "LOS/USDT".to_string(),
-                price: 0.010,
-                volume_24h: 1_000_000.0,
+                price_micro_usd: 10_000, // 0.01 USD
+                volume_24h_usd: 1_000_000,
                 timestamp: 0,
             },
         );
@@ -213,8 +236,8 @@ mod tests {
             ExchangePrice {
                 exchange: "coinbase".to_string(),
                 pair: "LOS-USD".to_string(),
-                price: 0.011,
-                volume_24h: 500_000.0,
+                price_micro_usd: 11_000, // 0.011 USD
+                volume_24h_usd: 500_000,
                 timestamp: 0,
             },
         );
@@ -224,14 +247,14 @@ mod tests {
             ExchangePrice {
                 exchange: "kraken".to_string(),
                 pair: "LOSUSD".to_string(),
-                price: 0.0105,
-                volume_24h: 750_000.0,
+                price_micro_usd: 10_500, // 0.0105 USD
+                volume_24h_usd: 750_000,
                 timestamp: 0,
             },
         );
 
-        let median = oracle.get_los_price_usd().unwrap();
-        assert_eq!(median, 0.0105); // Median of [0.010, 0.0105, 0.011]
+        let median = oracle.get_los_price_micro_usd().unwrap();
+        assert_eq!(median, 10_500); // Median of [10000, 10500, 11000]
     }
 
     #[test]
@@ -243,17 +266,17 @@ mod tests {
             ExchangePrice {
                 exchange: "binance".to_string(),
                 pair: "LOS/USDT".to_string(),
-                price: 0.01,
-                volume_24h: 1_000_000.0,
+                price_micro_usd: 10_000,
+                volume_24h_usd: 1_000_000,
                 timestamp: 0,
             },
         );
 
-        // Test within range (should pass)
-        assert!(oracle.verify_price_sanity(0.0105).unwrap());
+        // Test within range: 10500 vs median 10000 = 5% → should pass
+        assert!(oracle.verify_price_sanity(10_500).unwrap());
 
-        // Test outside range (should fail)
-        assert!(!oracle.verify_price_sanity(0.02).unwrap()); // 100% deviation
+        // Test outside range: 20000 vs median 10000 = 100% → should fail
+        assert!(!oracle.verify_price_sanity(20_000).unwrap());
     }
 
     #[test]
@@ -266,8 +289,8 @@ mod tests {
             ExchangePrice {
                 exchange: "binance".to_string(),
                 pair: "LOS/USDT".to_string(),
-                price: 0.0100,
-                volume_24h: 1_000_000.0,
+                price_micro_usd: 10_000,
+                volume_24h_usd: 1_000_000,
                 timestamp: 0,
             },
         );
@@ -277,14 +300,14 @@ mod tests {
             ExchangePrice {
                 exchange: "coinbase".to_string(),
                 pair: "LOS-USD".to_string(),
-                price: 0.0101,
-                volume_24h: 500_000.0,
+                price_micro_usd: 10_100,
+                volume_24h_usd: 500_000,
                 timestamp: 0,
             },
         );
 
         let consensus = oracle.get_oracle_consensus().unwrap();
-        assert!(consensus.confidence > 0.9); // High confidence
+        assert!(consensus.confidence_bps > 9000); // >90% confidence
         assert_eq!(consensus.sources.len(), 2);
     }
 }

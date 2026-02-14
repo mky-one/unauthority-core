@@ -27,6 +27,9 @@ pub struct GenesisWallet {
     pub public_key: Option<String>,
     #[serde(default)]
     pub private_key: Option<String>,
+    /// Tor hidden service address for this validator (peer discovery)
+    #[serde(default)]
+    pub onion_address: Option<String>,
 }
 
 /// Top-level genesis config.
@@ -324,6 +327,7 @@ mod tests {
             seed_phrase: None,
             public_key: None,
             private_key: None,
+            onion_address: None,
         };
         GenesisConfig {
             network_id: Some(network_id),
@@ -426,6 +430,7 @@ mod tests {
                 seed_phrase: None,
                 public_key: None,
                 private_key: None,
+                onion_address: None,
             }]),
             network: Some("testnet".to_string()),
             genesis_timestamp: Some(1770341710),

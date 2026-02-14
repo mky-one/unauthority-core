@@ -8,7 +8,7 @@
 ///
 /// Usage:
 ///   1. Run Tor with hidden service forwarding to libp2p_port
-///   2. Set LOS_TOR_SOCKS5=127.0.0.1:9050
+///   2. Set LOS_SOCKS5_PROXY=socks5h://127.0.0.1:9050 (or LOS_TOR_SOCKS5=127.0.0.1:9050)
 ///   3. Set LOS_BOOTSTRAP_NODES=<onion_addr>:<port>,<onion_addr2>:<port2>
 ///
 /// The proxy works by creating a local TCP listener for each .onion peer,
@@ -34,8 +34,11 @@ pub struct TorConfig {
 impl TorConfig {
     /// Load Tor configuration from environment variables
     pub fn from_env() -> Self {
-        let socks5_proxy = std::env::var("LOS_TOR_SOCKS5")
+        // Accept both LOS_SOCKS5_PROXY (with socks5h:// prefix) and LOS_TOR_SOCKS5 (bare addr)
+        let socks5_proxy = std::env::var("LOS_SOCKS5_PROXY")
+            .or_else(|_| std::env::var("LOS_TOR_SOCKS5"))
             .ok()
+            .map(|s| s.trim_start_matches("socks5h://").trim_start_matches("socks5://").to_string())
             .and_then(|s| s.parse::<SocketAddr>().ok());
 
         let onion_address = std::env::var("LOS_ONION_ADDRESS").ok();
@@ -254,6 +257,7 @@ mod tests {
 
     #[test]
     fn test_tor_config_defaults() {
+        std::env::remove_var("LOS_SOCKS5_PROXY");
         std::env::remove_var("LOS_TOR_SOCKS5");
         std::env::remove_var("LOS_ONION_ADDRESS");
         std::env::remove_var("LOS_P2P_PORT");

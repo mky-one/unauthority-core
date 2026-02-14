@@ -22,6 +22,7 @@ class _ExplorerScreenState extends State<ExplorerScreen> {
   Future<void> _search() async {
     final query = _searchController.text.trim();
     if (query.isEmpty) return;
+    debugPrint('🔍 [Explorer] Searching: "$query"');
 
     setState(() {
       _isLoading = true;
@@ -41,6 +42,7 @@ class _ExplorerScreenState extends State<ExplorerScreen> {
           final txResult = await api.getTransaction(query);
           if (txResult['status'] == 'found' ||
               txResult.containsKey('transaction')) {
+            debugPrint('🔍 [Explorer] Found transaction: $query');
             if (!mounted) return;
             setState(() {
               _result = txResult;
@@ -49,8 +51,8 @@ class _ExplorerScreenState extends State<ExplorerScreen> {
             });
             return;
           }
-        } catch (_) {
-          // Not a transaction, try block
+        } catch (e) {
+          debugPrint('🔍 [Explorer] Not a transaction ($e), trying block...');
         }
 
         // Try block lookup
@@ -58,6 +60,7 @@ class _ExplorerScreenState extends State<ExplorerScreen> {
           final blockResult = await api.getBlock(query);
           if (blockResult['status'] == 'found' ||
               blockResult.containsKey('block')) {
+            debugPrint('🔍 [Explorer] Found block: $query');
             if (!mounted) return;
             setState(() {
               _result = blockResult;
@@ -66,13 +69,16 @@ class _ExplorerScreenState extends State<ExplorerScreen> {
             });
             return;
           }
-        } catch (_) {
-          // Not found
+        } catch (e) {
+          debugPrint(
+              '🔍 [Explorer] Not a block either ($e), using search fallback...');
         }
       }
 
       // Fallback: use search endpoint
       final searchResult = await api.search(query);
+      debugPrint(
+          '🔍 [Explorer] Search result: ${searchResult['count'] ?? 0} matches');
       if (!mounted) return;
       setState(() {
         _result = searchResult;
@@ -80,6 +86,7 @@ class _ExplorerScreenState extends State<ExplorerScreen> {
         _isLoading = false;
       });
     } catch (e) {
+      debugPrint('❌ [Explorer] Search error: $e');
       if (!mounted) return;
       setState(() {
         _error = e.toString();

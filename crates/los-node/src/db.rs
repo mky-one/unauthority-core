@@ -6,6 +6,9 @@ use sled::{Db, Tree};
 use std::path::Path;
 use std::sync::Arc;
 
+#[cfg(unix)]
+use std::os::unix::io::AsRawFd;
+
 const DB_PATH: &str = "los_database";
 const TREE_BLOCKS: &str = "blocks";
 const TREE_ACCOUNTS: &str = "accounts";
@@ -19,16 +22,181 @@ pub struct LosDatabase {
 }
 
 impl LosDatabase {
-    /// Open or create database
-    pub fn open<P: AsRef<Path>>(path: P) -> Result<Self, String> {
-        let db = sled::open(path).map_err(|e| format!("Failed to open database: {}", e))?;
+    /// Pre-check: try a NON-BLOCKING flock on the sled db file.
+    ///
+    /// sled internally uses `flock(LOCK_EX)` (blocking) which can hang
+    /// forever if a UE zombie holds the lock. This function probes with
+    /// `LOCK_NB` to detect that scenario BEFORE calling `sled::open()`.
+    ///
+    /// Returns:
+    /// - Ok(true)  — lock is available (or db file doesn't exist yet)
+    /// - Ok(false) — lock is held by another process
+    /// - Err(_)    — some other I/O error
+    #[cfg(unix)]
+    fn is_db_lock_available(path: &Path) -> Result<bool, String> {
+        let db_file = path.join("db");
+        if !db_file.exists() {
+            return Ok(true); // New database — no lock contention possible
+        }
 
-        Ok(LosDatabase { db: Arc::new(db) })
+        let file = std::fs::OpenOptions::new()
+            .read(true)
+            .open(&db_file)
+            .map_err(|e| format!("Cannot open db file for lock check: {}", e))?;
+
+        let fd = file.as_raw_fd();
+        // LOCK_EX | LOCK_NB: exclusive, non-blocking
+        let ret = unsafe { libc::flock(fd, libc::LOCK_EX | libc::LOCK_NB) };
+        if ret == 0 {
+            // We got the lock — release it immediately (sled will re-acquire)
+            unsafe { libc::flock(fd, libc::LOCK_UN) };
+            Ok(true)
+        } else {
+            let err = std::io::Error::last_os_error();
+            if err.kind() == std::io::ErrorKind::WouldBlock {
+                Ok(false) // Lock held by another process
+            } else {
+                Err(format!("flock probe failed: {}", err))
+            }
+        }
+    }
+
+    #[cfg(not(unix))]
+    fn is_db_lock_available(_path: &Path) -> Result<bool, String> {
+        Ok(true) // Non-Unix: skip check, rely on sled's own error
+    }
+
+    /// Open or create database.
+    ///
+    /// **Anti-zombie design:**
+    /// 1. Pre-checks the sled flock with NON-BLOCKING flock(LOCK_NB).
+    ///    If another process (including UE zombies) holds the lock,
+    ///    returns an error immediately instead of blocking in kernel I/O
+    ///    (which would turn THIS process into ANOTHER UE zombie).
+    /// 2. Retries up to 3 times with exponential backoff (500ms, 1s, 2s)
+    ///    for transient lock-release delays (e.g. after normal SIGTERM).
+    pub fn open<P: AsRef<Path>>(path: P) -> Result<Self, String> {
+        let path_ref = path.as_ref();
+        let retry_delays_ms: [u64; 3] = [500, 1000, 2000];
+
+        // ── Anti-zombie pre-check ───────────────────────────────────────
+        // Probe the sled flock with LOCK_NB BEFORE calling sled::open().
+        // If a UE zombie holds the lock, we fail fast instead of blocking
+        // in kernel I/O (which would make US another UE zombie).
+        match Self::is_db_lock_available(path_ref) {
+            Ok(true) => { /* Lock available — proceed with sled::open */ }
+            Ok(false) => {
+                eprintln!(
+                    "⚠️  Database flock held by another process at {} — \
+                     will retry with backoff (NOT blocking in kernel I/O)",
+                    path_ref.display()
+                );
+                // Don't call sled::open yet — go straight to retry loop
+                // which uses the non-blocking probe on each iteration
+                for (i, delay_ms) in retry_delays_ms.iter().enumerate() {
+                    std::thread::sleep(std::time::Duration::from_millis(*delay_ms));
+                    eprintln!(
+                        "🔄 Lock probe retry {}/{} after {}ms...",
+                        i + 1,
+                        retry_delays_ms.len(),
+                        delay_ms
+                    );
+                    match Self::is_db_lock_available(path_ref) {
+                        Ok(true) => break, // Lock released — fall through to sled::open
+                        Ok(false) if i + 1 == retry_delays_ms.len() => {
+                            return Err(format!(
+                                "Database lock permanently held at {} — another los-node \
+                                 (possibly a UE zombie) still holds the flock. \
+                                 Fix: remove the database directory and resync from peers.",
+                                path_ref.display()
+                            ));
+                        }
+                        Ok(false) => continue,
+                        Err(e) => {
+                            eprintln!("⚠️ flock probe error: {}", e);
+                            break; // Fall through to sled::open and let it handle
+                        }
+                    }
+                }
+            }
+            Err(e) => {
+                eprintln!("⚠️ flock probe error: {} — falling through to sled::open", e);
+            }
+        }
+
+        // First attempt — fast path (no delay)
+        match sled::open(path_ref) {
+            Ok(db) => return Ok(LosDatabase { db: Arc::new(db) }),
+            Err(e) if Self::is_lock_error(&e) => {
+                eprintln!(
+                    "⚠️  Database lock held at {} — retrying ({} attempts remain)",
+                    path_ref.display(),
+                    retry_delays_ms.len()
+                );
+            }
+            Err(e) => return Err(format!("Failed to open database: {}", e)),
+        }
+
+        // Retry with exponential backoff — only for lock errors
+        for (i, delay_ms) in retry_delays_ms.iter().enumerate() {
+            std::thread::sleep(std::time::Duration::from_millis(*delay_ms));
+            eprintln!(
+                "🔄 Database lock retry {}/{} after {}ms...",
+                i + 1,
+                retry_delays_ms.len(),
+                delay_ms
+            );
+
+            match sled::open(path_ref) {
+                Ok(db) => {
+                    eprintln!("✅ Database lock acquired on retry {}", i + 1);
+                    return Ok(LosDatabase { db: Arc::new(db) });
+                }
+                Err(e) if Self::is_lock_error(&e) => {
+                    if i + 1 == retry_delays_ms.len() {
+                        return Err(format!(
+                            "Failed to open database after {} retries: {} \
+                             (another los-node process may still be running)",
+                            retry_delays_ms.len(),
+                            e
+                        ));
+                    }
+                }
+                Err(e) => return Err(format!("Failed to open database: {}", e)),
+            }
+        }
+
+        unreachable!("retry loop should return in all branches")
+    }
+
+    /// Check if a sled error is a lock/resource-busy error.
+    fn is_lock_error(e: &sled::Error) -> bool {
+        let msg = e.to_string();
+        // sled wraps IO errors: "IO error: ... Resource temporarily unavailable"
+        // or "IO error: ... Would block" (varies by OS)
+        msg.contains("Resource temporarily unavailable")
+            || msg.contains("WouldBlock")
+            || msg.contains("Would block")
+            || msg.contains("lock")
+            || msg.contains("EAGAIN")
+            || msg.contains("EWOULDBLOCK")
     }
 
     /// Open with default path
     pub fn open_default() -> Result<Self, String> {
         Self::open(DB_PATH)
+    }
+
+    /// Flush all pending writes to disk.
+    ///
+    /// Called during graceful shutdown (SIGTERM handler) BEFORE std::process::exit().
+    /// This ensures dirty pages are written without relying on sled::Drop,
+    /// which can hang in kernel I/O and cause macOS UE (Uninterruptible Exit) zombies.
+    pub fn flush(&self) -> Result<(), String> {
+        self.db
+            .flush()
+            .map_err(|e| format!("Failed to flush database: {}", e))?;
+        Ok(())
     }
 
     /// Get blocks tree

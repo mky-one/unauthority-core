@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../services/wallet_service.dart';
 import '../services/api_service.dart';
+import '../services/network_config.dart';
 import '../services/network_status_service.dart';
 import '../services/node_process_service.dart';
 import '../services/tor_service.dart';
@@ -25,9 +26,10 @@ class _NodeControlScreenState extends State<NodeControlScreen>
     with SingleTickerProviderStateMixin {
   late TabController _tabController;
   String? _walletAddress;
-  double? _balance;
+  int? _balanceCil; // Balance in CIL (smallest unit) — integer precision
   bool _showLogs = false;
   bool _isMonitorMode = false; // Genesis bootstrap validator → dashboard only
+  bool _isStartingNode = false; // Debounce: prevent double-click race
 
   @override
   void initState() {
@@ -64,6 +66,7 @@ class _NodeControlScreenState extends State<NodeControlScreen>
     // Capture context-dependent services before any async gap
     final apiService = context.read<ApiService>();
     final nodeService = context.read<NodeProcessService>();
+    final torService = context.read<TorService>();
     try {
       final isAddressOnly = await walletService.isAddressOnlyImport();
       if (isAddressOnly) return; // Can't sign without keys
@@ -85,6 +88,9 @@ class _NodeControlScreenState extends State<NodeControlScreen>
       final message = 'REGISTER_VALIDATOR:$address:$timestamp';
       final signature = await walletService.signTransaction(message);
 
+      // Include our .onion address so peers know how to reach us
+      final myOnion = torService.onionAddress;
+
       // Register on bootstrap node (shared ApiService points to .onion)
       await apiService.ensureReady();
       final result = await apiService.registerValidator(
@@ -92,6 +98,7 @@ class _NodeControlScreenState extends State<NodeControlScreen>
         publicKey: publicKey,
         signature: signature,
         timestamp: timestamp,
+        onionAddress: myOnion,
       );
       debugPrint('✅ Auto-registered on bootstrap: ${result['msg']}');
 
@@ -107,6 +114,7 @@ class _NodeControlScreenState extends State<NodeControlScreen>
             publicKey: publicKey,
             signature: signature,
             timestamp: timestamp,
+            onionAddress: myOnion,
           );
           debugPrint('✅ Auto-registered on local node');
         } catch (e) {
@@ -126,9 +134,9 @@ class _NodeControlScreenState extends State<NodeControlScreen>
     try {
       final apiService = context.read<ApiService>();
       final account = await apiService.getBalance(_walletAddress!);
-      if (mounted) setState(() => _balance = account.balanceLOS);
+      if (mounted) setState(() => _balanceCil = account.balance);
       debugPrint(
-          '💰 [NodeControlScreen._refreshBalance] Balance: ${account.balanceLOS} LOS');
+          '💰 [NodeControlScreen._refreshBalance] Balance: ${account.balance} CIL');
     } catch (e) {
       debugPrint('Balance refresh error: $e');
     }
@@ -290,8 +298,8 @@ class _NodeControlScreenState extends State<NodeControlScreen>
                           : 'Loading...'),
                   _infoRow(
                       'Balance',
-                      _balance != null
-                          ? '${BlockchainConstants.formatLos(_balance!)} LOS'
+                      _balanceCil != null
+                          ? '${BlockchainConstants.cilToLosString(_balanceCil!)} LOS'
                           : 'Loading...'),
                   // Show connected bootstrap node's .onion host
                   Builder(builder: (ctx) {
@@ -425,16 +433,20 @@ class _NodeControlScreenState extends State<NodeControlScreen>
   Widget _buildControlButtons(NodeProcessService node) {
     final isRunning = node.isRunning;
     final isStopped = node.isStopped;
+    final canStart = isStopped && !_isStartingNode; // Debounce double-click
 
     return Row(children: [
       Expanded(
         flex: 2,
         child: ElevatedButton.icon(
-          onPressed: isStopped
+          onPressed: canStart
               ? () => _startNode(node)
               : (isRunning ? () => _stopNode(node) : null),
-          icon: Icon(isStopped ? Icons.play_arrow : Icons.stop),
-          label: Text(isStopped ? 'START NODE' : 'STOP NODE',
+          icon: Icon(canStart ? Icons.play_arrow : Icons.stop),
+          label: Text(
+              _isStartingNode
+                  ? 'STARTING...'
+                  : (isStopped ? 'START NODE' : 'STOP NODE'),
               style: const TextStyle(fontWeight: FontWeight.bold)),
           style: ElevatedButton.styleFrom(
               backgroundColor: isStopped ? Colors.green : Colors.red,
@@ -520,19 +532,76 @@ class _NodeControlScreenState extends State<NodeControlScreen>
   Future<void> _startNode(NodeProcessService node) async {
     debugPrint('🖥️ [NodeControlScreen._startNode] Starting node...');
     if (_isMonitorMode) return; // Monitor mode — CLI manages the node
-    final torService = context.read<TorService>();
-    String? onion = torService.onionAddress;
+    if (_isStartingNode) return; // Already starting — prevent double-click
 
-    if (onion == null && !torService.isRunning) {
-      onion = await torService.startWithHiddenService(
-        localPort: node.apiPort,
-        onionPort: 80,
+    // DEBOUNCE: Disable button immediately before any async work.
+    // Without this, rapid clicks can both enter _startNode() because
+    // the async gap before node.start() leaves the button enabled.
+    setState(() => _isStartingNode = true);
+
+    try {
+      final torService = context.read<TorService>();
+      final apiService = context.read<ApiService>();
+      final walletService = context.read<WalletService>();
+      String? onion = torService.onionAddress;
+
+      if (onion == null && !torService.isRunning) {
+        onion = await torService.startWithHiddenService(
+          localPort: node.apiPort,
+          onionPort: 80,
+        );
+      }
+
+      // CRITICAL: Exclude own .onion from API failover peer list.
+      // Spec: "flutter_validator MUST NOT use its own local onion
+      // address for API consumption".
+      if (onion != null) {
+        apiService.setExcludedOnion('http://$onion');
+      }
+
+      // Retrieve mnemonic so los-node can derive the same keypair
+      final wallet =
+          await walletService.getCurrentWallet(includeMnemonic: true);
+      final mnemonic = wallet?['mnemonic'];
+
+      // Build bootstrap nodes for P2P discovery.
+      // MAINNET PARITY: ALWAYS use .onion P2P addresses.
+      // No localhost/127.0.0.1 — Tor onion routing is mandatory.
+      final testnetNodes = NetworkConfig.testnetNodes;
+      String? bootstrapNodes;
+      if (testnetNodes.isNotEmpty) {
+        bootstrapNodes = testnetNodes.map((n) => n.p2pAddress).join(',');
+        debugPrint('\ud83c\udf10 Bootstrap nodes (.onion): $bootstrapNodes');
+      }
+
+      // P2P port: auto-derived from API port + 1000 (matches los-node dynamic port)
+      final p2pPort = node.apiPort + 1000;
+      debugPrint('📡 P2P port: $p2pPort');
+
+      // Tor SOCKS5 proxy: MANDATORY for dialing .onion bootstrap peers.
+      // MAINNET PARITY: Without SOCKS5, los-node cannot reach any peer.
+      if (!torService.isRunning) {
+        debugPrint(
+            '⚠️ Tor not running — node will start without SOCKS5 (standalone mode)');
+      }
+      final torSocks5 = torService.isRunning
+          ? '127.0.0.1:${torService.activeSocksPort}'
+          : null;
+      debugPrint('🧅 Tor SOCKS5: $torSocks5');
+
+      final started = await node.start(
+        port: node.apiPort,
+        onionAddress: onion,
+        seedPhrase: mnemonic,
+        bootstrapNodes: bootstrapNodes,
+        p2pPort: p2pPort,
+        torSocks5: torSocks5,
       );
+      debugPrint(
+          '🖥️ [NodeControlScreen._startNode] ${started ? 'Success' : 'Failed'}');
+    } finally {
+      if (mounted) setState(() => _isStartingNode = false);
     }
-
-    final started = await node.start(port: node.apiPort, onionAddress: onion);
-    debugPrint(
-        '🖥️ [NodeControlScreen._startNode] ${started ? 'Success' : 'Failed'}');
   }
 
   Future<void> _stopNode(NodeProcessService node) async {
@@ -633,8 +702,8 @@ class _NodeControlScreenState extends State<NodeControlScreen>
             const SizedBox(height: 4),
             Row(children: [
               Text(
-                  _balance != null
-                      ? '${BlockchainConstants.formatLos(_balance!)} LOS'
+                  _balanceCil != null
+                      ? '${BlockchainConstants.cilToLosString(_balanceCil!)} LOS'
                       : 'Loading...',
                   style: const TextStyle(
                       fontSize: 20, fontWeight: FontWeight.bold)),
@@ -644,29 +713,40 @@ class _NodeControlScreenState extends State<NodeControlScreen>
                   onPressed: _refreshBalance),
             ]),
             const SizedBox(height: 8),
-            if (_balance != null)
+            if (_balanceCil != null)
               Container(
                   padding:
                       const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                   decoration: BoxDecoration(
-                      color: _balance! >= 1000
-                          ? Colors.green.withValues(alpha: 0.1)
-                          : Colors.red.withValues(alpha: 0.1),
+                      // Compare in CIL: 1000 LOS = 1000 * cilPerLos CIL
+                      // Integer comparison — no f64 precision loss
+                      color:
+                          _balanceCil! >= 1000 * BlockchainConstants.cilPerLos
+                              ? Colors.green.withValues(alpha: 0.1)
+                              : Colors.red.withValues(alpha: 0.1),
                       borderRadius: BorderRadius.circular(8)),
                   child: Row(mainAxisSize: MainAxisSize.min, children: [
-                    Icon(_balance! >= 1000 ? Icons.check_circle : Icons.warning,
+                    Icon(
+                        _balanceCil! >= 1000 * BlockchainConstants.cilPerLos
+                            ? Icons.check_circle
+                            : Icons.warning,
                         size: 16,
-                        color: _balance! >= 1000 ? Colors.green : Colors.red),
+                        color:
+                            _balanceCil! >= 1000 * BlockchainConstants.cilPerLos
+                                ? Colors.green
+                                : Colors.red),
                     const SizedBox(width: 6),
                     Text(
-                        _balance! >= 1000
+                        _balanceCil! >= 1000 * BlockchainConstants.cilPerLos
                             ? 'Active Validator (Stake >= 1,000 LOS)'
                             : 'Insufficient Stake',
                         style: TextStyle(
                             fontSize: 12,
                             fontWeight: FontWeight.w600,
-                            color:
-                                _balance! >= 1000 ? Colors.green : Colors.red)),
+                            color: _balanceCil! >=
+                                    1000 * BlockchainConstants.cilPerLos
+                                ? Colors.green
+                                : Colors.red)),
                   ])),
           ],
         ),

@@ -26,6 +26,8 @@ pub extern "C" fn __rust_probestack() {}
 
 // Oracle module for exchange price feeds
 pub mod oracle_connector;
+// USP-01: Unauthority Standard for Permissionless Tokens
+pub mod usp01;
 
 /// Unauthority Virtual Machine (UVM)
 /// Executes WebAssembly smart contracts with permissionless deployment
@@ -54,6 +56,10 @@ pub struct ContractCall {
     pub function: String,
     pub args: Vec<String>,
     pub gas_limit: u64,
+    /// Caller's LOS address (injected by node, verified via block signature).
+    /// Empty string if not set (testnet mock dispatch only).
+    #[serde(default)]
+    pub caller: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -62,6 +68,18 @@ pub struct ContractResult {
     pub output: String,
     pub gas_used: u64,
     pub state_changes: HashMap<String, String>,
+    /// Events emitted by the contract during execution
+    #[serde(default)]
+    pub events: Vec<ContractEvent>,
+}
+
+/// Contract event (emitted during execution, stored for indexing)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ContractEvent {
+    pub contract: String,
+    pub event_type: String,
+    pub data: HashMap<String, String>,
+    pub timestamp: u64,
 }
 
 /// WASM execution environment
@@ -110,21 +128,17 @@ impl WasmEngine {
         let contract_nonce = *owner_nonce;
         *owner_nonce = owner_nonce.saturating_add(1);
 
-        // Create deterministic address: hash(owner || nonce || block)
+        // Deterministic contract address via blake3(owner || nonce || block)
+        // Format: "LOSCon" + first 32 hex chars of blake3 hash
+        let addr_input = format!("{}:{}:{}", owner, contract_nonce, block_number);
+        let addr_hash = blake3::hash(addr_input.as_bytes());
         let address = format!(
-            "contract_{}_{}_{}",
-            owner.chars().take(12).collect::<String>(),
-            contract_nonce,
-            block_number
+            "LOSCon{}",
+            hex::encode(&addr_hash.as_bytes()[0..16])
         );
 
-        // Calculate code hash (simplified)
-        let code_hash = format!(
-            "{:x}",
-            blake3::hash(&bytecode).as_bytes()[0..16]
-                .iter()
-                .fold(0u64, |acc, &b| (acc << 4) ^ (b as u64))
-        );
+        // Calculate code hash
+        let code_hash = hex::encode(&blake3::hash(&bytecode).as_bytes()[0..32]);
 
         let contract = Contract {
             address: address.clone(),
@@ -371,6 +385,7 @@ impl WasmEngine {
                             output: result.to_string(),
                             gas_used,
                             state_changes: HashMap::new(),
+                            events: Vec::new(),
                         });
                     }
                     Err(e)
@@ -483,6 +498,7 @@ impl WasmEngine {
                 output,
                 gas_used,
                 state_changes,
+                events: Vec::new(),
             })
         } // end #[cfg(not(feature = "mainnet"))]
     }
@@ -551,6 +567,62 @@ impl Default for WasmEngine {
     }
 }
 
+// ─────────────────────────────────────────────────────────────────
+// PERSISTENCE: Serialize/Deserialize all contract state
+// ─────────────────────────────────────────────────────────────────
+
+impl WasmEngine {
+    /// Serialize all contracts + nonce state for persistence (sled DB).
+    /// Bytecode is included so peers can re-load without re-fetching.
+    pub fn serialize_all(&self) -> Result<Vec<u8>, String> {
+        let contracts = self
+            .contracts
+            .lock()
+            .map_err(|_| "Failed to lock contracts".to_string())?;
+        let nonce = self
+            .nonce
+            .lock()
+            .map_err(|_| "Failed to lock nonce".to_string())?;
+        let data = serde_json::json!({
+            "contracts": &*contracts,
+            "nonce": &*nonce,
+        });
+        serde_json::to_vec(&data).map_err(|e| format!("Failed to serialize VM state: {}", e))
+    }
+
+    /// Deserialize and restore all contracts + nonce state from persistence.
+    pub fn deserialize_all(&self, data: &[u8]) -> Result<usize, String> {
+        #[derive(Deserialize)]
+        struct VmSnapshot {
+            contracts: HashMap<String, Contract>,
+            nonce: HashMap<String, u64>,
+        }
+        let snapshot: VmSnapshot = serde_json::from_slice(data)
+            .map_err(|e| format!("Failed to deserialize VM state: {}", e))?;
+
+        let count = snapshot.contracts.len();
+
+        let mut c = self
+            .contracts
+            .lock()
+            .map_err(|_| "Failed to lock contracts".to_string())?;
+        *c = snapshot.contracts;
+
+        let mut n = self
+            .nonce
+            .lock()
+            .map_err(|_| "Failed to lock nonce".to_string())?;
+        *n = snapshot.nonce;
+
+        Ok(count)
+    }
+
+    /// Get the blake3 code hash for given bytecode (used for DEPLOY link verification)
+    pub fn compute_code_hash(bytecode: &[u8]) -> String {
+        hex::encode(&blake3::hash(bytecode).as_bytes()[0..32])
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -574,7 +646,7 @@ mod tests {
         assert!(result.is_ok());
 
         let addr = result.unwrap();
-        assert!(addr.contains("contract_"));
+        assert!(addr.starts_with("LOSCon"));
         assert_eq!(engine.contract_count().unwrap(), 1);
     }
 
@@ -621,6 +693,7 @@ mod tests {
             function: "transfer".to_string(),
             args: vec!["500".to_string(), "recipient".to_string()],
             gas_limit: 1000,
+            caller: "charlie".to_string(),
         };
 
         let result = engine.call_contract(call).unwrap();
@@ -643,6 +716,7 @@ mod tests {
             function: "set_state".to_string(),
             args: vec!["counter".to_string(), "42".to_string()],
             gas_limit: 1000,
+            caller: "dave".to_string(),
         };
 
         let result = engine.call_contract(set_call).unwrap();
@@ -654,6 +728,7 @@ mod tests {
             function: "get_state".to_string(),
             args: vec!["counter".to_string()],
             gas_limit: 1000,
+            caller: "dave".to_string(),
         };
 
         let result = engine.call_contract(get_call).unwrap();
@@ -676,6 +751,7 @@ mod tests {
             function: "get_balance".to_string(),
             args: vec![],
             gas_limit: 100,
+            caller: "eve".to_string(),
         };
 
         let result = engine.call_contract(call).unwrap();
@@ -690,6 +766,7 @@ mod tests {
             function: "transfer".to_string(),
             args: vec![],
             gas_limit: 1000,
+            caller: "nobody".to_string(),
         };
 
         let result = engine.call_contract(call);
@@ -760,6 +837,7 @@ mod tests {
             function: "transfer".to_string(),
             args: vec!["500".to_string(), "recipient".to_string()],
             gas_limit: 50, // Too low
+            caller: "henry".to_string(),
         };
 
         let result = engine.call_contract(call);
@@ -781,6 +859,7 @@ mod tests {
             function: "unknown_func".to_string(),
             args: vec![],
             gas_limit: 1000,
+            caller: "iris".to_string(),
         };
 
         let result = engine.call_contract(call);
@@ -795,6 +874,7 @@ mod tests {
             output: "success".to_string(),
             gas_used: 100,
             state_changes: HashMap::new(),
+            events: Vec::new(),
         };
 
         let json = serde_json::to_string(&result).unwrap();
@@ -819,6 +899,7 @@ mod tests {
             function: "set_state".to_string(),
             args: vec!["name".to_string(), "test".to_string()],
             gas_limit: 100,
+            caller: "jack".to_string(),
         };
 
         engine.call_contract(call).unwrap();
@@ -866,6 +947,7 @@ mod tests {
             function: "add".to_string(),
             args: vec!["5".to_string(), "7".to_string()],
             gas_limit: 1000,
+            caller: "wasm_tester".to_string(),
         };
 
         let result = engine.call_contract(call).unwrap();

@@ -8,7 +8,6 @@ use los_core::oracle_consensus::OracleConsensus; // NEW: Oracle consensus
 use los_core::validator_rewards::ValidatorRewardPool;
 use los_core::{AccountState, Block, BlockType, Ledger, CIL_PER_LOS, MIN_VALIDATOR_STAKE_CIL};
 use los_network::{LosNode, NetworkEvent};
-#[cfg(feature = "vm")]
 use los_vm::{ContractCall, WasmEngine};
 use rate_limiter::{filters::rate_limit, RateLimiter};
 use std::collections::{HashMap, HashSet};
@@ -186,21 +185,34 @@ struct BurnRequest {
     public_key: Option<String>, // Sender's Dilithium5 public key (hex)
 }
 
-#[cfg(feature = "vm")]
 #[derive(serde::Deserialize, serde::Serialize)]
 struct DeployContractRequest {
     owner: String,
-    bytecode: String, // base64 encoded WASM
+    bytecode: String,                          // base64 encoded WASM
     initial_state: Option<HashMap<String, String>>,
+    amount_cil: Option<u128>,                  // Initial CIL funding for contract
+    signature: Option<String>,                 // Client-signed: Dilithium5 sig
+    public_key: Option<String>,                // Client-signed: deployer's pubkey (hex)
+    previous: Option<String>,                  // Client-signed: previous block hash
+    work: Option<u64>,                         // Client-signed: PoW nonce
+    timestamp: Option<u64>,                    // Client-signed: block timestamp
+    fee: Option<u128>,                         // Client-signed: fee in CIL
 }
 
-#[cfg(feature = "vm")]
 #[derive(serde::Deserialize, serde::Serialize)]
 struct CallContractRequest {
     contract_address: String,
     function: String,
     args: Vec<String>,
     gas_limit: Option<u64>,
+    caller: Option<String>,                    // Caller address (if empty, use node's address)
+    amount_cil: Option<u128>,                  // CIL to send to contract (msg.value)
+    signature: Option<String>,                 // Client-signed: Dilithium5 sig
+    public_key: Option<String>,                // Client-signed: caller's pubkey (hex)
+    previous: Option<String>,                  // Client-signed: previous block hash
+    work: Option<u64>,                         // Client-signed: PoW nonce
+    timestamp: Option<u64>,                    // Client-signed: block timestamp
+    fee: Option<u128>,                         // Client-signed: fee in CIL
 }
 
 /// Per-address endpoint rate limiter
@@ -359,6 +371,9 @@ pub struct ApiServerConfig {
     /// Tracks wallet addresses registered as validators through this node's API.
     /// Heartbeat loop records heartbeats for these addresses so they earn rewards.
     pub local_registered_validators: Arc<Mutex<HashSet<String>>>,
+    /// WASM Smart Contract Engine — shared between API server and P2P event loop.
+    /// Contracts deployed via REST are persisted to sled and replicated via gossip.
+    pub wasm_engine: Arc<WasmEngine>,
 }
 
 #[allow(clippy::type_complexity)]
@@ -385,6 +400,7 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
         mempool_pool,
         abft_consensus,
         local_registered_validators,
+        wasm_engine,
     } = cfg;
     // Rate Limiter: 100 req/sec per IP, burst 200
     let limiter = RateLimiter::new(100, Some(200));
@@ -1472,105 +1488,306 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
             }
         });
 
-    // 7. POST /deploy-contract (PERMISSIONLESS)
-    #[cfg(feature = "vm")]
+    // 7. POST /deploy-contract (PERMISSIONLESS — create ContractDeploy block)
     let deploy_route = {
-        let wasm_engine = Arc::new(WasmEngine::new());
-        let wasm_deploy = wasm_engine.clone();
+        let l_deploy = ledger.clone();
+        let tx_deploy = tx_out.clone();
+        let sk_deploy = secret_key.clone();
+        let pk_deploy = node_public_key.clone();
+        let addr_deploy = my_address.clone();
+        let engine_deploy = wasm_engine.clone();
+        let db_deploy = database.clone();
+        let m_deploy = metrics.clone();
         let deploy = warp::path("deploy-contract")
             .and(warp::post())
             .and(warp::body::bytes())
-            .and(with_state(wasm_deploy))
-            .then(|body: bytes::Bytes, engine: Arc<WasmEngine>| async move {
-                // FIX: Parse JSON manually to return proper 400 instead of 500
+            .and(with_state((l_deploy, tx_deploy, sk_deploy, pk_deploy, addr_deploy, engine_deploy, db_deploy, m_deploy)))
+            .then(|body: bytes::Bytes, state: (Arc<Mutex<Ledger>>, mpsc::Sender<String>, Zeroizing<Vec<u8>>, Vec<u8>, String, Arc<WasmEngine>, Arc<LosDatabase>, Arc<LosMetrics>)| async move {
+                let (l, tx, sk, pk, my_addr, engine, db, metrics) = state;
                 let req: DeployContractRequest = match serde_json::from_slice(&body) {
                     Ok(r) => r,
                     Err(e) => {
                         return api_json(serde_json::json!({
-                            "status": "error",
-                            "code": 400,
+                            "status": "error", "code": 400,
                             "msg": format!("Invalid request body: {}", e)
                         }))
                     }
                 };
                 // Decode base64 WASM bytecode
-                let bytecode = match base64::engine::general_purpose::STANDARD.decode(&req.bytecode)
-                {
+                let bytecode = match base64::engine::general_purpose::STANDARD.decode(&req.bytecode) {
                     Ok(bytes) => bytes,
                     Err(_) => {
-                        return api_json(serde_json::json!({
-                            "status": "error",
-                            "msg": "Invalid base64 bytecode"
-                        }))
+                        return api_json(serde_json::json!({"status":"error","msg":"Invalid base64 bytecode"}))
                     }
                 };
-
-                // Deploy to UVM (permissionless)
-                let block_number = std::time::SystemTime::now()
+                // Compute code hash for block link
+                let code_hash = WasmEngine::compute_code_hash(&bytecode);
+                let link = format!("DEPLOY:{}", code_hash);
+                let amount_cil = req.amount_cil.unwrap_or(0);
+                let is_client_signed = req.signature.is_some() && req.public_key.is_some();
+                let fee = req.fee.unwrap_or(los_core::MIN_DEPLOY_FEE_CIL);
+                let now_ts = std::time::SystemTime::now()
                     .duration_since(std::time::UNIX_EPOCH)
                     .unwrap_or_default()
                     .as_secs();
 
-                match engine.deploy_contract(
-                    req.owner.clone(),
-                    bytecode,
-                    req.initial_state.unwrap_or_default(),
-                    block_number,
-                ) {
-                    Ok(contract_addr) => api_json(serde_json::json!({
-                        "status": "success",
-                        "contract_address": contract_addr,
-                        "owner": req.owner,
-                        "deployed_at_block": block_number
-                    })),
-                    Err(e) => api_json(serde_json::json!({
-                        "status": "error",
-                        "msg": e
-                    })),
+                let (account, pub_key_hex) = if is_client_signed {
+                    let pk_hex = req.public_key.clone().unwrap_or_default();
+                    let pk_bytes = hex::decode(&pk_hex).unwrap_or_default();
+                    let derived = los_crypto::public_key_to_address(&pk_bytes);
+                    (derived, pk_hex)
+                } else {
+                    (my_addr.clone(), hex::encode(&pk))
+                };
+
+                let previous = if is_client_signed {
+                    req.previous.unwrap_or_else(|| {
+                        let l_guard = safe_lock(&l);
+                        l_guard.accounts.get(&account).map(|a| a.head.clone()).unwrap_or_else(|| "0".to_string())
+                    })
+                } else {
+                    let l_guard = safe_lock(&l);
+                    l_guard.accounts.get(&account).map(|a| a.head.clone()).unwrap_or_else(|| "0".to_string())
+                };
+
+                let mut block = Block {
+                    account: account.clone(),
+                    previous,
+                    block_type: BlockType::ContractDeploy,
+                    amount: amount_cil,
+                    link: link.clone(),
+                    signature: String::new(),
+                    public_key: pub_key_hex,
+                    work: req.work.unwrap_or(0),
+                    timestamp: req.timestamp.unwrap_or(now_ts),
+                    fee,
+                };
+
+                // PoW + Signing
+                if is_client_signed {
+                    block.signature = req.signature.unwrap_or_default();
+                } else {
+                    solve_pow(&mut block);
+                    block.signature = match try_sign_hex(block.signing_hash().as_bytes(), &sk) {
+                        Ok(sig) => sig,
+                        Err(e) => {
+                            return api_json(serde_json::json!({"status":"error","msg":format!("Signing failed: {}", e)}))
+                        }
+                    };
                 }
+
+                // Process block through ledger (debit fees + optional funding)
+                let block_hash = {
+                    let mut l_guard = safe_lock(&l);
+                    match l_guard.process_block(&block) {
+                        Ok(hash) => hash,
+                        Err(e) => {
+                            return api_json(serde_json::json!({"status":"error","msg":e}))
+                        }
+                    }
+                };
+
+                // Deploy bytecode to WASM engine
+                let contract_addr = match engine.deploy_contract(
+                    account.clone(),
+                    bytecode.clone(),
+                    req.initial_state.unwrap_or_default(),
+                    now_ts,
+                ) {
+                    Ok(addr) => addr,
+                    Err(e) => {
+                        return api_json(serde_json::json!({"status":"error","msg":format!("VM deploy failed: {}", e)}))
+                    }
+                };
+
+                // Fund contract if amount > 0
+                if amount_cil > 0 {
+                    if let Err(e) = engine.send_to_contract(&contract_addr, amount_cil) {
+                        eprintln!("Warning: Failed to fund contract: {}", e);
+                    }
+                }
+
+                // Persist VM state to DB
+                if let Ok(vm_data) = engine.serialize_all() {
+                    let _ = db.save_contracts(&vm_data);
+                }
+
+                // Gossip to peers: CONTRACT_DEPLOYED:{block_b64}:{bytecode_b64}:{initial_state_b64}
+                let block_b64 = base64::engine::general_purpose::STANDARD.encode(
+                    serde_json::to_vec(&block).unwrap_or_default()
+                );
+                let bytecode_b64 = base64::engine::general_purpose::STANDARD.encode(&bytecode);
+                let gossip = format!("CONTRACT_DEPLOYED:{}:{}:{}", block_b64, bytecode_b64, contract_addr);
+                let _ = tx.send(gossip).await;
+
+                SAVE_DIRTY.store(true, Ordering::Relaxed);
+                metrics.contracts_deployed_total.inc();
+
+                api_json(serde_json::json!({
+                    "status": "success",
+                    "contract_address": contract_addr,
+                    "code_hash": code_hash,
+                    "block_hash": block_hash,
+                    "owner": account,
+                    "fee_cil": fee,
+                    "deployed_at": now_ts
+                }))
             });
 
-        // 8. POST /call-contract
-        let wasm_call = wasm_engine.clone();
+        // 8. POST /call-contract (create ContractCall block + execute)
+        let l_call = ledger.clone();
+        let tx_call = tx_out.clone();
+        let sk_call = secret_key.clone();
+        let pk_call = node_public_key.clone();
+        let addr_call = my_address.clone();
+        let engine_call = wasm_engine.clone();
+        let db_call = database.clone();
+        let m_call = metrics.clone();
         let call = warp::path("call-contract")
             .and(warp::post())
             .and(warp::body::bytes())
-            .and(with_state(wasm_call))
-            .then(|body: bytes::Bytes, engine: Arc<WasmEngine>| async move {
-                // FIX: Parse JSON manually to return proper 400 instead of 500
+            .and(with_state((l_call, tx_call, sk_call, pk_call, addr_call, engine_call, db_call, m_call)))
+            .then(|body: bytes::Bytes, state: (Arc<Mutex<Ledger>>, mpsc::Sender<String>, Zeroizing<Vec<u8>>, Vec<u8>, String, Arc<WasmEngine>, Arc<LosDatabase>, Arc<LosMetrics>)| async move {
+                let (l, tx, sk, pk, my_addr, engine, db, metrics) = state;
                 let req: CallContractRequest = match serde_json::from_slice(&body) {
                     Ok(r) => r,
                     Err(e) => {
                         return api_json(serde_json::json!({
-                            "status": "error",
-                            "code": 400,
+                            "status": "error", "code": 400,
                             "msg": format!("Invalid request body: {}", e)
                         }))
                     }
                 };
-                let call = ContractCall {
-                    contract: req.contract_address,
-                    function: req.function,
-                    args: req.args,
-                    gas_limit: req.gas_limit.unwrap_or(1000000),
+                let gas_limit = req.gas_limit.unwrap_or(los_core::DEFAULT_GAS_LIMIT);
+                let amount_cil = req.amount_cil.unwrap_or(0);
+                let fee = req.fee.unwrap_or(los_core::MIN_CALL_FEE_CIL.max(
+                    (gas_limit as u128).saturating_mul(los_core::GAS_PRICE_CIL)
+                ));
+                let is_client_signed = req.signature.is_some() && req.public_key.is_some();
+                let now_ts = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_secs();
+
+                // Encode args as base64 JSON for deterministic link field
+                let args_json = serde_json::to_string(&req.args).unwrap_or_else(|_| "[]".to_string());
+                let args_b64 = base64::engine::general_purpose::STANDARD.encode(args_json.as_bytes());
+                let link = format!("CALL:{}:{}:{}", req.contract_address, req.function, args_b64);
+
+                let (account, pub_key_hex) = if is_client_signed {
+                    let pk_hex = req.public_key.clone().unwrap_or_default();
+                    let pk_bytes = hex::decode(&pk_hex).unwrap_or_default();
+                    let derived = los_crypto::public_key_to_address(&pk_bytes);
+                    (derived, pk_hex)
+                } else {
+                    let caller = req.caller.clone().unwrap_or_else(|| my_addr.clone());
+                    // If caller != node, still use node's key (node-signed on behalf)
+                    (caller, hex::encode(&pk))
                 };
 
-                match engine.call_contract(call) {
-                    Ok(result) => api_json(serde_json::json!({
-                        "status": "success",
-                        "result": result
-                    })),
-                    Err(e) => api_json(serde_json::json!({
-                        "status": "error",
-                        "msg": e
-                    })),
+                let previous = if is_client_signed {
+                    req.previous.unwrap_or_else(|| {
+                        let l_guard = safe_lock(&l);
+                        l_guard.accounts.get(&account).map(|a| a.head.clone()).unwrap_or_else(|| "0".to_string())
+                    })
+                } else {
+                    let l_guard = safe_lock(&l);
+                    l_guard.accounts.get(&account).map(|a| a.head.clone()).unwrap_or_else(|| "0".to_string())
+                };
+
+                let mut block = Block {
+                    account: account.clone(),
+                    previous,
+                    block_type: BlockType::ContractCall,
+                    amount: amount_cil,
+                    link: link.clone(),
+                    signature: String::new(),
+                    public_key: pub_key_hex,
+                    work: req.work.unwrap_or(0),
+                    timestamp: req.timestamp.unwrap_or(now_ts),
+                    fee,
+                };
+
+                if is_client_signed {
+                    block.signature = req.signature.unwrap_or_default();
+                } else {
+                    solve_pow(&mut block);
+                    block.signature = match try_sign_hex(block.signing_hash().as_bytes(), &sk) {
+                        Ok(sig) => sig,
+                        Err(e) => {
+                            return api_json(serde_json::json!({"status":"error","msg":format!("Signing failed: {}", e)}))
+                        }
+                    };
                 }
+
+                // Process block through ledger (debit fee + value)
+                let block_hash = {
+                    let mut l_guard = safe_lock(&l);
+                    match l_guard.process_block(&block) {
+                        Ok(hash) => hash,
+                        Err(e) => {
+                            return api_json(serde_json::json!({"status":"error","msg":e}))
+                        }
+                    }
+                };
+
+                // Send CIL to contract if amount > 0
+                if amount_cil > 0 {
+                    if let Err(e) = engine.send_to_contract(&req.contract_address, amount_cil) {
+                        return api_json(serde_json::json!({"status":"error","msg":format!("Value transfer failed: {}", e)}));
+                    }
+                }
+
+                // Execute contract call on WASM engine
+                let call = ContractCall {
+                    contract: req.contract_address.clone(),
+                    function: req.function.clone(),
+                    args: req.args.clone(),
+                    gas_limit,
+                    caller: account.clone(),
+                };
+
+                let exec_result = match engine.call_contract(call) {
+                    Ok(result) => result,
+                    Err(e) => {
+                        return api_json(serde_json::json!({"status":"error","msg":format!("Execution failed: {}", e)}))
+                    }
+                };
+
+                // Persist VM state to DB
+                if let Ok(vm_data) = engine.serialize_all() {
+                    let _ = db.save_contracts(&vm_data);
+                }
+
+                // Gossip to peers
+                let block_b64 = base64::engine::general_purpose::STANDARD.encode(
+                    serde_json::to_vec(&block).unwrap_or_default()
+                );
+                let gossip = format!("CONTRACT_CALLED:{}", block_b64);
+                let _ = tx.send(gossip).await;
+
+                SAVE_DIRTY.store(true, Ordering::Relaxed);
+                metrics.contract_executions_total.inc();
+
+                api_json(serde_json::json!({
+                    "status": "success",
+                    "block_hash": block_hash,
+                    "result": {
+                        "success": exec_result.success,
+                        "output": exec_result.output,
+                        "gas_used": exec_result.gas_used,
+                        "state_changes": exec_result.state_changes,
+                        "events": exec_result.events
+                    },
+                    "fee_cil": fee,
+                    "caller": account
+                }))
             });
 
         // 9. GET /contract/:address
-        let wasm_get = wasm_engine.clone();
+        let engine_get = wasm_engine.clone();
         let get_contract = warp::path!("contract" / String)
-            .and(with_state(wasm_get))
+            .and(with_state(engine_get))
             .map(
                 |addr: String, engine: Arc<WasmEngine>| match engine.get_contract(&addr) {
                     Ok(contract) => api_json(serde_json::json!({
@@ -1591,28 +1808,26 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
                 },
             );
 
-        deploy
-            .boxed()
-            .or(call.boxed())
-            .or(get_contract.boxed())
-            .boxed()
-    };
+        // 9b. GET /contracts (list all deployed contracts)
+        let engine_list = wasm_engine.clone();
+        let list_contracts_route = warp::path("contracts")
+            .and(with_state(engine_list))
+            .map(|engine: Arc<WasmEngine>| {
+                match engine.list_contracts() {
+                    Ok(addrs) => api_json(serde_json::json!({
+                        "status": "success",
+                        "count": addrs.len(),
+                        "contracts": addrs
+                    })),
+                    Err(e) => api_json(serde_json::json!({"status":"error","msg":e})),
+                }
+            });
 
-    #[cfg(not(feature = "vm"))]
-    let deploy_route = {
-        let deploy = warp::path("deploy-contract")
-            .and(warp::post())
-            .map(|| api_json(serde_json::json!({"status":"error","msg":"VM feature not enabled"})));
-        let call = warp::path("call-contract")
-            .and(warp::post())
-            .map(|| api_json(serde_json::json!({"status":"error","msg":"VM feature not enabled"})));
-        let get_contract = warp::path!("contract" / String).map(|_: String| {
-            api_json(serde_json::json!({"status":"error","msg":"VM feature not enabled"}))
-        });
         deploy
             .boxed()
             .or(call.boxed())
             .or(get_contract.boxed())
+            .or(list_contracts_route.boxed())
             .boxed()
     };
 
@@ -4092,6 +4307,16 @@ fn print_history_table(blocks: Vec<&Block>) {
                 format!("-{}", amt_str),
                 format!("Evidence: {}", &b.link[..10.min(b.link.len())]),
             ),
+            BlockType::ContractDeploy => (
+                "📦 DEPLOY",
+                format!("-{}", amt_str),
+                format!("Code: {}", &b.link[..16.min(b.link.len())]),
+            ),
+            BlockType::ContractCall => (
+                "⚙️ CALL",
+                format!("-{}", amt_str),
+                format!("Contract: {}", &b.link[..16.min(b.link.len())]),
+            ),
         };
 
         let hash_short = if b.calculate_hash().len() > 8 {
@@ -5118,6 +5343,21 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
     let api_abft = Arc::clone(&abft_consensus);
 
+    // --- WASM Smart Contract Engine (shared between API + P2P) ---
+    let wasm_engine = Arc::new(WasmEngine::new());
+    // Restore contract state from DB (if any contracts were previously deployed)
+    match database.load_contracts() {
+        Ok(Some(vm_data)) => {
+            match wasm_engine.deserialize_all(&vm_data) {
+                Ok(count) => println!("✅ Restored {} smart contracts from database", count),
+                Err(e) => eprintln!("⚠️ Failed to restore contracts: {}", e),
+            }
+        }
+        Ok(None) => { /* No contracts deployed yet */ }
+        Err(e) => eprintln!("⚠️ Failed to load contracts from DB: {}", e),
+    }
+    let api_wasm_engine = Arc::clone(&wasm_engine);
+
     tokio::spawn(async move {
         start_api_server(ApiServerConfig {
             ledger: api_ledger,
@@ -5141,6 +5381,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             mempool_pool: api_mempool,
             abft_consensus: api_abft,
             local_registered_validators: api_local_validators,
+            wasm_engine: api_wasm_engine,
         })
         .await;
     });
@@ -7959,6 +8200,167 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                             SAVE_DIRTY.store(true, Ordering::Relaxed);
                                             println!("✅ Applied BLOCK_CONFIRMED: {} → {} ({} CIL)",
                                                 get_short_addr(&send_blk.account), get_short_addr(&recv_blk.account), send_blk.amount);
+                                        }
+                                    }
+                                }
+                            }
+                        } else if data.starts_with("CONTRACT_DEPLOYED:") {
+                            // CROSS-NODE CONTRACT REPLICATION
+                            // Format: CONTRACT_DEPLOYED:{block_b64}:{bytecode_b64}:{contract_addr}
+                            let parts: Vec<&str> = data.splitn(4, ':').collect();
+                            if parts.len() == 4 {
+                                let block_opt: Option<Block> = base64::engine::general_purpose::STANDARD
+                                    .decode(parts[1]).ok()
+                                    .and_then(|bytes| serde_json::from_slice(&bytes).ok());
+                                let bytecode_opt = base64::engine::general_purpose::STANDARD.decode(parts[2]).ok();
+                                let _contract_addr = parts[3].to_string();
+
+                                if let (Some(deploy_blk), Some(bytecode)) = (block_opt, bytecode_opt) {
+                                    // Validate: must be ContractDeploy + valid sig + valid PoW
+                                    let valid = deploy_blk.block_type == BlockType::ContractDeploy
+                                        && deploy_blk.verify_signature()
+                                        && deploy_blk.verify_pow()
+                                        && deploy_blk.link.starts_with("DEPLOY:");
+
+                                    if !valid {
+                                        println!("🚫 Rejected CONTRACT_DEPLOYED: validation failed");
+                                    } else {
+                                        let deploy_hash = deploy_blk.calculate_hash();
+                                        let mut l = safe_lock(&ledger);
+                                        if !l.blocks.contains_key(&deploy_hash) {
+                                            // Apply block to ledger (debit fees)
+                                            if !l.accounts.contains_key(&deploy_blk.account) {
+                                                l.accounts.insert(deploy_blk.account.clone(), AccountState {
+                                                    head: "0".to_string(), balance: 0, block_count: 0, is_validator: false,
+                                                });
+                                            }
+                                            if let Some(deployer) = l.accounts.get_mut(&deploy_blk.account) {
+                                                let total_debit = deploy_blk.amount.saturating_add(deploy_blk.fee);
+                                                deployer.balance = deployer.balance.saturating_sub(total_debit);
+                                                deployer.head = deploy_hash.clone();
+                                                deployer.block_count += 1;
+                                            }
+                                            l.accumulated_fees_cil += deploy_blk.fee;
+                                            l.blocks.insert(deploy_hash, deploy_blk.clone());
+                                            drop(l); // Release ledger lock before VM operations
+
+                                            // Deploy to local WASM engine
+                                            let code_hash = WasmEngine::compute_code_hash(&bytecode);
+                                            let expected_hash = &deploy_blk.link[7..]; // After "DEPLOY:"
+                                            if code_hash.starts_with(expected_hash) || expected_hash.starts_with(&code_hash[..expected_hash.len().min(code_hash.len())]) {
+                                                let now_ts = std::time::SystemTime::now()
+                                                    .duration_since(std::time::UNIX_EPOCH)
+                                                    .unwrap_or_default()
+                                                    .as_secs();
+                                                match wasm_engine.deploy_contract(
+                                                    deploy_blk.account.clone(),
+                                                    bytecode,
+                                                    HashMap::new(),
+                                                    now_ts,
+                                                ) {
+                                                    Ok(addr) => {
+                                                        // Fund contract if amount > 0
+                                                        if deploy_blk.amount > 0 {
+                                                            let _ = wasm_engine.send_to_contract(&addr, deploy_blk.amount);
+                                                        }
+                                                        // Persist VM state
+                                                        if let Ok(vm_data) = wasm_engine.serialize_all() {
+                                                            let _ = database.save_contracts(&vm_data);
+                                                        }
+                                                        println!("✅ Replicated CONTRACT_DEPLOYED: {} (owner: {})",
+                                                            addr, get_short_addr(&deploy_blk.account));
+                                                    }
+                                                    Err(e) => eprintln!("⚠️ Failed to replicate contract deploy: {}", e),
+                                                }
+                                            } else {
+                                                eprintln!("🚫 CONTRACT_DEPLOYED: code hash mismatch");
+                                            }
+
+                                            SAVE_DIRTY.store(true, Ordering::Relaxed);
+                                        }
+                                    }
+                                }
+                            }
+                        } else if data.starts_with("CONTRACT_CALLED:") {
+                            // CROSS-NODE CONTRACT CALL REPLICATION
+                            // Format: CONTRACT_CALLED:{block_b64}
+                            let parts: Vec<&str> = data.splitn(2, ':').collect();
+                            if parts.len() == 2 {
+                                let block_opt: Option<Block> = base64::engine::general_purpose::STANDARD
+                                    .decode(parts[1]).ok()
+                                    .and_then(|bytes| serde_json::from_slice(&bytes).ok());
+
+                                if let Some(call_blk) = block_opt {
+                                    let valid = call_blk.block_type == BlockType::ContractCall
+                                        && call_blk.verify_signature()
+                                        && call_blk.verify_pow()
+                                        && call_blk.link.starts_with("CALL:");
+
+                                    if !valid {
+                                        println!("🚫 Rejected CONTRACT_CALLED: validation failed");
+                                    } else {
+                                        let call_hash = call_blk.calculate_hash();
+                                        let mut l = safe_lock(&ledger);
+                                        if !l.blocks.contains_key(&call_hash) {
+                                            // Apply block to ledger (debit fees + value)
+                                            if !l.accounts.contains_key(&call_blk.account) {
+                                                l.accounts.insert(call_blk.account.clone(), AccountState {
+                                                    head: "0".to_string(), balance: 0, block_count: 0, is_validator: false,
+                                                });
+                                            }
+                                            if let Some(caller_acct) = l.accounts.get_mut(&call_blk.account) {
+                                                let total_debit = call_blk.amount.saturating_add(call_blk.fee);
+                                                caller_acct.balance = caller_acct.balance.saturating_sub(total_debit);
+                                                caller_acct.head = call_hash.clone();
+                                                caller_acct.block_count += 1;
+                                            }
+                                            l.accumulated_fees_cil += call_blk.fee;
+                                            l.blocks.insert(call_hash, call_blk.clone());
+                                            drop(l);
+
+                                            // Parse call data from link: "CALL:{addr}:{func}:{args_b64}"
+                                            let call_data = &call_blk.link[5..];
+                                            let call_parts: Vec<&str> = call_data.splitn(3, ':').collect();
+                                            if call_parts.len() >= 2 {
+                                                let contract_addr = call_parts[0];
+                                                let function = call_parts[1];
+                                                let args: Vec<String> = if call_parts.len() == 3 {
+                                                    base64::engine::general_purpose::STANDARD
+                                                        .decode(call_parts[2]).ok()
+                                                        .and_then(|bytes| serde_json::from_slice(&bytes).ok())
+                                                        .unwrap_or_default()
+                                                } else {
+                                                    Vec::new()
+                                                };
+                                                let gas_limit = call_blk.fee / los_core::GAS_PRICE_CIL.max(1);
+
+                                                // Value transfer to contract
+                                                if call_blk.amount > 0 {
+                                                    let _ = wasm_engine.send_to_contract(contract_addr, call_blk.amount);
+                                                }
+
+                                                // Execute deterministically (same result on all nodes)
+                                                let call = ContractCall {
+                                                    contract: contract_addr.to_string(),
+                                                    function: function.to_string(),
+                                                    args,
+                                                    gas_limit: gas_limit as u64,
+                                                    caller: call_blk.account.clone(),
+                                                };
+                                                match wasm_engine.call_contract(call) {
+                                                    Ok(result) => {
+                                                        if let Ok(vm_data) = wasm_engine.serialize_all() {
+                                                            let _ = database.save_contracts(&vm_data);
+                                                        }
+                                                        println!("✅ Replicated CONTRACT_CALLED: {}::{} → {}",
+                                                            contract_addr, function,
+                                                            if result.success { "OK" } else { "FAIL" });
+                                                    }
+                                                    Err(e) => eprintln!("⚠️ Failed to replicate contract call: {}", e),
+                                                }
+                                            }
+
+                                            SAVE_DIRTY.store(true, Ordering::Relaxed);
                                         }
                                     }
                                 }

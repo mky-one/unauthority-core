@@ -19,6 +19,10 @@ path = "token.rs"
 name = "oracle_price_feed"
 path = "oracle_price_feed.rs"
 
+[[bin]]
+name = "dex_amm"
+path = "dex_amm.rs"
+
 [profile.release]
 opt-level = "z"      # Optimize for size
 lto = true           # Link-time optimization

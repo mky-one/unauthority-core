@@ -481,6 +481,8 @@ impl LosMetrics {
                 los_core::BlockType::Mint => mint_count += 1,
                 los_core::BlockType::Change => {} // Skip change blocks for now
                 los_core::BlockType::Slash => {} // Slash blocks counted separately via slashing manager
+                los_core::BlockType::ContractDeploy => {} // Counted via contracts_deployed_total
+                los_core::BlockType::ContractCall => {} // Counted via contract_executions_total
             }
         }
 

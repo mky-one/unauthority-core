@@ -29,7 +29,12 @@
 set -e
 
 # ── Configuration ────────────────────────────────────────────────────────────
-VERSION="1.0.0-testnet"
+NETWORK="${NETWORK:-testnet}"
+if [ "$NETWORK" = "mainnet" ]; then
+    VERSION="1.0.0"
+else
+    VERSION="1.0.0-testnet"
+fi
 APP_NAME="LOS Wallet"
 BUNDLE_ID="com.unauthority.wallet"
 
@@ -107,7 +112,7 @@ echo "━━━━━━━━━━━━━━━━━━━━━━━━�
 
 cd "$WALLET_DIR"
 flutter pub get
-flutter build "$TARGET_PLATFORM" --release 2>&1
+flutter build "$TARGET_PLATFORM" --release --dart-define=NETWORK="$NETWORK" 2>&1
 
 echo "✅ Flutter build complete"
 echo ""

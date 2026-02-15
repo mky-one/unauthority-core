@@ -248,9 +248,12 @@ class _SetupWizardScreenState extends State<SetupWizardScreen> {
       // MAINNET PARITY: ALWAYS use .onion P2P addresses.
       // No localhost/127.0.0.1 — Tor onion routing is mandatory.
       await NetworkConfig.load();
-      final testnetNodes = NetworkConfig.testnetNodes;
-      final bootstrapAddresses =
-          testnetNodes.map((n) => n.p2pAddress).join(',');
+      const networkMode =
+          String.fromEnvironment('NETWORK', defaultValue: 'testnet');
+      final nodes = networkMode == 'mainnet'
+          ? NetworkConfig.mainnetNodes
+          : NetworkConfig.testnetNodes;
+      final bootstrapAddresses = nodes.map((n) => n.p2pAddress).join(',');
       debugPrint('\ud83c\udf10 Bootstrap nodes (.onion): $bootstrapAddresses');
 
       // P2P port: auto-derived from API port + 1000 (matches los-node)

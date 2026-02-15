@@ -128,7 +128,12 @@ class WalletTestnetConfig {
 
 /// Global wallet configuration
 class WalletConfig {
-  static WalletTestnetConfig _current = WalletTestnetConfig.functionalTestnet();
+  /// Build-time flag: --dart-define=NETWORK=mainnet
+  static const _networkMode =
+      String.fromEnvironment('NETWORK', defaultValue: 'testnet');
+  static WalletTestnetConfig _current = _networkMode == 'mainnet'
+      ? WalletTestnetConfig.mainnet()
+      : WalletTestnetConfig.functionalTestnet();
 
   static WalletTestnetConfig get current => _current;
 
@@ -152,6 +157,12 @@ class WalletConfig {
 
   /// Detect from environment variable (if set)
   static void detectFromEnvironment() {
+    final networkMode =
+        const String.fromEnvironment('NETWORK', defaultValue: 'testnet');
+    if (networkMode == 'mainnet') {
+      useMainnet();
+      return;
+    }
     final env = const String.fromEnvironment('LOS_TESTNET_LEVEL',
         defaultValue: 'functional');
 

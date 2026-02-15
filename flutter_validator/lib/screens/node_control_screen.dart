@@ -182,20 +182,7 @@ class _NodeControlScreenState extends State<NodeControlScreen>
                 ],
               ),
             ),
-          Container(
-            margin: const EdgeInsets.only(right: 8),
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-            decoration: BoxDecoration(
-                color: Colors.orange.withValues(alpha: 0.2),
-                borderRadius: BorderRadius.circular(12),
-                border:
-                    Border.all(color: Colors.orange.withValues(alpha: 0.5))),
-            child: const Text('TESTNET',
-                style: TextStyle(
-                    fontSize: 10,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.orange)),
-          ),
+          _NetworkBadge(),
         ],
         bottom: TabBar(
           controller: _tabController,
@@ -569,10 +556,14 @@ class _NodeControlScreenState extends State<NodeControlScreen>
       // Build bootstrap nodes for P2P discovery.
       // MAINNET PARITY: ALWAYS use .onion P2P addresses.
       // No localhost/127.0.0.1 — Tor onion routing is mandatory.
-      final testnetNodes = NetworkConfig.testnetNodes;
+      const networkMode =
+          String.fromEnvironment('NETWORK', defaultValue: 'testnet');
+      final activeNodes = networkMode == 'mainnet'
+          ? NetworkConfig.mainnetNodes
+          : NetworkConfig.testnetNodes;
       String? bootstrapNodes;
-      if (testnetNodes.isNotEmpty) {
-        bootstrapNodes = testnetNodes.map((n) => n.p2pAddress).join(',');
+      if (activeNodes.isNotEmpty) {
+        bootstrapNodes = activeNodes.map((n) => n.p2pAddress).join(',');
         debugPrint('\ud83c\udf10 Bootstrap nodes (.onion): $bootstrapNodes');
       }
 
@@ -915,6 +906,30 @@ class _NodeControlScreenState extends State<NodeControlScreen>
                   style: const TextStyle(color: Colors.red))),
         ],
       ),
+    );
+  }
+}
+
+/// Network badge widget — shows TESTNET (orange) or MAINNET (green)
+class _NetworkBadge extends StatelessWidget {
+  static const _isMainnet =
+      String.fromEnvironment('NETWORK', defaultValue: 'testnet') == 'mainnet';
+
+  @override
+  Widget build(BuildContext context) {
+    final label = _isMainnet ? 'MAINNET' : 'TESTNET';
+    final color = _isMainnet ? Colors.green : Colors.orange;
+    return Container(
+      margin: const EdgeInsets.only(right: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.2),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: color.withValues(alpha: 0.5)),
+      ),
+      child: Text(label,
+          style: TextStyle(
+              fontSize: 10, fontWeight: FontWeight.bold, color: color)),
     );
   }
 }

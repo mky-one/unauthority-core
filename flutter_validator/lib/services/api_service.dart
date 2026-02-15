@@ -137,12 +137,20 @@ class ApiService {
   /// Whether a Tor SOCKS recovery is already in progress.
   bool _torRecoveryInProgress = false;
 
+  /// Build-time flag: --dart-define=NETWORK=mainnet
+  static const _networkMode =
+      String.fromEnvironment('NETWORK', defaultValue: 'testnet');
+  static NetworkEnvironment get _defaultEnvironment => _networkMode == 'mainnet'
+      ? NetworkEnvironment.mainnet
+      : NetworkEnvironment.testnet;
+
   ApiService({
     String? customUrl,
-    this.environment = NetworkEnvironment.testnet,
+    NetworkEnvironment? environment,
     TorService? torService,
     String? excludeOwnOnion,
-  }) : _torService = torService ?? TorService() {
+  })  : environment = environment ?? _defaultEnvironment,
+        _torService = torService ?? TorService() {
     _excludedOnionUrl = excludeOwnOnion;
     _loadBootstrapUrls(environment);
     if (customUrl != null) {

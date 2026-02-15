@@ -306,6 +306,7 @@ class NodeProcessService extends ChangeNotifier {
   /// [torSocks5] — Tor SOCKS5 proxy address (e.g. '127.0.0.1:9052')
   /// [testnetLevel] — Testnet level: 'functional', 'consensus', or 'production'
   ///                  Defaults to 'consensus' (Level 2) for real multi-node testing.
+  ///                  On mainnet builds, this is ignored (los-node forces production).
   ///                  Use 'functional' ONLY for local single-node dev.
   Future<bool> start({
     int port = 3035,

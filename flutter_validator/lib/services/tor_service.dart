@@ -21,7 +21,7 @@ class TorService {
 
   /// Well-known SOCKS ports to probe for existing Tor instances.
   static const int torBrowserPort = 9150;
-  static const int testnetTorPort = 9052;
+  static const int losTorPort = 9052;
   static const int systemTorPort = 9050;
 
   Process? _torProcess;
@@ -954,7 +954,7 @@ UseBridges 0
     // can't actually route traffic.
     final candidates = [
       (bundledSocksPort, 'LOS Bundled Tor'),
-      (testnetTorPort, 'LOS Testnet Tor'),
+      (losTorPort, 'LOS Tor'),
       (systemTorPort, 'System Tor'),
       (torBrowserPort, 'Tor Browser'),
     ];

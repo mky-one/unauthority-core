@@ -183,9 +183,10 @@ class NetworkSettingsScreen extends StatelessWidget {
             trailing: WalletConfig.current.network == NetworkType.mainnet
                 ? const Icon(Icons.check_circle, color: Colors.green)
                 : null,
-            enabled: false, // Will be enabled when mainnet launches
+            enabled: true,
             onTap: () {
-              // WalletConfig.useMainnet();
+              WalletConfig.useMainnet();
+              Navigator.pop(context);
             },
           ),
           const Padding(

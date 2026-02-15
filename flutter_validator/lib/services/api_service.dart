@@ -451,26 +451,50 @@ class ApiService {
   }
 
   /// Execute an HTTP request with intelligent failover.
-  /// Handles: timeouts, connection errors, AND HTTP 5xx server errors.
   ///
-  /// STRATEGY: "Stick with what works" (sticky node)
-  /// - Current node gets 2 retries before we consider switching.
-  ///   Tor latency varies wildly (3s-30s), so a single timeout is normal.
-  /// - Only switch to next node after 2 consecutive failures on current.
-  /// - If SOCKS proxy is dead → skip all .onion nodes, go straight to local.
-  /// - Local node fallback if ALL external nodes fail.
-  /// - Tor auto-recovery if SOCKS proxy died.
+  /// STRATEGY: "Local first, external as background upgrade"
+  /// When we have a local node running → use it IMMEDIATELY (< 100ms).
+  /// Don't waste 45-225s trying .onion nodes through Tor SOCKS first.
+  ///
+  /// Order:
+  /// 1. Local node (direct HTTP, no SOCKS) — instant response
+  /// 2. External .onion peer via Tor SOCKS (sticky + retry)
+  /// 3. Failover to other .onion nodes
   Future<http.Response> _requestWithFailover(
     Future<http.Response> Function(String url) requestFn,
     String endpoint,
   ) async {
     await ensureReady();
 
-    bool socksDead = false; // Set true on "Connection refused" to skip Phase 1b
+    // ── Phase 0: Local node FIRST (instant, no Tor needed) ──
+    // The node is running at 127.0.0.1:3035 — response in < 100ms.
+    // Don't make the user wait 45-225s for Tor when local data is available.
+    if (_localNodeUrl != null) {
+      try {
+        final response = await _directClient
+            .get(Uri.parse('$_localNodeUrl$endpoint'))
+            .timeout(const Duration(seconds: 5));
 
-    // ── Phase 1: Try current node FIRST with a retry ──
-    // Give the current (sticky) node 2 chances before switching.
-    // This prevents unnecessary host-cycling on normal Tor jitter.
+        if (response.statusCode < 500) {
+          if (!_usingLocalFallback) {
+            _usingLocalFallback = true;
+            debugPrint('🏠 Using local node (instant) — '
+                'Dashboard data from local node');
+          }
+          // Trigger initial discovery (once) so we learn about external peers
+          if (!_initialDiscoveryDone) {
+            _initialDiscoveryDone = true;
+            Future.microtask(() => _runInitialDiscovery());
+          }
+          return response;
+        }
+      } on Exception catch (_) {
+        // Local node not responding — fall through to external nodes
+      }
+    }
+
+    // ── Phase 1: Try current external node with a retry ──
+    bool socksDead = false;
     for (var retry = 0; retry < 2; retry++) {
       try {
         final sw = Stopwatch()..start();
@@ -480,19 +504,16 @@ class ApiService {
         _getHealth(baseUrl).recordSuccess(sw.elapsedMilliseconds);
 
         if (response.statusCode >= 500) {
-          debugPrint(
-              '⚠️ Node ${_currentNodeIndex + 1} returned HTTP ${response.statusCode} for $endpoint');
           _getHealth(baseUrl).recordFailure();
-          break; // Server error → don't retry same node, fall through to other nodes
+          break;
         }
 
-        // Success — clear local fallback flag
+        // Success via external peer — clear local fallback
         if (_usingLocalFallback) {
           _usingLocalFallback = false;
           debugPrint('🌐 Restored external .onion connectivity');
         }
 
-        // Trigger initial discovery + latency probes (once)
         if (!_initialDiscoveryDone) {
           _initialDiscoveryDone = true;
           Future.microtask(() => _runInitialDiscovery());
@@ -502,32 +523,24 @@ class ApiService {
       } on Exception catch (e) {
         _getHealth(baseUrl).recordFailure();
         if (retry == 0) {
-          debugPrint(
-              '⚠️ Node ${_currentNodeIndex + 1} failed for $endpoint (retry 1/2): $e');
-          // Detect dead SOCKS proxy — all .onion nodes will fail too,
-          // so skip Phase 1b entirely (saves 90+ seconds of pointless retries)
           final errStr = e.toString();
           if (errStr.contains('Connection refused') ||
               errStr.contains('SOCKS') ||
               errStr.contains('Proxy')) {
             _triggerTorRecovery();
             socksDead = true;
-            break; // SOCKS dead → skip to local fallback immediately
+            break;
           }
-          continue; // Normal Tor jitter → retry same node once
+          continue;
         }
-        debugPrint(
-            '⚠️ Node ${_currentNodeIndex + 1} failed for $endpoint (retry 2/2): $e');
       }
     }
 
-    // ── Phase 1b: Try other available nodes (max 2 more attempts) ──
-    // SKIP entirely if SOCKS proxy is dead — all .onion nodes go through
-    // the same proxy, so they'll ALL fail. Don't waste 2 × 45s.
+    // ── Phase 1b: Try other nodes (skip if SOCKS dead) ──
     if (!socksDead) {
       final otherAttempts = (_bootstrapUrls.length - 1).clamp(0, 2);
       for (var i = 0; i < otherAttempts; i++) {
-        if (!_switchToNextNode()) break; // No more nodes to try
+        if (!_switchToNextNode()) break;
         try {
           final sw = Stopwatch()..start();
           final response = await requestFn(baseUrl).timeout(_timeout);
@@ -542,7 +555,7 @@ class ApiService {
 
           if (_usingLocalFallback) {
             _usingLocalFallback = false;
-            debugPrint('🌐 Restored external .onion connectivity via failover');
+            debugPrint('🌐 Restored external .onion via failover');
           }
 
           if (!_initialDiscoveryDone) {
@@ -559,31 +572,7 @@ class ApiService {
       }
     }
 
-    // ── Phase 2: Local node fallback (direct HTTP, no SOCKS) ──
-    if (_localNodeUrl != null) {
-      try {
-        debugPrint('🏠 Trying local node fallback: $_localNodeUrl$endpoint');
-        final response = await _directClient
-            .get(Uri.parse('$_localNodeUrl$endpoint'))
-            .timeout(const Duration(seconds: 10));
-
-        if (response.statusCode < 500) {
-          if (!_usingLocalFallback) {
-            _usingLocalFallback = true;
-            debugPrint('🏠 Using local node fallback (Tor unavailable) — '
-                'Dashboard data is from local node only');
-          }
-          return response;
-        }
-      } on Exception catch (e) {
-        debugPrint('❌ Local node fallback also failed for $endpoint: $e');
-      }
-    } else {
-      debugPrint('⚠️ No local node URL set — '
-          'start your node first for offline fallback');
-    }
-
-    // ── Phase 3: Everything failed ──
+    // ── Phase 2: Everything failed ──
     throw Exception('All nodes unreachable for $endpoint');
   }
 

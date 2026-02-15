@@ -305,11 +305,13 @@ impl ABFTConsensus {
             ));
         }
 
-        // Record prepare vote
-        self.prepare_votes
-            .entry(msg.sequence)
-            .or_default()
-            .push(msg);
+        // Record prepare vote — SECURITY FIX M-3: Dedup by sender.
+        // Without this, a Byzantine validator could replay prepare messages
+        // to artificially reach quorum (2f+1) and force consensus.
+        let votes = self.prepare_votes.entry(msg.sequence).or_default();
+        if !votes.iter().any(|v| v.sender == msg.sender) {
+            votes.push(msg);
+        }
 
         Ok(())
     }
@@ -332,8 +334,13 @@ impl ABFTConsensus {
 
         let sequence = msg.sequence;
 
-        // Record commit vote
-        self.commit_votes.entry(sequence).or_default().push(msg);
+        // Record commit vote — SECURITY FIX M-3: Dedup by sender.
+        // Same rationale as prepare(): prevents a single Byzantine validator
+        // from replaying commit messages to force finalization.
+        let votes = self.commit_votes.entry(sequence).or_default();
+        if !votes.iter().any(|v| v.sender == msg.sender) {
+            votes.push(msg);
+        }
 
         // Check if we reached consensus (2f+1 commits)
         if let Some(commit_votes) = self.commit_votes.get(&sequence) {
@@ -698,5 +705,117 @@ mod tests {
         let result = consensus.complete_view_change(1);
         assert!(result.is_ok());
         assert_eq!(consensus.state, ValidatorState::Normal);
+    }
+
+    #[test]
+    fn test_prepare_vote_dedup_by_sender() {
+        // SECURITY FIX M-3: Verify that duplicate prepare votes from the same
+        // sender are rejected. Without dedup, a single Byzantine validator could
+        // replay prepare messages to artificially reach quorum.
+        let mut consensus = ABFTConsensus::new("validator-1".to_string(), 7);
+        // 7 validators → f=2, quorum=5
+
+        // Pre-prepare to set state
+        let block = Block {
+            height: 1,
+            timestamp: 1000,
+            data: vec![1, 2, 3],
+            proposer: "validator-1".to_string(),
+            parent_hash: "0".to_string(),
+        };
+        let _pp = consensus.pre_prepare(block).unwrap();
+        let seq = consensus.sequence;
+
+        // Byzantine validator sends 10 identical prepare votes
+        for _ in 0..10 {
+            let msg = ConsensusMessage::new(
+                ConsensusMessageType::Prepare,
+                0,
+                seq,
+                "test_block_hash".to_string(),
+                "byzantine-validator".to_string(),
+            );
+            let _ = consensus.prepare(msg);
+        }
+
+        // Should only count as 1 vote, NOT 10
+        let votes = consensus.prepare_votes.get(&seq).unwrap();
+        assert_eq!(votes.len(), 1, "Duplicate prepare votes from same sender must be rejected");
+        // quorum=5, only 1 unique vote → cannot commit
+        assert!(!consensus.can_commit(seq), "Should NOT reach quorum with only 1 unique voter");
+    }
+
+    #[test]
+    fn test_commit_vote_dedup_by_sender() {
+        // SECURITY FIX M-3: Same dedup test for commit phase.
+        let mut consensus = ABFTConsensus::new("validator-1".to_string(), 7);
+
+        let block = Block {
+            height: 1,
+            timestamp: 1000,
+            data: vec![1, 2, 3],
+            proposer: "validator-1".to_string(),
+            parent_hash: "0".to_string(),
+        };
+        let _pp = consensus.pre_prepare(block).unwrap();
+        let seq = consensus.sequence;
+
+        // Byzantine validator sends 10 identical commit votes
+        for _ in 0..10 {
+            let msg = ConsensusMessage::new(
+                ConsensusMessageType::Commit,
+                0,
+                seq,
+                "test_block_hash".to_string(),
+                "byzantine-validator".to_string(),
+            );
+            let result = consensus.commit(msg);
+            // Should NOT finalize (only 1 unique committer)
+            assert!(!result.unwrap_or(false), "Byzantine replay must not force finalization");
+        }
+
+        let votes = consensus.commit_votes.get(&seq).unwrap();
+        assert_eq!(votes.len(), 1, "Duplicate commit votes from same sender must be rejected");
+    }
+
+    #[test]
+    fn test_quorum_requires_unique_senders() {
+        // Verify that quorum is reached only with distinct validators.
+        let mut consensus = ABFTConsensus::new("validator-1".to_string(), 7);
+        // quorum = 2*2+1 = 5
+
+        let block = Block {
+            height: 1,
+            timestamp: 1000,
+            data: vec![1, 2, 3],
+            proposer: "validator-1".to_string(),
+            parent_hash: "0".to_string(),
+        };
+        let _pp = consensus.pre_prepare(block).unwrap();
+        let seq = consensus.sequence;
+
+        // Send 4 unique prepare votes (below quorum)
+        for i in 0..4 {
+            let msg = ConsensusMessage::new(
+                ConsensusMessageType::Prepare,
+                0,
+                seq,
+                "test_block_hash".to_string(),
+                format!("validator-{}", i + 10),
+            );
+            let _ = consensus.prepare(msg);
+        }
+        assert!(!consensus.can_commit(seq), "4 votes < quorum 5");
+
+        // 5th unique validator → quorum reached
+        let msg5 = ConsensusMessage::new(
+            ConsensusMessageType::Prepare,
+            0,
+            seq,
+            "test_block_hash".to_string(),
+            "validator-15".to_string(),
+        );
+        let _ = consensus.prepare(msg5);
+        assert!(consensus.can_commit(seq), "5 unique votes should reach quorum");
     }
 }

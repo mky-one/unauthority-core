@@ -9,24 +9,31 @@ Validator node dashboard for **Unauthority (LOS)** blockchain. Track node status
 - **Node Monitoring** — block height, finality times, transaction throughput
 - **Slashing Alerts** — track penalties and validator health
 - **Consensus Status** — aBFT safety parameters and quorum tracking
-- **Built-in Tor** — connects to .onion nodes automatically
+- **Bundled los-node** — includes full validator binary (no separate install needed)
+- **Built-in Tor** — auto-downloads Tor Expert Bundle (no Tor Browser needed)
 - **CRYSTALS-Dilithium5** — post-quantum digital signatures via native Rust FFI
 
 ## Download
 
 Pre-built releases for macOS, Windows, and Linux:
 
-**[Download from GitHub Releases](https://github.com/unauthoritymky-6236/unauthority-core/releases/tag/validator-v1.0.1-testnet)**
+**[Download from GitHub Releases](https://github.com/monkey-one/unauthority-core/releases/tag/validator-v1.0.10-testnet)**
 
 | Platform | File |
 |----------|------|
-| macOS | `LOS-Validator-*-macos.dmg` |
-| Windows | `LOS-Validator-*-windows-x64.zip` |
-| Linux | `LOS-Validator-*-linux-x64.tar.gz` |
+| macOS | `LOS-Validator-1.0.10-testnet-macos.dmg` |
+| Windows | `LOS-Validator-1.0.10-testnet-windows-x64.zip` |
+| Linux | `LOS-Validator-1.0.10-testnet-linux-x64.tar.gz` |
 
-> **macOS:** Apple blocks unsigned apps. After install, run:
-> `xattr -cr /Applications/LOS\ Validator\ Node.app`
+> **macOS:** If blocked, run: `xattr -d com.apple.quarantine /Applications/LOS\ Validator\ Node.app`  
 > Or: System Settings → Privacy & Security → Open Anyway
+>
+> **Windows:** Click "More info" → "Run anyway" if SmartScreen blocks the app.  
+> **Linux:** Run via `run.sh` (sets `LD_LIBRARY_PATH` for native library).
+>
+> **First Launch:** The dashboard auto-downloads Tor Expert Bundle (~20MB, 1-2 min).
+>
+> **Bundled Binary:** The validator includes `los-node` (full validator binary) — no separate installation needed. Click "START NODE" in the dashboard to launch.
 
 ## Build from Source
 
@@ -54,18 +61,34 @@ flutter build windows --release  # Windows
 
 ## Connect to a Node
 
-1. Open the app
-2. Go to **Settings**
-3. Enter your node endpoint:
+The dashboard **auto-connects** to testnet peers via Tor (no configuration needed). When you click "START NODE", the bundled `los-node` binary launches automatically.
+
+### Manual Configuration (Optional)
+
+To connect to a remote node instead of the bundled binary:
+
+1. Open the app → **Settings**
+2. Enter your node endpoint:
    - Local node: `http://localhost:3030`
-   - Tor testnet: `http://fhljoiopyz2eflttc7o5qwfj6l6skhtlkjpn4r6yw4atqpy2azydnnqd.onion`
-4. Click **Test Connection** → **Save**
+   - Remote testnet peer: `http://<peer-onion-address>:3030`
+3. Click **Test Connection** → **Save**
+
+**See also:** [Testnet Quick Start Guide](../TESTNET_QUICKSTART.md)
 
 ## Running a Validator
 
-To run your own validator node, see the [Testnet Run Guide](../dev_docs/TESTNET_RUN_GUIDE.md).
+The dashboard includes a bundled `los-node` binary — no separate installation needed.
 
-Minimum stake requirement: **1,000 LOS**.
+**Quick Start:**
+1. Open the validator dashboard
+2. Import or generate validator keys
+3. Click "**START NODE**" to launch the bundled binary
+4. Register as a validator (requires **1,000 LOS** minimum stake)
+5. Monitor consensus participation in the dashboard
+
+**See also:**
+- [Testnet Quick Start Guide](../TESTNET_QUICKSTART.md)
+- [Validator Guide (Technical)](../docs/VALIDATOR_GUIDE.md)
 
 ## Project Structure
 

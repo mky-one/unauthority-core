@@ -11,24 +11,29 @@ Desktop wallet for the **Unauthority (LOS)** blockchain. Send, receive, and burn
 - **Address Book** — save frequently used addresses
 - **Transaction History** — view all past transactions
 - **QR Code** — share your address via QR
-- **Built-in Tor** — connects to .onion testnet automatically, no Tor Browser needed
+- **Built-in Tor** — auto-downloads Tor Expert Bundle (no Tor Browser needed)
 - **CRYSTALS-Dilithium5** — post-quantum digital signatures via native Rust FFI
+- **Multi-Platform** — macOS (Intel + Apple Silicon), Linux, Windows
 
 ## Download
 
 Pre-built releases for macOS, Windows, and Linux:
 
-**[Download from GitHub Releases](https://github.com/unauthoritymky-6236/unauthority-core/releases/tag/wallet-v1.0.1-testnet)**
+**[Download from GitHub Releases](https://github.com/monkey-one/unauthority-core/releases/tag/wallet-v1.0.8-testnet)**
 
 | Platform | File |
 |----------|------|
-| macOS | `LOS-Wallet-*-macos.dmg` |
-| Windows | `LOS-Wallet-*-windows-x64.zip` |
-| Linux | `LOS-Wallet-*-linux-x64.tar.gz` |
+| macOS | `LOS-Wallet-1.0.8-testnet-macos.dmg` |
+| Windows | `LOS-Wallet-1.0.8-testnet-windows-x64.zip` |
+| Linux | `LOS-Wallet-1.0.8-testnet-linux-x64.tar.gz` |
 
-> **macOS:** Apple blocks unsigned apps. After install, run:
-> `xattr -cr /Applications/LOS\ Wallet.app`
+> **macOS:** If blocked, run: `xattr -d com.apple.quarantine /Applications/LOS\ Wallet.app`  
 > Or: System Settings → Privacy & Security → Open Anyway
+>
+> **Windows:** Click "More info" → "Run anyway" if SmartScreen blocks the app.  
+> **Linux:** Run via `run.sh` (sets `LD_LIBRARY_PATH` for native library).
+>
+> **First Launch:** The wallet auto-downloads Tor Expert Bundle (~20MB, 1-2 min).
 
 ## Build from Source
 
@@ -58,16 +63,19 @@ The native library (`liblos_crypto_ffi.dylib` / `.so` / `.dll`) must be placed a
 
 ## Connect to Testnet
 
-The wallet auto-connects via Tor. If you need to configure manually:
+The wallet **auto-connects** to testnet peers via Tor (no configuration needed). Tor downloads automatically on first launch.
+
+### Manual Configuration (Optional)
+
+If auto-discovery fails:
 
 1. Open the app → **Settings** tab
-2. Enter the node endpoint:
-   ```
-   http://fhljoiopyz2eflttc7o5qwfj6l6skhtlkjpn4r6yw4atqpy2azydnnqd.onion
-   ```
+2. Enter a peer endpoint manually (e.g., `http://<peer-onion-address>:3030`)
 3. Click **Test Connection** → **Save & Reconnect**
 
 For local development, use `http://localhost:3030` instead.
+
+**See also:** [Testnet Quick Start Guide](../TESTNET_QUICKSTART.md)
 
 ## Project Structure
 

@@ -249,6 +249,36 @@ pub struct AccountState {
     pub is_validator: bool,
 }
 
+/// Result of processing a block through the ledger.
+/// Distinguishes between newly applied blocks and duplicates.
+/// Callers MUST check `is_new()` to avoid re-broadcasting duplicate blocks.
+#[derive(Debug, Clone, PartialEq)]
+pub enum ProcessResult {
+    /// Block was new and successfully applied to the ledger
+    Applied(String),
+    /// Block already existed in the ledger (no state change)
+    Duplicate(String),
+}
+
+impl ProcessResult {
+    /// Get the block hash regardless of whether it was new or duplicate
+    pub fn hash(&self) -> &str {
+        match self {
+            ProcessResult::Applied(h) | ProcessResult::Duplicate(h) => h,
+        }
+    }
+    /// Returns true if the block was newly applied (not a duplicate)
+    pub fn is_new(&self) -> bool {
+        matches!(self, ProcessResult::Applied(_))
+    }
+    /// Consume self and return the hash string
+    pub fn into_hash(self) -> String {
+        match self {
+            ProcessResult::Applied(h) | ProcessResult::Duplicate(h) => h,
+        }
+    }
+}
+
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Ledger {
     /// MAINNET: BTreeMap guarantees deterministic iteration and serialization
@@ -283,7 +313,7 @@ impl Ledger {
         }
     }
 
-    pub fn process_block(&mut self, block: &Block) -> Result<String, String> {
+    pub fn process_block(&mut self, block: &Block) -> Result<ProcessResult, String> {
         // 1. PROOF-OF-WORK VALIDATION (Anti-spam: 16 leading zero bits)
         if !block.verify_pow() {
             return Err(
@@ -300,7 +330,11 @@ impl Ledger {
         // For Send and Change blocks, the signer MUST be the account owner.
         // Receive/Mint/Slash are system-created (signed by node/validator, not account owner).
         if matches!(block.block_type, BlockType::Send | BlockType::Change | BlockType::ContractDeploy | BlockType::ContractCall) {
-            let pk_bytes = hex::decode(&block.public_key).unwrap_or_default();
+            let pk_bytes = hex::decode(&block.public_key)
+                .map_err(|e| format!("Authorization Error: Invalid public_key hex: {}", e))?;
+            if pk_bytes.is_empty() {
+                return Err("Authorization Error: public_key is empty".to_string());
+            }
             let derived_address = los_crypto::public_key_to_address(&pk_bytes);
             if derived_address != block.account {
                 return Err(format!(
@@ -313,7 +347,19 @@ impl Ledger {
         // Block ID = calculate_hash() yang mencakup signature
         let block_hash = block.calculate_hash();
         if self.blocks.contains_key(&block_hash) {
-            return Ok(block_hash);
+            return Ok(ProcessResult::Duplicate(block_hash));
+        }
+
+        // MAINNET SECURITY: Debit block types require the account to already exist.
+        // Only Mint and Receive may auto-create accounts (they credit funds).
+        // Without this, Change/Slash blocks could create empty accounts (state bloat attack).
+        if !matches!(block.block_type, BlockType::Mint | BlockType::Receive) {
+            if !self.accounts.contains_key(&block.account) {
+                return Err(format!(
+                    "Account Error: {} does not exist in ledger. Only Mint/Receive can create accounts.",
+                    &block.account[..block.account.len().min(16)]
+                ));
+            }
         }
 
         let mut state = self
@@ -559,7 +605,8 @@ impl Ledger {
                 }
                 // AUTHORIZATION: Signer must be a registered validator (min 1000 LOS stake + is_validator flag)
                 {
-                    let pk_bytes = hex::decode(&block.public_key).unwrap_or_default();
+                    let pk_bytes = hex::decode(&block.public_key)
+                        .map_err(|e| format!("Slash Error: Invalid public_key hex: {}", e))?;
                     let signer_addr = los_crypto::public_key_to_address(&pk_bytes);
                     let min_validator_stake = MIN_VALIDATOR_STAKE_CIL;
                     match self.accounts.get(&signer_addr) {
@@ -602,6 +649,16 @@ impl Ledger {
             self.claimed_sends.insert(block.link.clone());
         }
 
-        Ok(block_hash)
+        Ok(ProcessResult::Applied(block_hash))
+    }
+
+    /// Claim and reset accumulated transaction fees.
+    /// Returns the total fees (CIL) collected since last claim.
+    /// Used by the epoch reward system to redistribute fees to validators.
+    /// After calling, `accumulated_fees_cil` is reset to 0.
+    pub fn claim_accumulated_fees(&mut self) -> u128 {
+        let fees = self.accumulated_fees_cil;
+        self.accumulated_fees_cil = 0;
+        fees
     }
 }

@@ -1307,7 +1307,8 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
                             };
 
                             match l_guard.process_block(&mint_blk) {
-                                Ok(hash) => {
+                                Ok(result) => {
+                                    let hash = result.into_hash();
                                     SAVE_DIRTY.store(true, Ordering::Relaxed);
                                     println!("🧪 TESTNET (Functional): Instant mint {} → {} LOS to {}", sym, los_to_mint / CIL_PER_LOS, recipient);
                                     // Return hash AND serialized block for gossip
@@ -1428,7 +1429,7 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
                         };
 
                         match l_guard.process_block(&mint_blk) {
-                            Ok(_hash) => {
+                            Ok(_result) => {
                                 SAVE_DIRTY.store(true, Ordering::Relaxed);
                                 println!("🔥 Burn Minting Successful: +{} LOS to {}!", format_u128(los_to_mint / CIL_PER_LOS), get_short_addr(&burn_recipient));
                                 // Gossip the mint block to peers
@@ -1580,7 +1581,7 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
                 let block_hash = {
                     let mut l_guard = safe_lock(&l);
                     match l_guard.process_block(&block) {
-                        Ok(hash) => hash,
+                        Ok(result) => result.into_hash(),
                         Err(e) => {
                             return api_json(serde_json::json!({"status":"error","msg":e}))
                         }
@@ -1724,7 +1725,7 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
                 let block_hash = {
                     let mut l_guard = safe_lock(&l);
                     match l_guard.process_block(&block) {
-                        Ok(hash) => hash,
+                        Ok(result) => result.into_hash(),
                         Err(e) => {
                             return api_json(serde_json::json!({"status":"error","msg":e}))
                         }
@@ -2262,7 +2263,8 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
                 };
 
                 match l_guard.process_block(&faucet_block) {
-                    Ok(hash) => {
+                    Ok(result) => {
+                        let hash = result.into_hash();
                         let new_balance = l_guard.accounts.get(address)
                             .map(|a| a.balance).unwrap_or(0);
                         let _ = db.record_faucet_claim(address);
@@ -5935,7 +5937,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 }
                             }
                             match l.process_block(reward_blk) {
-                                Ok(hash) => {
+                                Ok(result) => {
+                                    let hash = result.into_hash();
                                     total_credited += reward_cil;
                                     gossip_queue.push(
                                         serde_json::to_string(reward_blk).unwrap_or_default(),
@@ -6051,7 +6054,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 }
                                 let supply_before = l.distribution.remaining_supply;
                                 match l.process_block(fee_blk) {
-                                    Ok(hash) => {
+                                    Ok(result) => {
+                                        let hash = result.into_hash();
                                         // Restore supply: fee rewards are redistribution, not new minting
                                         l.distribution.remaining_supply = supply_before;
                                         total_fee_credited += fee_share;
@@ -7325,7 +7329,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                                     slash_blk.signature = hex::encode(sig);
 
                                                     match l.process_block(&slash_blk) {
-                                                        Ok(hash) => {
+                                                        Ok(result) => {
+                                                            let hash = result.into_hash();
                                                             SAVE_DIRTY.store(true, Ordering::Relaxed);
                                                             gossip = Some(serde_json::to_string(&slash_blk).unwrap_or_default());
                                                             println!("🔨 SLASHED (consensus 2/3+1)! {} penalized {} LOS (block: {})",
@@ -8561,7 +8566,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 let mut msgs = Vec::new();
 
                                 match l.process_block(&inc) {
-                                    Ok(block_hash) => {
+                                    Ok(result) => {
+                                        let block_hash = result.into_hash();
                                         // 🛡️ SLASHING INTEGRATION: Record block participation for uptime tracking
                                         {
                                             let mut sm = safe_lock(&slashing_clone);

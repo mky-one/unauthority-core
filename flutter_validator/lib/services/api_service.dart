@@ -283,7 +283,8 @@ class ApiService {
             '(failure $failures/3)');
         // Only switch after 3+ consecutive failures (Tor is unreliable)
         if (failures >= 3) {
-          debugPrint('🔌 [HealthCheck] 3 consecutive failures — switching node');
+          debugPrint(
+              '🔌 [HealthCheck] 3 consecutive failures — switching node');
           _switchToNextNode();
         }
       }
@@ -657,7 +658,8 @@ class ApiService {
       debugPrint('🔌 Health degraded (3+ failures) — switching to next node');
       _switchToNextNode();
     } else {
-      debugPrint('🔌 Health degraded (${_getHealth(baseUrl).consecutiveFailures}/3) — staying on current node');
+      debugPrint(
+          '🔌 Health degraded (${_getHealth(baseUrl).consecutiveFailures}/3) — staying on current node');
     }
   }
 

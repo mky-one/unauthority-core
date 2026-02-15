@@ -45,10 +45,12 @@ This document covers known issues, testing status, and platform-specific behavio
 ### Installation
 ```bash
 tar -xzf LOS-{Wallet|Validator}-*-linux-x64.tar.gz
-cd bundle
+cd LOS-{Wallet|Validator}    # Each app extracts to its own folder
 chmod +x run.sh flutter_{wallet|validator} los-node  # los-node only for validator
 ./run.sh
 ```
+
+> **IMPORTANT:** Do NOT extract both apps to the same directory. Each app has its own `data/` folder; extracting both to one folder will cause one to overwrite the other.
 
 ### Known Issues & Workarounds
 
@@ -132,9 +134,12 @@ sudo pacman -S gtk3
 - **No Launcher Script:** Windows uses standard DLL search order (current dir → System32 → PATH)
 
 ### Installation
-1. Extract `LOS-{Wallet|Validator}-*-windows-x64.zip` to `C:\LOS-Wallet\` (or any folder)
-2. Run `flutter_wallet.exe` or `flutter_validator.exe`
-3. If Windows Defender blocks: Click "More info" → "Run anyway"
+1. Extract `LOS-{Wallet|Validator}-*-windows-x64.zip` to separate folders (e.g. `C:\LOS-Wallet\` and `C:\LOS-Validator\`)
+2. Each zip extracts to an `LOS-Wallet\` or `LOS-Validator\` subfolder
+3. Open the extracted subfolder and run `flutter_wallet.exe` or `flutter_validator.exe`
+4. If Windows Defender blocks: Click "More info" → "Run anyway"
+
+> **IMPORTANT:** Do NOT extract both apps to the same directory. Each app has its own `data/` folder; extracting both to one folder will cause one to overwrite the other and both apps will look identical.
 
 ### Known Issues & Workarounds
 

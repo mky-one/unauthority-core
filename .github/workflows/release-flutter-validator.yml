@@ -219,9 +219,11 @@ jobs:
           The validator dashboard connects to your LOS node.
           EOF
 
+          # Package inside LOS-Validator/ subfolder to prevent conflicts with wallet
           mkdir -p release
           cd build/linux/x64/release
-          tar czf "../../../../release/LOS-Validator-${VERSION}-linux-x64.tar.gz" bundle/
+          mv bundle LOS-Validator
+          tar czf "../../../../release/LOS-Validator-${VERSION}-linux-x64.tar.gz" LOS-Validator/
           cd ../../../../
 
       - name: Upload Linux artifact
@@ -300,14 +302,20 @@ jobs:
           ═══════════════════════════════════════════════════════════════
 
           INSTALLATION:
-            1. Extract this archive
+            1. Extract this archive to its own folder
             2. Run: flutter_validator.exe
 
-          The validator dashboard connects to your LOS node.
+          IMPORTANT: Do NOT extract into the same folder as LOS Wallet.
+          Each app must be in its own directory.
           "@ | Out-File -FilePath "$bundle\README.txt" -Encoding utf8
 
+          # Package inside LOS-Validator/ subfolder to prevent data/ conflicts with wallet
+          $staging = "release\staging\LOS-Validator"
+          New-Item -ItemType Directory -Force -Path $staging | Out-Null
+          Copy-Item -Path "$bundle\*" -Destination $staging -Recurse
           New-Item -ItemType Directory -Force -Path release | Out-Null
-          Compress-Archive -Path "$bundle\*" -DestinationPath "release\LOS-Validator-${version}-windows-x64.zip" -Force
+          Compress-Archive -Path "release\staging\LOS-Validator" -DestinationPath "release\LOS-Validator-${version}-windows-x64.zip" -Force
+          Remove-Item -Recurse -Force "release\staging"
 
       - name: Upload Windows artifact
         uses: actions/upload-artifact@v4

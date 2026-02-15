@@ -66,18 +66,12 @@ class ApiService {
   /// Tor-specific probe timeout (Tor circuits need more time)
   static const Duration _torProbeTimeout = Duration(seconds: 30);
 
-  /// Max latency (ms) before current host is considered "slow".
-  /// On Tor, 10-25s responses are normal. Only trigger re-probe above 30s.
-  static const int _slowThresholdMs = 30000;
-
   /// Interval between periodic peer re-discovery runs.
   /// 10min is relaxed: bootstrap nodes rarely change.
   static const Duration _rediscoveryInterval = Duration(minutes: 10);
 
   /// Interval between current-host health checks.
-  /// Only pings the CURRENT host — does NOT probe all nodes.
-  /// If current host fails twice → triggers full probe to find replacement.
-  /// 5min is relaxed enough to not churn on Tor jitter.
+  /// Only pings the CURRENT host. If 3+ consecutive failures → switch.
   static const Duration _healthCheckInterval = Duration(minutes: 5);
 
   late String baseUrl;
@@ -278,46 +272,38 @@ class ApiService {
 
       if (response.statusCode >= 200 && response.statusCode < 300) {
         _getHealth(baseUrl).recordSuccess(rtt);
-
-        // Check if host is too slow (degraded)
-        if (rtt > _slowThresholdMs) {
-          debugPrint(
-              '🔌 [HealthCheck] Current host is SLOW (${rtt}ms > ${_slowThresholdMs}ms)');
-          // Don't immediately re-probe — only if CONSECUTIVE slow responses
-          // This will be caught next cycle if it persists
-        } else {
-          debugPrint('🔌 [HealthCheck] Current host OK (${rtt}ms) ✓');
-        }
+        // Host responded — stay on it regardless of latency.
+        // Slow is fine, dead is not.
+        debugPrint('🔌 [HealthCheck] OK (${rtt}ms) ✓');
       } else {
-        // HTTP error (4xx/5xx) → host unhealthy
+        // HTTP error (4xx/5xx) → host unhealthy but don't switch yet
         _getHealth(baseUrl).recordFailure();
         final failures = _getHealth(baseUrl).consecutiveFailures;
         debugPrint('🔌 [HealthCheck] HTTP ${response.statusCode} '
-            '(failure $failures/2)');
-        // Only re-probe after 2+ consecutive failures (Tor jitter tolerance)
-        if (failures >= 2) _triggerFullProbe();
+            '(failure $failures/3)');
+        // Only switch after 3+ consecutive failures (Tor is unreliable)
+        if (failures >= 3) {
+          debugPrint('🔌 [HealthCheck] 3 consecutive failures — switching node');
+          _switchToNextNode();
+        }
       }
     } catch (e) {
       // Timeout or connection error → host may be DOWN
       _getHealth(baseUrl).recordFailure();
       final failures = _getHealth(baseUrl).consecutiveFailures;
       debugPrint('🔌 [HealthCheck] UNREACHABLE '
-          '(failure $failures/2)');
-      // Only re-probe after 2+ consecutive failures
-      if (failures >= 2) _triggerFullProbe();
+          '(failure $failures/3)');
+      // Only switch after 3+ consecutive failures
+      if (failures >= 3) {
+        debugPrint('🔌 [HealthCheck] 3 consecutive failures — switching node');
+        _switchToNextNode();
+      }
     }
   }
 
-  /// Trigger a full probe of all nodes to find a replacement host.
-  /// Called only when current host is down/error/slow.
-  void _triggerFullProbe() {
-    if (_disposed) return;
-    Future.microtask(() => probeAndSelectBestNode());
-  }
-
   /// Probe all known peers for latency, then select the fastest responsive one.
-  /// Called on startup (initial discovery) and when current host is degraded.
-  /// NOT called periodically — only triggered when needed.
+  /// Called ONLY for manual diagnostics or explicit user action.
+  /// NOT called automatically — we stick with the current working node.
   Future<void> probeAndSelectBestNode() async {
     if (_disposed || _bootstrapUrls.isEmpty) return;
     debugPrint(
@@ -626,17 +612,17 @@ class ApiService {
   }
 
   /// Runs once after first successful API response:
-  /// 1. Discover peers from network
-  /// 2. Probe all nodes for latency
-  /// 3. Select the best (fastest) node
-  /// 4. Start periodic background timers
+  /// 1. Discover peers from network (save for future failover)
+  /// 2. Start periodic background timers
+  ///
+  /// NOTE: We do NOT probe/switch nodes here. The current node
+  /// already responded successfully — stick with it.
   Future<void> _runInitialDiscovery() async {
     if (_disposed) return;
     try {
       await discoverAndSavePeers();
-      await probeAndSelectBestNode();
     } catch (e) {
-      debugPrint('⚠️ Initial discovery/probe failed (non-critical): $e');
+      debugPrint('⚠️ Initial discovery failed (non-critical): $e');
     }
     _startBackgroundTimers();
   }
@@ -662,12 +648,17 @@ class ApiService {
   }
 
   /// Called by NetworkStatusService when health check detects degradation.
-  /// Triggers a full probe to find a better node.
+  /// Instead of probing all nodes, just try the NEXT one.
+  /// Rule: don't waste time probing — just rotate once.
   void onHealthDegraded() {
     if (_disposed) return;
-    debugPrint('🔌 Health degraded — searching for new host...');
     _getHealth(baseUrl).recordFailure();
-    _triggerFullProbe();
+    if (_getHealth(baseUrl).consecutiveFailures >= 3) {
+      debugPrint('🔌 Health degraded (3+ failures) — switching to next node');
+      _switchToNextNode();
+    } else {
+      debugPrint('🔌 Health degraded (${_getHealth(baseUrl).consecutiveFailures}/3) — staying on current node');
+    }
   }
 
   /// Get appropriate timeout based on whether using Tor

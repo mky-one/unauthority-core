@@ -39,6 +39,18 @@ const PUBLIC_SUPPLY_LOS: u128 = TOTAL_SUPPLY_LOS - DEV_SUPPLY_TOTAL_LOS; // 21,2
 
 const DEV_TREASURY_COUNT: usize = 2;
 
+/// Structured wallet data for building multiple output formats
+#[allow(dead_code)]
+struct WalletData {
+    wallet_type: String,
+    address: String,
+    seed_phrase: String,
+    public_key: String,
+    private_key: String,
+    balance_cil: u128,
+    is_bootstrap: bool,
+}
+
 fn main() {
     eprintln!();
     eprintln!("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
@@ -84,6 +96,7 @@ fn main() {
 
     let mut wallet_entries_full: Vec<String> = Vec::new();
     let mut wallet_entries_public: Vec<String> = Vec::new();
+    let mut all_wallets: Vec<WalletData> = Vec::new();
 
     // ===== DEV TREASURY WALLETS =====
     println!("--- DEV TREASURY WALLETS ---\n");
@@ -133,6 +146,16 @@ fn main() {
             wallet_num, address, balance_cil,
             balance_los, pk_hex, wallet_num
         ));
+
+        all_wallets.push(WalletData {
+            wallet_type: format!("DevTreasury({})", wallet_num),
+            address,
+            seed_phrase,
+            public_key: pk_hex,
+            private_key: sk_hex,
+            balance_cil,
+            is_bootstrap: false,
+        });
     }
 
     // ===== BOOTSTRAP VALIDATOR WALLETS =====
@@ -184,6 +207,16 @@ fn main() {
             validator_num, address, balance_cil,
             BOOTSTRAP_NODE_STAKE_LOS, pk_hex, validator_num
         ));
+
+        all_wallets.push(WalletData {
+            wallet_type: format!("BootstrapNode({})", validator_num),
+            address,
+            seed_phrase,
+            public_key: pk_hex,
+            private_key: sk_hex,
+            balance_cil,
+            is_bootstrap: true,
+        });
     }
 
     // ===== ALLOCATION SUMMARY =====
@@ -207,11 +240,17 @@ fn main() {
     println!("Public:           {} LOS (~97%)", PUBLIC_SUPPLY_LOS);
     println!("===========================================================\n");
 
-    // ===== WRITE FULL JSON (PRIVATE - contains seeds + secret keys) =====
+    // ===== BUILD NODE-COMPATIBLE genesis_config.json =====
+    // This format matches what los-node/src/genesis.rs GenesisConfig expects
+    let total_supply_cil = TOTAL_SUPPLY_LOS * CIL_PER_LOS;
+    let dev_supply_total_cil = DEV_SUPPLY_TOTAL_LOS * CIL_PER_LOS;
+    let genesis_timestamp = chrono::Utc::now().timestamp();
+
+    // ===== WRITE FULL BACKUP JSON (PRIVATE) =====
     let full_json = format!(
         "{{\n  \"version\": \"2.0\",\n  \"network\": \"mainnet\",\n  \"description\": \"UNAUTHORITY MAINNET GENESIS - CONFIDENTIAL\",\n  \"warning\": \"CONTAINS PRIVATE KEYS - NEVER commit to git or share publicly!\",\n  \"crypto\": \"CRYSTALS-Dilithium5 (Post-Quantum)\",\n  \"total_supply_los\": \"{}\",\n  \"total_supply_cil\": \"{}\",\n  \"allocation\": {{\n    \"dev_treasury_total_los\": \"{}\",\n    \"dev_supply_total_los\": \"{}\",\n    \"public_supply_los\": \"{}\",\n    \"dev_percent\": \"~3%\"\n  }},\n  \"wallets\": [\n{}\n  ]\n}}",
         TOTAL_SUPPLY_LOS,
-        TOTAL_SUPPLY_LOS * CIL_PER_LOS,
+        total_supply_cil,
         DEV_TREASURY_TOTAL_LOS,
         DEV_SUPPLY_TOTAL_LOS,
         PUBLIC_SUPPLY_LOS,
@@ -222,7 +261,7 @@ fn main() {
     let public_json = format!(
         "{{\n  \"version\": \"2.0\",\n  \"network\": \"mainnet\",\n  \"description\": \"UNAUTHORITY MAINNET GENESIS - PUBLIC INFO\",\n  \"note\": \"Public addresses and balances only. No private keys or seed phrases.\",\n  \"crypto\": \"CRYSTALS-Dilithium5 (Post-Quantum)\",\n  \"total_supply_los\": \"{}\",\n  \"total_supply_cil\": \"{}\",\n  \"allocation\": {{\n    \"dev_treasury_total_los\": \"{}\",\n    \"dev_supply_total_los\": \"{}\",\n    \"public_supply_los\": \"{}\",\n    \"dev_percent\": \"~3%\"\n  }},\n  \"wallets\": [\n{}\n  ]\n}}",
         TOTAL_SUPPLY_LOS,
-        TOTAL_SUPPLY_LOS * CIL_PER_LOS,
+        total_supply_cil,
         DEV_TREASURY_TOTAL_LOS,
         DEV_SUPPLY_TOTAL_LOS,
         PUBLIC_SUPPLY_LOS,
@@ -241,9 +280,65 @@ fn main() {
     fs::write(&full_path, &full_json).expect("Failed to write mainnet_wallets.json");
     fs::write(&public_path, &public_json).expect("Failed to write mainnet_public.json");
 
+    // ===== WRITE NODE-COMPATIBLE genesis_config.json =====
+    // This matches los-node/src/genesis.rs GenesisConfig struct exactly:
+    // - network_id: u64, network: String
+    // - total_supply_cil: u128 (JSON number, not string)
+    // - bootstrap_nodes: Vec with stake_cil (integer)
+    // - dev_accounts: Vec with balance_cil (integer)
+    let bootstrap_json_entries: Vec<String> = all_wallets
+        .iter()
+        .filter(|w| w.is_bootstrap)
+        .map(|w| {
+            format!(
+                "    {{\n      \"address\": \"{}\",\n      \"stake_cil\": {},\n      \"seed_phrase\": \"{}\",\n      \"private_key\": \"{}\",\n      \"public_key\": \"{}\"\n    }}",
+                w.address, w.balance_cil, w.seed_phrase, w.private_key, w.public_key
+            )
+        })
+        .collect();
+
+    let dev_json_entries: Vec<String> = all_wallets
+        .iter()
+        .filter(|w| !w.is_bootstrap)
+        .map(|w| {
+            format!(
+                "    {{\n      \"address\": \"{}\",\n      \"balance_cil\": {},\n      \"seed_phrase\": \"{}\",\n      \"private_key\": \"{}\",\n      \"public_key\": \"{}\"\n    }}",
+                w.address, w.balance_cil, w.seed_phrase, w.private_key, w.public_key
+            )
+        })
+        .collect();
+
+    let node_config = format!(
+        r#"{{
+  "network_id": 1,
+  "network": "mainnet",
+  "chain_name": "Unauthority",
+  "ticker": "LOS",
+  "genesis_timestamp": {},
+  "total_supply_cil": {},
+  "dev_supply_cil": {},
+  "bootstrap_nodes": [
+{}
+  ],
+  "dev_accounts": [
+{}
+  ],
+  "security_notice": "⚠️ CRITICAL: This file contains private keys! Store in encrypted cold storage. NEVER commit to public repository!"
+}}"#,
+        genesis_timestamp,
+        total_supply_cil,
+        dev_supply_total_cil,
+        bootstrap_json_entries.join(",\n"),
+        dev_json_entries.join(",\n")
+    );
+
+    fs::write("genesis_config.json", &node_config)
+        .expect("Failed to write genesis_config.json");
+
     println!("OUTPUT FILES:");
-    println!("  FULL (PRIVATE): {}", full_path);
-    println!("  PUBLIC ONLY:    {}", public_path);
+    println!("  FULL (PRIVATE):        {}", full_path);
+    println!("  PUBLIC ONLY:           {}", public_path);
+    println!("  NODE CONFIG:           genesis_config.json");
     println!();
     eprintln!("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
     eprintln!(
@@ -256,5 +351,4 @@ fn main() {
         public_path
     );
     eprintln!("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
-    eprintln!();
 }

@@ -2397,7 +2397,8 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
                 api_json(serde_json::json!({
                     "address": addr,
                     "status": format!("{:?}", profile.status),
-                    "uptime_percent": profile.get_uptime_percent(),
+                    "uptime_bps": profile.get_uptime_bps(),
+                    "uptime_percent": profile.get_uptime_bps() as f64 / 100.0,
                     "total_slashed_cil": profile.total_slashed_cil,
                     "violation_count": profile.violation_count,
                     "blocks_participated": profile.blocks_participated,

@@ -204,9 +204,16 @@ pub fn validate_genesis(config: &GenesisConfig) -> Result<(), String> {
         // Generator format: CIL integer (21,936,236 × 10^11 = 2,193,623,600,000,000,000)
         tsv == 21_936_236u128 * CIL_PER_LOS
     } else if let Some(ref ts) = config.total_supply {
-        // Legacy format: LOS string
-        let trimmed = ts.trim_end_matches('0').trim_end_matches('.');
-        trimmed == "21936236"
+        // Legacy format: LOS string (e.g., "21936236" or "21936236.0")
+        // SECURITY FIX M-3: Parse numerically instead of trim_end_matches('0')
+        // which could strip meaningful digits (e.g., "219362360" → "21936236").
+        if let Some(dot_idx) = ts.find('.') {
+            let integer_part = &ts[..dot_idx];
+            let fractional_part = &ts[dot_idx + 1..];
+            integer_part == "21936236" && !fractional_part.is_empty() && fractional_part.chars().all(|c| c == '0')
+        } else {
+            ts == "21936236"
+        }
     } else {
         false
     };

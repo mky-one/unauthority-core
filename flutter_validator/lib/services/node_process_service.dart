@@ -446,10 +446,14 @@ class NodeProcessService extends ChangeNotifier {
       // 7. Monitor process exit
       _process!.exitCode.then(_handleProcessExit);
 
-      // 8. Wait for node_ready event (max 60s)
-      final ready = await _waitForReady(timeout: const Duration(seconds: 60));
+      // 8. Wait for node_ready event (max 180s)
+      // FIX: 60s was too tight — Dilithium5 keygen + DB init + genesis loading
+      // can take 50-70s on some machines, leaving near-zero margin for the
+      // node_ready JSON event to reach the Dart event loop before timeout.
+      // 180s gives comfortable headroom for slow machines / cold start.
+      final ready = await _waitForReady(timeout: const Duration(seconds: 180));
       if (!ready) {
-        _setError('Node failed to start within 60 seconds');
+        _setError('Node failed to start within 180 seconds');
         await stop();
         return false;
       }
@@ -550,10 +554,17 @@ class NodeProcessService extends ChangeNotifier {
       }
     }
 
-    // Fallback: detect key messages from human-readable output
-    if (line.contains('API Server running at')) {
-      _status = NodeStatus.running;
-      notifyListeners();
+    // Fallback: detect key messages from human-readable output.
+    // Multiple detection patterns for robustness — any of these means
+    // the node's REST/gRPC API is up and serving requests.
+    if (line.contains('API Server running at') ||
+        line.contains('gRPC Server STARTED') ||
+        line.contains('UNAUTHORITY (LOS) ORACLE NODE')) {
+      if (_status != NodeStatus.running) {
+        _status = NodeStatus.running;
+        _addLog('✅ Node is running!');
+        notifyListeners();
+      }
     }
   }
 

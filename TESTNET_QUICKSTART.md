@@ -40,7 +40,7 @@ This guide will help you install and run the LOS Wallet or Validator Dashboard i
 2. **Extract:**
    ```bash
    tar -xzf LOS-Wallet-1.0.8-testnet-linux-x64.tar.gz
-   cd bundle
+   cd LOS-Wallet
    ```
 3. **Make executable:**
    ```bash
@@ -56,13 +56,15 @@ This guide will help you install and run the LOS Wallet or Validator Dashboard i
 
 ### Windows
 1. **Download** `LOS-Wallet-1.0.8-testnet-windows-x64.zip`
-2. **Extract** to `C:\LOS-Wallet\` (or any folder)
-3. **Right-click** `flutter_wallet.exe` → **Properties** → **Unblock** checkbox → **OK**
-4. **Run** `flutter_wallet.exe`
-5. **If Windows SmartScreen appears:** Click "More info" → "Run anyway"
-6. **Done!** Tor downloads automatically on first run (~1-2 min)
+2. **Extract** to any folder (e.g. `C:\LOS-Wallet\`)
+   > **IMPORTANT:** Do NOT extract into the same folder as LOS Validator. Each app must be in its own directory.
+3. **Open** the extracted `LOS-Wallet` folder
+4. **Right-click** `flutter_wallet.exe` → **Properties** → **Unblock** checkbox → **OK**
+5. **Run** `flutter_wallet.exe`
+6. **If Windows SmartScreen appears:** Click "More info" → "Run anyway"
+7. **Done!** Tor downloads automatically on first run (~1-2 min)
 
-> **Why?** Windows SmartScreen blocks unsigned apps downloaded from the internet. The "Unblock" checkbox marks the file as safe.
+> **Why Unblock?** Windows SmartScreen blocks unsigned apps downloaded from the internet.
 
 ---
 
@@ -86,7 +88,7 @@ This guide will help you install and run the LOS Wallet or Validator Dashboard i
 2. **Extract:**
    ```bash
    tar -xzf LOS-Validator-1.0.10-testnet-linux-x64.tar.gz
-   cd bundle
+   cd LOS-Validator
    ```
 3. **Make executable:**
    ```bash
@@ -100,14 +102,16 @@ This guide will help you install and run the LOS Wallet or Validator Dashboard i
 
 ### Windows
 1. **Download** `LOS-Validator-1.0.10-testnet-windows-x64.zip`
-2. **Extract** to `C:\LOS-Validator\` (or any folder)
-3. **Right-click** `flutter_validator.exe` → **Properties** → **Unblock** checkbox → **OK**
-4. **Right-click** `los-node.exe` → **Properties** → **Unblock** checkbox → **OK**
-5. **Run** `flutter_validator.exe`
-6. **If Windows SmartScreen appears:** Click "More info" → "Run anyway"
-7. **Done!** The bundled `los-node.exe` starts automatically when you click "START NODE".
+2. **Extract** to any folder (e.g. `C:\LOS-Validator\`)
+   > **IMPORTANT:** Do NOT extract into the same folder as LOS Wallet. Each app must be in its own directory.
+3. **Open** the extracted `LOS-Validator` folder
+4. **Right-click** `flutter_validator.exe` → **Properties** → **Unblock** checkbox → **OK**
+5. **Right-click** `los-node.exe` → **Properties** → **Unblock** checkbox → **OK**
+6. **Run** `flutter_validator.exe`
+7. **If Windows SmartScreen appears:** Click "More info" → "Run anyway"
+8. **Done!** The bundled `los-node.exe` starts automatically when you click "START NODE".
 
-> **Why?** Windows SmartScreen blocks unsigned apps. The "Unblock" checkbox marks files as safe.
+> **Why separate folders?** Both apps use a `data/` directory for compiled code. Extracting to the same folder causes one app to overwrite the other's code.
 
 ---
 

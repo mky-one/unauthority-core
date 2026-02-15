@@ -266,7 +266,7 @@ async fn test_zero_trust_sync() {
             i,
             result.err()
         );
-        mint_hashes.push(result.unwrap());
+        mint_hashes.push(result.unwrap().into_hash());
         println!("  ✅ Node {} processed Mint: {} CIL", i, mint_amount);
     }
 
@@ -304,7 +304,7 @@ async fn test_zero_trust_sync() {
             i,
             result.err()
         );
-        send_hashes.push(result.unwrap());
+        send_hashes.push(result.unwrap().into_hash());
     }
 
     // All nodes agree on Send hash
@@ -334,7 +334,7 @@ async fn test_zero_trust_sync() {
             i,
             result.err()
         );
-        recv_hashes.push(result.unwrap());
+        recv_hashes.push(result.unwrap().into_hash());
     }
 
     for i in 1..recv_hashes.len() {
@@ -436,7 +436,7 @@ async fn test_financial_precision() {
         "FAUCET:TESTNET:GENESIS",
         &node.secret_key,
     );
-    let mint_hash = ledger.process_block(&mint_block).expect("Mint failed");
+    let mint_hash = ledger.process_block(&mint_block).expect("Mint failed").into_hash();
 
     // Send 3 transactions with increasing fees
     let receiver = SimNode::new();
@@ -457,7 +457,8 @@ async fn test_financial_precision() {
         );
         prev = ledger
             .process_block(&send)
-            .unwrap_or_else(|_| panic!("Send {} failed", i));
+            .unwrap_or_else(|_| panic!("Send {} failed", i))
+            .into_hash();
         send_hashes.push(prev.clone());
     }
 
@@ -553,7 +554,7 @@ async fn test_node_recovery() {
         "FAUCET:TESTNET:GENESIS",
         &node.secret_key,
     );
-    let mint_hash = ledger.process_block(&mint).expect("Mint failed");
+    let mint_hash = ledger.process_block(&mint).expect("Mint failed").into_hash();
 
     // Create a few sends
     let receiver = SimNode::new();
@@ -566,7 +567,7 @@ async fn test_node_recovery() {
         BASE_FEE_CIL,
         ts + 1,
     );
-    let send_hash = ledger.process_block(&send).expect("Send failed");
+    let send_hash = ledger.process_block(&send).expect("Send failed").into_hash();
 
     // Snapshot state BEFORE "crash"
     let pre_crash_balance = ledger.accounts.get(&node.address).unwrap().balance;
@@ -705,8 +706,8 @@ async fn test_proof_of_burn_distribution() {
         mine_and_sign(&mut mint, &node.secret_key);
 
         match ledger.process_block(&mint) {
-            Ok(hash) => {
-                prev_hash = hash;
+            Ok(result) => {
+                prev_hash = result.into_hash();
                 minted += amount;
                 mint_count += 1;
             }
@@ -1235,7 +1236,7 @@ async fn test_throughput_benchmark() {
         "FAUCET:TESTNET:BENCHMARK",
         &node.secret_key,
     );
-    let mut prev_hash = ledger.process_block(&mint).expect("Mint failed");
+    let mut prev_hash = ledger.process_block(&mint).expect("Mint failed").into_hash();
 
     // Pre-mine blocks for speed test
     let num_sends = 50; // Each needs PoW mining, so keep manageable

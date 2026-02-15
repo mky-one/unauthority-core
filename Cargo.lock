@@ -2898,6 +2898,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "los-sdk"
+version = "0.1.0"
+
+[[package]]
 name = "los-vm"
 version = "0.1.0"
 dependencies = [

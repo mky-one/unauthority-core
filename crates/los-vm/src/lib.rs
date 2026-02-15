@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicUsize, Ordering as AtomicOrdering};
 use std::sync::{Arc, Mutex};
-use wasmer::{imports, CompilerConfig, Instance, Module, Store, Value};
+use wasmer::{imports, CompilerConfig, FunctionEnv, Instance, Module, Store, Value};
 use wasmer_compiler_cranelift::Cranelift;
 use wasmer_middlewares::metering::get_remaining_points;
 use wasmer_middlewares::metering::MeteringPoints;
@@ -26,6 +26,8 @@ pub extern "C" fn __rust_probestack() {}
 
 // Oracle module for exchange price feeds
 pub mod oracle_connector;
+// Host functions: bridge between WASM guest and LOS runtime
+pub mod host;
 // USP-01: Unauthority Standard for Permissionless Tokens
 pub mod usp01;
 
@@ -354,56 +356,465 @@ impl WasmEngine {
         }
     }
 
-    /// Execute contract function (Hybrid WASM + Fallback)
-    pub fn call_contract(&self, call: ContractCall) -> Result<ContractResult, String> {
-        let mut contracts = self
-            .contracts
-            .lock()
-            .map_err(|_| "Failed to lock contracts".to_string())?;
+    /// Execute WASM bytecode with full host function support (SDK mode + legacy fallback).
+    ///
+    /// Host functions allow contracts to read/write state, emit events, transfer CIL,
+    /// and access caller context — all via WASM imports (module "env").
+    ///
+    /// **Calling convention:**
+    /// - SDK contracts: exported function takes no WASM params, returns `i32` status code.
+    ///   Args are read via `host_get_arg()`, return data via `host_set_return()`.
+    /// - Legacy contracts: exported function takes `i32` params directly, returns `i32` result.
+    ///   Detected automatically by checking the function's WASM type signature.
+    pub fn execute_wasm_hosted(
+        &self,
+        bytecode: &[u8],
+        function: &str,
+        args: &[String],
+        gas_limit: u64,
+        caller: &str,
+        contract_addr: &str,
+        contract_state: &HashMap<String, String>,
+        balance: u128,
+        timestamp: u64,
+    ) -> Result<host::HostExecResult, String> {
+        use host::{HostData, HostExecResult, HostState};
+        use std::collections::HashSet;
 
-        let contract = contracts
-            .get_mut(&call.contract)
-            .ok_or("Contract not found".to_string())?;
+        // Reuse the same safety checks as execute_wasm
+        let leaked = LEAKED_THREADS.load(AtomicOrdering::Relaxed);
+        if leaked >= MAX_LEAKED_THREADS {
+            return Err(format!(
+                "WASM execution rejected: {} leaked timeout threads (max {}). Node restart required.",
+                leaked, MAX_LEAKED_THREADS
+            ));
+        }
+        if bytecode.len() > MAX_BYTECODE_SIZE {
+            return Err(format!(
+                "WASM bytecode too large: {} bytes (max {} bytes)",
+                bytecode.len(),
+                MAX_BYTECODE_SIZE
+            ));
+        }
+        let compile_gas = (bytecode.len() as u64 / 1024 + 1) * GAS_PER_KB_BYTECODE;
+        if compile_gas > gas_limit {
+            return Err(format!(
+                "Out of gas: bytecode compilation cost {} exceeds gas limit {}",
+                compile_gas, gas_limit
+            ));
+        }
+        let remaining_gas = gas_limit - compile_gas;
 
-        // Try real WASM execution if bytecode is valid
-        if contract.bytecode.len() >= 8 {
-            if let Ok(i32_args) = call
-                .args
-                .iter()
-                .map(|s| s.parse::<i32>())
-                .collect::<Result<Vec<_>, _>>()
+        // Convert contract state (String→String) to byte state (String→Vec<u8>)
+        let state_bytes: HashMap<String, Vec<u8>> = contract_state
+            .iter()
+            .map(|(k, v)| (k.clone(), v.as_bytes().to_vec()))
+            .collect();
+
+        // Shared host data (accessed by host functions inside the WASM thread,
+        // then read back by the caller after execution completes).
+        let host_data = Arc::new(Mutex::new(HostData {
+            state: state_bytes,
+            dirty_keys: HashSet::new(),
+            events: Vec::new(),
+            transfers: Vec::new(),
+            caller: caller.to_string(),
+            self_address: contract_addr.to_string(),
+            balance,
+            timestamp,
+            args: args.to_vec(),
+            return_data: Vec::new(),
+            logs: Vec::new(),
+            aborted: false,
+            abort_message: String::new(),
+        }));
+        let host_data_thread = Arc::clone(&host_data);
+
+        let bytecode_owned = bytecode.to_vec();
+        let function_owned = function.to_string();
+        let args_owned = args.to_vec();
+        let abort_flag = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let abort_clone = Arc::clone(&abort_flag);
+
+        let (result_tx, result_rx) =
+            std::sync::mpsc::channel::<Result<(i32, u64, bool), String>>();
+
+        let _handle = std::thread::spawn(move || {
+            if abort_clone.load(std::sync::atomic::Ordering::Relaxed) {
+                return;
+            }
+
+            // Deterministic gas metering: 1 WASM instruction = 1 gas unit
+            let cost_fn = |_operator: &wasmer::wasmparser::Operator| -> u64 { 1 };
+            let metering =
+                Arc::new(wasmer_middlewares::Metering::new(remaining_gas, cost_fn));
+
+            let mut compiler = Cranelift::default();
+            compiler.push_middleware(metering);
+            let mut store = Store::new(compiler);
+
+            let module = match Module::new(&store, &bytecode_owned) {
+                Ok(m) => m,
+                Err(e) => {
+                    let _ =
+                        result_tx.send(Err(format!("Failed to compile WASM: {}", e)));
+                    return;
+                }
+            };
+
+            if abort_clone.load(std::sync::atomic::Ordering::Relaxed) {
+                return;
+            }
+
+            // Create FunctionEnv with host state (memory set after instantiation)
+            let host_state = HostState {
+                memory: None,
+                inner: host_data_thread,
+            };
+            let env = FunctionEnv::new(&mut store, host_state);
+
+            // Create imports with all 16 host functions
+            let import_object = host::create_host_imports(&mut store, &env);
+
+            let instance = match Instance::new(&mut store, &module, &import_object) {
+                Ok(i) => i,
+                Err(_) => {
+                    // Module may not import "env" at all — retry with empty imports
+                    match Instance::new(&mut store, &module, &imports! {}) {
+                        Ok(i) => i,
+                        Err(e) => {
+                            let _ = result_tx.send(Err(format!(
+                                "Failed to instantiate WASM: {}",
+                                e
+                            )));
+                            return;
+                        }
+                    }
+                }
+            };
+
+            // Set memory reference in env (so host functions can read/write guest memory)
+            if let Ok(memory) = instance.exports.get_memory("memory") {
+                env.as_mut(&mut store).memory = Some(memory.clone());
+            }
+
+            let func = match instance.exports.get_function(&function_owned) {
+                Ok(f) => f,
+                Err(e) => {
+                    let _ = result_tx.send(Err(format!(
+                        "Function '{}' not found: {}",
+                        function_owned, e
+                    )));
+                    return;
+                }
+            };
+
+            if abort_clone.load(std::sync::atomic::Ordering::Relaxed) {
+                return;
+            }
+
+            // Auto-detect calling convention from function signature
+            let func_type = func.ty(&store);
+            let params = func_type.params();
+            let is_sdk_mode = params.is_empty();
+
+            let call_result = if is_sdk_mode {
+                // SDK mode: no WASM-level args; contract reads via host_get_arg()
+                func.call(&mut store, &[])
+            } else {
+                // Legacy mode: convert string args to i32 values
+                let mut wasm_args: Vec<Value> = args_owned
+                    .iter()
+                    .map(|s| Value::I32(s.parse::<i32>().unwrap_or(0)))
+                    .collect();
+                // Pad with zeros if fewer args than params, truncate if more
+                while wasm_args.len() < params.len() {
+                    wasm_args.push(Value::I32(0));
+                }
+                wasm_args.truncate(params.len());
+                func.call(&mut store, &wasm_args)
+            };
+
+            if abort_clone.load(std::sync::atomic::Ordering::Relaxed) {
+                return;
+            }
+
+            // Read remaining gas
+            let exec_gas = match wasmer_middlewares::metering::get_remaining_points(
+                &mut store,
+                &instance,
+            ) {
+                wasmer_middlewares::metering::MeteringPoints::Remaining(r) => {
+                    remaining_gas - r
+                }
+                wasmer_middlewares::metering::MeteringPoints::Exhausted => {
+                    let _ = result_tx.send(Err(format!(
+                        "Out of gas: execution exceeded {} instruction limit",
+                        remaining_gas
+                    )));
+                    return;
+                }
+            };
+
+            match call_result {
+                Ok(results) => {
+                    let return_code = results
+                        .first()
+                        .and_then(
+                            |v| {
+                                if let Value::I32(x) = v {
+                                    Some(*x)
+                                } else {
+                                    None
+                                }
+                            },
+                        )
+                        .unwrap_or(0);
+                    let _ =
+                        result_tx.send(Ok((return_code, exec_gas, is_sdk_mode)));
+                }
+                Err(e) => {
+                    let err_str = format!("{}", e);
+                    if err_str.contains("unreachable") {
+                        // Could be metering exhaustion OR contract abort
+                        let _ = result_tx.send(Err(format!(
+                            "WASM trap (abort or out of gas): {}",
+                            err_str
+                        )));
+                    } else {
+                        let _ = result_tx.send(Err(format!(
+                            "WASM execution failed: {}",
+                            e
+                        )));
+                    }
+                }
+            }
+        });
+
+        // Wait with timeout (safety net)
+        let timeout = std::time::Duration::from_secs(MAX_EXECUTION_SECS);
+        match result_rx.recv_timeout(timeout) {
+            Ok(Ok((return_code, exec_gas, is_sdk_mode))) => {
+                let total_gas = compile_gas + exec_gas;
+                if total_gas > gas_limit {
+                    return Err(format!(
+                        "Out of gas: used {} (compile: {} + exec: {}) > limit {}",
+                        total_gas, compile_gas, exec_gas, gas_limit
+                    ));
+                }
+
+                // Extract results from shared host data
+                let data =
+                    host_data.lock().map_err(|_| "Failed to lock host data".to_string())?;
+
+                if data.aborted {
+                    return Err(format!("Contract aborted: {}", data.abort_message));
+                }
+
+                // Extract only dirty (modified) keys as state changes
+                let state_changes: HashMap<String, Vec<u8>> = data
+                    .dirty_keys
+                    .iter()
+                    .filter_map(|k| data.state.get(k).map(|v| (k.clone(), v.clone())))
+                    .collect();
+
+                Ok(HostExecResult {
+                    return_code,
+                    return_data: data.return_data.clone(),
+                    gas_used: total_gas,
+                    state_changes,
+                    events: data.events.clone(),
+                    transfers: data.transfers.clone(),
+                    logs: data.logs.clone(),
+                    aborted: false,
+                    abort_message: String::new(),
+                    sdk_mode: is_sdk_mode,
+                })
+            }
+            Ok(Err(e)) => {
+                // Check if abort was set before the error
+                if let Ok(d) = host_data.lock() {
+                    if d.aborted {
+                        return Err(format!("Contract aborted: {}", d.abort_message));
+                    }
+                }
+                Err(e)
+            }
+            Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
+                abort_flag.store(true, std::sync::atomic::Ordering::Relaxed);
+                LEAKED_THREADS.fetch_add(1, AtomicOrdering::Relaxed);
+                Err(format!(
+                    "WASM execution timeout: exceeded {} second limit",
+                    MAX_EXECUTION_SECS
+                ))
+            }
+            Err(e) => Err(format!("WASM execution channel error: {}", e)),
+        }
+    }
+
+    /// Try hosted WASM execution for a contract call.
+    /// Returns `Ok(Some(result))` on success, `Ok(None)` if fallback is needed,
+    /// or `Err(e)` for fatal errors that should propagate immediately.
+    fn try_hosted_call(
+        &self,
+        call: &ContractCall,
+    ) -> Result<Option<ContractResult>, String> {
+        // Get contract snapshot (short lock, released before execution)
+        let contract_snapshot = {
+            let contracts = self
+                .contracts
+                .lock()
+                .map_err(|_| "Failed to lock contracts".to_string())?;
+            match contracts.get(&call.contract) {
+                Some(c) => c.clone(),
+                None => return Ok(None), // Let main code handle "not found"
+            }
+        }; // lock released
+
+        // Must be valid WASM to attempt hosted execution
+        if contract_snapshot.bytecode.len() < 4
+            || !contract_snapshot.bytecode.starts_with(b"\0asm")
+        {
+            return Ok(None);
+        }
+
+        let timestamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+
+        match self.execute_wasm_hosted(
+            &contract_snapshot.bytecode,
+            &call.function,
+            &call.args,
+            call.gas_limit,
+            &call.caller,
+            &call.contract,
+            &contract_snapshot.state,
+            contract_snapshot.balance,
+            timestamp,
+        ) {
+            Ok(exec_result) => {
+                // Apply state changes + transfers back to contract (short lock)
+                if !exec_result.state_changes.is_empty()
+                    || !exec_result.transfers.is_empty()
+                {
+                    let mut contracts = self
+                        .contracts
+                        .lock()
+                        .map_err(|_| "Failed to lock contracts for state update".to_string())?;
+                    if let Some(c) = contracts.get_mut(&call.contract) {
+                        for (key, val) in &exec_result.state_changes {
+                            c.state
+                                .insert(key.clone(), String::from_utf8_lossy(val).to_string());
+                        }
+                        for (_, amount) in &exec_result.transfers {
+                            c.balance = c.balance.saturating_sub(*amount);
+                        }
+                    }
+                }
+
+                let (success, output) = if exec_result.sdk_mode {
+                    (
+                        exec_result.return_code == 0,
+                        if exec_result.return_data.is_empty() {
+                            exec_result.return_code.to_string()
+                        } else {
+                            String::from_utf8_lossy(&exec_result.return_data).to_string()
+                        },
+                    )
+                } else {
+                    // Legacy: return_code IS the result, always success
+                    (true, exec_result.return_code.to_string())
+                };
+
+                Ok(Some(ContractResult {
+                    success,
+                    output,
+                    gas_used: exec_result.gas_used,
+                    state_changes: exec_result
+                        .state_changes
+                        .iter()
+                        .map(|(k, v)| (k.clone(), String::from_utf8_lossy(v).to_string()))
+                        .collect(),
+                    events: exec_result.events,
+                }))
+            }
+            Err(e)
+                if e.contains("Out of gas")
+                    || e.contains("timeout")
+                    || e.contains("too large")
+                    || e.contains("leaked")
+                    || e.contains("aborted") =>
             {
-                match self.execute_wasm(
-                    &contract.bytecode,
-                    &call.function,
-                    &i32_args,
-                    call.gas_limit,
-                ) {
-                    Ok((result, gas_used)) => {
-                        return Ok(ContractResult {
-                            success: true,
-                            output: result.to_string(),
-                            gas_used,
-                            state_changes: HashMap::new(),
-                            events: Vec::new(),
-                        });
-                    }
-                    Err(e)
-                        if e.contains("Out of gas")
-                            || e.contains("timeout")
-                            || e.contains("too large") =>
-                    {
-                        return Err(e);
-                    }
-                    Err(_) => {
-                        // Fall through to mock dispatch (testnet only)
+                Err(e) // Fatal — propagate
+            }
+            Err(_) => Ok(None), // Non-fatal — fall through to legacy/mock
+        }
+    }
+
+    /// Execute contract function.
+    ///
+    /// Execution order:
+    /// 1. **Hosted WASM** (SDK mode with host functions) — preferred path
+    /// 2. **Legacy WASM** (i32 args, no host functions) — backward compatibility
+    /// 3. **Mock dispatch** (testnet only) — disabled on mainnet
+    pub fn call_contract(&self, call: ContractCall) -> Result<ContractResult, String> {
+        // ── Phase 1: Try hosted WASM execution (SDK + legacy auto-detect) ──
+        if let Some(result) = self.try_hosted_call(&call)? {
+            return Ok(result);
+        }
+
+        // ── Phase 2: Legacy WASM execution (backward compat, i32 args only) ──
+        {
+            let contracts = self
+                .contracts
+                .lock()
+                .map_err(|_| "Failed to lock contracts".to_string())?;
+            let contract = match contracts.get(&call.contract) {
+                Some(c) => c,
+                None => return Err("Contract not found".to_string()),
+            };
+
+            if contract.bytecode.len() >= 8 {
+                if let Ok(i32_args) = call
+                    .args
+                    .iter()
+                    .map(|s| s.parse::<i32>())
+                    .collect::<Result<Vec<_>, _>>()
+                {
+                    match self.execute_wasm(
+                        &contract.bytecode,
+                        &call.function,
+                        &i32_args,
+                        call.gas_limit,
+                    ) {
+                        Ok((result, gas_used)) => {
+                            return Ok(ContractResult {
+                                success: true,
+                                output: result.to_string(),
+                                gas_used,
+                                state_changes: HashMap::new(),
+                                events: Vec::new(),
+                            });
+                        }
+                        Err(e)
+                            if e.contains("Out of gas")
+                                || e.contains("timeout")
+                                || e.contains("too large") =>
+                        {
+                            return Err(e);
+                        }
+                        Err(_) => {
+                            // Fall through to mock dispatch
+                        }
                     }
                 }
             }
         }
 
+        // ── Phase 3: Mock dispatch (testnet only) ──
         // SECURITY: Mock dispatch is DISABLED on mainnet builds.
-        // On mainnet, contracts MUST have valid WASM — no fallback to hardcoded functions.
         #[cfg(feature = "mainnet")]
         return Err(format!(
             "Contract function '{}' not found in WASM module. Mock dispatch disabled on mainnet.",
@@ -413,6 +824,14 @@ impl WasmEngine {
         // Fallback to mock dispatch for testing/simple contracts (testnet only)
         #[cfg(not(feature = "mainnet"))]
         {
+            let mut contracts = self
+                .contracts
+                .lock()
+                .map_err(|_| "Failed to lock contracts for mock dispatch".to_string())?;
+            let contract = contracts
+                .get_mut(&call.contract)
+                .ok_or("Contract not found".to_string())?;
+
             let (output, gas_used, state_changes) = match call.function.as_str() {
                 "transfer" => {
                     if call.args.len() < 2 {

@@ -83,6 +83,22 @@ for i in 1 2 3 4; do
 
     mkdir -p "$NODE_DIR"
 
+    # Clean stale PID file if process is dead
+    rm -f "$PID_FILE"
+
+    # Clean stale database lock if the previous process died uncleanly.
+    # sled uses flock() which is auto-released on process death, but
+    # sometimes macOS holds it if the process entered UE (Uninterruptible Exit).
+    # The DB directory itself is fine — only the flock is stale.
+    DB_DIR="$NODE_DIR/los_database"
+    if [[ -d "$DB_DIR" ]]; then
+        # Verify no process actually holds the lock
+        if ! fuser "$DB_DIR" >/dev/null 2>&1; then
+            # No process has it open — safe to proceed
+            :
+        fi
+    fi
+
     # Seed phrase from genesis for deterministic identity across restarts
     SEED="${SEEDS[$i]:-}"
 

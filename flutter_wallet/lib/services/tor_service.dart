@@ -149,8 +149,8 @@ class TorService {
         r'C:\Program Files\Tor Browser\Browser\TorBrowser\Tor\tor.exe',
         r'C:\Program Files (x86)\Tor Browser\Browser\TorBrowser\Tor\tor.exe',
         if (localAppData.isNotEmpty)
-          path.join(localAppData, 'Tor Browser', 'Browser', 'TorBrowser',
-              'Tor', 'tor.exe'),
+          path.join(localAppData, 'Tor Browser', 'Browser', 'TorBrowser', 'Tor',
+              'tor.exe'),
         if (userProfile.isNotEmpty)
           path.join(userProfile, 'Desktop', 'Tor Browser', 'Browser',
               'TorBrowser', 'Tor', 'tor.exe'),

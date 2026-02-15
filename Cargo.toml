@@ -11,6 +11,11 @@ members = [
     "crates/los-vm", "crates/los-cli",
 ]
 
+exclude = [
+    "examples/contracts",
+    "pqcrypto-internals-seeded",
+]
+
 # Integration tests package
 [package]
 name = "unauthority-integration-tests"

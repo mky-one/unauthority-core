@@ -15,6 +15,7 @@ const TREE_ACCOUNTS: &str = "accounts";
 const TREE_META: &str = "metadata";
 const TREE_FAUCET_COOLDOWNS: &str = "faucet_cooldowns";
 const TREE_PEERS: &str = "known_peers";
+const TREE_CONTRACTS: &str = "contracts"; // Smart contract VM state
 
 /// Database wrapper with ACID guarantees
 pub struct LosDatabase {
@@ -488,6 +489,36 @@ impl LosDatabase {
             .map_err(|e| format!("Failed to flush after clear: {}", e))?;
 
         Ok(())
+    }
+
+    // --- Smart Contract VM State Persistence ---
+
+    /// Get contracts tree
+    fn contracts_tree(&self) -> Result<Tree, String> {
+        self.db
+            .open_tree(TREE_CONTRACTS)
+            .map_err(|e| format!("Failed to open contracts tree: {}", e))
+    }
+
+    /// Save entire VM state (all contracts + nonce maps) as a single blob.
+    /// The WasmEngine.serialize_all() output is stored under key "vm_state".
+    pub fn save_contracts(&self, vm_state_bytes: &[u8]) -> Result<(), String> {
+        let tree = self.contracts_tree()?;
+        tree.insert(b"vm_state", vm_state_bytes)
+            .map_err(|e| format!("Failed to save contracts: {}", e))?;
+        tree.flush()
+            .map_err(|e| format!("Failed to flush contracts: {}", e))?;
+        Ok(())
+    }
+
+    /// Load VM state blob. Returns None if no contracts have been deployed yet.
+    pub fn load_contracts(&self) -> Result<Option<Vec<u8>>, String> {
+        let tree = self.contracts_tree()?;
+        match tree.get(b"vm_state") {
+            Ok(Some(bytes)) => Ok(Some(bytes.to_vec())),
+            Ok(None) => Ok(None),
+            Err(e) => Err(format!("Failed to load contracts: {}", e)),
+        }
     }
 
     // --- Faucet Cooldown Persistence ---

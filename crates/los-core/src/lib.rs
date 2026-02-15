@@ -93,6 +93,27 @@ pub const REWARD_MIN_UPTIME_PCT: u64 = 95;
 /// Probation period: 1 epoch (30 days) before a new validator earns rewards
 pub const REWARD_PROBATION_EPOCHS: u64 = 1;
 
+// ─────────────────────────────────────────────────────────────────
+// SMART CONTRACT GAS PRICING
+// ─────────────────────────────────────────────────────────────────
+// Gas is priced in CIL. Each WASM instruction costs 1 gas unit.
+// GAS_PRICE_CIL converts gas units to CIL for fee calculation.
+// deploy_fee = bytecode_kb * GAS_PER_KB + BASE_DEPLOY_GAS
+// call_fee   = gas_limit * GAS_PRICE_CIL
+// ─────────────────────────────────────────────────────────────────
+
+/// Price per gas unit in CIL (1 gas = 1 CIL)
+pub const GAS_PRICE_CIL: u128 = 1;
+
+/// Minimum fee for deploying a contract (0.01 LOS = 1,000,000,000 CIL)
+pub const MIN_DEPLOY_FEE_CIL: u128 = 1_000_000_000;
+
+/// Minimum fee for calling a contract (same as base tx fee: 0.000001 LOS)
+pub const MIN_CALL_FEE_CIL: u128 = BASE_FEE_CIL;
+
+/// Default gas limit for contract calls (1,000,000 gas units)
+pub const DEFAULT_GAS_LIMIT: u64 = 1_000_000;
+
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub enum BlockType {
     Send,
@@ -100,6 +121,10 @@ pub enum BlockType {
     Change,
     Mint,
     Slash,
+    /// Deploy a WASM smart contract. link = "DEPLOY:{code_hash}"
+    ContractDeploy,
+    /// Call a smart contract function. link = "CALL:{contract_addr}:{function}:{args_b64}"
+    ContractCall,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -137,6 +162,8 @@ impl Block {
             BlockType::Change => 2,
             BlockType::Mint => 3,
             BlockType::Slash => 4,
+            BlockType::ContractDeploy => 5,
+            BlockType::ContractCall => 6,
         };
         hasher.update([type_byte]);
 
@@ -270,7 +297,7 @@ impl Ledger {
         // 3. ACCOUNT ↔ PUBLIC KEY BINDING (prevents fund theft)
         // For Send and Change blocks, the signer MUST be the account owner.
         // Receive/Mint/Slash are system-created (signed by node/validator, not account owner).
-        if matches!(block.block_type, BlockType::Send | BlockType::Change) {
+        if matches!(block.block_type, BlockType::Send | BlockType::Change | BlockType::ContractDeploy | BlockType::ContractCall) {
             let pk_bytes = hex::decode(&block.public_key).unwrap_or_default();
             let derived_address = los_crypto::public_key_to_address(&pk_bytes);
             if derived_address != block.account {
@@ -453,6 +480,70 @@ impl Ledger {
                 }
                 // Reject if representative is unchanged (no-op spam)
                 // No balance modification for Change blocks — only representative change
+            }
+            BlockType::ContractDeploy => {
+                // Contract deployment: deployer pays fee, optionally funds contract
+                // link format: "DEPLOY:{code_hash}" — bytecode hash for integrity verification
+                if !block.link.starts_with("DEPLOY:") {
+                    return Err("ContractDeploy Error: link must start with 'DEPLOY:'".to_string());
+                }
+                let code_hash = &block.link[7..]; // After "DEPLOY:"
+                if code_hash.is_empty() || code_hash.len() < 8 {
+                    return Err("ContractDeploy Error: invalid code hash in link field".to_string());
+                }
+                // Fee validation (higher minimum than regular transactions)
+                if block.fee < MIN_DEPLOY_FEE_CIL {
+                    return Err(format!(
+                        "Deploy fee too low: {} CIL < minimum {} CIL (0.01 LOS)",
+                        block.fee, MIN_DEPLOY_FEE_CIL
+                    ));
+                }
+                // Debit: fee + optional initial contract funding
+                let total_debit = block
+                    .amount
+                    .checked_add(block.fee)
+                    .ok_or("Overflow: amount + fee exceeds u128")?;
+                if state.balance < total_debit {
+                    return Err(
+                        "Insufficient Funds: balance < deploy fee + initial funding".to_string(),
+                    );
+                }
+                state.balance -= total_debit;
+                self.accumulated_fees_cil += block.fee;
+            }
+            BlockType::ContractCall => {
+                // Contract call: caller pays gas fee, optionally sends CIL to contract
+                // link format: "CALL:{contract_addr}:{function}:{args_b64}"
+                if !block.link.starts_with("CALL:") {
+                    return Err("ContractCall Error: link must start with 'CALL:'".to_string());
+                }
+                let call_data = &block.link[5..]; // After "CALL:"
+                let call_parts: Vec<&str> = call_data.splitn(3, ':').collect();
+                if call_parts.len() < 2 {
+                    return Err(
+                        "ContractCall Error: link must contain contract address and function"
+                            .to_string(),
+                    );
+                }
+                // Fee validation (at least base fee)
+                if block.fee < MIN_CALL_FEE_CIL {
+                    return Err(format!(
+                        "Call fee too low: {} CIL < minimum {} CIL",
+                        block.fee, MIN_CALL_FEE_CIL
+                    ));
+                }
+                // Debit: fee + optional value transfer to contract
+                let total_debit = block
+                    .amount
+                    .checked_add(block.fee)
+                    .ok_or("Overflow: amount + fee exceeds u128")?;
+                if state.balance < total_debit {
+                    return Err(
+                        "Insufficient Funds: balance < call fee + value transfer".to_string(),
+                    );
+                }
+                state.balance -= total_debit;
+                self.accumulated_fees_cil += block.fee;
             }
             BlockType::Slash => {
                 // Slash: penalty deduction for validator misbehavior

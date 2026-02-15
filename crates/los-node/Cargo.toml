@@ -19,7 +19,7 @@ los-core = { path = "../los-core" }
 los-crypto = { path = "../los-crypto" }
 los-consensus = { path = "../los-consensus" }
 los-network = { path = "../los-network" }
-los-vm = { path = "../los-vm", optional = true }
+los-vm = { path = "../los-vm" }
 
 # gRPC dependencies (NEW)
 tonic = "0.12"
@@ -35,8 +35,7 @@ bip39 = "2.0"  # BIP39 mnemonic → seed for deterministic validator keypairs
 libc = "0.2"  # Non-blocking flock() to prevent UE zombie cascade
 
 [features]
-default = ["vm"]
-vm = ["los-vm"]
+default = []
 mainnet = ["los-core/mainnet"]  # Build for mainnet: cargo build --release -p los-node --features mainnet
 
 [build-dependencies]

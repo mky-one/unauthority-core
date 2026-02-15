@@ -1,3 +1,4 @@
+import '../constants/colors.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../services/wallet_service.dart';
@@ -409,7 +410,7 @@ class _SetupWizardScreenState extends State<SetupWizardScreen> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           const SizedBox(height: 32),
-          const Icon(Icons.verified_user, size: 80, color: Color(0xFF6B4CE6)),
+          const Icon(Icons.verified_user, size: 80, color: ValidatorColors.accent),
           const SizedBox(height: 16),
           const Text('Register Validator',
               style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold),
@@ -434,7 +435,7 @@ class _SetupWizardScreenState extends State<SetupWizardScreen> {
           ElevatedButton(
               onPressed: _isValidating ? null : _importAndValidate,
               style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF6B4CE6),
+                  backgroundColor: ValidatorColors.accent,
                   foregroundColor: Colors.white,
                   padding: const EdgeInsets.symmetric(vertical: 16),
                   shape: RoundedRectangleBorder(
@@ -535,7 +536,7 @@ class _SetupWizardScreenState extends State<SetupWizardScreen> {
           ] else ...[
             // Normal validator — full node spawn flow
             Card(
-                color: const Color(0xFF1A1F2E).withValues(alpha: 0.6),
+                color: ValidatorColors.cardBg.withValues(alpha: 0.6),
                 child: Padding(
                     padding: const EdgeInsets.all(16),
                     child: Column(
@@ -566,7 +567,7 @@ class _SetupWizardScreenState extends State<SetupWizardScreen> {
                       fontSize: 16, fontWeight: FontWeight.bold)),
               style: ElevatedButton.styleFrom(
                   backgroundColor: _isGenesisMonitor
-                      ? const Color(0xFF6B4CE6)
+                      ? ValidatorColors.accent
                       : Colors.green,
                   foregroundColor: Colors.white,
                   padding:
@@ -593,7 +594,7 @@ class _SetupWizardScreenState extends State<SetupWizardScreen> {
             width: 24,
             height: 24,
             decoration: BoxDecoration(
-                color: const Color(0xFF6B4CE6).withValues(alpha: 0.3),
+                color: ValidatorColors.accent.withValues(alpha: 0.3),
                 borderRadius: BorderRadius.circular(12)),
             child: Center(
                 child: Text(num,
@@ -617,7 +618,7 @@ class _SetupWizardScreenState extends State<SetupWizardScreen> {
                 width: 80,
                 height: 80,
                 child: CircularProgressIndicator(
-                    strokeWidth: 4, color: Color(0xFF6B4CE6)))
+                    strokeWidth: 4, color: ValidatorColors.accent))
           else
             Icon(_isGenesisMonitor ? Icons.monitor_heart : Icons.check_circle,
                 size: 80, color: Colors.green),
@@ -643,7 +644,7 @@ class _SetupWizardScreenState extends State<SetupWizardScreen> {
                   value: _launchProgress,
                   backgroundColor: Colors.grey[800],
                   color: _launchProgress < 1.0
-                      ? const Color(0xFF6B4CE6)
+                      ? ValidatorColors.accent
                       : Colors.green,
                   minHeight: 8,
                   borderRadius: BorderRadius.circular(4))),
@@ -686,22 +687,22 @@ class _SetupWizardScreenState extends State<SetupWizardScreen> {
       _ImportMethod method, IconData icon, String title, String subtitle) {
     final selected = _importMethod == method;
     return Card(
-      color: selected ? const Color(0xFF6B4CE6).withValues(alpha: 0.2) : null,
+      color: selected ? ValidatorColors.accent.withValues(alpha: 0.2) : null,
       shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(8),
           side: BorderSide(
-              color: selected ? const Color(0xFF6B4CE6) : Colors.transparent,
+              color: selected ? ValidatorColors.accent : Colors.transparent,
               width: 1.5)),
       child: ListTile(
           leading: Icon(icon,
-              color: selected ? const Color(0xFF6B4CE6) : Colors.grey),
+              color: selected ? ValidatorColors.accent : Colors.grey),
           title: Text(title,
               style: TextStyle(
                   fontWeight: selected ? FontWeight.bold : FontWeight.normal)),
           subtitle: Text(subtitle,
               style: TextStyle(fontSize: 12, color: Colors.grey[400])),
           trailing: selected
-              ? const Icon(Icons.check_circle, color: Color(0xFF6B4CE6))
+              ? const Icon(Icons.check_circle, color: ValidatorColors.accent)
               : null,
           onTap: () => setState(() {
                 _importMethod = method;

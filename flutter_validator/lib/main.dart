@@ -95,14 +95,18 @@ class _MyAppState extends State<MyApp> {
         debugShowCheckedModeBanner: false,
         theme: ThemeData(
           colorScheme: ColorScheme.fromSeed(
-            seedColor: const Color(0xFF6B4CE6),
+            seedColor: const Color(0xFFE67E22), // Orange — distinct from wallet purple
             brightness: Brightness.dark,
           ),
           useMaterial3: true,
-          scaffoldBackgroundColor: const Color(0xFF0A0E1A),
+          scaffoldBackgroundColor: const Color(0xFF0D1117), // Darker — GitHub-dark feel
           cardTheme: const CardThemeData(
-            color: Color(0xFF1A1F2E),
+            color: Color(0xFF161B22), // Distinct from wallet (0xFF1A1F2E)
             elevation: 4,
+          ),
+          appBarTheme: const AppBarTheme(
+            backgroundColor: Color(0xFF161B22),
+            foregroundColor: Color(0xFFE67E22),
           ),
         ),
         home: _AppRouter(key: _routerKey),
@@ -158,8 +162,38 @@ class _AppRouterState extends State<_AppRouter> {
   @override
   Widget build(BuildContext context) {
     if (_loading) {
-      return const Scaffold(
-        body: Center(child: CircularProgressIndicator()),
+      return Scaffold(
+        body: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(
+                Icons.dns_rounded,
+                size: 80,
+                color: Theme.of(context).colorScheme.primary,
+              ),
+              const SizedBox(height: 24),
+              const Text(
+                'LOS VALIDATOR',
+                style: TextStyle(
+                  fontSize: 32,
+                  fontWeight: FontWeight.bold,
+                  letterSpacing: 3,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Unauthority Node Dashboard',
+                style: TextStyle(
+                  fontSize: 16,
+                  color: Colors.grey[400],
+                ),
+              ),
+              const SizedBox(height: 48),
+              const CircularProgressIndicator(),
+            ],
+          ),
+        ),
       );
     }
     if (_hasWallet) {

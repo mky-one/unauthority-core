@@ -27,15 +27,26 @@ import 'dilithium_service.dart';
 /// Both modes use BIP39 24-word mnemonic for wallet creation/backup.
 class WalletService {
   // Non-sensitive keys (SharedPreferences — survives app reinstall on some platforms)
-  static const String _addressKey = 'wallet_address';
-  static const String _importModeKey = 'wallet_import_mode';
-  static const String _cryptoModeKey = 'wallet_crypto_mode';
-  static const String _monitorModeKey = 'validator_monitor_mode';
+  // IMPORTANT: Prefixed with 'v_' to avoid collision with wallet app on Linux/Windows
+  // (libsecret and Credential Manager share keys globally without app namespacing)
+  static const String _addressKey = 'v_wallet_address';
+  static const String _importModeKey = 'v_wallet_import_mode';
+  static const String _cryptoModeKey = 'v_wallet_crypto_mode';
+  static const String _monitorModeKey = 'v_validator_monitor_mode';
 
   // Sensitive keys (flutter_secure_storage — Keychain/Keystore)
-  static const String _seedKey = 'wallet_seed';
-  static const String _publicKeyKey = 'wallet_public_key';
-  static const String _secretKeyKey = 'wallet_secret_key';
+  static const String _seedKey = 'v_wallet_seed';
+  static const String _publicKeyKey = 'v_wallet_public_key';
+  static const String _secretKeyKey = 'v_wallet_secret_key';
+
+  // Legacy keys (for migration from old non-prefixed keys)
+  static const String _legacyAddressKey = 'wallet_address';
+  static const String _legacyImportModeKey = 'wallet_import_mode';
+  static const String _legacyCryptoModeKey = 'wallet_crypto_mode';
+  static const String _legacyMonitorModeKey = 'validator_monitor_mode';
+  static const String _legacySeedKey = 'wallet_seed';
+  static const String _legacyPublicKeyKey = 'wallet_public_key';
+  static const String _legacySecretKeyKey = 'wallet_secret_key';
 
   /// Encrypted storage backed by platform Keychain (iOS/macOS) or Keystore (Android)
   /// useDataProtectionKeyChain: false = legacy file-based keychain (works with ad-hoc signing)
@@ -53,8 +64,52 @@ class WalletService {
 
   /// One-time migration from SharedPreferences → SecureStorage
   /// Called on app startup. Silent if already migrated.
+  /// Also migrates from legacy non-prefixed keys to v_ prefixed keys.
   Future<void> migrateFromSharedPreferences() async {
     final prefs = await SharedPreferences.getInstance();
+
+    // === Phase 1: Migrate legacy non-prefixed keys → v_ prefixed keys ===
+    // This fixes the Linux/Windows storage collision between wallet and validator apps.
+    final legacyAddress = prefs.getString(_legacyAddressKey);
+    if (legacyAddress != null && prefs.getString(_addressKey) == null) {
+      await prefs.setString(_addressKey, legacyAddress);
+      final legacyImport = prefs.getString(_legacyImportModeKey);
+      if (legacyImport != null) {
+        await prefs.setString(_importModeKey, legacyImport);
+      }
+      final legacyCrypto = prefs.getString(_legacyCryptoModeKey);
+      if (legacyCrypto != null) {
+        await prefs.setString(_cryptoModeKey, legacyCrypto);
+      }
+      final legacyMonitor = prefs.getBool(_legacyMonitorModeKey);
+      if (legacyMonitor != null) {
+        await prefs.setBool(_monitorModeKey, legacyMonitor);
+      }
+      // Migrate secure storage keys
+      final legacySeed = await _secureStorage.read(key: _legacySeedKey);
+      if (legacySeed != null) {
+        await _secureStorage.write(key: _seedKey, value: legacySeed);
+        await _secureStorage.delete(key: _legacySeedKey);
+      }
+      final legacyPk = await _secureStorage.read(key: _legacyPublicKeyKey);
+      if (legacyPk != null) {
+        await _secureStorage.write(key: _publicKeyKey, value: legacyPk);
+        await _secureStorage.delete(key: _legacyPublicKeyKey);
+      }
+      final legacySk = await _secureStorage.read(key: _legacySecretKeyKey);
+      if (legacySk != null) {
+        await _secureStorage.write(key: _secretKeyKey, value: legacySk);
+        await _secureStorage.delete(key: _legacySecretKeyKey);
+      }
+      // Clean up legacy non-prefixed keys from SharedPreferences
+      await prefs.remove(_legacyAddressKey);
+      await prefs.remove(_legacyImportModeKey);
+      await prefs.remove(_legacyCryptoModeKey);
+      await prefs.remove(_legacyMonitorModeKey);
+      debugPrint('🔄 Migrated validator keys from legacy → v_ prefixed');
+    }
+
+    // === Phase 2: Original migration from SharedPreferences → SecureStorage ===
     final existingSeed = prefs.getString(_seedKey);
     if (existingSeed != null) {
       // Migrate secrets to secure storage

@@ -292,8 +292,7 @@ class ApiService {
         // HTTP error (4xx/5xx) → host unhealthy
         _getHealth(baseUrl).recordFailure();
         final failures = _getHealth(baseUrl).consecutiveFailures;
-        debugPrint(
-            '🔌 [HealthCheck] HTTP ${response.statusCode} '
+        debugPrint('🔌 [HealthCheck] HTTP ${response.statusCode} '
             '(failure $failures/2)');
         // Only re-probe after 2+ consecutive failures (Tor jitter tolerance)
         if (failures >= 2) _triggerFullProbe();
@@ -471,6 +470,7 @@ class ApiService {
   /// - Current node gets 2 retries before we consider switching.
   ///   Tor latency varies wildly (3s-30s), so a single timeout is normal.
   /// - Only switch to next node after 2 consecutive failures on current.
+  /// - If SOCKS proxy is dead → skip all .onion nodes, go straight to local.
   /// - Local node fallback if ALL external nodes fail.
   /// - Tor auto-recovery if SOCKS proxy died.
   Future<http.Response> _requestWithFailover(
@@ -478,6 +478,8 @@ class ApiService {
     String endpoint,
   ) async {
     await ensureReady();
+
+    bool socksDead = false; // Set true on "Connection refused" to skip Phase 1b
 
     // ── Phase 1: Try current node FIRST with a retry ──
     // Give the current (sticky) node 2 chances before switching.
@@ -515,13 +517,15 @@ class ApiService {
         if (retry == 0) {
           debugPrint(
               '⚠️ Node ${_currentNodeIndex + 1} failed for $endpoint (retry 1/2): $e');
-          // Detect dead SOCKS proxy
+          // Detect dead SOCKS proxy — all .onion nodes will fail too,
+          // so skip Phase 1b entirely (saves 90+ seconds of pointless retries)
           final errStr = e.toString();
           if (errStr.contains('Connection refused') ||
               errStr.contains('SOCKS') ||
               errStr.contains('Proxy')) {
             _triggerTorRecovery();
-            break; // SOCKS dead → don't retry same proxy, go to fallback
+            socksDead = true;
+            break; // SOCKS dead → skip to local fallback immediately
           }
           continue; // Normal Tor jitter → retry same node once
         }
@@ -531,35 +535,40 @@ class ApiService {
     }
 
     // ── Phase 1b: Try other available nodes (max 2 more attempts) ──
-    final otherAttempts = (_bootstrapUrls.length - 1).clamp(0, 2);
-    for (var i = 0; i < otherAttempts; i++) {
-      if (!_switchToNextNode()) break; // No more nodes to try
-      try {
-        final sw = Stopwatch()..start();
-        final response = await requestFn(baseUrl).timeout(_timeout);
-        sw.stop();
+    // SKIP entirely if SOCKS proxy is dead — all .onion nodes go through
+    // the same proxy, so they'll ALL fail. Don't waste 2 × 45s.
+    if (!socksDead) {
+      final otherAttempts = (_bootstrapUrls.length - 1).clamp(0, 2);
+      for (var i = 0; i < otherAttempts; i++) {
+        if (!_switchToNextNode()) break; // No more nodes to try
+        try {
+          final sw = Stopwatch()..start();
+          final response = await requestFn(baseUrl).timeout(_timeout);
+          sw.stop();
 
-        _getHealth(baseUrl).recordSuccess(sw.elapsedMilliseconds);
+          _getHealth(baseUrl).recordSuccess(sw.elapsedMilliseconds);
 
-        if (response.statusCode >= 500) {
+          if (response.statusCode >= 500) {
+            _getHealth(baseUrl).recordFailure();
+            continue;
+          }
+
+          if (_usingLocalFallback) {
+            _usingLocalFallback = false;
+            debugPrint('🌐 Restored external .onion connectivity via failover');
+          }
+
+          if (!_initialDiscoveryDone) {
+            _initialDiscoveryDone = true;
+            Future.microtask(() => _runInitialDiscovery());
+          }
+
+          return response;
+        } on Exception catch (e) {
           _getHealth(baseUrl).recordFailure();
-          continue;
+          debugPrint(
+              '⚠️ Failover node ${_currentNodeIndex + 1} failed for $endpoint: $e');
         }
-
-        if (_usingLocalFallback) {
-          _usingLocalFallback = false;
-          debugPrint('🌐 Restored external .onion connectivity via failover');
-        }
-
-        if (!_initialDiscoveryDone) {
-          _initialDiscoveryDone = true;
-          Future.microtask(() => _runInitialDiscovery());
-        }
-
-        return response;
-      } on Exception catch (e) {
-        _getHealth(baseUrl).recordFailure();
-        debugPrint('⚠️ Failover node ${_currentNodeIndex + 1} failed for $endpoint: $e');
       }
     }
 
@@ -582,6 +591,9 @@ class ApiService {
       } on Exception catch (e) {
         debugPrint('❌ Local node fallback also failed for $endpoint: $e');
       }
+    } else {
+      debugPrint('⚠️ No local node URL set — '
+          'start your node first for offline fallback');
     }
 
     // ── Phase 3: Everything failed ──

@@ -1,3 +1,4 @@
+import '../constants/colors.dart';
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -163,20 +164,20 @@ class _NodeControlScreenState extends State<NodeControlScreen>
               margin: const EdgeInsets.only(right: 4),
               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
               decoration: BoxDecoration(
-                  color: const Color(0xFF6B4CE6).withValues(alpha: 0.2),
+                  color: ValidatorColors.accent.withValues(alpha: 0.2),
                   borderRadius: BorderRadius.circular(12),
                   border: Border.all(
-                      color: const Color(0xFF6B4CE6).withValues(alpha: 0.5))),
+                      color: ValidatorColors.accent.withValues(alpha: 0.5))),
               child: const Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Icon(Icons.monitor_heart, size: 12, color: Color(0xFF6B4CE6)),
+                  Icon(Icons.monitor_heart, size: 12, color: ValidatorColors.accent),
                   SizedBox(width: 4),
                   Text('MONITOR',
                       style: TextStyle(
                           fontSize: 10,
                           fontWeight: FontWeight.bold,
-                          color: Color(0xFF6B4CE6))),
+                          color: ValidatorColors.accent)),
                 ],
               ),
             ),
@@ -261,13 +262,13 @@ class _NodeControlScreenState extends State<NodeControlScreen>
               padding: const EdgeInsets.all(20),
               child: Column(children: [
                 const Icon(Icons.monitor_heart,
-                    size: 56, color: Color(0xFF6B4CE6)),
+                    size: 56, color: ValidatorColors.accent),
                 const SizedBox(height: 12),
                 const Text('Monitor Mode',
                     style: TextStyle(
                         fontSize: 24,
                         fontWeight: FontWeight.bold,
-                        color: Color(0xFF6B4CE6))),
+                        color: ValidatorColors.accent)),
                 const SizedBox(height: 4),
                 Text('Viewing genesis bootstrap validator dashboard',
                     style: TextStyle(color: Colors.grey[400], fontSize: 12)),
@@ -405,7 +406,7 @@ class _NodeControlScreenState extends State<NodeControlScreen>
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             const Row(children: [
-              Icon(Icons.info_outline, color: Color(0xFF6B4CE6)),
+              Icon(Icons.info_outline, color: ValidatorColors.accent),
               SizedBox(width: 8),
               Text('Node Details',
                   style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
@@ -463,7 +464,7 @@ class _NodeControlScreenState extends State<NodeControlScreen>
           icon: const Icon(Icons.refresh),
           label: const Text('RESTART'),
           style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFF6B4CE6),
+              backgroundColor: ValidatorColors.accent,
               foregroundColor: Colors.white,
               padding: const EdgeInsets.symmetric(vertical: 16),
               shape: RoundedRectangleBorder(
@@ -671,7 +672,7 @@ class _NodeControlScreenState extends State<NodeControlScreen>
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             const Row(children: [
-              Icon(Icons.account_balance_wallet, color: Color(0xFF6B4CE6)),
+              Icon(Icons.account_balance_wallet, color: ValidatorColors.accent),
               SizedBox(width: 8),
               Text('Validator Wallet',
                   style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),

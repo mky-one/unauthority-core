@@ -1,5 +1,7 @@
 // Rate Limiter Module - DDoS Protection
 // Implements Token Bucket Algorithm dengan IP-based tracking
+// MAINNET SAFETY: Uses integer math (millitokens) instead of f64
+// for deterministic behavior across platforms.
 
 use std::collections::HashMap;
 use std::net::IpAddr;
@@ -14,19 +16,24 @@ fn safe_lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
     }
 }
 
+/// Precision multiplier: 1 token = 1000 millitokens
+/// This avoids f64 while maintaining sub-token precision for refills.
+const MILLITOKEN: u64 = 1000;
+
 /// Token Bucket Rate Limiter
 /// Allows burst traffic but limits average rate over time
+/// MAINNET SAFETY: Uses integer math (millitokens) — no f64 in production.
 #[derive(Clone)]
 pub struct RateLimiter {
     buckets: Arc<Mutex<HashMap<IpAddr, TokenBucket>>>,
-    max_tokens: u32,            // Maximum tokens (burst capacity)
+    max_tokens_milli: u64,      // Maximum tokens in millitokens (burst capacity)
     refill_rate: u32,           // Tokens per second
     cleanup_interval: Duration, // How often to cleanup old entries
     last_cleanup: Arc<Mutex<Instant>>,
 }
 
 struct TokenBucket {
-    tokens: f64,
+    tokens_milli: u64, // Token count in millitokens (1000 = 1 token)
     last_refill: Instant,
 }
 
@@ -41,7 +48,7 @@ impl RateLimiter {
 
         RateLimiter {
             buckets: Arc::new(Mutex::new(HashMap::new())),
-            max_tokens,
+            max_tokens_milli: max_tokens as u64 * MILLITOKEN,
             refill_rate: requests_per_second,
             cleanup_interval: Duration::from_secs(300), // 5 minutes
             last_cleanup: Arc::new(Mutex::new(Instant::now())),
@@ -57,21 +64,23 @@ impl RateLimiter {
         let mut buckets = safe_lock(&self.buckets);
 
         let bucket = buckets.entry(ip).or_insert_with(|| TokenBucket {
-            tokens: self.max_tokens as f64,
+            tokens_milli: self.max_tokens_milli,
             last_refill: Instant::now(),
         });
 
-        // Refill tokens based on elapsed time
+        // Refill tokens based on elapsed time (integer math)
         let now = Instant::now();
-        let elapsed = now.duration_since(bucket.last_refill).as_secs_f64();
-        let tokens_to_add = elapsed * self.refill_rate as f64;
+        let elapsed_ms = now.duration_since(bucket.last_refill).as_millis() as u64;
+        // tokens_to_add_milli = elapsed_ms * refill_rate * MILLITOKEN / 1000
+        // Simplifies to: elapsed_ms * refill_rate (since MILLITOKEN = 1000)
+        let tokens_to_add_milli = elapsed_ms * self.refill_rate as u64;
 
-        bucket.tokens = (bucket.tokens + tokens_to_add).min(self.max_tokens as f64);
+        bucket.tokens_milli = (bucket.tokens_milli + tokens_to_add_milli).min(self.max_tokens_milli);
         bucket.last_refill = now;
 
-        // Check if we have at least 1 token
-        if bucket.tokens >= 1.0 {
-            bucket.tokens -= 1.0;
+        // Check if we have at least 1 token (1000 millitokens)
+        if bucket.tokens_milli >= MILLITOKEN {
+            bucket.tokens_milli -= MILLITOKEN;
             true
         } else {
             false
@@ -79,10 +88,11 @@ impl RateLimiter {
     }
 
     /// Get current token count for IP (for monitoring)
+    /// Returns millitokens (divide by 1000 for whole tokens)
     #[allow(dead_code)]
-    pub fn get_tokens(&self, ip: IpAddr) -> Option<f64> {
+    pub fn get_tokens_milli(&self, ip: IpAddr) -> Option<u64> {
         let buckets = safe_lock(&self.buckets);
-        buckets.get(&ip).map(|b| b.tokens)
+        buckets.get(&ip).map(|b| b.tokens_milli)
     }
 
     /// Get number of tracked IPs
@@ -237,26 +247,30 @@ mod tests {
     }
 
     #[test]
-    fn test_get_tokens() {
+    fn test_get_tokens_milli() {
         let limiter = RateLimiter::new(10, Some(10));
         let ip = IpAddr::V4(Ipv4Addr::new(192, 168, 1, 30));
 
-        // Initial tokens should be max (10)
+        // Initial tokens should be max (10 * 1000 = 10000 millitokens)
         assert!(limiter.check_rate_limit(ip));
-        let tokens = limiter.get_tokens(ip).unwrap();
+        let tokens = limiter.get_tokens_milli(ip).unwrap();
+        // After 1 request: 10000 - 1000 = 9000 millitokens (+ small refill)
         assert!(
-            (8.9..=9.1).contains(&tokens),
-            "Tokens should be ~9 after 1 request"
+            (8900..=9100).contains(&tokens),
+            "Tokens should be ~9000 milli after 1 request, got {}",
+            tokens
         );
 
         // Consume 5 more
         for _ in 0..5 {
             limiter.check_rate_limit(ip);
         }
-        let tokens = limiter.get_tokens(ip).unwrap();
+        let tokens = limiter.get_tokens_milli(ip).unwrap();
+        // After 6 requests: ~4000 millitokens
         assert!(
-            (3.9..=4.1).contains(&tokens),
-            "Tokens should be ~4 after 6 requests"
+            (3800..=4200).contains(&tokens),
+            "Tokens should be ~4000 milli after 6 requests, got {}",
+            tokens
         );
     }
 

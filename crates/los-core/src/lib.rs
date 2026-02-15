@@ -6,6 +6,7 @@ use std::collections::{HashMap, HashSet};
 pub const MAX_TIMESTAMP_DRIFT_SECS: u64 = 300;
 
 pub mod anti_whale;
+#[cfg(not(feature = "mainnet"))]
 pub mod bonding_curve;
 pub mod distribution;
 pub mod oracle_consensus;

@@ -9,6 +9,7 @@ members = [
     "crates/los-node",
     "crates/los-consensus",
     "crates/los-vm", "crates/los-cli",
+    "crates/los-sdk",
 ]
 
 exclude = [

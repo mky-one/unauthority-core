@@ -22,6 +22,18 @@ Unauthority is a post-quantum secure, block-lattice (DAG) blockchain with aBFT c
 | **Cryptography** | Dilithium5 (Post-Quantum) + SHA-3 |
 | **Network** | Tor Hidden Services (.onion) exclusively |
 
+## 🚀 Testnet Now Available!
+
+**Join the Unauthority Testnet** to test the wallet, run validators, and earn testnet LOS tokens.
+
+- **📱 Wallet:** Download for macOS, Linux, or Windows → [Testnet Quick Start](TESTNET_QUICKSTART.md)
+- **🖥️ Validator:** Run a full node with dashboard → [Validator Guide](docs/VALIDATOR_GUIDE.md)
+- **🎁 Faucet:** Get 1,000 LOS testnet tokens via the wallet (rate limit: 1 per address/hour)
+
+**Latest Releases:**
+- [Wallet v1.0.8-testnet](https://github.com/monkey-one/unauthority-core/releases/tag/wallet-v1.0.8-testnet)
+- [Validator v1.0.10-testnet](https://github.com/monkey-one/unauthority-core/releases/tag/validator-v1.0.10-testnet)
+
 ## Architecture
 
 ```

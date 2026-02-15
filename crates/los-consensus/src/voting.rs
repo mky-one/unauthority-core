@@ -9,7 +9,7 @@
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 
 /// Voting power calculation precision (decimal places)
 pub const VOTING_POWER_PRECISION: u32 = 6;
@@ -132,7 +132,8 @@ pub struct VotingPowerSummary {
 /// Voting system to calculate and track voting power
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct VotingSystem {
-    validators: HashMap<String, ValidatorVote>,
+    /// MAINNET: BTreeMap for deterministic validator iteration order
+    validators: BTreeMap<String, ValidatorVote>,
 }
 
 impl Default for VotingSystem {
@@ -145,7 +146,7 @@ impl VotingSystem {
     /// Create new voting system
     pub fn new() -> Self {
         Self {
-            validators: HashMap::new(),
+            validators: BTreeMap::new(),
         }
     }
 

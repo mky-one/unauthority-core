@@ -10,7 +10,7 @@
 
 use serde::{Deserialize, Serialize};
 use sha3::{Digest, Keccak256};
-use std::collections::{HashMap, VecDeque};
+use std::collections::{BTreeMap, VecDeque};
 
 /// Block structure for consensus
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
@@ -172,9 +172,10 @@ pub struct ABFTConsensus {
     pub locked_view: u64,
 
     // Message tracking
-    pub pre_prepare_messages: HashMap<u64, ConsensusMessage>,
-    pub prepare_votes: HashMap<u64, Vec<ConsensusMessage>>,
-    pub commit_votes: HashMap<u64, Vec<ConsensusMessage>>,
+    /// MAINNET: BTreeMap for deterministic sequence ordering
+    pub pre_prepare_messages: BTreeMap<u64, ConsensusMessage>,
+    pub prepare_votes: BTreeMap<u64, Vec<ConsensusMessage>>,
+    pub commit_votes: BTreeMap<u64, Vec<ConsensusMessage>>,
 
     // Finalized blocks
     pub finalized_blocks: VecDeque<Block>,
@@ -213,9 +214,9 @@ impl ABFTConsensus {
             state: ValidatorState::Normal,
             locked_block: None,
             locked_view: 0,
-            pre_prepare_messages: HashMap::new(),
-            prepare_votes: HashMap::new(),
-            commit_votes: HashMap::new(),
+            pre_prepare_messages: BTreeMap::new(),
+            prepare_votes: BTreeMap::new(),
+            commit_votes: BTreeMap::new(),
             finalized_blocks: VecDeque::new(),
             finality_timestamp: 0,
             block_timeout_ms: 3000, // 3 seconds for finality

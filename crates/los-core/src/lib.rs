@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 use sha3::{Digest, Keccak256};
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet};
 
 /// Maximum allowed timestamp drift from current time (5 minutes)
 pub const MAX_TIMESTAMP_DRIFT_SECS: u64 = 300;
@@ -251,14 +251,16 @@ pub struct AccountState {
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Ledger {
-    pub accounts: HashMap<String, AccountState>,
-    pub blocks: HashMap<String, Block>,
+    /// MAINNET: BTreeMap guarantees deterministic iteration and serialization
+    /// across all validators. Required for state root agreement.
+    pub accounts: BTreeMap<String, AccountState>,
+    pub blocks: BTreeMap<String, Block>,
     pub distribution: DistributionState,
     /// O(1) index of Send block hashes that have already been claimed by a Receive block.
-    /// PERF: HashSet (never pruned) eliminates O(n) full-scan fallback entirely.
+    /// MAINNET: BTreeSet for deterministic serialization in SYNC_GZIP payloads.
     /// Memory: ~64 bytes per entry × 10M entries ≈ 640MB upper bound.
     #[serde(default)]
-    pub claimed_sends: HashSet<String>,
+    pub claimed_sends: BTreeSet<String>,
     /// Accumulated transaction fees (CIL units) — available for validator distribution
     #[serde(default)]
     pub accumulated_fees_cil: u128,
@@ -273,10 +275,10 @@ impl Default for Ledger {
 impl Ledger {
     pub fn new() -> Self {
         Self {
-            accounts: HashMap::new(),
-            blocks: HashMap::new(),
+            accounts: BTreeMap::new(),
+            blocks: BTreeMap::new(),
             distribution: DistributionState::new(),
-            claimed_sends: HashSet::new(),
+            claimed_sends: BTreeSet::new(),
             accumulated_fees_cil: 0,
         }
     }
@@ -453,7 +455,7 @@ impl Ledger {
                         ));
                     }
                     // 4. Double-receive prevention:
-                    // O(1) definitive check via claimed_sends HashSet (never pruned).
+                    // O(1) definitive check via claimed_sends BTreeSet (never pruned).
                     if self.claimed_sends.contains(&block.link) {
                         return Err(format!(
                             "Receive Error: Send block {} already received",

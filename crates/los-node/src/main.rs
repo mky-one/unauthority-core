@@ -2613,7 +2613,7 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
                     "address": addr,
                     "status": format!("{:?}", profile.status),
                     "uptime_bps": profile.get_uptime_bps(),
-                    "uptime_percent": profile.get_uptime_bps() as f64 / 100.0,
+                    "uptime_percent_x100": profile.get_uptime_bps(),  // 9500 = 95.00%
                     "total_slashed_cil": profile.total_slashed_cil,
                     "violation_count": profile.violation_count,
                     "blocks_participated": profile.blocks_participated,
@@ -3753,13 +3753,35 @@ async fn get_crypto_prices() -> (u128, u128) {
     let mut eth_prices: Vec<u128> = Vec::new();
     let mut btc_prices: Vec<u128> = Vec::new();
 
-    /// Convert API f64 price to micro-USD (u128). Single f64→u128 conversion is safe.
+    /// Convert API f64 price to micro-USD (u128). Single f64→u128 at external API boundary.
+    /// MAINNET NOTE: External JSON APIs (CoinGecko, CryptoCompare) return numbers as f64.
+    /// This is the single unavoidable conversion point. Result feeds into median consensus.
     fn to_micro(price_f64: f64) -> Option<u128> {
         if price_f64.is_finite() && price_f64 > 0.0 {
             Some((price_f64 * MICRO as f64).round() as u128)
         } else {
             None
         }
+    }
+
+    /// MAINNET: Deterministic string-to-micro-USD conversion (no f64).
+    /// Parses decimal strings like "2000.50" directly to micro-USD u128.
+    fn str_to_micro(price_str: &str) -> Option<u128> {
+        let trimmed = price_str.trim();
+        if trimmed.is_empty() {
+            return None;
+        }
+        let parts: Vec<&str> = trimmed.split('.').collect();
+        let whole: u128 = parts[0].parse().ok()?;
+        let frac_micro = if parts.len() > 1 {
+            // Pad or truncate to 6 decimal places (micro-USD)
+            let frac_str = parts[1];
+            let padded = format!("{:<06}", frac_str); // pad right with zeros
+            padded[..6].parse::<u128>().unwrap_or(0)
+        } else {
+            0
+        };
+        whole.checked_mul(MICRO)?.checked_add(frac_micro)
     }
 
     // 1. Fetch CoinGecko
@@ -3794,10 +3816,9 @@ async fn get_crypto_prices() -> (u128, u128) {
                 if let Some(eth) = result.get("XETHZUSD") {
                     if let Some(p_array) = eth["c"].as_array() {
                         if let Some(p_str) = p_array[0].as_str() {
-                            if let Ok(p) = p_str.parse::<f64>() {
-                                if let Some(micro) = to_micro(p) {
-                                    eth_prices.push(micro);
-                                }
+                            // MAINNET: Use string parser (no f64) for Kraken prices
+                            if let Some(micro) = str_to_micro(p_str) {
+                                eth_prices.push(micro);
                             }
                         }
                     }
@@ -3805,10 +3826,9 @@ async fn get_crypto_prices() -> (u128, u128) {
                 if let Some(btc) = result.get("XXBTZUSD") {
                     if let Some(p_array) = btc["c"].as_array() {
                         if let Some(p_str) = p_array[0].as_str() {
-                            if let Ok(p) = p_str.parse::<f64>() {
-                                if let Some(micro) = to_micro(p) {
-                                    btc_prices.push(micro);
-                                }
+                            // MAINNET: Use string parser (no f64) for Kraken prices
+                            if let Some(micro) = str_to_micro(p_str) {
+                                btc_prices.push(micro);
                             }
                         }
                     }
@@ -3962,12 +3982,14 @@ async fn verify_eth_burn_tx(txid: &str) -> Option<u128> {
                         for a in addrs {
                             if a.as_str().unwrap_or("").to_lowercase() == target {
                                 // BlockCypher returns value in wei (integer)
-                                // Try u64 first (covers < 18.4 ETH), fallback to f64→u128
+                                // MAINNET SAFETY: NO f64 — use u64 then string parse for large values
+                                // f64 loses precision above 2^53 (~9 ETH in wei)
                                 let wei =
                                     out["value"].as_u64().map(|v| v as u128).unwrap_or_else(|| {
+                                        // Fallback: parse as string → u128 (exact, no float rounding)
                                         out["value"]
-                                            .as_f64()
-                                            .map(|v| v.round() as u128)
+                                            .as_str()
+                                            .and_then(|s| s.parse::<u128>().ok())
                                             .unwrap_or(0)
                                     });
                                 return Some(wei);
@@ -4019,11 +4041,13 @@ async fn verify_btc_burn_tx(txid: &str) -> Option<u128> {
                     for out in vout.iter() {
                         if out.to_string().contains(BURN_ADDRESS_BTC) {
                             // mempool.space returns value in satoshi (integer)
+                            // MAINNET SAFETY: NO f64 — deterministic integer parsing only
                             let satoshi =
                                 out["value"].as_u64().map(|v| v as u128).unwrap_or_else(|| {
+                                    // Fallback: parse as string → u128 (exact, no float rounding)
                                     out["value"]
-                                        .as_f64()
-                                        .map(|v| v.round() as u128)
+                                        .as_str()
+                                        .and_then(|s| s.parse::<u128>().ok())
                                         .unwrap_or(0)
                                 });
                             return Some(satoshi);
@@ -5572,7 +5596,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 // ── HEARTBEAT RECORDING (idempotent per tick) ──
                 // Uses record_heartbeat_once() so each validator gets exactly
                 // 1 heartbeat per tick, regardless of how many sources report them.
-                let mut seen_this_tick = std::collections::HashSet::<String>::new();
+                let mut seen_this_tick = std::collections::BTreeSet::<String>::new();
 
                 // 1. Record heartbeat for THIS node (we are running = proven liveness)
                 pool.record_heartbeat_once(&reward_my_addr, &mut seen_this_tick);
@@ -6488,7 +6512,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     },
                     "supply" => {
                         let l = safe_lock(&ledger);
-                        println!("📉 Supply: {} LOS | 🔥 Burn: ${:.2}", format_u128(l.distribution.remaining_supply / CIL_PER_LOS), (l.distribution.total_burned_usd as f64) / 100.0);
+                        println!("📉 Supply: {} LOS | 🔥 Burn: ${}.{:02}", format_u128(l.distribution.remaining_supply / CIL_PER_LOS), l.distribution.total_burned_usd / 100, l.distribution.total_burned_usd % 100);
                     },
                     "history" => {
                         let l = safe_lock(&ledger);

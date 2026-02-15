@@ -108,19 +108,57 @@ class TorService {
   /// Kill any Tor process that is using the validator's data directory.
   /// This handles the case where the app was restarted but the old Tor
   /// process from the previous run is still alive, holding the lock file.
+  /// Works on macOS, Linux, AND Windows.
   Future<void> _killOrphanedTor() async {
-    if (Platform.isWindows) return;
     try {
-      // Find Tor processes using our data directory
       final appDir = await getApplicationSupportDirectory();
       final dataDir = path.join(appDir.path, 'tor_validator_data');
       final lockFile = File(path.join(dataDir, 'lock'));
 
-      // If lock file exists, there's likely an orphaned process
+      if (Platform.isWindows) {
+        // Windows: kill tor.exe processes that use our data directory
+        // wmic is available on all Windows versions
+        try {
+          final result = await Process.run(
+            'wmic',
+            [
+              'process',
+              'where',
+              'name="tor.exe"',
+              'get',
+              'ProcessId,CommandLine'
+            ],
+            runInShell: true,
+          );
+          if (result.exitCode == 0) {
+            final lines = result.stdout.toString().split('\n');
+            for (final line in lines) {
+              if (line.contains('tor_validator_data')) {
+                // Extract PID from the line (last number)
+                final pidMatch = RegExp(r'(\d+)\s*$').firstMatch(line.trim());
+                if (pidMatch != null) {
+                  final pid = pidMatch.group(1);
+                  debugPrint('🛑 Killing orphaned Tor PID (Windows): $pid');
+                  await Process.run('taskkill', ['/F', '/PID', pid!],
+                      runInShell: true);
+                }
+              }
+            }
+          }
+        } catch (_) {}
+
+        // Also remove stale lock file
+        if (await lockFile.exists()) {
+          await lockFile.delete();
+          debugPrint('🗑️ Removed stale Tor lock file');
+        }
+        return;
+      }
+
+      // Unix (macOS / Linux): use pgrep + SIGTERM
       if (await lockFile.exists()) {
         debugPrint('🔒 Found Tor lock file — killing orphaned processes...');
 
-        // Find PIDs of tor processes matching our config
         final result = await Process.run('pgrep', ['-f', 'tor_validator_data']);
         if (result.exitCode == 0) {
           final pids = result.stdout
@@ -135,11 +173,9 @@ class TorService {
               Process.killPid(pidNum, ProcessSignal.sigterm);
             }
           }
-          // Wait for processes to die
           await Future.delayed(const Duration(seconds: 1));
         }
 
-        // Remove stale lock file if it still exists
         if (await lockFile.exists()) {
           await lockFile.delete();
           debugPrint('🗑️ Removed stale Tor lock file');
@@ -371,9 +407,22 @@ ExitPolicy reject *:*
         '/snap/bin/tor',
       ]);
     } else if (Platform.isWindows) {
+      final localAppData = Platform.environment['LOCALAPPDATA'] ?? '';
+      final appData = Platform.environment['APPDATA'] ?? '';
+      final userProfile = Platform.environment['USERPROFILE'] ?? '';
       commonPaths.addAll([
         r'C:\Program Files\Tor\tor.exe',
+        r'C:\Program Files\Tor Browser\Browser\TorBrowser\Tor\tor.exe',
         r'C:\Program Files (x86)\Tor Browser\Browser\TorBrowser\Tor\tor.exe',
+        if (localAppData.isNotEmpty)
+          path.join(localAppData, 'Tor Browser', 'Browser', 'TorBrowser', 'Tor',
+              'tor.exe'),
+        if (userProfile.isNotEmpty)
+          path.join(userProfile, 'Desktop', 'Tor Browser', 'Browser',
+              'TorBrowser', 'Tor', 'tor.exe'),
+        if (appData.isNotEmpty)
+          path.join(appData, 'Tor Browser', 'Browser', 'TorBrowser', 'Tor',
+              'tor.exe'),
       ]);
     }
 
@@ -449,7 +498,8 @@ ExitPolicy reject *:*
   // AUTO-INSTALL — Package manager installation
   // ════════════════════════════════════════════════════════════════════════
 
-  /// Try to install Tor via system package manager (silent, no user input)
+  /// Try to install Tor via system package manager (silent, no user input).
+  /// Supports macOS (brew), Linux (apt/dnf with sudo), Windows (winget/choco).
   Future<String?> _autoInstallTor() async {
     try {
       if (Platform.isMacOS) {
@@ -481,37 +531,107 @@ ExitPolicy reject *:*
           }
         }
       } else if (Platform.isLinux) {
-        // Try apt (Debian/Ubuntu)
+        // Try apt with sudo (Debian/Ubuntu)
         final aptCheck = await Process.run('which', ['apt-get']);
         if (aptCheck.exitCode == 0) {
-          debugPrint('📦 Installing Tor via apt...');
-          // Note: This might need sudo, which won't work non-interactively
-          // unless the user has passwordless sudo for apt
+          debugPrint('📦 Installing Tor via sudo apt-get...');
           final result = await Process.run(
-            'apt-get',
-            ['install', '-y', 'tor'],
+            'sudo',
+            ['apt-get', 'install', '-y', 'tor'],
             runInShell: true,
           ).timeout(const Duration(minutes: 5));
 
-          if (result.exitCode == 0) {
+          if (result.exitCode == 0 && await File('/usr/bin/tor').exists()) {
+            debugPrint('✅ Tor installed via apt');
             return '/usr/bin/tor';
           }
         }
 
-        // Try dnf (Fedora/RHEL)
+        // Try dnf with sudo (Fedora/RHEL)
         final dnfCheck = await Process.run('which', ['dnf']);
         if (dnfCheck.exitCode == 0) {
-          debugPrint('📦 Installing Tor via dnf...');
+          debugPrint('📦 Installing Tor via sudo dnf...');
           final result = await Process.run(
-            'dnf',
-            ['install', '-y', 'tor'],
+            'sudo',
+            ['dnf', 'install', '-y', 'tor'],
             runInShell: true,
           ).timeout(const Duration(minutes: 5));
 
-          if (result.exitCode == 0) {
+          if (result.exitCode == 0 && await File('/usr/bin/tor').exists()) {
+            debugPrint('✅ Tor installed via dnf');
             return '/usr/bin/tor';
           }
         }
+
+        // Try pacman with sudo (Arch)
+        final pacmanCheck = await Process.run('which', ['pacman']);
+        if (pacmanCheck.exitCode == 0) {
+          debugPrint('📦 Installing Tor via sudo pacman...');
+          final result = await Process.run(
+            'sudo',
+            ['pacman', '-S', '--noconfirm', 'tor'],
+            runInShell: true,
+          ).timeout(const Duration(minutes: 5));
+
+          if (result.exitCode == 0 && await File('/usr/bin/tor').exists()) {
+            debugPrint('✅ Tor installed via pacman');
+            return '/usr/bin/tor';
+          }
+        }
+      } else if (Platform.isWindows) {
+        // Try winget (Windows 10/11 built-in)
+        try {
+          final wingetCheck =
+              await Process.run('where', ['winget'], runInShell: true);
+          if (wingetCheck.exitCode == 0) {
+            debugPrint('📦 Installing Tor via winget...');
+            final result = await Process.run(
+              'winget',
+              ['install', '--id', 'TorProject.TorBrowser', '-e', '--silent'],
+              runInShell: true,
+            ).timeout(const Duration(minutes: 10));
+
+            if (result.exitCode == 0) {
+              // Check common Tor Browser install paths on Windows
+              for (final p in [
+                r'C:\Program Files\Tor Browser\Browser\TorBrowser\Tor\tor.exe',
+                r'C:\Program Files (x86)\Tor Browser\Browser\TorBrowser\Tor\tor.exe',
+                path.join(Platform.environment['LOCALAPPDATA'] ?? '',
+                    'Tor Browser', 'Browser', 'TorBrowser', 'Tor', 'tor.exe'),
+              ]) {
+                if (await File(p).exists()) {
+                  debugPrint('✅ Tor installed via winget: $p');
+                  return p;
+                }
+              }
+            }
+          }
+        } catch (_) {}
+
+        // Try chocolatey
+        try {
+          final chocoCheck =
+              await Process.run('where', ['choco'], runInShell: true);
+          if (chocoCheck.exitCode == 0) {
+            debugPrint('📦 Installing Tor via choco...');
+            final result = await Process.run(
+              'choco',
+              ['install', 'tor', '-y'],
+              runInShell: true,
+            ).timeout(const Duration(minutes: 10));
+
+            if (result.exitCode == 0) {
+              final whereResult =
+                  await Process.run('where', ['tor'], runInShell: true);
+              if (whereResult.exitCode == 0) {
+                final torPath =
+                    whereResult.stdout.toString().trim().split('\n').first;
+                debugPrint('✅ Tor installed via choco: $torPath');
+                return torPath;
+              }
+            }
+          }
+        } catch (_) {}
       }
     } catch (e) {
       debugPrint('⚠️  Auto-install failed: $e');
@@ -541,12 +661,30 @@ ExitPolicy reject *:*
       debugPrint('📥 Downloading Tor Expert Bundle...');
       debugPrint('   URL: $url');
 
-      // Download using system curl (more reliable for HTTPS)
-      final curlResult = await Process.run(
-        'curl',
-        ['-L', '-o', downloadPath, '--connect-timeout', '30', url],
-        runInShell: true,
-      ).timeout(const Duration(minutes: 10));
+      // Download using curl (Win10+, macOS, Linux) or PowerShell fallback
+      ProcessResult curlResult;
+      try {
+        curlResult = await Process.run(
+          'curl',
+          ['-L', '-o', downloadPath, '--connect-timeout', '30', url],
+          runInShell: true,
+        ).timeout(const Duration(minutes: 10));
+      } catch (_) {
+        // curl not available — try PowerShell on Windows
+        if (Platform.isWindows) {
+          debugPrint('⚠️ curl not found, using PowerShell...');
+          curlResult = await Process.run(
+            'powershell',
+            [
+              '-Command',
+              'Invoke-WebRequest -Uri "$url" -OutFile "$downloadPath" -TimeoutSec 300',
+            ],
+            runInShell: true,
+          ).timeout(const Duration(minutes: 10));
+        } else {
+          rethrow;
+        }
+      }
 
       if (curlResult.exitCode != 0) {
         debugPrint('❌ Download failed: ${curlResult.stderr}');
@@ -562,6 +700,7 @@ ExitPolicy reject *:*
       debugPrint('📦 Extracting Tor binary...');
 
       // Extract the tarball
+      // `tar` is available natively on Windows 10+, macOS, and Linux
       final extractResult = await Process.run(
         'tar',
         ['xzf', downloadPath, '-C', torBinDir],
@@ -569,8 +708,25 @@ ExitPolicy reject *:*
       );
 
       if (extractResult.exitCode != 0) {
-        debugPrint('❌ Extraction failed: ${extractResult.stderr}');
-        return null;
+        // Windows fallback: try PowerShell extraction if tar fails
+        if (Platform.isWindows) {
+          debugPrint('⚠️ tar failed, trying PowerShell extraction...');
+          final psResult = await Process.run(
+            'powershell',
+            [
+              '-Command',
+              'Expand-Archive -Force -Path "$downloadPath" -DestinationPath "$torBinDir"',
+            ],
+            runInShell: true,
+          );
+          if (psResult.exitCode != 0) {
+            debugPrint('❌ Extraction failed: ${psResult.stderr}');
+            return null;
+          }
+        } else {
+          debugPrint('❌ Extraction failed: ${extractResult.stderr}');
+          return null;
+        }
       }
 
       // Find the tor binary in the extracted files
@@ -629,42 +785,53 @@ ExitPolicy reject *:*
       }
       return '$base/tor-expert-bundle-macos-$arch-$version.tar.gz';
     } else if (Platform.isLinux) {
-      return '$base/tor-expert-bundle-linux-x86_64-$version.tar.gz';
+      // Detect ARM64 (Raspberry Pi, etc.) vs x86_64
+      String arch = 'x86_64';
+      try {
+        final result = await Process.run('uname', ['-m']);
+        if (result.exitCode == 0) {
+          final uname = result.stdout.toString().trim();
+          if (uname == 'aarch64' || uname == 'arm64') {
+            arch = 'aarch64';
+          }
+        }
+      } catch (_) {}
+      return '$base/tor-expert-bundle-linux-$arch-$version.tar.gz';
     } else if (Platform.isWindows) {
       return '$base/tor-expert-bundle-windows-x86_64-$version.tar.gz';
     }
     return null;
   }
 
-  /// Search for tor binary in extracted archive directory
+  /// Search for tor binary in extracted archive directory.
+  /// Uses pure Dart directory listing — works on ALL platforms (Linux/macOS/Windows).
   Future<String?> _findExtractedTorBinary(String dir) async {
     final binaryName = Platform.isWindows ? 'tor.exe' : 'tor';
 
-    // Search recursively using find
-    try {
-      final result = await Process.run(
-        'find',
-        [dir, '-name', binaryName, '-type', 'f'],
-      );
-      if (result.exitCode == 0) {
-        final paths = result.stdout.toString().trim().split('\n');
-        for (final p in paths) {
-          if (p.isNotEmpty && await File(p).exists()) {
-            return p;
-          }
-        }
-      }
-    } catch (_) {}
-
-    // Manual search of common subdirectories
+    // 1. Check common subdirectories first (fast path)
     final candidates = [
       path.join(dir, 'tor', binaryName),
       path.join(dir, binaryName),
       path.join(dir, 'tor-expert-bundle', 'tor', binaryName),
+      path.join(dir, 'Tor', binaryName), // Windows capitalization
+      path.join(dir, 'tor-expert-bundle', 'Tor', binaryName),
     ];
 
     for (final candidate in candidates) {
       if (await File(candidate).exists()) return candidate;
+    }
+
+    // 2. Recursive Dart directory listing (cross-platform, no Unix `find`)
+    try {
+      await for (final entity
+          in Directory(dir).list(recursive: true, followLinks: false)) {
+        if (entity is File && path.basename(entity.path) == binaryName) {
+          debugPrint('✅ Found tor binary: ${entity.path}');
+          return entity.path;
+        }
+      }
+    } catch (e) {
+      debugPrint('⚠️ _findExtractedTorBinary scan error: $e');
     }
 
     return null;

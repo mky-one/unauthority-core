@@ -3876,7 +3876,7 @@ fn format_u128(n: u128) -> String {
     if s.len() > 3 {
         let mut result = String::new();
         for (count, c) in s.chars().rev().enumerate() {
-            if count > 0 && count % 3 == 0 {
+            if count > 0 && count.is_multiple_of(3) {
                 result.push('.');
             }
             result.push(c);
@@ -5371,7 +5371,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             //    from most validators, directly ping their .onion /health endpoints.
             //    This runs every `http_check_interval` ticks to avoid overwhelming Tor.
             //    It compensates for gossipsub mesh collapse (broken Tor circuits).
-            if tick_counter % http_check_interval == 0 && socks_proxy.is_some() {
+            if tick_counter.is_multiple_of(http_check_interval) && socks_proxy.is_some() {
                 let proxy_url = socks_proxy.as_deref().unwrap_or("socks5h://127.0.0.1:9050");
                 // Collect endpoints for validators NOT yet seen this tick
                 let endpoints_to_check: Vec<(String, String)> = {

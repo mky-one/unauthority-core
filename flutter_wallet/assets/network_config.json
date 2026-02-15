@@ -30,6 +30,32 @@
     ]
   },
   "mainnet": {
-    "bootstrap_nodes": []
+    "comment": "Populated at mainnet launch with 4 genesis validator .onion addresses",
+    "bootstrap_nodes": [
+      {
+        "name": "genesis-validator-1",
+        "onion": "PLACEHOLDER_GENESIS_V1.onion",
+        "rest_port": 80,
+        "p2p_port": 4001
+      },
+      {
+        "name": "genesis-validator-2",
+        "onion": "PLACEHOLDER_GENESIS_V2.onion",
+        "rest_port": 80,
+        "p2p_port": 4001
+      },
+      {
+        "name": "genesis-validator-3",
+        "onion": "PLACEHOLDER_GENESIS_V3.onion",
+        "rest_port": 80,
+        "p2p_port": 4001
+      },
+      {
+        "name": "genesis-validator-4",
+        "onion": "PLACEHOLDER_GENESIS_V4.onion",
+        "rest_port": 80,
+        "p2p_port": 4001
+      }
+    ]
   }
 }

@@ -210,23 +210,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 children: [
                   const Text('LOS Validator'),
                   const SizedBox(width: 8),
-                  Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                    decoration: BoxDecoration(
-                      color: Colors.orange.withValues(alpha: 0.15),
-                      border: Border.all(color: Colors.orange, width: 1),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: const Text(
-                      'TESTNET',
-                      style: TextStyle(
-                        color: Colors.orange,
-                        fontSize: 10,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ),
+                  _NetworkBadge(),
                 ],
               ),
               centerTitle: true,
@@ -286,36 +270,39 @@ class _DashboardScreenState extends State<DashboardScreen> {
                         child: ListView(
                           padding: const EdgeInsets.all(16),
                           children: [
-                            // Testnet Warning Banner
-                            Container(
-                              width: double.infinity,
-                              padding: const EdgeInsets.all(12),
-                              margin: const EdgeInsets.only(bottom: 16),
-                              decoration: BoxDecoration(
-                                color: Colors.orange.withValues(alpha: 0.1),
-                                border:
-                                    Border.all(color: Colors.orange, width: 1),
-                                borderRadius: BorderRadius.circular(8),
-                              ),
-                              child: const Row(
-                                children: [
-                                  Icon(Icons.science,
-                                      color: Colors.orange, size: 20),
-                                  SizedBox(width: 12),
-                                  Expanded(
-                                    child: Text(
-                                      '⚠️ TESTNET — This is a testing network. '
-                                      'Tokens have no real value.',
-                                      style: TextStyle(
-                                        color: Colors.orange,
-                                        fontSize: 12,
-                                        fontWeight: FontWeight.w500,
+                            // Network Warning Banner (testnet only)
+                            if (const String.fromEnvironment('NETWORK',
+                                    defaultValue: 'testnet') !=
+                                'mainnet')
+                              Container(
+                                width: double.infinity,
+                                padding: const EdgeInsets.all(12),
+                                margin: const EdgeInsets.only(bottom: 16),
+                                decoration: BoxDecoration(
+                                  color: Colors.orange.withValues(alpha: 0.1),
+                                  border: Border.all(
+                                      color: Colors.orange, width: 1),
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: const Row(
+                                  children: [
+                                    Icon(Icons.science,
+                                        color: Colors.orange, size: 20),
+                                    SizedBox(width: 12),
+                                    Expanded(
+                                      child: Text(
+                                        '⚠️ TESTNET — This is a testing network. '
+                                        'Tokens have no real value.',
+                                        style: TextStyle(
+                                          color: Colors.orange,
+                                          fontSize: 12,
+                                          fontWeight: FontWeight.w500,
+                                        ),
                                       ),
                                     ),
-                                  ),
-                                ],
+                                  ],
+                                ),
                               ),
-                            ),
                             // Local-only fallback warning (shows when Tor is down)
                             Consumer<ApiService>(
                               builder: (context, api, _) {
@@ -964,5 +951,34 @@ class _DashboardScreenState extends State<DashboardScreen> {
       return '${seconds ~/ 3600}h ${(seconds % 3600) ~/ 60}m';
     }
     return '${seconds ~/ 86400}d ${(seconds % 86400) ~/ 3600}h';
+  }
+}
+
+/// Network badge widget — shows TESTNET (orange) or MAINNET (green)
+/// based on the build-time NETWORK dart-define flag.
+class _NetworkBadge extends StatelessWidget {
+  static const _isMainnet =
+      String.fromEnvironment('NETWORK', defaultValue: 'testnet') == 'mainnet';
+
+  @override
+  Widget build(BuildContext context) {
+    final label = _isMainnet ? 'MAINNET' : 'TESTNET';
+    final color = _isMainnet ? Colors.green : Colors.orange;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.15),
+        border: Border.all(color: color, width: 1),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+          color: color,
+          fontSize: 10,
+          fontWeight: FontWeight.bold,
+        ),
+      ),
+    );
   }
 }

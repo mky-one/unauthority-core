@@ -24,7 +24,7 @@ class TorService {
 
   /// Well-known SOCKS ports to probe for existing Tor instances.
   static const int torBrowserPort = 9150;
-  static const int testnetTorPort = 9052;
+  static const int losTorPort = 9052;
   static const int systemTorPort = 9050;
 
   /// Timeout for Tor to finish bootstrapping (100% circuit established).
@@ -704,11 +704,11 @@ UseBridges 0
     }
 
     // Check LOS testnet Tor
-    if (await _isSocks5Proxy('localhost', testnetTorPort)) {
+    if (await _isSocks5Proxy('localhost', losTorPort)) {
       return {
         'found': true,
-        'type': 'LOS Testnet Tor',
-        'proxy': 'localhost:$testnetTorPort'
+        'type': 'LOS Tor',
+        'proxy': 'localhost:$losTorPort'
       };
     }
 

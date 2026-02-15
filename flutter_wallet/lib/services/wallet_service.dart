@@ -49,7 +49,10 @@ class WalletService {
   /// SECURITY: When true, only Dilithium5 crypto is permitted.
   /// Ed25519 fallback is refused — mainnet requires post-quantum signatures.
   /// Set by ApiService.switchEnvironment() when connecting to mainnet.
-  static bool mainnetMode = false;
+  /// Build-time flag: --dart-define=NETWORK=mainnet
+  static bool mainnetMode =
+      const String.fromEnvironment('NETWORK', defaultValue: 'testnet') ==
+          'mainnet';
 
   /// One-time migration from SharedPreferences → SecureStorage
   /// Called on app startup. Silent if already migrated.

@@ -158,10 +158,16 @@ impl LosNode {
         // Without reconnection, the mesh collapses and nodes become isolated:
         // no heartbeats, no block gossip, no reward Mint propagation.
         // This timer periodically re-dials bootstrap nodes to maintain the mesh.
-        let reconnect_interval_secs = if std::env::var("LOS_TESTNET_LEVEL").is_ok() { 60 } else { 180 };
-        let mut reconnect_timer = tokio::time::interval(Duration::from_secs(reconnect_interval_secs));
+        let reconnect_interval_secs = if std::env::var("LOS_TESTNET_LEVEL").is_ok() {
+            60
+        } else {
+            180
+        };
+        let mut reconnect_timer =
+            tokio::time::interval(Duration::from_secs(reconnect_interval_secs));
         reconnect_timer.tick().await; // Consume the first immediate tick
-        let mut connected_peers: std::collections::HashSet<libp2p::PeerId> = std::collections::HashSet::new();
+        let mut connected_peers: std::collections::HashSet<libp2p::PeerId> =
+            std::collections::HashSet::new();
         let min_peers: usize = bootstrap_nodes.len().max(1);
 
         loop {

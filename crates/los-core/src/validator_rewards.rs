@@ -589,12 +589,24 @@ mod tests {
         assert!(!pool.record_heartbeat_once("LOSval1", &mut seen));
 
         // Only 1 heartbeat recorded
-        assert_eq!(pool.validators.get("LOSval1").unwrap().heartbeats_current_epoch, 1);
+        assert_eq!(
+            pool.validators
+                .get("LOSval1")
+                .unwrap()
+                .heartbeats_current_epoch,
+            1
+        );
 
         // New tick (new seen set) — can record again
         let mut seen2 = HashSet::new();
         assert!(pool.record_heartbeat_once("LOSval1", &mut seen2));
-        assert_eq!(pool.validators.get("LOSval1").unwrap().heartbeats_current_epoch, 2);
+        assert_eq!(
+            pool.validators
+                .get("LOSval1")
+                .unwrap()
+                .heartbeats_current_epoch,
+            2
+        );
     }
 
     #[test]

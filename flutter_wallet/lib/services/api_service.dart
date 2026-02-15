@@ -141,13 +141,13 @@ class ApiService {
   })  : environment = environment ?? _defaultEnvironment,
         _torService = torService ?? TorService() {
     _excludedOnionUrl = excludeOwnOnion;
-    _loadBootstrapUrls(environment);
+    _loadBootstrapUrls(this.environment);
     if (customUrl != null) {
       baseUrl = customUrl;
     } else {
       baseUrl = _bootstrapUrls.isNotEmpty
           ? _bootstrapUrls.first
-          : _getBaseUrl(environment);
+          : _getBaseUrl(this.environment);
     }
     _clientReady = _initializeClient();
     debugPrint('🔗 LOS ApiService initialized with baseUrl: $baseUrl '

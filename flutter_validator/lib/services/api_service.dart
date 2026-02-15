@@ -66,20 +66,19 @@ class ApiService {
   /// Tor-specific probe timeout (Tor circuits need more time)
   static const Duration _torProbeTimeout = Duration(seconds: 30);
 
-  /// Max latency (ms) before current host is considered "slow" and triggers re-probe.
-  /// If a health check takes longer than this, the host is degraded.
-  static const int _slowThresholdMs = 15000;
+  /// Max latency (ms) before current host is considered "slow".
+  /// On Tor, 10-25s responses are normal. Only trigger re-probe above 30s.
+  static const int _slowThresholdMs = 30000;
 
-  /// Max retry attempts across bootstrap nodes before giving up
-  static const int _maxRetries = 4;
-
-  /// Interval between periodic peer re-discovery runs
-  static const Duration _rediscoveryInterval = Duration(minutes: 5);
+  /// Interval between periodic peer re-discovery runs.
+  /// 10min is relaxed: bootstrap nodes rarely change.
+  static const Duration _rediscoveryInterval = Duration(minutes: 10);
 
   /// Interval between current-host health checks.
   /// Only pings the CURRENT host — does NOT probe all nodes.
-  /// If current host is down/error/slow → triggers full probe to find replacement.
-  static const Duration _healthCheckInterval = Duration(minutes: 2);
+  /// If current host fails twice → triggers full probe to find replacement.
+  /// 5min is relaxed enough to not churn on Tor jitter.
+  static const Duration _healthCheckInterval = Duration(minutes: 5);
 
   late String baseUrl;
   http.Client _client = http.Client();
@@ -283,26 +282,30 @@ class ApiService {
         // Check if host is too slow (degraded)
         if (rtt > _slowThresholdMs) {
           debugPrint(
-              '🔌 [HealthCheck] Current host $baseUrl is SLOW (${rtt}ms > ${_slowThresholdMs}ms) '
-              '— searching for faster host...');
-          _triggerFullProbe();
+              '🔌 [HealthCheck] Current host is SLOW (${rtt}ms > ${_slowThresholdMs}ms)');
+          // Don't immediately re-probe — only if CONSECUTIVE slow responses
+          // This will be caught next cycle if it persists
         } else {
-          debugPrint('🔌 [HealthCheck] Current host $baseUrl OK (${rtt}ms) ✓');
+          debugPrint('🔌 [HealthCheck] Current host OK (${rtt}ms) ✓');
         }
       } else {
         // HTTP error (4xx/5xx) → host unhealthy
         _getHealth(baseUrl).recordFailure();
+        final failures = _getHealth(baseUrl).consecutiveFailures;
         debugPrint(
-            '🔌 [HealthCheck] Current host $baseUrl returned HTTP ${response.statusCode} '
-            '— searching for new host...');
-        _triggerFullProbe();
+            '🔌 [HealthCheck] HTTP ${response.statusCode} '
+            '(failure $failures/2)');
+        // Only re-probe after 2+ consecutive failures (Tor jitter tolerance)
+        if (failures >= 2) _triggerFullProbe();
       }
     } catch (e) {
-      // Timeout or connection error → host is DOWN
+      // Timeout or connection error → host may be DOWN
       _getHealth(baseUrl).recordFailure();
-      debugPrint('🔌 [HealthCheck] Current host $baseUrl UNREACHABLE ($e) '
-          '— searching for new host...');
-      _triggerFullProbe();
+      final failures = _getHealth(baseUrl).consecutiveFailures;
+      debugPrint('🔌 [HealthCheck] UNREACHABLE '
+          '(failure $failures/2)');
+      // Only re-probe after 2+ consecutive failures
+      if (failures >= 2) _triggerFullProbe();
     }
   }
 
@@ -464,41 +467,37 @@ class ApiService {
   /// Execute an HTTP request with intelligent failover.
   /// Handles: timeouts, connection errors, AND HTTP 5xx server errors.
   ///
-  /// PRIORITY ORDER:
-  /// 1. External .onion peers via Tor SOCKS5 (preferred: cross-verification)
-  /// 2. Local node via direct HTTP (fallback: Dashboard still works)
-  /// 3. Tor auto-recovery if SOCKS proxy died
+  /// STRATEGY: "Stick with what works" (sticky node)
+  /// - Current node gets 2 retries before we consider switching.
+  ///   Tor latency varies wildly (3s-30s), so a single timeout is normal.
+  /// - Only switch to next node after 2 consecutive failures on current.
+  /// - Local node fallback if ALL external nodes fail.
+  /// - Tor auto-recovery if SOCKS proxy died.
   Future<http.Response> _requestWithFailover(
     Future<http.Response> Function(String url) requestFn,
     String endpoint,
   ) async {
     await ensureReady();
-    int attempts = 0;
-    final maxAttempts = _bootstrapUrls.length.clamp(1, _maxRetries);
 
-    // ── Phase 1: Try external .onion peers via Tor SOCKS5 ──
-    while (attempts < maxAttempts) {
+    // ── Phase 1: Try current node FIRST with a retry ──
+    // Give the current (sticky) node 2 chances before switching.
+    // This prevents unnecessary host-cycling on normal Tor jitter.
+    for (var retry = 0; retry < 2; retry++) {
       try {
         final sw = Stopwatch()..start();
         final response = await requestFn(baseUrl).timeout(_timeout);
         sw.stop();
 
-        // Record successful RTT for this node
         _getHealth(baseUrl).recordSuccess(sw.elapsedMilliseconds);
 
-        // HTTP 5xx = server error → treat as node failure, try next
         if (response.statusCode >= 500) {
           debugPrint(
               '⚠️ Node ${_currentNodeIndex + 1} returned HTTP ${response.statusCode} for $endpoint');
           _getHealth(baseUrl).recordFailure();
-          final isLastAttempt = attempts >= maxAttempts - 1;
-          if (isLastAttempt) break; // Fall through to local fallback
-          _switchToNextNode();
-          attempts++;
-          continue;
+          break; // Server error → don't retry same node, fall through to other nodes
         }
 
-        // Success via external peer — clear local fallback flag
+        // Success — clear local fallback flag
         if (_usingLocalFallback) {
           _usingLocalFallback = false;
           debugPrint('🌐 Restored external .onion connectivity');
@@ -513,30 +512,58 @@ class ApiService {
         return response;
       } on Exception catch (e) {
         _getHealth(baseUrl).recordFailure();
-        final isLastAttempt = attempts >= maxAttempts - 1;
-        debugPrint('⚠️ Node ${_currentNodeIndex + 1} failed for $endpoint: $e');
+        if (retry == 0) {
+          debugPrint(
+              '⚠️ Node ${_currentNodeIndex + 1} failed for $endpoint (retry 1/2): $e');
+          // Detect dead SOCKS proxy
+          final errStr = e.toString();
+          if (errStr.contains('Connection refused') ||
+              errStr.contains('SOCKS') ||
+              errStr.contains('Proxy')) {
+            _triggerTorRecovery();
+            break; // SOCKS dead → don't retry same proxy, go to fallback
+          }
+          continue; // Normal Tor jitter → retry same node once
+        }
+        debugPrint(
+            '⚠️ Node ${_currentNodeIndex + 1} failed for $endpoint (retry 2/2): $e');
+      }
+    }
 
-        // Detect dead SOCKS proxy → trigger Tor auto-recovery (async, non-blocking)
-        final errStr = e.toString();
-        if (errStr.contains('Connection refused') ||
-            errStr.contains('SOCKS') ||
-            errStr.contains('Proxy')) {
-          _triggerTorRecovery();
+    // ── Phase 1b: Try other available nodes (max 2 more attempts) ──
+    final otherAttempts = (_bootstrapUrls.length - 1).clamp(0, 2);
+    for (var i = 0; i < otherAttempts; i++) {
+      if (!_switchToNextNode()) break; // No more nodes to try
+      try {
+        final sw = Stopwatch()..start();
+        final response = await requestFn(baseUrl).timeout(_timeout);
+        sw.stop();
+
+        _getHealth(baseUrl).recordSuccess(sw.elapsedMilliseconds);
+
+        if (response.statusCode >= 500) {
+          _getHealth(baseUrl).recordFailure();
+          continue;
         }
 
-        if (isLastAttempt) break; // Fall through to local fallback
+        if (_usingLocalFallback) {
+          _usingLocalFallback = false;
+          debugPrint('🌐 Restored external .onion connectivity via failover');
+        }
 
-        _switchToNextNode();
-        attempts++;
-        debugPrint('🔄 Retrying $endpoint on node ${_currentNodeIndex + 1}...');
+        if (!_initialDiscoveryDone) {
+          _initialDiscoveryDone = true;
+          Future.microtask(() => _runInitialDiscovery());
+        }
+
+        return response;
+      } on Exception catch (e) {
+        _getHealth(baseUrl).recordFailure();
+        debugPrint('⚠️ Failover node ${_currentNodeIndex + 1} failed for $endpoint: $e');
       }
     }
 
     // ── Phase 2: Local node fallback (direct HTTP, no SOCKS) ──
-    // Uses _directClient (plain HTTP) because _client may be dead SOCKS-proxied.
-    // Only works for GET (read-only) endpoints — Dashboard data, validators, health.
-    // POST endpoints (send/burn/register) intentionally skip this because they
-    // require external consensus peers to propagate.
     if (_localNodeUrl != null) {
       try {
         debugPrint('🏠 Trying local node fallback: $_localNodeUrl$endpoint');
@@ -558,8 +585,7 @@ class ApiService {
     }
 
     // ── Phase 3: Everything failed ──
-    throw Exception('All nodes unreachable for $endpoint '
-        '(${attempts + 1} external + ${_localNodeUrl != null ? 1 : 0} local)');
+    throw Exception('All nodes unreachable for $endpoint');
   }
 
   /// Trigger Tor SOCKS proxy recovery in the background.
@@ -604,8 +630,8 @@ class ApiService {
   }
 
   /// Start recurring background tasks:
-  /// - Re-discover peers every 5 minutes
-  /// - Health-check current host every 2 minutes (NOT full probe)
+  /// - Re-discover peers every 10 minutes (bootstrap list rarely changes)
+  /// - Health-check current host every 5 minutes (NOT full probe)
   void _startBackgroundTimers() {
     _rediscoveryTimer?.cancel();
     _healthCheckTimer?.cancel();

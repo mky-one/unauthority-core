@@ -570,7 +570,18 @@ class NodeProcessService extends ChangeNotifier {
 
   void _handleStderr(String line) {
     _addLog('[ERR] $line');
-    if (line.contains('FATAL') || line.contains('❌')) {
+    // CRITICAL FIX: Only treat truly FATAL errors as node failures.
+    // Previously `line.contains('❌')` matched non-fatal errors like:
+    //   "❌ P2P dial error: Transport(Timeout)" — normal Tor jitter
+    //   "❌ Oracle sign error" — transient signing failure
+    //   "❌ Auto-Receive signing failed" — non-critical
+    // These set NodeStatus.error → killed the running node.
+    //
+    // New rule: only 'FATAL' keyword (always uppercase in los-node) or
+    // specific fatal conditions trigger node ERROR status.
+    if (line.contains('FATAL') ||
+        line.contains('database_lock_failed') ||
+        line.contains('checkpoint_db_lock_failed')) {
       _setError(line);
     }
   }

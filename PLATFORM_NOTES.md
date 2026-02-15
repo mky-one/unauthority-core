@@ -217,11 +217,17 @@ sudo pacman -S gtk3
 
 **Fix:**
 ```bash
-# Remove quarantine attribute
-xattr -d com.apple.quarantine /Applications/LOS\ Wallet.app  # or LOS Validator Node.app
+# Remove ALL quarantine attributes (recommended)
+xattr -cr /Applications/LOS\ Wallet.app
+xattr -cr /Applications/LOS\ Validator\ Node.app
+
+# Or remove specific attribute only
+xattr -d com.apple.quarantine /Applications/LOS\ Wallet.app
 ```
 
-Or: System Settings → Privacy & Security → Click "Open Anyway" below the error message.
+**Alternative:** System Settings → Privacy & Security → Click "Open Anyway" below the error message.
+
+> **Note:** `-cr` (clear + recursive) is more thorough than `-d` (delete single attribute).
 
 #### 2. **Tor Permissions Issue**
 **Error:** `Operation not permitted: tor`

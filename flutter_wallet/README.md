@@ -27,11 +27,11 @@ Pre-built releases for macOS, Windows, and Linux:
 | Windows | `LOS-Wallet-1.0.8-testnet-windows-x64.zip` |
 | Linux | `LOS-Wallet-1.0.8-testnet-linux-x64.tar.gz` |
 
-> **macOS:** If blocked, run: `xattr -d com.apple.quarantine /Applications/LOS\ Wallet.app`  
+> **macOS:** Remove quarantine: `xattr -cr /Applications/LOS\ Wallet.app` (required for unsigned apps)  
 > Or: System Settings → Privacy & Security → Open Anyway
 >
-> **Windows:** Click "More info" → "Run anyway" if SmartScreen blocks the app.  
-> **Linux:** Run via `run.sh` (sets `LD_LIBRARY_PATH` for native library).
+> **Windows:** Right-click `flutter_wallet.exe` → Properties → Unblock, then launch. If SmartScreen appears: click "More info" → "Run anyway"  
+> **Linux:** Make executable: `chmod +x run.sh flutter_wallet`, then run via `./run.sh` (sets `LD_LIBRARY_PATH` for native library).
 >
 > **First Launch:** The wallet auto-downloads Tor Expert Bundle (~20MB, 1-2 min).
 

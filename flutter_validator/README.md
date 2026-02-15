@@ -25,11 +25,11 @@ Pre-built releases for macOS, Windows, and Linux:
 | Windows | `LOS-Validator-1.0.10-testnet-windows-x64.zip` |
 | Linux | `LOS-Validator-1.0.10-testnet-linux-x64.tar.gz` |
 
-> **macOS:** If blocked, run: `xattr -d com.apple.quarantine /Applications/LOS\ Validator\ Node.app`  
+> **macOS:** Remove quarantine: `xattr -cr /Applications/LOS\ Validator\ Node.app` (required for unsigned apps)  
 > Or: System Settings → Privacy & Security → Open Anyway
 >
-> **Windows:** Click "More info" → "Run anyway" if SmartScreen blocks the app.  
-> **Linux:** Run via `run.sh` (sets `LD_LIBRARY_PATH` for native library).
+> **Windows:** Right-click both `flutter_validator.exe` and `los-node.exe` → Properties → Unblock, then launch. If SmartScreen appears: click "More info" → "Run anyway"  
+> **Linux:** Make executable: `chmod +x run.sh flutter_validator los-node`, then run via `./run.sh` (sets `LD_LIBRARY_PATH` for native library).
 >
 > **First Launch:** The dashboard auto-downloads Tor Expert Bundle (~20MB, 1-2 min).
 >

@@ -9,7 +9,7 @@
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 use serde::{Deserialize, Serialize};
-use std::collections::{HashMap, VecDeque};
+use std::collections::{BTreeMap, VecDeque};
 
 /// Slashing constants — all percentages expressed as basis points (1/100 of a percent)
 /// for deterministic cross-platform consensus. 10000 bps = 100%.
@@ -141,7 +141,8 @@ pub struct SlashProposal {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SlashingManager {
     /// Per-validator safety profiles
-    validators: HashMap<String, ValidatorSafetyProfile>,
+    /// MAINNET: BTreeMap for deterministic serialization
+    validators: BTreeMap<String, ValidatorSafetyProfile>,
 
     /// Global slash events log
     slash_events: Vec<SlashEvent>,
@@ -150,7 +151,8 @@ pub struct SlashingManager {
     current_block_height: u64,
 
     /// Pending slash proposals requiring confirmation
-    pending_proposals: HashMap<String, SlashProposal>,
+    /// MAINNET: BTreeMap for deterministic serialization
+    pending_proposals: BTreeMap<String, SlashProposal>,
 }
 
 impl Default for SlashingManager {
@@ -163,10 +165,10 @@ impl SlashingManager {
     /// Create new slashing manager
     pub fn new() -> Self {
         Self {
-            validators: HashMap::new(),
+            validators: BTreeMap::new(),
             slash_events: Vec::new(),
             current_block_height: 0,
-            pending_proposals: HashMap::new(),
+            pending_proposals: BTreeMap::new(),
         }
     }
 
@@ -694,7 +696,7 @@ mod tests {
         let profile = manager.get_profile("validator1").unwrap();
         assert_eq!(profile.blocks_participated, 95);
         assert_eq!(profile.total_blocks_observed, 100);
-        assert_eq!(profile.get_uptime_percent(), 95.0);
+        assert_eq!(profile.get_uptime_bps(), 9500); // 95.00% in basis points
         assert!(profile.meets_uptime_requirement());
     }
 

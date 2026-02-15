@@ -10,7 +10,7 @@
 // ─────────────────────────────────────────────────────────────────
 
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 
 use crate::{
     effective_reward_epoch_secs, CIL_PER_LOS, MIN_VALIDATOR_STAKE_CIL,
@@ -124,7 +124,8 @@ pub struct ValidatorRewardPool {
     /// Total CIL distributed across all epochs
     pub total_distributed_cil: u128,
     /// Per-validator reward state (keyed by address)
-    pub validators: HashMap<String, ValidatorRewardState>,
+    /// MAINNET: BTreeMap for deterministic iteration and serialization
+    pub validators: BTreeMap<String, ValidatorRewardState>,
     /// Epoch duration in seconds (testnet=120, mainnet=2592000)
     /// Defaults to effective_reward_epoch_secs() if not present (backwards-compatible).
     #[serde(default = "default_epoch_duration")]
@@ -145,7 +146,7 @@ impl ValidatorRewardPool {
             epoch_start_timestamp: genesis_timestamp,
             halvings_occurred: 0,
             total_distributed_cil: 0,
-            validators: HashMap::new(),
+            validators: BTreeMap::new(),
             epoch_duration_secs: effective_reward_epoch_secs(),
         }
     }
@@ -158,7 +159,7 @@ impl ValidatorRewardPool {
             epoch_start_timestamp: genesis_timestamp,
             halvings_occurred: 0,
             total_distributed_cil: 0,
-            validators: HashMap::new(),
+            validators: BTreeMap::new(),
             epoch_duration_secs: effective_reward_epoch_secs(),
         }
     }
@@ -193,7 +194,7 @@ impl ValidatorRewardPool {
     pub fn record_heartbeat_once(
         &mut self,
         address: &str,
-        seen_this_tick: &mut std::collections::HashSet<String>,
+        seen_this_tick: &mut std::collections::BTreeSet<String>,
     ) -> bool {
         if seen_this_tick.contains(address) {
             return false; // Already counted this tick
@@ -576,11 +577,11 @@ mod tests {
 
     #[test]
     fn test_heartbeat_once_dedup() {
-        use std::collections::HashSet;
+        use std::collections::BTreeSet;
         let mut pool = ValidatorRewardPool::new(GENESIS_TS);
         pool.register_validator("LOSval1", false, 1000 * CIL_PER_LOS);
 
-        let mut seen = HashSet::new();
+        let mut seen = BTreeSet::new();
         // First call: recorded
         assert!(pool.record_heartbeat_once("LOSval1", &mut seen));
         // Second call same tick: deduplicated
@@ -598,7 +599,7 @@ mod tests {
         );
 
         // New tick (new seen set) — can record again
-        let mut seen2 = HashSet::new();
+        let mut seen2 = BTreeSet::new();
         assert!(pool.record_heartbeat_once("LOSval1", &mut seen2));
         assert_eq!(
             pool.validators

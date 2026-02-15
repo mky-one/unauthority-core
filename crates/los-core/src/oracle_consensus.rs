@@ -23,7 +23,7 @@ use serde::{Deserialize, Serialize};
 /// 4. All validators collect submissions within time window
 /// 5. Calculate median (Byzantine-resistant, pure integer math)
 /// 6. Use consensus price for PoB burn calculations
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 
 /// 1 USD = 1,000,000 micro-USD (6 decimal places of precision)
 pub const MICRO_USD_PER_USD: u128 = 1_000_000;
@@ -42,7 +42,8 @@ pub struct PriceSubmission {
 /// Oracle consensus state (pure integer math — no f64)
 pub struct OracleConsensus {
     /// Validator submissions: address -> PriceSubmission
-    submissions: HashMap<String, PriceSubmission>,
+    /// MAINNET: BTreeMap for deterministic iteration
+    submissions: BTreeMap<String, PriceSubmission>,
 
     /// Submission window in seconds (default: 60s)
     submission_window_secs: u64,
@@ -64,7 +65,7 @@ impl OracleConsensus {
     /// Create new oracle consensus with default settings
     pub fn new() -> Self {
         Self {
-            submissions: HashMap::new(),
+            submissions: BTreeMap::new(),
             submission_window_secs: 60,
             min_submissions: 2, // For 3 validators: 2f+1 = 2 (f=0.5, rounded up to 1, so 2*1+1=2)
             outlier_threshold_bp: 2000, // 20% = 2000 basis points
@@ -79,7 +80,7 @@ impl OracleConsensus {
         outlier_threshold_bp: u128,
     ) -> Self {
         Self {
-            submissions: HashMap::new(),
+            submissions: BTreeMap::new(),
             submission_window_secs,
             min_submissions,
             outlier_threshold_bp,

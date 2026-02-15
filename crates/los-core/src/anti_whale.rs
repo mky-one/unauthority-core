@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 
 /// Anti-Whale Mechanisms for Unauthority
 /// Prevents single entities from dominating the network through:
@@ -26,7 +26,7 @@ pub struct AddressActivity {
 
 pub struct AntiWhaleEngine {
     pub config: AntiWhaleConfig,
-    address_activity: HashMap<String, AddressActivity>,
+    address_activity: BTreeMap<String, AddressActivity>,
     current_block: u64,
 }
 
@@ -51,7 +51,7 @@ impl AntiWhaleEngine {
     pub fn new(config: AntiWhaleConfig) -> Self {
         AntiWhaleEngine {
             config,
-            address_activity: HashMap::new(),
+            address_activity: BTreeMap::new(),
             current_block: 0,
         }
     }
@@ -195,9 +195,9 @@ impl AntiWhaleEngine {
     /// Get voting power distribution for validators (basis points, 10000 = 100%)
     pub fn calculate_voting_distribution(
         &self,
-        validators: HashMap<String, u64>, // address -> stake
-    ) -> HashMap<String, u64> {
-        let mut distribution = HashMap::new();
+        validators: BTreeMap<String, u64>, // address -> stake
+    ) -> BTreeMap<String, u64> {
+        let mut distribution = BTreeMap::new();
         let mut total_power: u64 = 0;
 
         // Calculate power for each validator
@@ -248,7 +248,7 @@ impl AntiWhaleEngine {
     }
 
     /// Get statistics on network concentration
-    pub fn get_concentration_stats(&self, validators: HashMap<String, u64>) -> ConcentrationStats {
+    pub fn get_concentration_stats(&self, validators: BTreeMap<String, u64>) -> ConcentrationStats {
         if validators.is_empty() {
             return ConcentrationStats::default();
         }
@@ -409,7 +409,7 @@ mod tests {
         let config = AntiWhaleConfig::new();
         let engine = AntiWhaleEngine::new(config);
 
-        let mut validators = HashMap::new();
+        let mut validators = BTreeMap::new();
         validators.insert("alice".to_string(), 100);
         validators.insert("bob".to_string(), 100);
 
@@ -441,7 +441,7 @@ mod tests {
         let config = AntiWhaleConfig::new();
         let engine = AntiWhaleEngine::new(config);
 
-        let mut validators = HashMap::new();
+        let mut validators = BTreeMap::new();
         validators.insert("alice".to_string(), 10_000);
         validators.insert("bob".to_string(), 5_000);
         validators.insert("charlie".to_string(), 3_000);
@@ -522,7 +522,7 @@ mod tests {
         let config = AntiWhaleConfig::new();
         let engine = AntiWhaleEngine::new(config);
 
-        let stats = engine.get_concentration_stats(HashMap::new());
+        let stats = engine.get_concentration_stats(BTreeMap::new());
         assert_eq!(stats.total_validators, 0);
         assert_eq!(stats.total_stake, 0);
     }

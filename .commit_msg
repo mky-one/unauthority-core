@@ -1,0 +1,40 @@
+MAINNET SAFETY: Deterministic state + eliminate f64 from consensus
+
+Critical fixes for mainnet immutability guarantee:
+
+[DETERMINISM] HashMap/HashSet → BTreeMap/BTreeSet (all core crates)
+- Ledger.accounts, Ledger.blocks, Ledger.claimed_sends
+- ValidatorRewardPool.validators
+- SlashingManager.validators, SlashingManager.pending_proposals
+- ABFTConsensus.pre_prepare_messages/prepare_votes/commit_votes
+- VotingSystem.validators
+- OracleConsensus.submissions
+- AntiWhaleEngine.address_activity
+- All test code updated
+
+  Why: HashMap iteration order is non-deterministic (RandomState
+  hasher). BTreeMap guarantees deterministic ordering for:
+  - serde_json serialization (SYNC_GZIP state transfer)
+  - State root calculation consistency
+  - Reward distribution order
+
+[CONSENSUS SAFETY] f64 eliminated from burn verification
+- verify_eth_burn_tx: as_f64() fallback → as_str().parse::<u128>()
+- verify_btc_burn_tx: as_f64() fallback → as_str().parse::<u128>()
+- Oracle Kraken price: f64 parse → str_to_micro() deterministic
+- API uptime_percent f64 → uptime_percent_x100 integer (bps)
+- Burn USD display: f64 → integer math ($X.YY format)
+
+  Why: f64 loses precision above 2^53 (≈9 ETH in wei).
+  String→u128 parsing is exact for any value.
+
+[CLEANUP] Delete legacy genesis files
+- genesis/src/main_clean.rs (ed25519 + f64 allocation)
+- genesis/src/main_backup.rs (ed25519 + f64 + corrupted)
+  These used ed25519_dalek (NOT Dilithium5) and f64 math.
+
+[TEST] Slashing test: get_uptime_percent() → get_uptime_bps()
+- Test now works on both testnet and mainnet feature builds
+
+Build: 0 warnings, 0 errors (release + mainnet feature)
+Tests: 239 passed, 0 failed, 3 ignored

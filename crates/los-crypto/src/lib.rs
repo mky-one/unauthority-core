@@ -188,7 +188,7 @@ fn verify_dilithium5(message: &[u8], signature_bytes: &[u8], public_key_bytes: &
 /// Ed25519 signature verification (TESTNET fallback for Flutter desktop)
 /// Uses ed25519-dalek which follows RFC 8032 — compatible with Dart `cryptography` package.
 fn verify_ed25519(message: &[u8], signature_bytes: &[u8], public_key_bytes: &[u8]) -> bool {
-    use ed25519_dalek::{Signature, VerifyingKey, Verifier};
+    use ed25519_dalek::{Signature, Verifier, VerifyingKey};
 
     let pk_array: [u8; 32] = match public_key_bytes.try_into() {
         Ok(a) => a,

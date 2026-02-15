@@ -13,18 +13,18 @@ pub const MICRO_USD: u64 = 1_000_000;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ExchangePrice {
-    pub exchange: String,       // "binance", "coinbase", "kraken"
-    pub pair: String,           // "LOS/USDT", "LOS/BTC"
-    pub price_micro_usd: u64,  // Price in micro-USD (1 USD = 1_000_000)
-    pub volume_24h_usd: u64,   // 24h volume in whole USD
-    pub timestamp: u64,         // Last update timestamp
+    pub exchange: String,     // "binance", "coinbase", "kraken"
+    pub pair: String,         // "LOS/USDT", "LOS/BTC"
+    pub price_micro_usd: u64, // Price in micro-USD (1 USD = 1_000_000)
+    pub volume_24h_usd: u64,  // 24h volume in whole USD
+    pub timestamp: u64,       // Last update timestamp
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OracleConsensusPrice {
     pub median_price_micro_usd: u64, // Byzantine-resistant median in micro-USD
     pub sources: Vec<ExchangePrice>,
-    pub confidence_bps: u16,         // 0-10000 basis points (0.00%-100.00%)
+    pub confidence_bps: u16, // 0-10000 basis points (0.00%-100.00%)
 }
 
 /// Smart Contract Oracle Interface
@@ -131,7 +131,9 @@ impl PriceOracle for ExchangeOracle {
         }
 
         // Calculate median price (Byzantine-resistant) — integer only
-        let mut prices: Vec<u64> = self.price_feeds.values()
+        let mut prices: Vec<u64> = self
+            .price_feeds
+            .values()
             .map(|p| p.price_micro_usd)
             .filter(|p| *p > 0) // Filter zero prices
             .collect();
@@ -160,7 +162,9 @@ impl PriceOracle for ExchangeOracle {
         }
 
         // Calculate confidence — integer math with basis points
-        let prices: Vec<u64> = self.price_feeds.values()
+        let prices: Vec<u64> = self
+            .price_feeds
+            .values()
             .map(|p| p.price_micro_usd)
             .filter(|p| *p > 0)
             .collect();
@@ -190,11 +194,7 @@ impl PriceOracle for ExchangeOracle {
         }
 
         // Calculate deviation in basis points (integer math)
-        let diff = if price_micro_usd > median {
-            price_micro_usd - median
-        } else {
-            median - price_micro_usd
-        };
+        let diff = price_micro_usd.abs_diff(median);
         let deviation_bps = (diff as u128 * 10_000 / median as u128) as u64;
 
         // Reject if price deviates more than 10% (1000 bps) from oracle consensus

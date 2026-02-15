@@ -111,11 +111,7 @@ fn api_json(body: serde_json::Value) -> warp::reply::WithStatus<warp::reply::Jso
 /// Insert a validator endpoint, deduplicating by .onion address.
 /// One .onion can only map to ONE current LOS address — if a validator
 /// restarts with a new keypair, the old stale entry is removed.
-fn insert_validator_endpoint(
-    ve: &mut HashMap<String, String>,
-    address: String,
-    onion: String,
-) {
+fn insert_validator_endpoint(ve: &mut HashMap<String, String>, address: String, onion: String) {
     // Remove any existing entry that maps to the same onion
     // (stale address from previous restart of the same node)
     ve.retain(|existing_addr, existing_onion| {
@@ -1604,12 +1600,12 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
 
     #[cfg(not(feature = "vm"))]
     let deploy_route = {
-        let deploy = warp::path("deploy-contract").and(warp::post()).map(|| {
-            api_json(serde_json::json!({"status":"error","msg":"VM feature not enabled"}))
-        });
-        let call = warp::path("call-contract").and(warp::post()).map(|| {
-            api_json(serde_json::json!({"status":"error","msg":"VM feature not enabled"}))
-        });
+        let deploy = warp::path("deploy-contract")
+            .and(warp::post())
+            .map(|| api_json(serde_json::json!({"status":"error","msg":"VM feature not enabled"})));
+        let call = warp::path("call-contract")
+            .and(warp::post())
+            .map(|| api_json(serde_json::json!({"status":"error","msg":"VM feature not enabled"})));
         let get_contract = warp::path!("contract" / String).map(|_: String| {
             api_json(serde_json::json!({"status":"error","msg":"VM feature not enabled"}))
         });
@@ -2285,53 +2281,56 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
         });
 
     // 19. GET / (Root endpoint - API welcome)
-    let root_route = warp::path::end()
-        .map(|| {
-            let network_label = if los_core::is_mainnet_build() { "mainnet" } else { "testnet" };
-            api_json(serde_json::json!({
-                "name": "Unauthority (LOS) Blockchain API",
-                "version": env!("CARGO_PKG_VERSION"),
-                "network": network_label,
-                "description": "Decentralized blockchain with Proof-of-Burn consensus",
-                "endpoints": {
-                    "health": "GET /health - Health check",
-                    "node_info": "GET /node-info - Node information",
-                    "bal": "GET /bal/{address} - Account balance (short alias)",
-                    "balance": "GET /balance/{address} - Account balance",
-                    "supply": "GET /supply - Total supply, burned, remaining",
-                    "fee_estimate": "GET /fee-estimate/{address} - Dynamic fee estimate (anti-whale)",
-                    "account": "GET /account/{address} - Account details + history",
-                    "history": "GET /history/{address} - Transaction history",
-                    "validators": "GET /validators - Active validators",
-                    "peers": "GET /peers - Connected peers + validator endpoints",
-                    "network_peers": "GET /network/peers - Validator .onion endpoint discovery",
-                    "block": "GET /block - Latest block",
-                    "block_by_hash": "GET /block/{hash} - Block by hash",
-                    "blocks_recent": "GET /blocks/recent - Recent blocks",
-                    "transaction": "GET /transaction/{hash} - Transaction by hash",
-                    "search": "GET /search/{query} - Search addresses, blocks, transactions",
-                    "whoami": "GET /whoami - Node's signing address",
-                    "consensus": "GET /consensus - aBFT consensus parameters and safety status",
-                    "reward_info": "GET /reward-info - Validator reward pool status and epoch info",
-                    "slashing": "GET /slashing - Slashing statistics",
-                    "slashing_profile": "GET /slashing/{address} - Validator slashing profile",
-                    "sync": "GET /sync - Node sync status",
-                    "metrics": "GET /metrics - Prometheus metrics",
-                    "mempool_stats": "GET /mempool/stats - Mempool statistics",
-                    "send": "POST /send {from, target, amount} - Send transaction",
-                    "burn": "POST /burn {chain, tx_hash} - Proof-of-burn mint",
-                    "faucet": "POST /faucet {address} - Claim testnet tokens",
-                    "register_validator": "POST /register-validator - Register as validator",
-                    "unregister_validator": "POST /unregister-validator - Unregister validator",
-                    "reset_burn_txid": "POST /reset-burn-txid - Reset stuck burn TXID",
-                    "deploy_contract": "POST /deploy-contract - Deploy WASM smart contract",
-                    "call_contract": "POST /call-contract - Call smart contract method",
-                    "contract": "GET /contract/{address} - Contract info and state"
-                },
-                "docs": "https://github.com/unauthoritymky-6236/unauthority-core",
-                "status": "operational"
-            }))
-        });
+    let root_route = warp::path::end().map(|| {
+        let network_label = if los_core::is_mainnet_build() {
+            "mainnet"
+        } else {
+            "testnet"
+        };
+        api_json(serde_json::json!({
+            "name": "Unauthority (LOS) Blockchain API",
+            "version": env!("CARGO_PKG_VERSION"),
+            "network": network_label,
+            "description": "Decentralized blockchain with Proof-of-Burn consensus",
+            "endpoints": {
+                "health": "GET /health - Health check",
+                "node_info": "GET /node-info - Node information",
+                "bal": "GET /bal/{address} - Account balance (short alias)",
+                "balance": "GET /balance/{address} - Account balance",
+                "supply": "GET /supply - Total supply, burned, remaining",
+                "fee_estimate": "GET /fee-estimate/{address} - Dynamic fee estimate (anti-whale)",
+                "account": "GET /account/{address} - Account details + history",
+                "history": "GET /history/{address} - Transaction history",
+                "validators": "GET /validators - Active validators",
+                "peers": "GET /peers - Connected peers + validator endpoints",
+                "network_peers": "GET /network/peers - Validator .onion endpoint discovery",
+                "block": "GET /block - Latest block",
+                "block_by_hash": "GET /block/{hash} - Block by hash",
+                "blocks_recent": "GET /blocks/recent - Recent blocks",
+                "transaction": "GET /transaction/{hash} - Transaction by hash",
+                "search": "GET /search/{query} - Search addresses, blocks, transactions",
+                "whoami": "GET /whoami - Node's signing address",
+                "consensus": "GET /consensus - aBFT consensus parameters and safety status",
+                "reward_info": "GET /reward-info - Validator reward pool status and epoch info",
+                "slashing": "GET /slashing - Slashing statistics",
+                "slashing_profile": "GET /slashing/{address} - Validator slashing profile",
+                "sync": "GET /sync - Node sync status",
+                "metrics": "GET /metrics - Prometheus metrics",
+                "mempool_stats": "GET /mempool/stats - Mempool statistics",
+                "send": "POST /send {from, target, amount} - Send transaction",
+                "burn": "POST /burn {chain, tx_hash} - Proof-of-burn mint",
+                "faucet": "POST /faucet {address} - Claim testnet tokens",
+                "register_validator": "POST /register-validator - Register as validator",
+                "unregister_validator": "POST /unregister-validator - Unregister validator",
+                "reset_burn_txid": "POST /reset-burn-txid - Reset stuck burn TXID",
+                "deploy_contract": "POST /deploy-contract - Deploy WASM smart contract",
+                "call_contract": "POST /call-contract - Call smart contract method",
+                "contract": "GET /contract/{address} - Contract info and state"
+            },
+            "docs": "https://github.com/unauthoritymky-6236/unauthority-core",
+            "status": "operational"
+        }))
+    });
 
     // 20. GET /slashing (Slashing statistics and validator safety)
     let sm_stats = slashing_manager.clone();
@@ -2449,34 +2448,35 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
 
     // 22b. GET /tor-health (Tor Hidden Service reachability status)
     let tor_health_m = metrics.clone();
-    let tor_health_route = warp::path("tor-health")
-        .and(with_state(tor_health_m))
-        .map(move |m: Arc<LosMetrics>| {
-            let reachable = m.tor_onion_reachable.get();
-            let consecutive_failures = m.tor_consecutive_failures.get();
-            let total_pings = m.tor_self_ping_total.get();
-            let total_failures = m.tor_self_ping_failures_total.get();
-            let onion_addr = std::env::var("LOS_ONION_ADDRESS").unwrap_or_default();
+    let tor_health_route =
+        warp::path("tor-health")
+            .and(with_state(tor_health_m))
+            .map(move |m: Arc<LosMetrics>| {
+                let reachable = m.tor_onion_reachable.get();
+                let consecutive_failures = m.tor_consecutive_failures.get();
+                let total_pings = m.tor_self_ping_total.get();
+                let total_failures = m.tor_self_ping_failures_total.get();
+                let onion_addr = std::env::var("LOS_ONION_ADDRESS").unwrap_or_default();
 
-            let status = match reachable {
-                1 => "reachable",
-                0 => "unreachable",
-                _ => "not_configured",
-            };
+                let status = match reachable {
+                    1 => "reachable",
+                    0 => "unreachable",
+                    _ => "not_configured",
+                };
 
-            api_json(serde_json::json!({
-                "status": status,
-                "onion_address": onion_addr,
-                "reachable": reachable == 1,
-                "consecutive_failures": consecutive_failures,
-                "total_pings": total_pings,
-                "total_failures": total_failures,
-                "timestamp": std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH)
-                    .unwrap_or_default()
-                    .as_secs()
-            }))
-        });
+                api_json(serde_json::json!({
+                    "status": status,
+                    "onion_address": onion_addr,
+                    "reachable": reachable == 1,
+                    "consecutive_failures": consecutive_failures,
+                    "total_pings": total_pings,
+                    "total_failures": total_failures,
+                    "timestamp": std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap_or_default()
+                        .as_secs()
+                }))
+            });
 
     // 23. GET /block/:hash (Block explorer - get block by hash)
     let l_block_hash = ledger.clone();
@@ -4332,11 +4332,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let bip39_seed = mnemonic.to_seed("");
         let kp = los_crypto::generate_keypair_from_seed(&bip39_seed);
         let derived_addr = los_crypto::public_key_to_address(&kp.public_key);
-        println!("🔑 Derived keypair from LOS_SEED_PHRASE → {}", get_short_addr(&derived_addr));
+        println!(
+            "🔑 Derived keypair from LOS_SEED_PHRASE → {}",
+            get_short_addr(&derived_addr)
+        );
         // Save/overwrite wallet.json so subsequent restarts without seed phrase still work
         fs::create_dir_all(&base_data_dir).ok();
         if let Ok(encrypted) = los_crypto::migrate_to_encrypted(&kp, &wallet_password) {
-            let _ = fs::write(&wallet_path, serde_json::to_string(&encrypted).unwrap_or_default());
+            let _ = fs::write(
+                &wallet_path,
+                serde_json::to_string(&encrypted).unwrap_or_default(),
+            );
         }
         kp
     } else if let Ok(data) = fs::read_to_string(&wallet_path) {
@@ -4456,7 +4462,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 // Collect onion_address if present in genesis bootstrap_nodes
                                 if let Some(ref onion) = node.onion_address {
                                     if !onion.is_empty() && onion.ends_with(".onion") {
-                                        genesis_onion_map.push((node.address.clone(), onion.clone()));
+                                        genesis_onion_map
+                                            .push((node.address.clone(), onion.clone()));
                                     }
                                 }
                             }
@@ -4547,7 +4554,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                         // Collect onion_address for validator endpoint discovery
                                         if let Some(onion) = wallet["onion_address"].as_str() {
                                             if !onion.is_empty() && onion.ends_with(".onion") {
-                                                genesis_onion_map.push((address.to_string(), onion.to_string()));
+                                                genesis_onion_map
+                                                    .push((address.to_string(), onion.to_string()));
                                             }
                                         }
                                     }
@@ -4708,7 +4716,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // because this node's liveness proves the registered validator's liveness.
     // Without this, a user who registers a different wallet address than the node's keypair
     // would get 0 heartbeats → 0% uptime → no rewards.
-    let local_registered_validators: Arc<Mutex<HashSet<String>>> = Arc::new(Mutex::new(HashSet::new()));
+    let local_registered_validators: Arc<Mutex<HashSet<String>>> =
+        Arc::new(Mutex::new(HashSet::new()));
 
     let pending_burns = Arc::new(Mutex::new(HashMap::<
         String,
@@ -4745,10 +4754,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     // Seed from genesis validator onion addresses (collected during genesis loading)
     for (addr, onion) in &genesis_onion_map {
-        initial_endpoints.entry(addr.clone()).or_insert_with(|| onion.clone());
+        initial_endpoints
+            .entry(addr.clone())
+            .or_insert_with(|| onion.clone());
     }
     if !genesis_onion_map.is_empty() {
-        println!("🧅 Seeded {} genesis validator endpoints for discovery", genesis_onion_map.len());
+        println!(
+            "🧅 Seeded {} genesis validator endpoints for discovery",
+            genesis_onion_map.len()
+        );
     }
     let validator_endpoints = Arc::new(Mutex::new(initial_endpoints));
 
@@ -5048,7 +5062,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     if std::env::var("LOS_P2P_PORT").is_err() {
         let p2p_port = api_port + 1000;
         std::env::set_var("LOS_P2P_PORT", p2p_port.to_string());
-        println!("📡 P2P port auto-derived: {} (API {} + 1000)", p2p_port, api_port);
+        println!(
+            "📡 P2P port auto-derived: {} (API {} + 1000)",
+            p2p_port, api_port
+        );
     }
 
     let (tx_out, rx_out) = mpsc::channel(32);
@@ -5264,7 +5281,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 if let Ok(sig) = los_crypto::sign_message(message.as_bytes(), &reward_sk) {
                     let sig_hex = hex::encode(&sig);
                     let pk_hex = hex::encode(&reward_pk);
-                    let hb_msg = format!("VALIDATOR_HEARTBEAT:{}:{}:{}:{}", reward_my_addr, now, pk_hex, sig_hex);
+                    let hb_msg = format!(
+                        "VALIDATOR_HEARTBEAT:{}:{}:{}:{}",
+                        reward_my_addr, now, pk_hex, sig_hex
+                    );
                     let _ = reward_tx.send(hb_msg).await;
                 }
             }
@@ -5277,15 +5297,25 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             {
                 let local_addrs: Vec<String> = {
                     let lrv = safe_lock(&reward_local_validators);
-                    lrv.iter().filter(|a| **a != reward_my_addr).cloned().collect()
+                    lrv.iter()
+                        .filter(|a| **a != reward_my_addr)
+                        .cloned()
+                        .collect()
                 }; // lrv dropped here before .await
                 for addr in &local_addrs {
-                    let message = format!("VALIDATOR_HEARTBEAT_PROXY:{}:{}:{}", addr, reward_my_addr, now);
+                    let message = format!(
+                        "VALIDATOR_HEARTBEAT_PROXY:{}:{}:{}",
+                        addr, reward_my_addr, now
+                    );
                     if let Ok(sig) = los_crypto::sign_message(message.as_bytes(), &reward_sk) {
                         let sig_hex = hex::encode(&sig);
                         let proxy_msg = format!(
                             "VALIDATOR_HEARTBEAT_PROXY:{}:{}:{}:{}:{}",
-                            addr, reward_my_addr, now, hex::encode(&reward_pk), sig_hex
+                            addr,
+                            reward_my_addr,
+                            now,
+                            hex::encode(&reward_pk),
+                            sig_hex
                         );
                         let _ = reward_tx.send(proxy_msg).await;
                     }
@@ -5347,11 +5377,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let endpoints_to_check: Vec<(String, String)> = {
                     let ve = safe_lock(&reward_ve);
                     let pool = safe_lock(&reward_pool_bg);
-                    pool.validators.keys()
+                    pool.validators
+                        .keys()
                         .filter(|addr| !seen_this_tick.contains(*addr) && **addr != reward_my_addr)
-                        .filter_map(|addr| {
-                            ve.get(addr).map(|onion| (addr.clone(), onion.clone()))
-                        })
+                        .filter_map(|addr| ve.get(addr).map(|onion| (addr.clone(), onion.clone())))
                         .collect()
                 };
 
@@ -5362,26 +5391,26 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         let proxy = proxy_url.to_string();
                         check_set.spawn(async move {
                             let url = format!("http://{}:80/health", onion);
-                            let ok = tokio::time::timeout(
-                                Duration::from_secs(8),
-                                async {
-                                    let proxy_obj = match reqwest::Proxy::all(&proxy) {
-                                        Ok(p) => p,
-                                        Err(_) => return false,
-                                    };
-                                    let client = match reqwest::Client::builder()
-                                        .proxy(proxy_obj)
-                                        .timeout(Duration::from_secs(6))
-                                        .build() {
-                                        Ok(c) => c,
-                                        Err(_) => return false,
-                                    };
-                                    match client.get(&url).send().await {
-                                        Ok(resp) => resp.status().is_success(),
-                                        Err(_) => false,
-                                    }
+                            let ok = tokio::time::timeout(Duration::from_secs(8), async {
+                                let proxy_obj = match reqwest::Proxy::all(&proxy) {
+                                    Ok(p) => p,
+                                    Err(_) => return false,
+                                };
+                                let client = match reqwest::Client::builder()
+                                    .proxy(proxy_obj)
+                                    .timeout(Duration::from_secs(6))
+                                    .build()
+                                {
+                                    Ok(c) => c,
+                                    Err(_) => return false,
+                                };
+                                match client.get(&url).send().await {
+                                    Ok(resp) => resp.status().is_success(),
+                                    Err(_) => false,
                                 }
-                            ).await.unwrap_or(false);
+                            })
+                            .await
+                            .unwrap_or(false);
                             (addr, ok)
                         });
                     }
@@ -5408,8 +5437,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         }
                     }
                     if total_checked > 0 {
-                        println!("📡 HTTP heartbeat fallback: {}/{} validators reachable",
-                            reachable_count, total_checked);
+                        println!(
+                            "📡 HTTP heartbeat fallback: {}/{} validators reachable",
+                            reachable_count, total_checked
+                        );
                     }
                 }
             }
@@ -5420,7 +5451,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             // blocking ALL HTTP routes that touch ledger or reward_pool for seconds.
             // NEW: Phase 1 (pool lock) → Phase 2 (no lock, CPU work) → Phase 3 (ledger lock, write)
             let (gossip_queue, fee_gossip_queue) = {
-
                 // ═══════════════════════════════════════════════════════════════════
                 // PHASE 1: Epoch check + reward calculation (pool lock only, fast)
                 // ═══════════════════════════════════════════════════════════════════
@@ -5451,13 +5481,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 let leader_addr = registered[leader_idx].as_str();
                                 let am_leader = leader_addr == reward_my_addr.as_str();
                                 if am_leader {
-                                    println!("👑 Epoch {} leader election: I am the leader (slot {}/{})",
-                                        pool.current_epoch, leader_idx, registered.len());
+                                    println!(
+                                        "👑 Epoch {} leader election: I am the leader (slot {}/{})",
+                                        pool.current_epoch,
+                                        leader_idx,
+                                        registered.len()
+                                    );
                                 } else {
-                                    println!("⏳ Epoch {} leader election: leader is {} (slot {}/{})",
+                                    println!(
+                                        "⏳ Epoch {} leader election: leader is {} (slot {}/{})",
                                         pool.current_epoch,
                                         &leader_addr[..leader_addr.len().min(15)],
-                                        leader_idx, registered.len());
+                                        leader_idx,
+                                        registered.len()
+                                    );
                                 }
                                 am_leader
                             }
@@ -5572,18 +5609,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 block_count: 0,
                                 is_validator: false,
                             });
-                            block_templates.push((addr.clone(), *reward_cil, Block {
-                                block_type: BlockType::Mint,
-                                account: addr.clone(),
-                                previous: state.head.clone(),
-                                link: format!("REWARD:EPOCH:{}", completed_epoch),
-                                amount: *reward_cil,
-                                fee: 0,
-                                timestamp: now_ts,
-                                public_key: hex::encode(&reward_pk),
-                                signature: String::new(),
-                                work: 0,
-                            }));
+                            block_templates.push((
+                                addr.clone(),
+                                *reward_cil,
+                                Block {
+                                    block_type: BlockType::Mint,
+                                    account: addr.clone(),
+                                    previous: state.head.clone(),
+                                    link: format!("REWARD:EPOCH:{}", completed_epoch),
+                                    amount: *reward_cil,
+                                    fee: 0,
+                                    timestamp: now_ts,
+                                    public_key: hex::encode(&reward_pk),
+                                    signature: String::new(),
+                                    work: 0,
+                                },
+                            ));
                         }
                     } // ledger released — HTTP routes unblocked during CPU work
 
@@ -5594,18 +5635,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     for (addr, reward_cil, mut blk) in block_templates {
                         compute_pow_inline(&mut blk, 0);
                         let signing_hash = blk.signing_hash();
-                        blk.signature =
-                            match try_sign_hex(signing_hash.as_bytes(), &reward_sk) {
-                                Ok(sig) => sig,
-                                Err(e) => {
-                                    eprintln!(
-                                        "❌ Failed to sign reward block for {}: {}",
-                                        get_short_addr(&addr),
-                                        e
-                                    );
-                                    continue;
-                                }
-                            };
+                        blk.signature = match try_sign_hex(signing_hash.as_bytes(), &reward_sk) {
+                            Ok(sig) => sig,
+                            Err(e) => {
+                                eprintln!(
+                                    "❌ Failed to sign reward block for {}: {}",
+                                    get_short_addr(&addr),
+                                    e
+                                );
+                                continue;
+                            }
+                        };
                         signed_blocks.push((addr, reward_cil, blk));
                     }
 
@@ -5683,25 +5723,28 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 if fee_share == 0 {
                                     continue;
                                 }
-                                let state =
-                                    l.accounts.get(addr).cloned().unwrap_or(AccountState {
-                                        head: "0".to_string(),
-                                        balance: 0,
-                                        block_count: 0,
-                                        is_validator: false,
-                                    });
-                                fee_templates.push((addr.clone(), fee_share, Block {
-                                    block_type: BlockType::Mint,
-                                    account: addr.clone(),
-                                    previous: state.head.clone(),
-                                    link: format!("FEE_REWARD:EPOCH:{}", completed_epoch),
-                                    amount: fee_share,
-                                    fee: 0,
-                                    timestamp: now_ts,
-                                    public_key: hex::encode(&reward_pk),
-                                    signature: String::new(),
-                                    work: 0,
-                                }));
+                                let state = l.accounts.get(addr).cloned().unwrap_or(AccountState {
+                                    head: "0".to_string(),
+                                    balance: 0,
+                                    block_count: 0,
+                                    is_validator: false,
+                                });
+                                fee_templates.push((
+                                    addr.clone(),
+                                    fee_share,
+                                    Block {
+                                        block_type: BlockType::Mint,
+                                        account: addr.clone(),
+                                        previous: state.head.clone(),
+                                        link: format!("FEE_REWARD:EPOCH:{}", completed_epoch),
+                                        amount: fee_share,
+                                        fee: 0,
+                                        timestamp: now_ts,
+                                        public_key: hex::encode(&reward_pk),
+                                        signature: String::new(),
+                                        work: 0,
+                                    },
+                                ));
                             }
                         } // ledger released
 
@@ -5710,18 +5753,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         for (addr, fee_share, mut blk) in fee_templates {
                             compute_pow_inline(&mut blk, 0);
                             let signing_hash = blk.signing_hash();
-                            blk.signature =
-                                match try_sign_hex(signing_hash.as_bytes(), &reward_sk) {
-                                    Ok(sig) => sig,
-                                    Err(e) => {
-                                        eprintln!(
-                                            "❌ Fee reward sign failed for {}: {}",
-                                            get_short_addr(&addr),
-                                            e
-                                        );
-                                        continue;
-                                    }
-                                };
+                            blk.signature = match try_sign_hex(signing_hash.as_bytes(), &reward_sk)
+                            {
+                                Ok(sig) => sig,
+                                Err(e) => {
+                                    eprintln!(
+                                        "❌ Fee reward sign failed for {}: {}",
+                                        get_short_addr(&addr),
+                                        e
+                                    );
+                                    continue;
+                                }
+                            };
                             signed_fee_blocks.push((addr, fee_share, blk));
                         }
 
@@ -5966,7 +6009,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 // Wait for node to fully start before first self-ping
                 tokio::time::sleep(Duration::from_secs(60)).await;
 
-                let check_interval_secs: u64 = if los_core::is_testnet_build() { 60 } else { 120 };
+                let check_interval_secs: u64 = if los_core::is_testnet_build() {
+                    60
+                } else {
+                    120
+                };
                 let mut interval = tokio::time::interval(Duration::from_secs(check_interval_secs));
                 let mut consecutive_failures: u32 = 0;
 
@@ -5974,7 +6021,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let proxy = match reqwest::Proxy::all(format!("socks5h://{}", tor_socks)) {
                     Ok(p) => p,
                     Err(e) => {
-                        eprintln!("🧅❌ Tor Health Monitor: failed to create SOCKS5 proxy: {}", e);
+                        eprintln!(
+                            "🧅❌ Tor Health Monitor: failed to create SOCKS5 proxy: {}",
+                            e
+                        );
                         return;
                     }
                 };
@@ -5985,7 +6035,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 {
                     Ok(c) => c,
                     Err(e) => {
-                        eprintln!("🧅❌ Tor Health Monitor: failed to build HTTP client: {}", e);
+                        eprintln!(
+                            "🧅❌ Tor Health Monitor: failed to build HTTP client: {}",
+                            e
+                        );
                         return;
                     }
                 };
@@ -5993,11 +6046,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 // Determine the health check URL.
                 // Tor hidden services expose port 80 → local API port.
                 // So we always use http://<onion>/health (port 80 default).
-                let health_url = format!("http://{}/health",
-                    my_onion.trim_end_matches('/'));
+                let health_url = format!("http://{}/health", my_onion.trim_end_matches('/'));
 
-                println!("🧅🏥 Tor Health Monitor started (checking {} every {}s)",
-                    health_url, check_interval_secs);
+                println!(
+                    "🧅🏥 Tor Health Monitor started (checking {} every {}s)",
+                    health_url, check_interval_secs
+                );
 
                 loop {
                     interval.tick().await;
@@ -6017,17 +6071,23 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             // HTTP response but non-success status — service reachable but unhealthy
                             consecutive_failures += 1;
                             tor_health_metrics.tor_onion_reachable.set(0);
-                            tor_health_metrics.tor_consecutive_failures.set(consecutive_failures as i64);
+                            tor_health_metrics
+                                .tor_consecutive_failures
+                                .set(consecutive_failures as i64);
                             tor_health_metrics.tor_self_ping_failures_total.inc();
                             eprintln!(
                                 "🧅⚠️ Tor self-ping: HTTP {} (failure #{}) — {}",
-                                resp.status(), consecutive_failures, health_url
+                                resp.status(),
+                                consecutive_failures,
+                                health_url
                             );
                         }
                         Err(e) => {
                             consecutive_failures += 1;
                             tor_health_metrics.tor_onion_reachable.set(0);
-                            tor_health_metrics.tor_consecutive_failures.set(consecutive_failures as i64);
+                            tor_health_metrics
+                                .tor_consecutive_failures
+                                .set(consecutive_failures as i64);
                             tor_health_metrics.tor_self_ping_failures_total.inc();
 
                             if consecutive_failures >= 3 {
@@ -6137,10 +6197,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             #[cfg(unix)]
             {
                 use tokio::signal::unix::{signal, SignalKind};
-                let mut sigterm = signal(SignalKind::terminate())
-                    .expect("Failed to install SIGTERM handler");
-                let mut sigint = signal(SignalKind::interrupt())
-                    .expect("Failed to install SIGINT handler");
+                let mut sigterm =
+                    signal(SignalKind::terminate()).expect("Failed to install SIGTERM handler");
+                let mut sigint =
+                    signal(SignalKind::interrupt()).expect("Failed to install SIGINT handler");
 
                 tokio::select! {
                     _ = sigterm.recv() => do_shutdown("SIGTERM"),

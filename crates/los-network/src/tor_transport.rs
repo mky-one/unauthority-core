@@ -38,7 +38,11 @@ impl TorConfig {
         let socks5_proxy = std::env::var("LOS_SOCKS5_PROXY")
             .or_else(|_| std::env::var("LOS_TOR_SOCKS5"))
             .ok()
-            .map(|s| s.trim_start_matches("socks5h://").trim_start_matches("socks5://").to_string())
+            .map(|s| {
+                s.trim_start_matches("socks5h://")
+                    .trim_start_matches("socks5://")
+                    .to_string()
+            })
             .and_then(|s| s.parse::<SocketAddr>().ok());
 
         let onion_address = std::env::var("LOS_ONION_ADDRESS").ok();

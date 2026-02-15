@@ -120,7 +120,10 @@ impl LosDatabase {
                 }
             }
             Err(e) => {
-                eprintln!("⚠️ flock probe error: {} — falling through to sled::open", e);
+                eprintln!(
+                    "⚠️ flock probe error: {} — falling through to sled::open",
+                    e
+                );
             }
         }
 

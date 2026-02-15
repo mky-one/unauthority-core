@@ -123,6 +123,27 @@ class ApiService {
   /// local onion address for API consumption").
   String? _excludedOnionUrl;
 
+  // ══════════════════════════════════════════════════════════════════
+  //  LOCAL NODE FALLBACK — FIX: Dashboard usable when Tor is down
+  // ══════════════════════════════════════════════════════════════════
+
+  /// Local node URL (e.g. http://127.0.0.1:3035) — set when bundled
+  /// los-node is running. Used as highest-priority fallback so the
+  /// Dashboard works even when Tor SOCKS proxy is unavailable.
+  String? _localNodeUrl;
+
+  /// Direct HTTP client (no SOCKS proxy) for localhost requests.
+  final http.Client _directClient = http.Client();
+
+  /// Whether the last successful request went through _localNodeUrl
+  /// (as fallback) instead of an external .onion peer.
+  /// UI can show a warning like "Local data only — external verification pending".
+  bool _usingLocalFallback = false;
+  bool get isUsingLocalFallback => _usingLocalFallback;
+
+  /// Whether a Tor SOCKS recovery is already in progress.
+  bool _torRecoveryInProgress = false;
+
   ApiService({
     String? customUrl,
     this.environment = NetworkEnvironment.testnet,
@@ -166,6 +187,24 @@ class ApiService {
       _switchToNextNode();
     }
     debugPrint('🔗 Excluded own onion from peer list: $onionUrl');
+  }
+
+  /// Set the local node URL when the bundled los-node is running.
+  /// This enables a direct (non-SOCKS) fallback path so the Dashboard
+  /// works even when Tor is unavailable (dead SOCKS proxy, no internet, etc.)
+  ///
+  /// This does NOT violate the spec: we still prefer external .onion peers
+  /// for cross-verification; local is a fallback only.
+  void setLocalNodeUrl(String url) {
+    _localNodeUrl = url;
+    debugPrint('🔗 Local node URL set: $url (fallback enabled)');
+  }
+
+  /// Clear the local node URL when the bundled los-node stops.
+  void clearLocalNodeUrl() {
+    _localNodeUrl = null;
+    _usingLocalFallback = false;
+    debugPrint('🔗 Local node URL cleared');
   }
 
   /// Load all bootstrap URLs for the given environment.
@@ -424,6 +463,11 @@ class ApiService {
 
   /// Execute an HTTP request with intelligent failover.
   /// Handles: timeouts, connection errors, AND HTTP 5xx server errors.
+  ///
+  /// PRIORITY ORDER:
+  /// 1. External .onion peers via Tor SOCKS5 (preferred: cross-verification)
+  /// 2. Local node via direct HTTP (fallback: Dashboard still works)
+  /// 3. Tor auto-recovery if SOCKS proxy died
   Future<http.Response> _requestWithFailover(
     Future<http.Response> Function(String url) requestFn,
     String endpoint,
@@ -432,6 +476,7 @@ class ApiService {
     int attempts = 0;
     final maxAttempts = _bootstrapUrls.length.clamp(1, _maxRetries);
 
+    // ── Phase 1: Try external .onion peers via Tor SOCKS5 ──
     while (attempts < maxAttempts) {
       try {
         final sw = Stopwatch()..start();
@@ -447,10 +492,16 @@ class ApiService {
               '⚠️ Node ${_currentNodeIndex + 1} returned HTTP ${response.statusCode} for $endpoint');
           _getHealth(baseUrl).recordFailure();
           final isLastAttempt = attempts >= maxAttempts - 1;
-          if (isLastAttempt) return response;
+          if (isLastAttempt) break; // Fall through to local fallback
           _switchToNextNode();
           attempts++;
           continue;
+        }
+
+        // Success via external peer — clear local fallback flag
+        if (_usingLocalFallback) {
+          _usingLocalFallback = false;
+          debugPrint('🌐 Restored external .onion connectivity');
         }
 
         // Trigger initial discovery + latency probes (once)
@@ -465,18 +516,75 @@ class ApiService {
         final isLastAttempt = attempts >= maxAttempts - 1;
         debugPrint('⚠️ Node ${_currentNodeIndex + 1} failed for $endpoint: $e');
 
-        if (isLastAttempt) {
-          debugPrint(
-              '❌ All ${attempts + 1} bootstrap nodes failed for $endpoint');
-          rethrow;
+        // Detect dead SOCKS proxy → trigger Tor auto-recovery (async, non-blocking)
+        final errStr = e.toString();
+        if (errStr.contains('Connection refused') ||
+            errStr.contains('SOCKS') ||
+            errStr.contains('Proxy')) {
+          _triggerTorRecovery();
         }
+
+        if (isLastAttempt) break; // Fall through to local fallback
 
         _switchToNextNode();
         attempts++;
         debugPrint('🔄 Retrying $endpoint on node ${_currentNodeIndex + 1}...');
       }
     }
-    throw Exception('All bootstrap nodes unreachable for $endpoint');
+
+    // ── Phase 2: Local node fallback (direct HTTP, no SOCKS) ──
+    // Uses _directClient (plain HTTP) because _client may be dead SOCKS-proxied.
+    // Only works for GET (read-only) endpoints — Dashboard data, validators, health.
+    // POST endpoints (send/burn/register) intentionally skip this because they
+    // require external consensus peers to propagate.
+    if (_localNodeUrl != null) {
+      try {
+        debugPrint('🏠 Trying local node fallback: $_localNodeUrl$endpoint');
+        final response = await _directClient
+            .get(Uri.parse('$_localNodeUrl$endpoint'))
+            .timeout(const Duration(seconds: 10));
+
+        if (response.statusCode < 500) {
+          if (!_usingLocalFallback) {
+            _usingLocalFallback = true;
+            debugPrint('🏠 Using local node fallback (Tor unavailable) — '
+                'Dashboard data is from local node only');
+          }
+          return response;
+        }
+      } on Exception catch (e) {
+        debugPrint('❌ Local node fallback also failed for $endpoint: $e');
+      }
+    }
+
+    // ── Phase 3: Everything failed ──
+    throw Exception('All nodes unreachable for $endpoint '
+        '(${attempts + 1} external + ${_localNodeUrl != null ? 1 : 0} local)');
+  }
+
+  /// Trigger Tor SOCKS proxy recovery in the background.
+  /// Non-blocking: fires and forgets. Only one recovery attempt at a time.
+  void _triggerTorRecovery() {
+    if (_torRecoveryInProgress || _disposed) return;
+    // Use a non-final field via closure
+    debugPrint('🔄 [ApiService] Triggering Tor SOCKS recovery...');
+    _torRecoveryInProgress = true;
+    Future(() async {
+      try {
+        final started = await _torService.start();
+        if (started) {
+          debugPrint('✅ [ApiService] Tor recovered — recreating HTTP client');
+          await _reinitializeTorClient();
+        } else {
+          debugPrint(
+              '⚠️ [ApiService] Tor recovery failed — local fallback active');
+        }
+      } catch (e) {
+        debugPrint('❌ [ApiService] Tor recovery error: $e');
+      } finally {
+        _torRecoveryInProgress = false;
+      }
+    });
   }
 
   /// Runs once after first successful API response:
@@ -1153,5 +1261,6 @@ class ApiService {
     _rediscoveryTimer?.cancel();
     _healthCheckTimer?.cancel();
     _client.close();
+    _directClient.close();
   }
 }

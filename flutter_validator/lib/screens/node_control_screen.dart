@@ -171,7 +171,8 @@ class _NodeControlScreenState extends State<NodeControlScreen>
               child: const Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Icon(Icons.monitor_heart, size: 12, color: ValidatorColors.accent),
+                  Icon(Icons.monitor_heart,
+                      size: 12, color: ValidatorColors.accent),
                   SizedBox(width: 4),
                   Text('MONITOR',
                       style: TextStyle(
@@ -598,6 +599,14 @@ class _NodeControlScreenState extends State<NodeControlScreen>
         p2pPort: p2pPort,
         torSocks5: torSocks5,
       );
+
+      // FIX: Enable local node fallback in ApiService so Dashboard works
+      // even when Tor SOCKS proxy is unavailable. The local node's REST API
+      // at http://127.0.0.1:<port> is always reachable without Tor.
+      if (started) {
+        apiService.setLocalNodeUrl(node.localApiUrl);
+      }
+
       debugPrint(
           '🖥️ [NodeControlScreen._startNode] ${started ? 'Success' : 'Failed'}');
     } finally {
@@ -607,7 +616,11 @@ class _NodeControlScreenState extends State<NodeControlScreen>
 
   Future<void> _stopNode(NodeProcessService node) async {
     debugPrint('🖥️ [NodeControlScreen._stopNode] Stopping node...');
+    // Capture ApiService BEFORE async gap to satisfy use_build_context_synchronously
+    final apiService = context.read<ApiService>();
     await node.stop();
+    // Clear local fallback — node is gone, localhost won't respond.
+    apiService.clearLocalNodeUrl();
     debugPrint('🖥️ [NodeControlScreen._stopNode] Node stopped');
   }
 

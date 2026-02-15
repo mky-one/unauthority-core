@@ -316,6 +316,45 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                 ],
                               ),
                             ),
+                            // Local-only fallback warning (shows when Tor is down)
+                            Consumer<ApiService>(
+                              builder: (context, api, _) {
+                                if (!api.isUsingLocalFallback) {
+                                  return const SizedBox.shrink();
+                                }
+                                return Container(
+                                  width: double.infinity,
+                                  padding: const EdgeInsets.all(12),
+                                  margin: const EdgeInsets.only(bottom: 16),
+                                  decoration: BoxDecoration(
+                                    color: Colors.deepOrange
+                                        .withValues(alpha: 0.12),
+                                    border: Border.all(
+                                        color: Colors.deepOrange, width: 1),
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                  child: const Row(
+                                    children: [
+                                      Icon(Icons.wifi_off,
+                                          color: Colors.deepOrange, size: 20),
+                                      SizedBox(width: 12),
+                                      Expanded(
+                                        child: Text(
+                                          '🏠 LOCAL DATA ONLY — Tor is reconnecting. '
+                                          'Data shown is from your local node. '
+                                          'External verification will resume automatically.',
+                                          style: TextStyle(
+                                            color: Colors.deepOrange,
+                                            fontSize: 12,
+                                            fontWeight: FontWeight.w500,
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                );
+                              },
+                            ),
                             // Node Info Card
                             Card(
                               child: Padding(

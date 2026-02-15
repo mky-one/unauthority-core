@@ -278,6 +278,8 @@ impl BlockBurnState {
 
     /// Get fill percentage (0-100) — DEPRECATED: use get_capacity_percentage_bps() instead
     /// Kept for backward compatibility during migration. Will be removed before mainnet.
+    /// MAINNET SAFETY: Excluded from mainnet builds (uses f64)
+    #[cfg(not(feature = "mainnet"))]
     #[deprecated(note = "Uses f64. Migrate to get_capacity_percentage_bps() for mainnet.")]
     pub fn get_capacity_percentage(&self) -> f64 {
         let used = (BURN_LIMIT_PER_BLOCK_CIL - self.remaining_capacity) as f64;

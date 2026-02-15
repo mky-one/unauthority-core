@@ -1,3 +1,10 @@
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// MAINNET SAFETY GATE: This entire module is EXCLUDED from mainnet builds.
+// It uses f64::ln() which is NOT deterministic across CPU architectures.
+// For testnet/development only — off-chain economics estimation / UI display.
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+#![cfg(not(feature = "mainnet"))]
+
 use serde::{Deserialize, Serialize};
 
 /// Bonding Curve for Unauthority (LOS) distribution

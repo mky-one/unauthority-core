@@ -249,6 +249,7 @@ fn generate_config(wallets: &[DevWallet]) {
     let config = format!(
         r#"{{
   "network_id": 1,
+  "network": "mainnet",
   "chain_name": "Unauthority",
   "ticker": "LOS",
   "genesis_timestamp": {},

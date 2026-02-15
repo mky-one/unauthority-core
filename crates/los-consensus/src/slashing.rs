@@ -111,6 +111,8 @@ impl ValidatorSafetyProfile {
     }
 
     /// Legacy f64 helper — for display/logging only, NOT for consensus decisions
+    /// MAINNET SAFETY: Excluded from mainnet builds (uses f64)
+    #[cfg(not(feature = "mainnet"))]
     pub fn get_uptime_percent(&self) -> f64 {
         self.get_uptime_bps() as f64 / 100.0
     }

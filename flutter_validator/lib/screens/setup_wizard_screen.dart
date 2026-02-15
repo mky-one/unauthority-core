@@ -410,7 +410,8 @@ class _SetupWizardScreenState extends State<SetupWizardScreen> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           const SizedBox(height: 32),
-          const Icon(Icons.verified_user, size: 80, color: ValidatorColors.accent),
+          const Icon(Icons.verified_user,
+              size: 80, color: ValidatorColors.accent),
           const SizedBox(height: 16),
           const Text('Register Validator',
               style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold),
@@ -566,9 +567,8 @@ class _SetupWizardScreenState extends State<SetupWizardScreen> {
                   style: const TextStyle(
                       fontSize: 16, fontWeight: FontWeight.bold)),
               style: ElevatedButton.styleFrom(
-                  backgroundColor: _isGenesisMonitor
-                      ? ValidatorColors.accent
-                      : Colors.green,
+                  backgroundColor:
+                      _isGenesisMonitor ? ValidatorColors.accent : Colors.green,
                   foregroundColor: Colors.white,
                   padding:
                       const EdgeInsets.symmetric(horizontal: 32, vertical: 16),

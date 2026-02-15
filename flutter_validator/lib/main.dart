@@ -95,11 +95,13 @@ class _MyAppState extends State<MyApp> {
         debugShowCheckedModeBanner: false,
         theme: ThemeData(
           colorScheme: ColorScheme.fromSeed(
-            seedColor: const Color(0xFFE67E22), // Orange — distinct from wallet purple
+            seedColor:
+                const Color(0xFFE67E22), // Orange — distinct from wallet purple
             brightness: Brightness.dark,
           ),
           useMaterial3: true,
-          scaffoldBackgroundColor: const Color(0xFF0D1117), // Darker — GitHub-dark feel
+          scaffoldBackgroundColor:
+              const Color(0xFF0D1117), // Darker — GitHub-dark feel
           cardTheme: const CardThemeData(
             color: Color(0xFF161B22), // Distinct from wallet (0xFF1A1F2E)
             elevation: 4,

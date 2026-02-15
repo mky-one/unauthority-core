@@ -26,8 +26,14 @@ This guide will help you install and run the LOS Wallet or Validator Dashboard i
 1. **Download** `LOS-Wallet-1.0.8-testnet-macos.dmg`
 2. **Open** the DMG file
 3. **Drag** "LOS Wallet.app" to Applications folder
-4. **Launch** from Applications (if blocked: System Settings → Privacy & Security → Open Anyway)
-5. **Done!** Tor downloads automatically on first run (~1-2 min)
+4. **Remove Quarantine** (run in Terminal):
+   ```bash
+   xattr -cr /Applications/LOS\ Wallet.app
+   ```
+5. **Launch** from Applications
+6. **Done!** Tor downloads automatically on first run (~1-2 min)
+
+> **Why?** macOS Gatekeeper blocks unsigned apps. The `xattr -cr` command removes all quarantine attributes.
 
 ### Linux
 1. **Download** `LOS-Wallet-1.0.8-testnet-linux-x64.tar.gz`
@@ -51,11 +57,12 @@ This guide will help you install and run the LOS Wallet or Validator Dashboard i
 ### Windows
 1. **Download** `LOS-Wallet-1.0.8-testnet-windows-x64.zip`
 2. **Extract** to `C:\LOS-Wallet\` (or any folder)
-3. **Run** `flutter_wallet.exe`
-4. **Windows Defender Warning:** Click "More info" → "Run anyway"
-5. **Done!** Tor downloads automatically on first run (~1-2 min)
+3. **Right-click** `flutter_wallet.exe` → **Properties** → **Unblock** checkbox → **OK**
+4. **Run** `flutter_wallet.exe`
+5. **If Windows SmartScreen appears:** Click "More info" → "Run anyway"
+6. **Done!** Tor downloads automatically on first run (~1-2 min)
 
-**Note:** If Windows SmartScreen blocks the app, click "More info" then "Run anyway". The wallet will auto-download Tor Expert Bundle on first launch.
+> **Why?** Windows SmartScreen blocks unsigned apps downloaded from the internet. The "Unblock" checkbox marks the file as safe.
 
 ---
 
@@ -65,8 +72,14 @@ This guide will help you install and run the LOS Wallet or Validator Dashboard i
 1. **Download** `LOS-Validator-1.0.10-testnet-macos.dmg`
 2. **Open** the DMG file
 3. **Drag** "LOS Validator Node.app" to Applications folder
-4. **Launch** from Applications (if blocked: System Settings → Privacy & Security → Open Anyway)
-5. **Done!** The dashboard includes a bundled `los-node` binary — no separate installation needed.
+4. **Remove Quarantine** (run in Terminal):
+   ```bash
+   xattr -cr /Applications/LOS\ Validator\ Node.app
+   ```
+5. **Launch** from Applications
+6. **Done!** The dashboard includes a bundled `los-node` binary — no separate installation needed.
+
+> **Why?** macOS Gatekeeper blocks unsigned apps. The `xattr -cr` command removes all quarantine attributes.
 
 ### Linux
 1. **Download** `LOS-Validator-1.0.10-testnet-linux-x64.tar.gz`
@@ -88,9 +101,13 @@ This guide will help you install and run the LOS Wallet or Validator Dashboard i
 ### Windows
 1. **Download** `LOS-Validator-1.0.10-testnet-windows-x64.zip`
 2. **Extract** to `C:\LOS-Validator\` (or any folder)
-3. **Run** `flutter_validator.exe`
-4. **Windows Defender Warning:** Click "More info" → "Run anyway"
-5. **Done!** The bundled `los-node.exe` starts automatically when you click "START NODE".
+3. **Right-click** `flutter_validator.exe` → **Properties** → **Unblock** checkbox → **OK**
+4. **Right-click** `los-node.exe` → **Properties** → **Unblock** checkbox → **OK**
+5. **Run** `flutter_validator.exe`
+6. **If Windows SmartScreen appears:** Click "More info" → "Run anyway"
+7. **Done!** The bundled `los-node.exe` starts automatically when you click "START NODE".
+
+> **Why?** Windows SmartScreen blocks unsigned apps. The "Unblock" checkbox marks files as safe.
 
 ---
 

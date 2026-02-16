@@ -29,8 +29,7 @@ class _AccountManagementScreenState extends State<AccountManagementScreen> {
   }
 
   Future<void> _loadAccounts() async {
-    losLog(
-        '👤 [AccountManagementScreen._loadAccounts] Loading accounts...');
+    losLog('👤 [AccountManagementScreen._loadAccounts] Loading accounts...');
     setState(() => _isLoading = true);
     try {
       final accountsList = await _accountService.loadAccounts();

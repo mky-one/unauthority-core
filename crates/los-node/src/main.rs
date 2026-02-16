@@ -930,6 +930,19 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
                         // blk.fee is what's in the signed block (may be >= final_fee)
                         let actual_fee = blk.fee;
                         if let Some(sender_state) = l_guard.accounts.get_mut(&sender_addr) {
+                            // SECURITY FIX M-10: Chain-sequence validation — prevents double-spend.
+                            // In block-lattice, each block references its predecessor. If two
+                            // blocks claim the same `previous`, only the first can be applied.
+                            // Without this check, a malicious client could submit conflicting
+                            // sends to the same node and both would succeed (balance check
+                            // alone is insufficient if the first tx hasn't been processed yet).
+                            if sender_state.head != blk.previous {
+                                return api_json(serde_json::json!({
+                                    "status": "error",
+                                    "msg": format!("Chain sequence error: expected previous={}, got={}",
+                                        sender_state.head, blk.previous)
+                                }));
+                            }
                             let total_debit = amt.saturating_add(actual_fee);
                             if sender_state.balance < total_debit {
                                 return api_json(serde_json::json!({
@@ -8266,9 +8279,38 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                                     head: "0".to_string(), balance: 0, block_count: 0, is_validator: false,
                                                 });
                                             }
+                                            // SECURITY FIX M-10: Chain-sequence + balance validation
+                                            // for BLOCK_CONFIRMED. Without these checks, a malicious
+                                            // originator could broadcast conflicting BLOCK_CONFIRMED
+                                            // messages (double-spend) — receiving nodes would apply
+                                            // both via saturating_sub, creating money from nothing.
+                                            let send_rejected = if let Some(sender) = l.accounts.get(&send_blk.account) {
+                                                let total_debit = send_blk.amount.saturating_add(send_blk.fee);
+                                                if sender.head != send_blk.previous {
+                                                    println!("🚫 Rejected BLOCK_CONFIRMED: chain fork detected \
+                                                        (sender={}, head={}, block.previous={})",
+                                                        get_short_addr(&send_blk.account),
+                                                        get_short_addr(&sender.head),
+                                                        get_short_addr(&send_blk.previous));
+                                                    true
+                                                } else if sender.balance < total_debit {
+                                                    println!("🚫 Rejected BLOCK_CONFIRMED: insufficient sender \
+                                                        balance ({} < {}) for {}",
+                                                        sender.balance, total_debit,
+                                                        get_short_addr(&send_blk.account));
+                                                    true
+                                                } else {
+                                                    false
+                                                }
+                                            } else {
+                                                false // New account — will be created below
+                                            };
+                                            if send_rejected {
+                                                // Skip this BLOCK_CONFIRMED entirely
+                                            } else {
                                             if let Some(sender) = l.accounts.get_mut(&send_blk.account) {
                                                 let total_debit = send_blk.amount.saturating_add(send_blk.fee);
-                                                sender.balance = sender.balance.saturating_sub(total_debit);
+                                                sender.balance -= total_debit; // Safe: checked above
                                                 sender.head = send_hash.clone();
                                                 sender.block_count += 1;
                                             }
@@ -8297,6 +8339,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                             SAVE_DIRTY.store(true, Ordering::Relaxed);
                                             println!("✅ Applied BLOCK_CONFIRMED: {} → {} ({} CIL)",
                                                 get_short_addr(&send_blk.account), get_short_addr(&recv_blk.account), send_blk.amount);
+                                        } // end if !send_rejected
                                         }
                                     }
                                 }
@@ -8325,15 +8368,38 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                         let deploy_hash = deploy_blk.calculate_hash();
                                         let mut l = safe_lock(&ledger);
                                         if !l.blocks.contains_key(&deploy_hash) {
-                                            // Apply block to ledger (debit fees)
+                                            // Ensure deployer account exists
                                             if !l.accounts.contains_key(&deploy_blk.account) {
                                                 l.accounts.insert(deploy_blk.account.clone(), AccountState {
                                                     head: "0".to_string(), balance: 0, block_count: 0, is_validator: false,
                                                 });
                                             }
+                                            // SECURITY FIX M-10: Chain-sequence + balance validation
+                                            // for CONTRACT_DEPLOYED — same pattern as BLOCK_CONFIRMED fix.
+                                            let deploy_rejected = if let Some(deployer) = l.accounts.get(&deploy_blk.account) {
+                                                let total_debit = deploy_blk.amount.saturating_add(deploy_blk.fee);
+                                                if deployer.head != deploy_blk.previous {
+                                                    println!("🚫 Rejected CONTRACT_DEPLOYED: chain fork \
+                                                        (deployer={}, head={}, block.previous={})",
+                                                        get_short_addr(&deploy_blk.account),
+                                                        get_short_addr(&deployer.head),
+                                                        get_short_addr(&deploy_blk.previous));
+                                                    true
+                                                } else if deployer.balance < total_debit {
+                                                    println!("🚫 Rejected CONTRACT_DEPLOYED: insufficient \
+                                                        deployer balance ({} < {})",
+                                                        deployer.balance, total_debit);
+                                                    true
+                                                } else {
+                                                    false
+                                                }
+                                            } else {
+                                                false
+                                            };
+                                            if !deploy_rejected {
                                             if let Some(deployer) = l.accounts.get_mut(&deploy_blk.account) {
                                                 let total_debit = deploy_blk.amount.saturating_add(deploy_blk.fee);
-                                                deployer.balance = deployer.balance.saturating_sub(total_debit);
+                                                deployer.balance -= total_debit; // Safe: checked above
                                                 deployer.head = deploy_hash.clone();
                                                 deployer.block_count += 1;
                                             }
@@ -8374,7 +8440,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                             }
 
                                             SAVE_DIRTY.store(true, Ordering::Relaxed);
-                                        }
+                                        } // end if !deploy_rejected
+                                    }
                                     }
                                 }
                             }
@@ -8399,15 +8466,38 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                         let call_hash = call_blk.calculate_hash();
                                         let mut l = safe_lock(&ledger);
                                         if !l.blocks.contains_key(&call_hash) {
-                                            // Apply block to ledger (debit fees + value)
+                                            // Ensure caller account exists
                                             if !l.accounts.contains_key(&call_blk.account) {
                                                 l.accounts.insert(call_blk.account.clone(), AccountState {
                                                     head: "0".to_string(), balance: 0, block_count: 0, is_validator: false,
                                                 });
                                             }
+                                            // SECURITY FIX M-10: Chain-sequence + balance validation
+                                            // for CONTRACT_CALLED — same pattern as BLOCK_CONFIRMED fix.
+                                            let call_rejected = if let Some(caller) = l.accounts.get(&call_blk.account) {
+                                                let total_debit = call_blk.amount.saturating_add(call_blk.fee);
+                                                if caller.head != call_blk.previous {
+                                                    println!("🚫 Rejected CONTRACT_CALLED: chain fork \
+                                                        (caller={}, head={}, block.previous={})",
+                                                        get_short_addr(&call_blk.account),
+                                                        get_short_addr(&caller.head),
+                                                        get_short_addr(&call_blk.previous));
+                                                    true
+                                                } else if caller.balance < total_debit {
+                                                    println!("🚫 Rejected CONTRACT_CALLED: insufficient \
+                                                        caller balance ({} < {})",
+                                                        caller.balance, total_debit);
+                                                    true
+                                                } else {
+                                                    false
+                                                }
+                                            } else {
+                                                false
+                                            };
+                                            if !call_rejected {
                                             if let Some(caller_acct) = l.accounts.get_mut(&call_blk.account) {
                                                 let total_debit = call_blk.amount.saturating_add(call_blk.fee);
-                                                caller_acct.balance = caller_acct.balance.saturating_sub(total_debit);
+                                                caller_acct.balance -= total_debit; // Safe: checked above
                                                 caller_acct.head = call_hash.clone();
                                                 caller_acct.block_count += 1;
                                             }
@@ -8459,7 +8549,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                             }
 
                                             SAVE_DIRTY.store(true, Ordering::Relaxed);
-                                        }
+                                        } // end if !call_rejected
                                     }
                                 }
                             }

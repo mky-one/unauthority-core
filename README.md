@@ -57,9 +57,11 @@ unauthority-core/
 
 | Allocation | Amount | Percentage |
 |---|---|---|
-| **Public (Proof-of-Burn)** | 21,258,413 LOS | ~96.9% |
+| **Public (Proof-of-Burn)** | 21,158,413 LOS | ~96.5% |
 | **Dev Treasury 1** | 428,113 LOS | ~1.95% |
 | **Dev Treasury 2** | 245,710 LOS | ~1.12% |
+| **Dev Treasury 3** | 50,000 LOS | ~0.23% |
+| **Dev Treasury 4** | 50,000 LOS | ~0.23% |
 | **Bootstrap Validators (4×1,000)** | 4,000 LOS | ~0.02% |
 | **Total** | **21,936,236 LOS** | **100%** |
 

@@ -1015,6 +1015,11 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
                                 recv_acct.block_count += 1;
                             }
                             l_guard.blocks.insert(recv_hash.clone(), recv_blk.clone());
+                            // SECURITY FIX M-4: Track claimed Send for double-receive prevention.
+                            // Direct ledger manipulation bypasses process_block() which normally
+                            // inserts into claimed_sends. Without this, a second Receive referencing
+                            // the same Send could pass the claimed_sends check in process_block().
+                            l_guard.claimed_sends.insert(hash.clone());
                             SAVE_DIRTY.store(true, Ordering::Relaxed);
                             println!("✅ Auto-Receive created for {} ({} CIL)", get_short_addr(&target), amt);
                             let recv_json = serde_json::to_string(&recv_blk).unwrap_or_default();
@@ -7795,6 +7800,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                                                 recv_acct.block_count += 1;
                                                             }
                                                             l.blocks.insert(recv_hash.clone(), recv_blk.clone());
+                                                            // SECURITY FIX M-4: Track claimed Send hash for double-receive prevention.
+                                                            // See M-4 comment in /send endpoint for full rationale.
+                                                            l.claimed_sends.insert(recv_blk.link.clone());
                                                             SAVE_DIRTY.store(true, Ordering::Relaxed);
                                                             println!("📨 Auto-Receive created for {} (+{} CIL)",
                                                                 get_short_addr(&target), blk_to_finalize.amount);
@@ -8225,6 +8233,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                                 recipient.block_count += 1;
                                             }
                                             l.blocks.insert(recv_hash, recv_blk.clone());
+                                            // SECURITY FIX M-4: Track claimed Send for double-receive prevention.
+                                            // BLOCK_CONFIRMED bypasses process_block(); without this insert,
+                                            // a subsequent Receive via process_block() could re-claim the
+                                            // same Send (claimed_sends check would return false).
+                                            l.claimed_sends.insert(send_hash.clone());
 
                                             SAVE_DIRTY.store(true, Ordering::Relaxed);
                                             println!("✅ Applied BLOCK_CONFIRMED: {} → {} ({} CIL)",

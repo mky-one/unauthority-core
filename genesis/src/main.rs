@@ -6,20 +6,24 @@ use std::io::Write;
 const CIL_PER_LOS: u128 = 100_000_000_000; // 10^11 CIL per LOS
 const TOTAL_SUPPLY_CIL: u128 = 21_936_236 * CIL_PER_LOS;
 
-// Genesis Allocation (~3% DEV / ~97% PUBLIC)
+// Genesis Allocation (~3.5% DEV / ~96.5% PUBLIC)
 // Dev Treasury 1:  428,113 LOS
 // Dev Treasury 2:  245,710 LOS
+// Dev Treasury 3:   50,000 LOS
+// Dev Treasury 4:   50,000 LOS
 // Bootstrap Nodes: 4 × 1,000 = 4,000 LOS
-// Total Dev:       677,823 LOS (~3%)
-// Public:          21,258,413 LOS (~97%)
+// Total Dev:       777,823 LOS (~3.5%)
+// Public:          21,158,413 LOS (~96.5%)
 const DEV_TREASURY_1_CIL: u128 = 428_113 * CIL_PER_LOS;
 const DEV_TREASURY_2_CIL: u128 = 245_710 * CIL_PER_LOS;
-const DEV_TREASURY_TOTAL_CIL: u128 = DEV_TREASURY_1_CIL + DEV_TREASURY_2_CIL; // 673,823 LOS
+const DEV_TREASURY_3_CIL: u128 = 50_000 * CIL_PER_LOS;
+const DEV_TREASURY_4_CIL: u128 = 50_000 * CIL_PER_LOS;
+const DEV_TREASURY_TOTAL_CIL: u128 = DEV_TREASURY_1_CIL + DEV_TREASURY_2_CIL + DEV_TREASURY_3_CIL + DEV_TREASURY_4_CIL; // 773,823 LOS
 const BOOTSTRAP_NODE_COUNT: usize = 4;
 const ALLOCATION_PER_BOOTSTRAP_NODE_CIL: u128 = 1_000 * CIL_PER_LOS;
 const TOTAL_BOOTSTRAP_ALLOCATION_CIL: u128 =
     ALLOCATION_PER_BOOTSTRAP_NODE_CIL * (BOOTSTRAP_NODE_COUNT as u128);
-const DEV_SUPPLY_TOTAL_CIL: u128 = DEV_TREASURY_TOTAL_CIL + TOTAL_BOOTSTRAP_ALLOCATION_CIL; // 677,823 LOS
+const DEV_SUPPLY_TOTAL_CIL: u128 = DEV_TREASURY_TOTAL_CIL + TOTAL_BOOTSTRAP_ALLOCATION_CIL; // 777,823 LOS
 
 #[derive(Clone)]
 struct DevWallet {
@@ -41,15 +45,17 @@ fn main() {
     println!("\n╔════════════════════════════════════════════════════════════╗");
     println!("║   UNAUTHORITY GENESIS GENERATOR v5.0 (PRODUCTION)         ║");
     println!("╚════════════════════════════════════════════════════════════╝");
-    println!("\n6 Wallets: 2 Dev Treasury + 4 Bootstrap Validators (~3% Dev / ~97% Public)\n");
+    println!("\n8 Wallets: 4 Dev Treasury + 4 Bootstrap Validators (~3.5% Dev / ~96.5% Public)\n");
 
     // Supply validation
     assert_eq!(DEV_TREASURY_1_CIL / CIL_PER_LOS, 428_113);
     assert_eq!(DEV_TREASURY_2_CIL / CIL_PER_LOS, 245_710);
-    assert_eq!(DEV_TREASURY_TOTAL_CIL / CIL_PER_LOS, 673_823);
-    assert_eq!(DEV_SUPPLY_TOTAL_CIL / CIL_PER_LOS, 677_823);
+    assert_eq!(DEV_TREASURY_3_CIL / CIL_PER_LOS, 50_000);
+    assert_eq!(DEV_TREASURY_4_CIL / CIL_PER_LOS, 50_000);
+    assert_eq!(DEV_TREASURY_TOTAL_CIL / CIL_PER_LOS, 773_823);
+    assert_eq!(DEV_SUPPLY_TOTAL_CIL / CIL_PER_LOS, 777_823);
     let public_los = (TOTAL_SUPPLY_CIL - DEV_SUPPLY_TOTAL_CIL) / CIL_PER_LOS;
-    assert_eq!(public_los, 21_258_413);
+    assert_eq!(public_los, 21_158_413);
 
     let mut wallets: Vec<DevWallet> = Vec::new();
     let mut total_allocated_cil: u128 = 0;
@@ -82,6 +88,36 @@ fn main() {
             balance_cil: DEV_TREASURY_2_CIL,
         });
         total_allocated_cil += DEV_TREASURY_2_CIL;
+    }
+
+    // Dev Treasury #3 (50,000 LOS)
+    {
+        let (seed_phrase, priv_key, pub_key) = generate_keys("dev-treasury-3");
+        let address = derive_address(&pub_key);
+        wallets.push(DevWallet {
+            wallet_type: WalletType::DevTreasury(3),
+            address,
+            seed_phrase,
+            private_key: priv_key,
+            public_key: pub_key,
+            balance_cil: DEV_TREASURY_3_CIL,
+        });
+        total_allocated_cil += DEV_TREASURY_3_CIL;
+    }
+
+    // Dev Treasury #4 (50,000 LOS)
+    {
+        let (seed_phrase, priv_key, pub_key) = generate_keys("dev-treasury-4");
+        let address = derive_address(&pub_key);
+        wallets.push(DevWallet {
+            wallet_type: WalletType::DevTreasury(4),
+            address,
+            seed_phrase,
+            private_key: priv_key,
+            public_key: pub_key,
+            balance_cil: DEV_TREASURY_4_CIL,
+        });
+        total_allocated_cil += DEV_TREASURY_4_CIL;
     }
 
     // Bootstrap Validators #1-#4 (1,000 LOS each)

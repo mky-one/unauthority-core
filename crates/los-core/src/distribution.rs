@@ -1,7 +1,7 @@
 use crate::CIL_PER_LOS;
 use serde::{Deserialize, Serialize};
 
-pub const PUBLIC_SUPPLY_CAP: u128 = 21_258_413 * CIL_PER_LOS;
+pub const PUBLIC_SUPPLY_CAP: u128 = 21_158_413 * CIL_PER_LOS;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct DistributionState {
@@ -32,7 +32,7 @@ impl DistributionState {
         // Formula: yield = burn_usd * remaining_supply / PUBLIC_SUPPLY_CAP
         // Use checked arithmetic to prevent overflow
         // Scale: burn_amount_usd is in $0.01 units, result is in CIL
-        let public_cap_los: u128 = 21_258_413;
+        let public_cap_los: u128 = 21_158_413;
 
         // yield_cil = burn_amount_usd * remaining_supply / (public_cap_los * CIL_PER_LOS)
         // To avoid overflow with large numbers, divide before multiply where possible

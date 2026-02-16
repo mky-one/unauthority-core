@@ -57,7 +57,7 @@ los-node --port 3030 --data-dir ~/.los-node --node-id my-validator
 | **Epoch Duration** | ~10 minutes (100 blocks) |
 | **Min Validator Stake** | 1,000 LOS |
 | **Total Supply** | 21,936,236 LOS (fixed) |
-| **Genesis Accounts** | 6 (2 Dev Treasury + 4 Bootstrap Nodes) |
+| **Genesis Accounts** | 8 (4 Dev Treasury + 4 Bootstrap Nodes) |
 
 ---
 
@@ -67,11 +67,13 @@ los-node --port 3030 --data-dir ~/.los-node --node-id my-validator
 |---------|------|---------------|
 | **Dev Treasury 1** | Funding | 428,113 LOS |
 | **Dev Treasury 2** | Operations | 245,710 LOS |
+| **Dev Treasury 3** | Reserve | 50,000 LOS |
+| **Dev Treasury 4** | Reserve | 50,000 LOS |
 | **Bootstrap Node 1** | Validator | 1,000 LOS |
 | **Bootstrap Node 2** | Validator | 1,000 LOS |
 | **Bootstrap Node 3** | Validator | 1,000 LOS |
 | **Bootstrap Node 4** | Validator | 1,000 LOS |
-| **Public Distribution** | Faucet / PoB | 21,258,413 LOS |
+| **Public Distribution** | Faucet / PoB | 21,158,413 LOS |
 
 ---
 

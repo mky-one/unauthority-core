@@ -78,9 +78,11 @@ This prevents any single whale from dominating consensus while still rewarding l
 
 | Allocation | Amount (LOS) | Amount (CIL) | Percentage |
 |---|---|---|---|
-| Public (Proof-of-Burn) | 21,258,413 | 2,125,841,300,000,000,000 | ~96.9% |
+| Public (Proof-of-Burn) | 21,158,413 | 2,115,841,300,000,000,000 | ~96.5% |
 | Dev Treasury 1 | 428,113 | 42,811,300,000,000,000 | ~1.95% |
 | Dev Treasury 2 | 245,710 | 24,571,000,000,000,000 | ~1.12% |
+| Dev Treasury 3 | 50,000 | 5,000,000,000,000,000 | ~0.23% |
+| Dev Treasury 4 | 50,000 | 5,000,000,000,000,000 | ~0.23% |
 | Bootstrap Validators (4) | 4,000 | 400,000,000,000,000 | ~0.02% |
 | **Total** | **21,936,236** | **2,193,623,600,000,000,000** | **100%** |
 

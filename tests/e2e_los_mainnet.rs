@@ -1309,11 +1309,11 @@ async fn test_genesis_allocation() {
     println!("===========================================\n");
 
     let total_supply_los = 21_936_236u128;
-    let dev_treasury_los = 673_823u128;
+    let dev_treasury_los = 773_823u128;
     let bootstrap_los = 4 * 1_000u128; // 4 validators × 1000 LOS
     let public_los = total_supply_los - dev_treasury_los - bootstrap_los;
 
-    assert_eq!(public_los, 21_258_413, "Public allocation");
+    assert_eq!(public_los, 21_158_413, "Public allocation");
     println!("  Total:      {} LOS", total_supply_los);
     println!(
         "  Dev:        {} LOS (~{}.{}%)",
@@ -1329,15 +1329,15 @@ async fn test_genesis_allocation() {
         (public_los * 10_000 / total_supply_los) % 100
     );
 
-    // Dev < 3.1%
+    // Dev < 3.6%
     let dev_pct_bps = dev_treasury_los * 10_000 / total_supply_los;
-    assert!(dev_pct_bps < 310, "Dev allocation must be < 3.1%");
-    println!("  ✅ Dev = {}bps (< 310bps / 3.1%)", dev_pct_bps);
+    assert!(dev_pct_bps < 360, "Dev allocation must be < 3.6%");
+    println!("  ✅ Dev = {}bps (< 360bps / 3.6%)", dev_pct_bps);
 
-    // Public > 96.9%
+    // Public > 96.4%
     let public_pct_bps = public_los * 10_000 / total_supply_los;
-    assert!(public_pct_bps > 9690, "Public must be > 96.9%");
-    println!("  ✅ Public = {}bps (> 9690bps / 96.9%)", public_pct_bps);
+    assert!(public_pct_bps > 9640, "Public must be > 96.4%");
+    println!("  ✅ Public = {}bps (> 9640bps / 96.4%)", public_pct_bps);
 
     // All allocations in CIL
     let total_cil = total_supply_los * CIL_PER_LOS;

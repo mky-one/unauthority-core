@@ -6,6 +6,9 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:crypto/crypto.dart';
 import 'package:bip39/bip39.dart' as bip39;
 import 'package:pointycastle/digests/blake2b.dart';
+// TESTNET ONLY: Ed25519 is used as a fallback when Dilithium5 native lib is not built.
+// On mainnet builds (--dart-define=NETWORK=mainnet), all Ed25519 code paths throw
+// before reaching the crypto call. Dart tree-shaker eliminates dead branches in AOT.
 import 'package:cryptography/cryptography.dart' as ed_crypto;
 import 'dilithium_service.dart';
 
@@ -439,8 +442,7 @@ class WalletService {
     final mode = prefs.getString(_cryptoModeKey);
     if (mode != null) result['crypto_mode'] = mode;
 
-    losLog(
-        '💰 [WalletService.getCurrentWallet] Result: ${result['address']}');
+    losLog('💰 [WalletService.getCurrentWallet] Result: ${result['address']}');
     return result;
   }
 

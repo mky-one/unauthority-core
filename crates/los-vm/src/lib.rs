@@ -63,6 +63,12 @@ pub struct ContractCall {
     /// Empty string if not set (testnet mock dispatch only).
     #[serde(default)]
     pub caller: String,
+    /// Block timestamp (seconds since epoch) for deterministic execution.
+    /// All validators MUST use the SAME timestamp (from the block being processed)
+    /// to ensure identical WASM execution results across the network.
+    /// If 0, falls back to SystemTime::now() (backward-compatible, but non-deterministic).
+    #[serde(default)]
+    pub block_timestamp: u64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -679,10 +685,17 @@ impl WasmEngine {
             return Ok(None);
         }
 
-        let timestamp = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_secs();
+        // DETERMINISM FIX: Use block timestamp for reproducible execution.
+        // All validators processing the same block MUST get identical results.
+        // Fallback to SystemTime::now() only if block_timestamp is 0 (legacy calls).
+        let timestamp = if call.block_timestamp > 0 {
+            call.block_timestamp
+        } else {
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_secs()
+        };
 
         match self.execute_wasm_hosted(
             &contract_snapshot.bytecode,
@@ -1114,6 +1127,7 @@ mod tests {
             args: vec!["500".to_string(), "recipient".to_string()],
             gas_limit: 1000,
             caller: "charlie".to_string(),
+            block_timestamp: 0,
         };
 
         let result = engine.call_contract(call).unwrap();
@@ -1137,6 +1151,7 @@ mod tests {
             args: vec!["counter".to_string(), "42".to_string()],
             gas_limit: 1000,
             caller: "dave".to_string(),
+            block_timestamp: 0,
         };
 
         let result = engine.call_contract(set_call).unwrap();
@@ -1149,6 +1164,7 @@ mod tests {
             args: vec!["counter".to_string()],
             gas_limit: 1000,
             caller: "dave".to_string(),
+            block_timestamp: 0,
         };
 
         let result = engine.call_contract(get_call).unwrap();
@@ -1172,6 +1188,7 @@ mod tests {
             args: vec![],
             gas_limit: 100,
             caller: "eve".to_string(),
+            block_timestamp: 0,
         };
 
         let result = engine.call_contract(call).unwrap();
@@ -1187,6 +1204,7 @@ mod tests {
             args: vec![],
             gas_limit: 1000,
             caller: "nobody".to_string(),
+            block_timestamp: 0,
         };
 
         let result = engine.call_contract(call);
@@ -1258,6 +1276,7 @@ mod tests {
             args: vec!["500".to_string(), "recipient".to_string()],
             gas_limit: 50, // Too low
             caller: "henry".to_string(),
+            block_timestamp: 0,
         };
 
         let result = engine.call_contract(call);
@@ -1280,6 +1299,7 @@ mod tests {
             args: vec![],
             gas_limit: 1000,
             caller: "iris".to_string(),
+            block_timestamp: 0,
         };
 
         let result = engine.call_contract(call);
@@ -1320,6 +1340,7 @@ mod tests {
             args: vec!["name".to_string(), "test".to_string()],
             gas_limit: 100,
             caller: "jack".to_string(),
+            block_timestamp: 0,
         };
 
         engine.call_contract(call).unwrap();
@@ -1368,6 +1389,7 @@ mod tests {
             args: vec!["5".to_string(), "7".to_string()],
             gas_limit: 1000,
             caller: "wasm_tester".to_string(),
+            block_timestamp: 0,
         };
 
         let result = engine.call_contract(call).unwrap();

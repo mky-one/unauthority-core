@@ -6,14 +6,14 @@
 # SECURITY CRITICAL - NEVER COMMIT
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-# Genesis configuration (contains private keys!)
-genesis/genesis_config.json
-genesis_config.json
-testnet-genesis/genesis_config.json
+# Genesis configuration — PUBLIC-ONLY (secrets stripped, safe to commit)
+# FIX M-8: Un-ignored genesis_config.json (no longer contains private keys)
+# Root genesis_config.json is required by nodes at startup.
 genesis_backup*.json
+genesis_config.json.old
 
-# MAINNET GENESIS — NEVER COMMIT (contains private keys for real funds)
-mainnet-genesis/
+# MAINNET GENESIS — NEVER COMMIT wallet secrets
+genesis/mainnet-genesis-new/
 **/mainnet_wallets.json
 **/mainnet_genesis.json
 **/mainnet_keys/

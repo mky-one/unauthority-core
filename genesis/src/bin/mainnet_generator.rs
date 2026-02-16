@@ -294,8 +294,8 @@ fn main() {
         .filter(|w| w.is_bootstrap)
         .map(|w| {
             format!(
-                "    {{\n      \"address\": \"{}\",\n      \"stake_cil\": {},\n      \"seed_phrase\": \"{}\",\n      \"private_key\": \"{}\",\n      \"public_key\": \"{}\"\n    }}",
-                w.address, w.balance_cil, w.seed_phrase, w.private_key, w.public_key
+                "    {{\n      \"address\": \"{}\",\n      \"stake_cil\": {},\n      \"public_key\": \"{}\"\n    }}",
+                w.address, w.balance_cil, w.public_key
             )
         })
         .collect();
@@ -305,8 +305,8 @@ fn main() {
         .filter(|w| !w.is_bootstrap)
         .map(|w| {
             format!(
-                "    {{\n      \"address\": \"{}\",\n      \"balance_cil\": {},\n      \"seed_phrase\": \"{}\",\n      \"private_key\": \"{}\",\n      \"public_key\": \"{}\"\n    }}",
-                w.address, w.balance_cil, w.seed_phrase, w.private_key, w.public_key
+                "    {{\n      \"address\": \"{}\",\n      \"balance_cil\": {},\n      \"public_key\": \"{}\"\n    }}",
+                w.address, w.balance_cil, w.public_key
             )
         })
         .collect();
@@ -326,7 +326,7 @@ fn main() {
   "dev_accounts": [
 {}
   ],
-  "security_notice": "⚠️ CRITICAL: This file contains private keys! Store in encrypted cold storage. NEVER commit to public repository!"
+  "security_notice": "Private keys and seed phrases have been stripped. Backed up separately."
 }}"#,
         genesis_timestamp,
         total_supply_cil,

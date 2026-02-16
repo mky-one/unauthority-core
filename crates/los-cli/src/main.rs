@@ -233,6 +233,133 @@ enum DexCommands {
         #[arg(short, long)]
         user: String,
     },
+
+    /// Deploy a DEX AMM contract
+    Deploy {
+        /// Wallet name
+        #[arg(short, long)]
+        wallet: String,
+
+        /// Path to compiled WASM file
+        #[arg(long)]
+        wasm: String,
+    },
+
+    /// Create a new liquidity pool
+    CreatePool {
+        /// Wallet name
+        #[arg(short, long)]
+        wallet: String,
+
+        /// DEX contract address
+        #[arg(short, long)]
+        contract: String,
+
+        /// Token A identifier
+        #[arg(long)]
+        token_a: String,
+
+        /// Token B identifier
+        #[arg(long)]
+        token_b: String,
+
+        /// Initial amount of Token A (atomic units)
+        #[arg(long)]
+        amount_a: String,
+
+        /// Initial amount of Token B (atomic units)
+        #[arg(long)]
+        amount_b: String,
+
+        /// Fee in basis points (default: 30 = 0.3%)
+        #[arg(long)]
+        fee_bps: Option<String>,
+    },
+
+    /// Add liquidity to a pool
+    AddLiquidity {
+        /// Wallet name
+        #[arg(short, long)]
+        wallet: String,
+
+        /// DEX contract address
+        #[arg(short, long)]
+        contract: String,
+
+        /// Pool ID
+        #[arg(short, long)]
+        pool_id: String,
+
+        /// Amount of Token A to add
+        #[arg(long)]
+        amount_a: String,
+
+        /// Amount of Token B to add
+        #[arg(long)]
+        amount_b: String,
+
+        /// Minimum LP tokens to receive (slippage protection)
+        #[arg(long)]
+        min_lp: String,
+    },
+
+    /// Remove liquidity from a pool
+    RemoveLiquidity {
+        /// Wallet name
+        #[arg(short, long)]
+        wallet: String,
+
+        /// DEX contract address
+        #[arg(short, long)]
+        contract: String,
+
+        /// Pool ID
+        #[arg(short, long)]
+        pool_id: String,
+
+        /// LP tokens to burn
+        #[arg(long)]
+        lp_amount: String,
+
+        /// Minimum Token A to receive (slippage protection)
+        #[arg(long)]
+        min_a: String,
+
+        /// Minimum Token B to receive (slippage protection)
+        #[arg(long)]
+        min_b: String,
+    },
+
+    /// Execute a token swap
+    Swap {
+        /// Wallet name
+        #[arg(short, long)]
+        wallet: String,
+
+        /// DEX contract address
+        #[arg(short, long)]
+        contract: String,
+
+        /// Pool ID
+        #[arg(short, long)]
+        pool_id: String,
+
+        /// Token to sell
+        #[arg(long)]
+        token_in: String,
+
+        /// Amount to sell (atomic units)
+        #[arg(long)]
+        amount_in: String,
+
+        /// Minimum amount to receive (slippage protection)
+        #[arg(long)]
+        min_out: String,
+
+        /// Transaction deadline (unix timestamp, default: now + 5min)
+        #[arg(long)]
+        deadline: Option<u64>,
+    },
 }
 
 #[derive(Subcommand)]
@@ -271,6 +398,121 @@ enum TokenCommands {
         #[arg(short, long)]
         spender: String,
     },
+
+    /// Deploy a new USP-01 token
+    Deploy {
+        /// Wallet name
+        #[arg(short, long)]
+        wallet: String,
+
+        /// Path to compiled WASM file
+        #[arg(long)]
+        wasm: String,
+
+        /// Token name (1-64 chars)
+        #[arg(long)]
+        name: String,
+
+        /// Token symbol (1-8 chars)
+        #[arg(long)]
+        symbol: String,
+
+        /// Token decimals (0-18)
+        #[arg(long, default_value = "11")]
+        decimals: u8,
+
+        /// Total supply (atomic units)
+        #[arg(long)]
+        total_supply: String,
+
+        /// Max supply (0 = unlimited, atomic units)
+        #[arg(long)]
+        max_supply: Option<String>,
+
+        /// Is this a wrapped asset?
+        #[arg(long, default_value = "false")]
+        is_wrapped: bool,
+
+        /// Origin chain for wrapped asset (e.g. "ethereum")
+        #[arg(long)]
+        wrapped_origin: Option<String>,
+
+        /// Bridge operator address for wrapped asset
+        #[arg(long)]
+        bridge_operator: Option<String>,
+    },
+
+    /// Distribute tokens (transfer from owner)
+    Mint {
+        /// Wallet name
+        #[arg(short, long)]
+        wallet: String,
+
+        /// Token contract address
+        #[arg(short, long)]
+        token: String,
+
+        /// Recipient address
+        #[arg(long)]
+        to: String,
+
+        /// Amount (atomic units)
+        #[arg(long)]
+        amount: String,
+    },
+
+    /// Transfer tokens to another address
+    Transfer {
+        /// Wallet name
+        #[arg(short, long)]
+        wallet: String,
+
+        /// Token contract address
+        #[arg(short, long)]
+        token: String,
+
+        /// Recipient address
+        #[arg(long)]
+        to: String,
+
+        /// Amount (atomic units)
+        #[arg(long)]
+        amount: String,
+    },
+
+    /// Approve spender allowance
+    Approve {
+        /// Wallet name
+        #[arg(short, long)]
+        wallet: String,
+
+        /// Token contract address
+        #[arg(short, long)]
+        token: String,
+
+        /// Spender address
+        #[arg(long)]
+        spender: String,
+
+        /// Amount to allow (atomic units)
+        #[arg(long)]
+        amount: String,
+    },
+
+    /// Burn tokens from your balance
+    Burn {
+        /// Wallet name
+        #[arg(short, long)]
+        wallet: String,
+
+        /// Token contract address
+        #[arg(short, long)]
+        token: String,
+
+        /// Amount to burn (atomic units)
+        #[arg(long)]
+        amount: String,
+    },
 }
 
 #[tokio::main]
@@ -304,9 +546,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             commands::tx::handle(action, &cli.rpc, &config_dir).await?;
         }
         Commands::Token { action } => {
-            commands::token::handle(action, &cli.rpc).await?;
+            commands::token::handle(action, &cli.rpc, &config_dir).await?;
         }
-        Commands::Dex { action } => commands::dex::handle(action, &cli.rpc).await?,
+        Commands::Dex { action } => commands::dex::handle(action, &cli.rpc, &config_dir).await?,
     }
 
     Ok(())

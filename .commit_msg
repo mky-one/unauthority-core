@@ -1,14 +1,18 @@
-security: full mainnet audit M-6 - strip genesis secrets, enforce Tor, harden Flutter apps
+security: M-7 - stdin secrets, deterministic VM, Ed25519 gate
 
-M-6 Audit Fixes:
-- G-1 CRITICAL: Strip all private_key + seed_phrase from 4 genesis files (48 fields)
-- T-1 HIGH: Mainnet refuses startup without Tor (LOS_SOCKS5_PROXY required)
-- R-2 MEDIUM: Block LOS_BIND_ALL=1 on mainnet builds
-- N-2 MEDIUM: Fix testnet genesis network_id from 1 to 2
-- S-03 HIGH: Replace 400+ debugPrint with losLog() (no-op in release mode)
-- D-1/D-2: Docker testnet-genesis stripping via jq
-- Clipboard auto-clear 30s on wallet_setup_screen
-- Validator standalone mode gate on mainnet (refuse without Tor)
+S-01 HIGH: Move LOS_SEED_PHRASE + LOS_WALLET_PASSWORD from env vars
+to stdin pipe protocol. Prevents /proc/[pid]/environ exposure on Linux.
+- Rust: read 2 lines from stdin when piped (wallet_pw, seed_phrase)
+- Flutter: write both secrets to stdin, remove LOS_SEED_PHRASE from env
+- Fallback to env vars when stdin is a TTY (interactive CLI usage)
 
-Rust: 0 warnings, 294 tests passing
-Flutter: 0 analysis issues, all tests passing
+VM-01 MEDIUM: Deterministic contract execution timestamp.
+- Add block_timestamp field to ContractCall (serde default = 0)
+- try_hosted_call() uses block.timestamp instead of SystemTime::now()
+- Both REST handler and P2P replication pass block.timestamp
+- Prevents non-deterministic WASM execution across validators
+
+Ed25519: Added compile-time documentation on tree-shaking behavior.
+Ed25519 fallback is properly gated (throws on mainnet builds).
+
+Tests: 294 Rust passed, 0 failed | Flutter: 0 issues, all tests passed

@@ -1751,6 +1751,7 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
                     args: req.args.clone(),
                     gas_limit,
                     caller: account.clone(),
+                    block_timestamp: block.timestamp,
                 };
 
                 let exec_result = match engine.call_contract(call) {
@@ -4541,14 +4542,38 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     };
 
+    // ── SECURITY: Read secrets from stdin pipe (preferred) or env vars (fallback) ──
+    // When launched from Flutter or a secure process manager, secrets are piped via
+    // stdin to avoid exposure in /proc/[pid]/environ on Linux.
+    // Protocol: line 1 = wallet_password, line 2 = seed_phrase (empty = skip).
+    // If stdin is a TTY (interactive), skip and read from env vars as before.
+    let (stdin_wallet_pw, stdin_seed_phrase) = {
+        use std::io::IsTerminal;
+        if !std::io::stdin().is_terminal() {
+            // stdin is piped — read secrets line by line (blocking, before async runtime)
+            let mut line1 = String::new();
+            let mut line2 = String::new();
+            let _ = std::io::BufRead::read_line(&mut std::io::stdin().lock(), &mut line1);
+            let _ = std::io::BufRead::read_line(&mut std::io::stdin().lock(), &mut line2);
+            let pw = line1.trim().to_string();
+            let sp = line2.trim().to_string();
+            (
+                if pw.is_empty() { None } else { Some(pw) },
+                if sp.is_empty() { None } else { Some(sp) },
+            )
+        } else {
+            (None, None)
+        }
+    };
+
     // Use node-specific wallet file path
     // SECURITY: Wallet keys are encrypted at rest using age encryption.
     // The encryption password is derived from the node ID (for automated startup).
     // MAINNET: operators MUST set LOS_WALLET_PASSWORD — weak auto-key is rejected.
     let wallet_path = format!("{}/wallet.json", &base_data_dir);
-    let wallet_password = match std::env::var("LOS_WALLET_PASSWORD") {
-        Ok(pw) if pw.len() >= 12 => pw,
-        Ok(pw) if !pw.is_empty() => {
+    let wallet_password = match stdin_wallet_pw.or_else(|| std::env::var("LOS_WALLET_PASSWORD").ok()) {
+        Some(pw) if pw.len() >= 12 => pw,
+        Some(pw) if !pw.is_empty() => {
             if los_core::is_mainnet_build() {
                 eprintln!(
                     "❌ FATAL: LOS_WALLET_PASSWORD must be at least 12 characters on mainnet."
@@ -4575,14 +4600,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             auto
         }
     };
-    let keys: los_crypto::KeyPair = if let Ok(seed_phrase) = std::env::var("LOS_SEED_PHRASE") {
+    let keys: los_crypto::KeyPair = if let Some(seed_phrase) = stdin_seed_phrase.or_else(|| std::env::var("LOS_SEED_PHRASE").ok()) {
         // DETERMINISTIC KEYPAIR: Derive from BIP39 mnemonic (genesis validator identity)
         // This ensures the node's runtime address matches its genesis address.
+        // SECURITY: Prefer stdin pipe over env var to avoid /proc/[pid]/environ exposure.
         let mnemonic = match bip39::Mnemonic::parse_normalized(&seed_phrase) {
             Ok(m) => m,
             Err(e) => {
-                eprintln!("FATAL: LOS_SEED_PHRASE contains invalid BIP39 mnemonic: {e}");
-                eprintln!("Please check the environment variable and try again.");
+                eprintln!("FATAL: Seed phrase contains invalid BIP39 mnemonic: {e}");
+                eprintln!("Please check the seed phrase (stdin or LOS_SEED_PHRASE env) and try again.");
                 std::process::exit(1);
             }
         };
@@ -8414,6 +8440,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                                     args,
                                                     gas_limit: gas_limit as u64,
                                                     caller: call_blk.account.clone(),
+                                                    block_timestamp: call_blk.timestamp,
                                                 };
                                                 match wasm_engine.call_contract(call) {
                                                     Ok(result) => {

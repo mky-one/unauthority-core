@@ -193,16 +193,14 @@ class NodeProcessService extends ChangeNotifier {
           if (state.startsWith('U') || state.startsWith('Z')) {
             // UE/Zombie process — it STILL holds the flock but can't release it.
             // MUST nuke the DB so the new node can start fresh.
-            losLog(
-                '💀 PID $pid is in $state state (unkillable) — nuking DB');
+            losLog('💀 PID $pid is in $state state (unkillable) — nuking DB');
             await _nukeDatabaseDirs(dataDir);
             await pidFile.delete();
             return;
           }
 
           // Process is alive and healthy — don't nuke
-          losLog(
-              '⚠️ PID $pid is still running (state: $state) — DB in use');
+          losLog('⚠️ PID $pid is still running (state: $state) — DB in use');
           return;
         }
       }
@@ -246,8 +244,7 @@ class NodeProcessService extends ChangeNotifier {
 
       if (hasRealProcesses) {
         // Real alive processes — DB is actively in use. Don't nuke.
-        losLog(
-            '⚠️ Active los-node process found — DB in use, skipping nuke');
+        losLog('⚠️ Active los-node process found — DB in use, skipping nuke');
         return;
       }
     } catch (e) {
@@ -364,11 +361,11 @@ class NodeProcessService extends ChangeNotifier {
       final env = <String, String>{
         'LOS_TESTNET_LEVEL': testnetLevel,
       };
+      // SECURITY FIX S-01: Seed phrase is NO LONGER passed via environment variable.
+      // It is now sent via stdin pipe (see below) to prevent exposure via
+      // /proc/[pid]/environ on Linux. We only save it for auto-restart.
       if (seedPhrase != null && seedPhrase.isNotEmpty) {
-        env['LOS_SEED_PHRASE'] = seedPhrase;
         _seedPhrase = seedPhrase; // Save for auto-restart
-      } else if (_seedPhrase != null) {
-        env['LOS_SEED_PHRASE'] = _seedPhrase!; // Reuse from previous start
       }
       if (onionAddress != null) {
         env['LOS_ONION_ADDRESS'] = onionAddress;
@@ -420,10 +417,15 @@ class NodeProcessService extends ChangeNotifier {
         workingDirectory: await _getWorkingDir(),
       );
 
-      // SECURITY FIX F5: Write wallet password to stdin pipe then close.
-      // This avoids exposing the password in /proc/[pid]/environ.
-      if (hasWalletPassword) {
-        _process!.stdin.writeln(walletPassword);
+      // SECURITY FIX F5+S-01: Write secrets to stdin pipe then close.
+      // Protocol: line 1 = wallet_password, line 2 = seed_phrase.
+      // This avoids exposing secrets in /proc/[pid]/environ on Linux.
+      // Empty lines are sent for missing values (Rust side skips empty lines).
+      {
+        final effectiveSeedPhrase = _seedPhrase ?? '';
+        final effectivePassword = hasWalletPassword ? walletPassword : '';
+        _process!.stdin.writeln(effectivePassword);
+        _process!.stdin.writeln(effectiveSeedPhrase);
         await _process!.stdin.flush();
         await _process!.stdin.close();
       }

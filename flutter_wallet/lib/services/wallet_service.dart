@@ -6,6 +6,9 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:crypto/crypto.dart';
 import 'package:bip39/bip39.dart' as bip39;
 import 'package:pointycastle/digests/blake2b.dart';
+// TESTNET ONLY: Ed25519 is used as a fallback when Dilithium5 native lib is not built.
+// On mainnet builds (--dart-define=NETWORK=mainnet), all Ed25519 code paths throw
+// before reaching the crypto call. Dart tree-shaker eliminates dead branches in AOT.
 import 'package:cryptography/cryptography.dart' as ed_crypto;
 import 'dilithium_service.dart';
 import '../constants/blockchain.dart';
@@ -289,8 +292,7 @@ class WalletService {
       }
     }
 
-    losLog(
-        '💰 [WalletService.importByAddress] Address-only import success');
+    losLog('💰 [WalletService.importByAddress] Address-only import success');
     return {'address': address};
   }
 
@@ -568,8 +570,7 @@ class WalletService {
     final seed = bip39.mnemonicToSeed(mnemonic);
     try {
       final address = await _deriveAddressEd25519(seed);
-      losLog(
-          '💰 [WalletService.deriveAddressFromMnemonic] Address: $address');
+      losLog('💰 [WalletService.deriveAddressFromMnemonic] Address: $address');
       return address;
     } finally {
       seed.fillRange(0, seed.length, 0);

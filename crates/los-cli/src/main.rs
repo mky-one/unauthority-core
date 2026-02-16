@@ -62,6 +62,12 @@ enum Commands {
         #[command(subcommand)]
         action: TokenCommands,
     },
+
+    /// DEX (Decentralized Exchange) operations
+    Dex {
+        #[command(subcommand)]
+        action: DexCommands,
+    },
 }
 
 #[derive(Subcommand)]
@@ -179,6 +185,57 @@ enum TxCommands {
 }
 
 #[derive(Subcommand)]
+enum DexCommands {
+    /// List all DEX pools across all contracts
+    Pools,
+
+    /// Show pool info
+    Pool {
+        /// DEX contract address (LOSCon...)
+        #[arg(short, long)]
+        contract: String,
+
+        /// Pool ID (e.g. POOL:LOS:TOKEN_A)
+        #[arg(short, long)]
+        pool_id: String,
+    },
+
+    /// Get a swap quote
+    Quote {
+        /// DEX contract address
+        #[arg(short, long)]
+        contract: String,
+
+        /// Pool ID
+        #[arg(short, long)]
+        pool_id: String,
+
+        /// Token to sell
+        #[arg(short, long)]
+        token_in: String,
+
+        /// Amount to sell (atomic units)
+        #[arg(short, long)]
+        amount_in: u128,
+    },
+
+    /// Get LP position for a user
+    Position {
+        /// DEX contract address
+        #[arg(short, long)]
+        contract: String,
+
+        /// Pool ID
+        #[arg(short, long)]
+        pool_id: String,
+
+        /// User address
+        #[arg(short, long)]
+        user: String,
+    },
+}
+
+#[derive(Subcommand)]
 enum TokenCommands {
     /// List all deployed USP-01 tokens
     List,
@@ -249,6 +306,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Commands::Token { action } => {
             commands::token::handle(action, &cli.rpc).await?;
         }
+        Commands::Dex { action } => commands::dex::handle(action, &cli.rpc).await?,
     }
 
     Ok(())

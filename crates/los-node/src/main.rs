@@ -10,7 +10,7 @@ use los_core::oracle_consensus::OracleConsensus; // NEW: Oracle consensus
 use los_core::validator_rewards::ValidatorRewardPool;
 use los_core::{AccountState, Block, BlockType, Ledger, CIL_PER_LOS, MIN_VALIDATOR_STAKE_CIL};
 use los_network::{LosNode, NetworkEvent};
-use los_vm::{token_registry, ContractCall, WasmEngine};
+use los_vm::{dex_registry, token_registry, ContractCall, WasmEngine};
 use rate_limiter::{filters::rate_limit, RateLimiter};
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -1980,6 +1980,93 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
             },
         );
 
+    // ── DEX Routes ──
+
+    // GET /dex/pools — List all DEX pools across all contracts
+    let engine_dex_pools = wasm_engine.clone();
+    let dex_list_pools_route = warp::path!("dex" / "pools")
+        .and(with_state(engine_dex_pools))
+        .map(|engine: Arc<WasmEngine>| {
+            let pools = dex_registry::list_all_dex_pools(&engine);
+            api_json(serde_json::json!({
+                "status": "success",
+                "count": pools.len(),
+                "pools": pools
+            }))
+        });
+
+    // GET /dex/pool/:contract/:pool_id — Get pool info
+    let engine_dex_pool = wasm_engine.clone();
+    let dex_pool_info_route = warp::path!("dex" / "pool" / String / String)
+        .and(warp::get())
+        .and(with_state(engine_dex_pool))
+        .map(
+            |contract: String, pool_id: String, engine: Arc<WasmEngine>| {
+                match dex_registry::query_pool_info(&engine, &contract, &pool_id) {
+                    Some(info) => api_json(serde_json::json!({
+                        "status": "success",
+                        "pool": info
+                    })),
+                    None => api_json(serde_json::json!({
+                        "status": "error",
+                        "msg": "Pool not found or contract is not a DEX"
+                    })),
+                }
+            },
+        );
+
+    // GET /dex/quote/:contract/:pool_id/:token_in/:amount_in — Swap quote
+    let engine_dex_quote = wasm_engine.clone();
+    let dex_quote_route = warp::path!("dex" / "quote" / String / String / String / String)
+        .and(with_state(engine_dex_quote))
+        .map(
+            |contract: String,
+             pool_id: String,
+             token_in: String,
+             amount_str: String,
+             engine: Arc<WasmEngine>| {
+                let amount_in: u128 = amount_str.parse().unwrap_or(0);
+                match dex_registry::compute_quote(
+                    &engine, &contract, &pool_id, &token_in, amount_in,
+                ) {
+                    Ok((amount_out, fee, impact_bps)) => api_json(serde_json::json!({
+                        "status": "success",
+                        "quote": {
+                            "amount_out": amount_out.to_string(),
+                            "fee": fee.to_string(),
+                            "price_impact_bps": impact_bps.to_string()
+                        }
+                    })),
+                    Err(e) => api_json(serde_json::json!({
+                        "status": "error",
+                        "msg": e
+                    })),
+                }
+            },
+        );
+
+    // GET /dex/position/:contract/:pool_id/:user — LP position
+    let engine_dex_pos = wasm_engine.clone();
+    let dex_position_route = warp::path!("dex" / "position" / String / String / String)
+        .and(with_state(engine_dex_pos))
+        .map(
+            |contract: String, pool_id: String, user: String, engine: Arc<WasmEngine>| {
+                match dex_registry::query_lp_position(&engine, &contract, &pool_id, &user) {
+                    Ok(shares) => api_json(serde_json::json!({
+                        "status": "success",
+                        "contract": contract,
+                        "pool_id": pool_id,
+                        "user": user,
+                        "lp_shares": shares.to_string()
+                    })),
+                    Err(e) => api_json(serde_json::json!({
+                        "status": "error",
+                        "msg": e
+                    })),
+                }
+            },
+        );
+
     // 10. GET /metrics (Prometheus endpoint)
     let metrics_clone = metrics.clone();
     let ledger_metrics = ledger.clone();
@@ -2694,7 +2781,11 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
                 "tokens": "GET /tokens - List all USP-01 tokens",
                 "token_info": "GET /token/{address} - USP-01 token metadata",
                 "token_balance": "GET /token/{address}/balance/{holder} - Token balance",
-                "token_allowance": "GET /token/{address}/allowance/{owner}/{spender} - Token allowance"
+                "token_allowance": "GET /token/{address}/allowance/{owner}/{spender} - Token allowance",
+                "dex_pools": "GET /dex/pools - List all DEX pools",
+                "dex_pool": "GET /dex/pool/{contract}/{pool_id} - Pool info",
+                "dex_quote": "GET /dex/quote/{contract}/{pool_id}/{token_in}/{amount} - Swap quote",
+                "dex_position": "GET /dex/position/{contract}/{pool_id}/{user} - LP position"
             },
             "docs": "https://github.com/unauthoritymky-6236/unauthority-core",
             "status": "operational"
@@ -3768,11 +3859,20 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
         .or(token_info_route.boxed())
         .boxed();
 
+    // DEX routes
+    let group6 = dex_list_pools_route
+        .boxed()
+        .or(dex_pool_info_route.boxed())
+        .or(dex_quote_route.boxed())
+        .or(dex_position_route.boxed())
+        .boxed();
+
     let routes = group1
         .or(group2)
         .or(group3)
         .or(group4)
         .or(group5)
+        .or(group6)
         .with(cors) // Apply CORS
         .with(warp::log("api"))
         .recover(handle_rejection);

@@ -740,9 +740,16 @@ mod tests {
 
         // Should only count as 1 vote, NOT 10
         let votes = consensus.prepare_votes.get(&seq).unwrap();
-        assert_eq!(votes.len(), 1, "Duplicate prepare votes from same sender must be rejected");
+        assert_eq!(
+            votes.len(),
+            1,
+            "Duplicate prepare votes from same sender must be rejected"
+        );
         // quorum=5, only 1 unique vote → cannot commit
-        assert!(!consensus.can_commit(seq), "Should NOT reach quorum with only 1 unique voter");
+        assert!(
+            !consensus.can_commit(seq),
+            "Should NOT reach quorum with only 1 unique voter"
+        );
     }
 
     #[test]
@@ -771,11 +778,18 @@ mod tests {
             );
             let result = consensus.commit(msg);
             // Should NOT finalize (only 1 unique committer)
-            assert!(!result.unwrap_or(false), "Byzantine replay must not force finalization");
+            assert!(
+                !result.unwrap_or(false),
+                "Byzantine replay must not force finalization"
+            );
         }
 
         let votes = consensus.commit_votes.get(&seq).unwrap();
-        assert_eq!(votes.len(), 1, "Duplicate commit votes from same sender must be rejected");
+        assert_eq!(
+            votes.len(),
+            1,
+            "Duplicate commit votes from same sender must be rejected"
+        );
     }
 
     #[test]
@@ -816,6 +830,9 @@ mod tests {
             "validator-15".to_string(),
         );
         let _ = consensus.prepare(msg5);
-        assert!(consensus.can_commit(seq), "5 unique votes should reach quorum");
+        assert!(
+            consensus.can_commit(seq),
+            "5 unique votes should reach quorum"
+        );
     }
 }

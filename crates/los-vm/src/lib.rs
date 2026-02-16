@@ -141,10 +141,7 @@ impl WasmEngine {
         // Format: "LOSCon" + first 32 hex chars of blake3 hash
         let addr_input = format!("{}:{}:{}", owner, contract_nonce, block_number);
         let addr_hash = blake3::hash(addr_input.as_bytes());
-        let address = format!(
-            "LOSCon{}",
-            hex::encode(&addr_hash.as_bytes()[0..16])
-        );
+        let address = format!("LOSCon{}", hex::encode(&addr_hash.as_bytes()[0..16]));
 
         // Calculate code hash
         let code_hash = hex::encode(&blake3::hash(&bytecode).as_bytes()[0..32]);
@@ -443,8 +440,7 @@ impl WasmEngine {
         let abort_flag = Arc::new(std::sync::atomic::AtomicBool::new(false));
         let abort_clone = Arc::clone(&abort_flag);
 
-        let (result_tx, result_rx) =
-            std::sync::mpsc::channel::<Result<(i32, u64, bool), String>>();
+        let (result_tx, result_rx) = std::sync::mpsc::channel::<Result<(i32, u64, bool), String>>();
 
         let _handle = std::thread::spawn(move || {
             if abort_clone.load(std::sync::atomic::Ordering::Relaxed) {
@@ -453,8 +449,7 @@ impl WasmEngine {
 
             // Deterministic gas metering: 1 WASM instruction = 1 gas unit
             let cost_fn = |_operator: &wasmer::wasmparser::Operator| -> u64 { 1 };
-            let metering =
-                Arc::new(wasmer_middlewares::Metering::new(remaining_gas, cost_fn));
+            let metering = Arc::new(wasmer_middlewares::Metering::new(remaining_gas, cost_fn));
 
             let mut compiler = Cranelift::default();
             compiler.push_middleware(metering);
@@ -463,8 +458,7 @@ impl WasmEngine {
             let module = match Module::new(&store, &bytecode_owned) {
                 Ok(m) => m,
                 Err(e) => {
-                    let _ =
-                        result_tx.send(Err(format!("Failed to compile WASM: {}", e)));
+                    let _ = result_tx.send(Err(format!("Failed to compile WASM: {}", e)));
                     return;
                 }
             };
@@ -490,10 +484,8 @@ impl WasmEngine {
                     match Instance::new(&mut store, &module, &imports! {}) {
                         Ok(i) => i,
                         Err(e) => {
-                            let _ = result_tx.send(Err(format!(
-                                "Failed to instantiate WASM: {}",
-                                e
-                            )));
+                            let _ =
+                                result_tx.send(Err(format!("Failed to instantiate WASM: {}", e)));
                             return;
                         }
                     }
@@ -547,52 +539,40 @@ impl WasmEngine {
             }
 
             // Read remaining gas
-            let exec_gas = match wasmer_middlewares::metering::get_remaining_points(
-                &mut store,
-                &instance,
-            ) {
-                wasmer_middlewares::metering::MeteringPoints::Remaining(r) => {
-                    remaining_gas - r
-                }
-                wasmer_middlewares::metering::MeteringPoints::Exhausted => {
-                    let _ = result_tx.send(Err(format!(
-                        "Out of gas: execution exceeded {} instruction limit",
-                        remaining_gas
-                    )));
-                    return;
-                }
-            };
+            let exec_gas =
+                match wasmer_middlewares::metering::get_remaining_points(&mut store, &instance) {
+                    wasmer_middlewares::metering::MeteringPoints::Remaining(r) => remaining_gas - r,
+                    wasmer_middlewares::metering::MeteringPoints::Exhausted => {
+                        let _ = result_tx.send(Err(format!(
+                            "Out of gas: execution exceeded {} instruction limit",
+                            remaining_gas
+                        )));
+                        return;
+                    }
+                };
 
             match call_result {
                 Ok(results) => {
                     let return_code = results
                         .first()
-                        .and_then(
-                            |v| {
-                                if let Value::I32(x) = v {
-                                    Some(*x)
-                                } else {
-                                    None
-                                }
-                            },
-                        )
+                        .and_then(|v| {
+                            if let Value::I32(x) = v {
+                                Some(*x)
+                            } else {
+                                None
+                            }
+                        })
                         .unwrap_or(0);
-                    let _ =
-                        result_tx.send(Ok((return_code, exec_gas, is_sdk_mode)));
+                    let _ = result_tx.send(Ok((return_code, exec_gas, is_sdk_mode)));
                 }
                 Err(e) => {
                     let err_str = format!("{}", e);
                     if err_str.contains("unreachable") {
                         // Could be metering exhaustion OR contract abort
-                        let _ = result_tx.send(Err(format!(
-                            "WASM trap (abort or out of gas): {}",
-                            err_str
-                        )));
+                        let _ = result_tx
+                            .send(Err(format!("WASM trap (abort or out of gas): {}", err_str)));
                     } else {
-                        let _ = result_tx.send(Err(format!(
-                            "WASM execution failed: {}",
-                            e
-                        )));
+                        let _ = result_tx.send(Err(format!("WASM execution failed: {}", e)));
                     }
                 }
             }
@@ -611,8 +591,9 @@ impl WasmEngine {
                 }
 
                 // Extract results from shared host data
-                let data =
-                    host_data.lock().map_err(|_| "Failed to lock host data".to_string())?;
+                let data = host_data
+                    .lock()
+                    .map_err(|_| "Failed to lock host data".to_string())?;
 
                 if data.aborted {
                     return Err(format!("Contract aborted: {}", data.abort_message));
@@ -662,10 +643,7 @@ impl WasmEngine {
     /// Try hosted WASM execution for a contract call.
     /// Returns `Ok(Some(result))` on success, `Ok(None)` if fallback is needed,
     /// or `Err(e)` for fatal errors that should propagate immediately.
-    fn try_hosted_call(
-        &self,
-        call: &ContractCall,
-    ) -> Result<Option<ContractResult>, String> {
+    fn try_hosted_call(&self, call: &ContractCall) -> Result<Option<ContractResult>, String> {
         // Get contract snapshot (short lock, released before execution)
         let contract_snapshot = {
             let contracts = self
@@ -679,8 +657,7 @@ impl WasmEngine {
         }; // lock released
 
         // Must be valid WASM to attempt hosted execution
-        if contract_snapshot.bytecode.len() < 4
-            || !contract_snapshot.bytecode.starts_with(b"\0asm")
+        if contract_snapshot.bytecode.len() < 4 || !contract_snapshot.bytecode.starts_with(b"\0asm")
         {
             return Ok(None);
         }
@@ -710,9 +687,7 @@ impl WasmEngine {
         ) {
             Ok(exec_result) => {
                 // Apply state changes + transfers back to contract (short lock)
-                if !exec_result.state_changes.is_empty()
-                    || !exec_result.transfers.is_empty()
-                {
+                if !exec_result.state_changes.is_empty() || !exec_result.transfers.is_empty() {
                     let mut contracts = self
                         .contracts
                         .lock()

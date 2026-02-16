@@ -44,8 +44,11 @@ jobs:
           path: target
           key: ${{ runner.os }}-target-${{ hashFiles('**/Cargo.lock') }}
 
-      - name: Run tests
-        run: cargo test --workspace --all-features --verbose --exclude los-vm
+      - name: Run unit tests (all crates)
+        run: cargo test --workspace --all-features --verbose --exclude los-vm --exclude unauthority-integration-tests
+
+      - name: Run E2E tests (serial — Dilithium5 CPU-intensive)
+        run: cargo test --all-features -p unauthority-integration-tests -- --test-threads=1 --verbose
 
       - name: Run doc tests
         run: cargo test --doc --workspace

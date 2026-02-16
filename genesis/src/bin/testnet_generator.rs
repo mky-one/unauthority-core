@@ -26,7 +26,8 @@ const DEV_TREASURY_1_LOS: u128 = 428_113;
 const DEV_TREASURY_2_LOS: u128 = 245_710;
 const DEV_TREASURY_3_LOS: u128 = 50_000;
 const DEV_TREASURY_4_LOS: u128 = 50_000;
-const DEV_TREASURY_TOTAL_LOS: u128 = DEV_TREASURY_1_LOS + DEV_TREASURY_2_LOS + DEV_TREASURY_3_LOS + DEV_TREASURY_4_LOS; // 773,823
+const DEV_TREASURY_TOTAL_LOS: u128 =
+    DEV_TREASURY_1_LOS + DEV_TREASURY_2_LOS + DEV_TREASURY_3_LOS + DEV_TREASURY_4_LOS; // 773,823
 const BOOTSTRAP_NODE_COUNT: usize = 4;
 const BOOTSTRAP_NODE_STAKE_LOS: u128 = 1_000;
 const TOTAL_BOOTSTRAP_LOS: u128 = BOOTSTRAP_NODE_STAKE_LOS * (BOOTSTRAP_NODE_COUNT as u128); // 4,000
@@ -84,7 +85,12 @@ fn main() {
         "Public supply must be 21,158,413 LOS"
     );
 
-    let dev_balances_los: [u128; 4] = [DEV_TREASURY_1_LOS, DEV_TREASURY_2_LOS, DEV_TREASURY_3_LOS, DEV_TREASURY_4_LOS];
+    let dev_balances_los: [u128; 4] = [
+        DEV_TREASURY_1_LOS,
+        DEV_TREASURY_2_LOS,
+        DEV_TREASURY_3_LOS,
+        DEV_TREASURY_4_LOS,
+    ];
     let mut wallet_entries: Vec<String> = Vec::new();
 
     println!("===================================================");
@@ -164,7 +170,11 @@ fn main() {
     println!("Total Supply:     {} LOS", TOTAL_SUPPLY_LOS);
     println!(
         "Dev Treasury:     {} LOS (T1: {} + T2: {} + T3: {} + T4: {})",
-        DEV_TREASURY_TOTAL_LOS, DEV_TREASURY_1_LOS, DEV_TREASURY_2_LOS, DEV_TREASURY_3_LOS, DEV_TREASURY_4_LOS
+        DEV_TREASURY_TOTAL_LOS,
+        DEV_TREASURY_1_LOS,
+        DEV_TREASURY_2_LOS,
+        DEV_TREASURY_3_LOS,
+        DEV_TREASURY_4_LOS
     );
     println!(
         "Bootstrap:        {} x {} LOS = {} LOS",

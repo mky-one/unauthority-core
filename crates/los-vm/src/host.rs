@@ -411,12 +411,7 @@ fn host_get_arg_count_fn(env: FunctionEnvMut<HostState>) -> i32 {
 
 /// `host_get_arg(idx, out_ptr, out_max) -> i32` — Get argument by index.
 /// Returns byte length of the argument, or -1 if index is out of bounds.
-fn host_get_arg_fn(
-    env: FunctionEnvMut<HostState>,
-    idx: i32,
-    out_ptr: i32,
-    out_max: i32,
-) -> i32 {
+fn host_get_arg_fn(env: FunctionEnvMut<HostState>, idx: i32, out_ptr: i32, out_max: i32) -> i32 {
     let arg_data = {
         let inner = match env.data().inner.lock() {
             Ok(i) => i,
@@ -444,7 +439,12 @@ fn host_set_return_fn(env: FunctionEnvMut<HostState>, ptr: i32, len: i32) {
 /// `host_blake3(data_ptr, data_len, out_ptr) -> i32`
 /// Compute blake3 hash of input data, write 32 bytes to `out_ptr`.
 /// Returns 32 on success, -1 on error.
-fn host_blake3_fn(env: FunctionEnvMut<HostState>, data_ptr: i32, data_len: i32, out_ptr: i32) -> i32 {
+fn host_blake3_fn(
+    env: FunctionEnvMut<HostState>,
+    data_ptr: i32,
+    data_len: i32,
+    out_ptr: i32,
+) -> i32 {
     let data_len = (data_len as u32).min(MAX_STATE_VALUE_SIZE);
     let data = match read_guest_bytes(&env, data_ptr as u32, data_len) {
         Some(d) => d,

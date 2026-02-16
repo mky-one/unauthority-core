@@ -163,17 +163,11 @@ pub enum Usp01Action {
     },
 
     // ── Read-only queries (gas cost ≤ 50) ──
-
     /// Return balance of `account` in atomic units.
-    BalanceOf {
-        account: String,
-    },
+    BalanceOf { account: String },
 
     /// Return allowance granted by `owner` to `spender`.
-    AllowanceOf {
-        owner: String,
-        spender: String,
-    },
+    AllowanceOf { owner: String, spender: String },
 
     /// Return total supply in atomic units.
     TotalSupply,
@@ -182,7 +176,6 @@ pub enum Usp01Action {
     TokenInfo,
 
     // ── Wrapped Asset Operations (optional, for is_wrapped = true) ──
-
     /// Mint wrapped tokens when a deposit is confirmed on the source chain.
     /// Only callable by the designated bridge operator / multisig.
     WrapMint {
@@ -454,11 +447,7 @@ impl Usp01Token {
     }
 
     /// Execute a USP-01 action. `caller` is the verified LOS address.
-    pub fn execute(
-        &mut self,
-        caller: &str,
-        action: Usp01Action,
-    ) -> Usp01Response {
+    pub fn execute(&mut self, caller: &str, action: Usp01Action) -> Usp01Response {
         match action {
             Usp01Action::Init { .. } => {
                 // Init is handled at deployment — reject runtime calls
@@ -531,10 +520,7 @@ impl Usp01Token {
                     return Usp01Response {
                         success: false,
                         data: None,
-                        message: format!(
-                            "Allowance exceeded: have {} need {}",
-                            allowance, amount
-                        ),
+                        message: format!("Allowance exceeded: have {} need {}", allowance, amount),
                         events: Vec::new(),
                     };
                 }
@@ -595,8 +581,7 @@ impl Usp01Token {
                     *bal = bal.checked_sub(amount).unwrap_or(0);
                 }
                 // Decrease total supply permanently
-                self.metadata.total_supply =
-                    self.metadata.total_supply.saturating_sub(amount);
+                self.metadata.total_supply = self.metadata.total_supply.saturating_sub(amount);
 
                 Usp01Response {
                     success: true,
@@ -643,8 +628,7 @@ impl Usp01Token {
             Usp01Action::TokenInfo => Usp01Response {
                 success: true,
                 data: Some(
-                    serde_json::to_string(&self.metadata)
-                        .unwrap_or_else(|_| "{}".to_string()),
+                    serde_json::to_string(&self.metadata).unwrap_or_else(|_| "{}".to_string()),
                 ),
                 message: "Token info".to_string(),
                 events: Vec::new(),
@@ -672,8 +656,7 @@ impl Usp01Token {
                     let bal = self.balances.entry(to.clone()).or_insert(0);
                     *bal = bal.checked_add(amount).unwrap_or(u128::MAX);
                 }
-                self.metadata.total_supply =
-                    self.metadata.total_supply.checked_add(amount).unwrap_or(u128::MAX);
+                self.metadata.total_supply = self.metadata.total_supply.saturating_add(amount);
 
                 Usp01Response {
                     success: true,
@@ -711,8 +694,7 @@ impl Usp01Token {
                     let bal = self.balances.entry(caller.to_string()).or_insert(0);
                     *bal = bal.checked_sub(amount).unwrap_or(0);
                 }
-                self.metadata.total_supply =
-                    self.metadata.total_supply.saturating_sub(amount);
+                self.metadata.total_supply = self.metadata.total_supply.saturating_sub(amount);
 
                 Usp01Response {
                     success: true,
@@ -848,10 +830,7 @@ mod tests {
         assert_eq!(token.metadata.name, "TestToken");
         assert_eq!(token.metadata.symbol, "TST");
         assert_eq!(token.metadata.total_supply, 1_000_000);
-        assert_eq!(
-            token.balances.get(ALICE).copied().unwrap_or(0),
-            1_000_000
-        );
+        assert_eq!(token.balances.get(ALICE).copied().unwrap_or(0), 1_000_000);
     }
 
     #[test]
@@ -993,8 +972,7 @@ mod tests {
         let mut token = make_token(1_000_000);
         let resp = token.execute(ALICE, Usp01Action::TokenInfo);
         assert!(resp.success);
-        let meta: TokenMetadata =
-            serde_json::from_str(resp.data.as_ref().unwrap()).unwrap();
+        let meta: TokenMetadata = serde_json::from_str(resp.data.as_ref().unwrap()).unwrap();
         assert_eq!(meta.name, "TestToken");
         assert_eq!(meta.symbol, "TST");
     }
@@ -1175,10 +1153,7 @@ mod tests {
             },
         );
         assert!(resp.success);
-        assert_eq!(
-            token.balances[ALICE],
-            big_supply - 10_000_000_000_000
-        );
+        assert_eq!(token.balances[ALICE], big_supply - 10_000_000_000_000);
         assert_eq!(token.balances[BOB], 10_000_000_000_000);
     }
 }

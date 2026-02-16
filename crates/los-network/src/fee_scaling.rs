@@ -395,19 +395,19 @@ mod tests {
         let mut burn_state = BlockBurnState::new(1);
 
         // Empty: 0%
-        assert_eq!(burn_state.get_capacity_percentage(), 0.0);
+        assert_eq!(burn_state.get_capacity_percentage_bps(), 0);
 
         // Half full
         burn_state
             .try_add_burn(BURN_LIMIT_PER_BLOCK_CIL / 2)
             .unwrap();
-        assert_eq!(burn_state.get_capacity_percentage(), 50.0);
+        assert_eq!(burn_state.get_capacity_percentage_bps(), 5000); // 50.00%
 
         // Full
         burn_state
             .try_add_burn(BURN_LIMIT_PER_BLOCK_CIL / 2)
             .unwrap();
-        assert_eq!(burn_state.get_capacity_percentage(), 100.0);
+        assert_eq!(burn_state.get_capacity_percentage_bps(), 10000); // 100.00%
     }
 
     #[test]

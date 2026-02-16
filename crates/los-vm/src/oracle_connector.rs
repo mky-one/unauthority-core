@@ -173,9 +173,8 @@ impl PriceOracle for ExchangeOracle {
 
         // deviation_bps = ((max - min) * 10000) / median, clamped to u16 range
         let deviation_bps = if median > 0 {
-            let raw = ((max_price.saturating_sub(min_price) as u128 * 10_000) / median as u128)
-                .min(10_000) as u16;
-            raw
+            ((max_price.saturating_sub(min_price) as u128 * 10_000) / median as u128).min(10_000)
+                as u16
         } else {
             10_000 // 100% deviation if median is 0
         };

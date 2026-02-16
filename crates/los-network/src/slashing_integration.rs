@@ -9,7 +9,7 @@
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 
 /// Re-export slashing types for convenience
 pub use los_consensus::slashing::{
@@ -21,7 +21,7 @@ pub use los_consensus::slashing::{
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SlashingManager {
     /// Per-validator safety profiles
-    pub validator_profiles: HashMap<String, ValidatorSafetyProfile>,
+    pub validator_profiles: BTreeMap<String, ValidatorSafetyProfile>,
 
     /// Current block height (for tracking participation)
     pub current_block_height: u64,
@@ -40,7 +40,7 @@ impl SlashingManager {
     /// Create new slashing manager with empty state
     pub fn new() -> Self {
         Self {
-            validator_profiles: HashMap::new(),
+            validator_profiles: BTreeMap::new(),
             current_block_height: 0,
             banned_validators: Vec::new(),
             total_network_slash_cil: 0,

@@ -25,7 +25,7 @@
 //! | `host_blake3`                | `(i32, i32, i32) -> i32`                             | Compute blake3 hash (32 bytes)       |
 
 use crate::ContractEvent;
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashSet};
 use std::sync::{Arc, Mutex};
 use wasmer::{imports, Function, FunctionEnv, FunctionEnvMut, Imports, Memory, Store};
 
@@ -74,7 +74,7 @@ pub struct HostState {
 pub struct HostData {
     /// Working copy of contract state (original + modifications during execution).
     /// Keys are UTF-8 strings, values are raw bytes.
-    pub state: HashMap<String, Vec<u8>>,
+    pub state: BTreeMap<String, Vec<u8>>,
     /// Keys that were modified (set or deleted) during execution.
     pub dirty_keys: HashSet<String>,
     /// Events emitted during execution.
@@ -111,7 +111,7 @@ pub struct HostExecResult {
     /// Total gas consumed (compilation + execution).
     pub gas_used: u64,
     /// State changes (only dirty keys). Key → new value bytes.
-    pub state_changes: HashMap<String, Vec<u8>>,
+    pub state_changes: BTreeMap<String, Vec<u8>>,
     /// Events emitted during execution.
     pub events: Vec<ContractEvent>,
     /// Pending transfers (recipient, amount_cil).
@@ -292,7 +292,7 @@ fn host_emit_event_fn(
     };
 
     // Parse event data as JSON key-value pairs (gracefully defaults to empty on parse errors)
-    let data: HashMap<String, String> = serde_json::from_str(&data_str).unwrap_or_default();
+    let data: BTreeMap<String, String> = serde_json::from_str(&data_str).unwrap_or_default();
 
     if let Ok(mut inner) = env.data().inner.lock() {
         if inner.events.len() >= MAX_EVENTS {
@@ -514,7 +514,7 @@ mod tests {
     #[test]
     fn test_host_data_creation() {
         let data = HostData {
-            state: HashMap::new(),
+            state: BTreeMap::new(),
             dirty_keys: HashSet::new(),
             events: Vec::new(),
             transfers: Vec::new(),
@@ -546,7 +546,7 @@ mod tests {
             return_code: 0,
             return_data: Vec::new(),
             gas_used: 100,
-            state_changes: HashMap::new(),
+            state_changes: BTreeMap::new(),
             events: Vec::new(),
             transfers: Vec::new(),
             logs: Vec::new(),

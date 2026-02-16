@@ -8,7 +8,7 @@
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 /// Encrypted peer session metadata
@@ -62,7 +62,7 @@ pub struct P2PNetworkManager {
     pub node_role: NodeRole,
 
     // Peer sessions (serializable metadata only)
-    pub peer_sessions: HashMap<String, PeerSession>,
+    pub peer_sessions: BTreeMap<String, PeerSession>,
 
     // Statistics (serializable)
     pub stats: NetworkStats,
@@ -99,7 +99,7 @@ impl P2PNetworkManager {
             listen_addr,
             listen_port,
             node_role,
-            peer_sessions: HashMap::new(),
+            peer_sessions: BTreeMap::new(),
             stats: NetworkStats {
                 total_peers: 0,
                 connected_peers: 0,

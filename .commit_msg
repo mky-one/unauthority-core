@@ -1,0 +1,21 @@
+security: pre-mainnet deep audit fixes (M-5)
+
+CRITICAL FIXES:
+- Gate Ed25519 behind cfg(not(feature=mainnet)) in los-crypto
+  Mainnet ONLY accepts Dilithium5 post-quantum signatures
+- Replace all HashMap with BTreeMap in VM engine and network layer
+  for deterministic state serialization across validators
+- Add checked_add/checked_sub for all USP-01 token balance operations
+  Prevents u128 overflow/underflow in transfer, transferFrom, mint, burn
+
+HIGH FIXES:
+- Clamp oracle deviation_bps to u16 range before cast
+
+AUDIT VERIFIED (290 tests, 0 failures):
+- Genesis: 21,936,236 LOS supply math verified, 8 unique addresses
+- Ledger: BTreeMap + BTreeSet, checked_add, double-receive prevention
+- Consensus: aBFT keyed MAC, dedup by sender, integer-only isqrt
+- Rewards: 500K pool, integer sqrt weight, probation, halving
+- Crypto: Dilithium5 + SHA3, key zeroization, deterministic derivation
+- VM: Gas metering, bytecode limit, mainnet mock kill-switch
+- Zero unwrap/panic/todo in production, zero f64 in consensus paths

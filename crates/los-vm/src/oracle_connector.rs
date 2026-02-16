@@ -6,7 +6,7 @@
 // across all CPU architectures (no f64 rounding differences).
 
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 
 /// Micro-USD per 1 USD (10^6 precision)
 pub const MICRO_USD: u64 = 1_000_000;
@@ -46,14 +46,14 @@ pub trait PriceOracle {
 
 /// Implementation (used by UVM when contract calls oracle)
 pub struct ExchangeOracle {
-    price_feeds: HashMap<String, ExchangePrice>,
+    price_feeds: BTreeMap<String, ExchangePrice>,
     last_update: u64,
 }
 
 impl ExchangeOracle {
     pub fn new() -> Self {
         Self {
-            price_feeds: HashMap::new(),
+            price_feeds: BTreeMap::new(),
             last_update: 0,
         }
     }
@@ -171,9 +171,10 @@ impl PriceOracle for ExchangeOracle {
         let max_price = prices.iter().copied().max().unwrap_or(0);
         let min_price = prices.iter().copied().min().unwrap_or(0);
 
-        // deviation_bps = ((max - min) * 10000) / median
+        // deviation_bps = ((max - min) * 10000) / median, clamped to u16 range
         let deviation_bps = if median > 0 {
-            ((max_price.saturating_sub(min_price) as u128 * 10_000) / median as u128) as u16
+            ((max_price.saturating_sub(min_price) as u128 * 10_000) / median as u128).min(10_000)
+                as u16
         } else {
             10_000 // 100% deviation if median is 0
         };

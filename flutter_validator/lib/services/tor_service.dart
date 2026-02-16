@@ -1,3 +1,4 @@
+import '../utils/log.dart';
 import 'dart:io';
 import 'dart:async';
 import 'package:flutter/foundation.dart';
@@ -52,7 +53,7 @@ class TorService {
   /// Returns true if a SOCKS proxy is available, false if all methods failed.
   Future<bool> start() async {
     if (_isRunning) {
-      debugPrint('🔵 Tor already running on $_activeProxy');
+      losLog('🔵 Tor already running on $_activeProxy');
       return true;
     }
 
@@ -61,7 +62,7 @@ class TorService {
     if (existing['found'] == true) {
       _activeProxy = existing['proxy'] as String;
       _isRunning = true;
-      debugPrint('✅ Using existing ${existing['type']}: $_activeProxy');
+      losLog('✅ Using existing ${existing['type']}: $_activeProxy');
       return true;
     }
 
@@ -69,18 +70,18 @@ class TorService {
     String? torBinary = await _findTorBinary();
 
     if (torBinary == null) {
-      debugPrint('🔍 No Tor binary found, attempting auto-install...');
+      losLog('🔍 No Tor binary found, attempting auto-install...');
       torBinary = await _autoInstallTor();
     }
 
     if (torBinary == null) {
-      debugPrint('📥 Auto-install failed, attempting download...');
+      losLog('📥 Auto-install failed, attempting download...');
       torBinary = await _downloadAndCacheTor();
     }
 
     if (torBinary == null) {
-      debugPrint('❌ Could not find, install, or download Tor');
-      debugPrint('   The wallet will not be able to connect to .onion nodes');
+      losLog('❌ Could not find, install, or download Tor');
+      losLog('   The wallet will not be able to connect to .onion nodes');
       return false;
     }
 
@@ -91,7 +92,7 @@ class TorService {
   /// Stop Tor daemon (managed process only — won't kill external Tor)
   Future<void> stop() async {
     if (_torProcess != null) {
-      debugPrint('🛑 Stopping Tor daemon (PID: ${_torProcess!.pid})...');
+      losLog('🛑 Stopping Tor daemon (PID: ${_torProcess!.pid})...');
       _torProcess!.kill(ProcessSignal.sigterm);
       await Future.delayed(const Duration(milliseconds: 500));
       _torProcess = null;
@@ -102,7 +103,7 @@ class TorService {
 
     _isRunning = false;
     _activeProxy = null;
-    debugPrint('✅ Tor state reset');
+    losLog('✅ Tor state reset');
   }
 
   /// Kill any Tor process that is using the validator's data directory.
@@ -138,7 +139,7 @@ class TorService {
                 final pidMatch = RegExp(r'(\d+)\s*$').firstMatch(line.trim());
                 if (pidMatch != null) {
                   final pid = pidMatch.group(1);
-                  debugPrint('🛑 Killing orphaned Tor PID (Windows): $pid');
+                  losLog('🛑 Killing orphaned Tor PID (Windows): $pid');
                   await Process.run('taskkill', ['/F', '/PID', pid!],
                       runInShell: true);
                 }
@@ -150,14 +151,14 @@ class TorService {
         // Also remove stale lock file
         if (await lockFile.exists()) {
           await lockFile.delete();
-          debugPrint('🗑️ Removed stale Tor lock file');
+          losLog('🗑️ Removed stale Tor lock file');
         }
         return;
       }
 
       // Unix (macOS / Linux): use pgrep + SIGTERM
       if (await lockFile.exists()) {
-        debugPrint('🔒 Found Tor lock file — killing orphaned processes...');
+        losLog('🔒 Found Tor lock file — killing orphaned processes...');
 
         final result = await Process.run('pgrep', ['-f', 'tor_validator_data']);
         if (result.exitCode == 0) {
@@ -169,7 +170,7 @@ class TorService {
           for (final pid in pids) {
             final pidNum = int.tryParse(pid.trim());
             if (pidNum != null) {
-              debugPrint('🛑 Killing orphaned Tor PID: $pidNum');
+              losLog('🛑 Killing orphaned Tor PID: $pidNum');
               Process.killPid(pidNum, ProcessSignal.sigterm);
             }
           }
@@ -178,11 +179,11 @@ class TorService {
 
         if (await lockFile.exists()) {
           await lockFile.delete();
-          debugPrint('🗑️ Removed stale Tor lock file');
+          losLog('🗑️ Removed stale Tor lock file');
         }
       }
     } catch (e) {
-      debugPrint('⚠️ _killOrphanedTor: $e');
+      losLog('⚠️ _killOrphanedTor: $e');
     }
   }
 
@@ -199,10 +200,10 @@ class TorService {
     required int localPort,
     int onionPort = 80,
   }) async {
-    debugPrint(
+    losLog(
         '🧅 [TorService.startWithHiddenService] localPort: $localPort, onionPort: $onionPort');
     if (_isRunning && _onionAddress != null) {
-      debugPrint('🔵 Tor hidden service already active: $_onionAddress');
+      losLog('🔵 Tor hidden service already active: $_onionAddress');
       return _onionAddress;
     }
 
@@ -210,7 +211,7 @@ class TorService {
     // gracefully restart it with hidden service configuration.
     // Since we use a shared TorService instance (DI), this is safe.
     if (_isRunning && _onionAddress == null) {
-      debugPrint(
+      losLog(
           '🔄 Tor running as SOCKS-only — restarting with hidden service...');
       await stop();
       // Wait briefly for the port to be released
@@ -223,18 +224,18 @@ class TorService {
     // If port is STILL busy (external/zombie Tor not managed by us),
     // find a free alternative SocksPort instead of failing.
     if (await _isPortOpen('localhost', _socksPort)) {
-      debugPrint('⚠️ Port $_socksPort still occupied — finding free port...');
+      losLog('⚠️ Port $_socksPort still occupied — finding free port...');
       bool found = false;
       for (int p = _socksPort + 1; p <= _socksPort + 20; p++) {
         if (!await _isPortOpen('localhost', p)) {
-          debugPrint('✅ Using alternative SocksPort $p');
+          losLog('✅ Using alternative SocksPort $p');
           _socksPort = p;
           found = true;
           break;
         }
       }
       if (!found) {
-        debugPrint(
+        losLog(
             '❌ No free SocksPort available ($_socksPort..${_socksPort + 20})');
         return null;
       }
@@ -243,15 +244,15 @@ class TorService {
     // Find Tor binary
     String? torBinary = await _findTorBinary();
     if (torBinary == null) {
-      debugPrint('🔍 No Tor binary found, attempting auto-install...');
+      losLog('🔍 No Tor binary found, attempting auto-install...');
       torBinary = await _autoInstallTor();
     }
     if (torBinary == null) {
-      debugPrint('📥 Auto-install failed, attempting download...');
+      losLog('📥 Auto-install failed, attempting download...');
       torBinary = await _downloadAndCacheTor();
     }
     if (torBinary == null) {
-      debugPrint('❌ Could not find, install, or download Tor');
+      losLog('❌ Could not find, install, or download Tor');
       return null;
     }
 
@@ -271,7 +272,7 @@ class TorService {
     final hostnameFile = File(path.join(_hiddenServiceDir!, 'hostname'));
     if (await hostnameFile.exists()) {
       _onionAddress = (await hostnameFile.readAsString()).trim();
-      debugPrint('📋 Existing .onion: $_onionAddress');
+      losLog('📋 Existing .onion: $_onionAddress');
     }
 
     // Create torrc with hidden service config
@@ -297,9 +298,9 @@ ExitPolicy reject *:*
 ''';
     await File(torrcPath).writeAsString(config);
 
-    debugPrint('🚀 Starting Tor with hidden service...');
-    debugPrint('   Binary: $torBinary');
-    debugPrint('   Hidden service → 127.0.0.1:$localPort');
+    losLog('🚀 Starting Tor with hidden service...');
+    losLog('   Binary: $torBinary');
+    losLog('   Hidden service → 127.0.0.1:$localPort');
 
     try {
       _torProcess = await Process.start(torBinary, ['-f', torrcPath]);
@@ -317,19 +318,19 @@ ExitPolicy reject *:*
       // Some Tor builds (Debian/Homebrew) log to stderr even with `Log notice stdout`.
       _torProcess!.stdout.listen((data) {
         final output = String.fromCharCodes(data);
-        debugPrint('🔧 Tor[out]: ${output.trim()}');
+        losLog('🔧 Tor[out]: ${output.trim()}');
         checkBootstrap(output);
       });
 
       _torProcess!.stderr.listen((data) {
         final output = String.fromCharCodes(data);
-        debugPrint('🔧 Tor[err]: ${output.trim()}');
+        losLog('🔧 Tor[err]: ${output.trim()}');
         checkBootstrap(output);
       });
 
       _torProcess!.exitCode.then((code) {
         if (code != 0 && _isRunning) {
-          debugPrint('⚠️  Tor process exited with code $code');
+          losLog('⚠️  Tor process exited with code $code');
         }
         _isRunning = false;
       });
@@ -342,7 +343,7 @@ ExitPolicy reject *:*
       }
 
       if (!_isRunning) {
-        debugPrint('❌ Tor failed to bootstrap within 120 seconds');
+        losLog('❌ Tor failed to bootstrap within 120 seconds');
         await stop();
         return null;
       }
@@ -357,18 +358,18 @@ ExitPolicy reject *:*
         if (await hostnameFile.exists()) {
           _onionAddress = (await hostnameFile.readAsString()).trim();
           if (_onionAddress!.endsWith('.onion')) {
-            debugPrint('🧅 Hidden service: $_onionAddress');
-            debugPrint('   Routes to: 127.0.0.1:$localPort');
+            losLog('🧅 Hidden service: $_onionAddress');
+            losLog('   Routes to: 127.0.0.1:$localPort');
             return _onionAddress;
           }
         }
         await Future.delayed(const Duration(seconds: 1));
       }
 
-      debugPrint('❌ Could not read .onion hostname after Tor started');
+      losLog('❌ Could not read .onion hostname after Tor started');
       return null;
     } catch (e) {
-      debugPrint('❌ Failed to start Tor hidden service: $e');
+      losLog('❌ Failed to start Tor hidden service: $e');
       return null;
     }
   }
@@ -386,7 +387,7 @@ ExitPolicy reject *:*
       if (result.exitCode == 0) {
         final torPath = result.stdout.toString().trim().split('\n').first;
         if (torPath.isNotEmpty && await File(torPath).exists()) {
-          debugPrint('✅ Found system tor: $torPath');
+          losLog('✅ Found system tor: $torPath');
           return torPath;
         }
       }
@@ -428,7 +429,7 @@ ExitPolicy reject *:*
 
     for (final torPath in commonPaths) {
       if (await File(torPath).exists()) {
-        debugPrint('✅ Found tor at: $torPath');
+        losLog('✅ Found tor at: $torPath');
         return torPath;
       }
     }
@@ -470,7 +471,7 @@ ExitPolicy reject *:*
         if (!Platform.isWindows) {
           await Process.run('chmod', ['+x', location]);
         }
-        debugPrint('✅ Found bundled tor: $location');
+        losLog('✅ Found bundled tor: $location');
         return location;
       }
     }
@@ -487,7 +488,7 @@ ExitPolicy reject *:*
       final cachedPath = path.join(torBinDir, binaryName);
 
       if (await File(cachedPath).exists()) {
-        debugPrint('✅ Found cached tor: $cachedPath');
+        losLog('✅ Found cached tor: $cachedPath');
         return cachedPath;
       }
     } catch (_) {}
@@ -506,7 +507,7 @@ ExitPolicy reject *:*
         // Check if Homebrew is available
         final brewCheck = await Process.run('which', ['brew']);
         if (brewCheck.exitCode == 0) {
-          debugPrint(
+          losLog(
               '📦 Installing Tor via Homebrew (this may take a minute)...');
           final installResult = await Process.run(
             'brew',
@@ -519,7 +520,7 @@ ExitPolicy reject *:*
             final whichResult = await Process.run('which', ['tor']);
             if (whichResult.exitCode == 0) {
               final torPath = whichResult.stdout.toString().trim();
-              debugPrint('✅ Tor installed via Homebrew: $torPath');
+              losLog('✅ Tor installed via Homebrew: $torPath');
               return torPath;
             }
             // Try common Homebrew paths
@@ -527,14 +528,14 @@ ExitPolicy reject *:*
               if (await File(p).exists()) return p;
             }
           } else {
-            debugPrint('⚠️  brew install tor failed: ${installResult.stderr}');
+            losLog('⚠️  brew install tor failed: ${installResult.stderr}');
           }
         }
       } else if (Platform.isLinux) {
         // Try apt with sudo (Debian/Ubuntu)
         final aptCheck = await Process.run('which', ['apt-get']);
         if (aptCheck.exitCode == 0) {
-          debugPrint('📦 Installing Tor via sudo apt-get...');
+          losLog('📦 Installing Tor via sudo apt-get...');
           final result = await Process.run(
             'sudo',
             ['apt-get', 'install', '-y', 'tor'],
@@ -542,7 +543,7 @@ ExitPolicy reject *:*
           ).timeout(const Duration(minutes: 5));
 
           if (result.exitCode == 0 && await File('/usr/bin/tor').exists()) {
-            debugPrint('✅ Tor installed via apt');
+            losLog('✅ Tor installed via apt');
             return '/usr/bin/tor';
           }
         }
@@ -550,7 +551,7 @@ ExitPolicy reject *:*
         // Try dnf with sudo (Fedora/RHEL)
         final dnfCheck = await Process.run('which', ['dnf']);
         if (dnfCheck.exitCode == 0) {
-          debugPrint('📦 Installing Tor via sudo dnf...');
+          losLog('📦 Installing Tor via sudo dnf...');
           final result = await Process.run(
             'sudo',
             ['dnf', 'install', '-y', 'tor'],
@@ -558,7 +559,7 @@ ExitPolicy reject *:*
           ).timeout(const Duration(minutes: 5));
 
           if (result.exitCode == 0 && await File('/usr/bin/tor').exists()) {
-            debugPrint('✅ Tor installed via dnf');
+            losLog('✅ Tor installed via dnf');
             return '/usr/bin/tor';
           }
         }
@@ -566,7 +567,7 @@ ExitPolicy reject *:*
         // Try pacman with sudo (Arch)
         final pacmanCheck = await Process.run('which', ['pacman']);
         if (pacmanCheck.exitCode == 0) {
-          debugPrint('📦 Installing Tor via sudo pacman...');
+          losLog('📦 Installing Tor via sudo pacman...');
           final result = await Process.run(
             'sudo',
             ['pacman', '-S', '--noconfirm', 'tor'],
@@ -574,7 +575,7 @@ ExitPolicy reject *:*
           ).timeout(const Duration(minutes: 5));
 
           if (result.exitCode == 0 && await File('/usr/bin/tor').exists()) {
-            debugPrint('✅ Tor installed via pacman');
+            losLog('✅ Tor installed via pacman');
             return '/usr/bin/tor';
           }
         }
@@ -584,7 +585,7 @@ ExitPolicy reject *:*
           final wingetCheck =
               await Process.run('where', ['winget'], runInShell: true);
           if (wingetCheck.exitCode == 0) {
-            debugPrint('📦 Installing Tor via winget...');
+            losLog('📦 Installing Tor via winget...');
             final result = await Process.run(
               'winget',
               ['install', '--id', 'TorProject.TorBrowser', '-e', '--silent'],
@@ -600,7 +601,7 @@ ExitPolicy reject *:*
                     'Tor Browser', 'Browser', 'TorBrowser', 'Tor', 'tor.exe'),
               ]) {
                 if (await File(p).exists()) {
-                  debugPrint('✅ Tor installed via winget: $p');
+                  losLog('✅ Tor installed via winget: $p');
                   return p;
                 }
               }
@@ -613,7 +614,7 @@ ExitPolicy reject *:*
           final chocoCheck =
               await Process.run('where', ['choco'], runInShell: true);
           if (chocoCheck.exitCode == 0) {
-            debugPrint('📦 Installing Tor via choco...');
+            losLog('📦 Installing Tor via choco...');
             final result = await Process.run(
               'choco',
               ['install', 'tor', '-y'],
@@ -626,7 +627,7 @@ ExitPolicy reject *:*
               if (whereResult.exitCode == 0) {
                 final torPath =
                     whereResult.stdout.toString().trim().split('\n').first;
-                debugPrint('✅ Tor installed via choco: $torPath');
+                losLog('✅ Tor installed via choco: $torPath');
                 return torPath;
               }
             }
@@ -634,7 +635,7 @@ ExitPolicy reject *:*
         } catch (_) {}
       }
     } catch (e) {
-      debugPrint('⚠️  Auto-install failed: $e');
+      losLog('⚠️  Auto-install failed: $e');
     }
     return null;
   }
@@ -648,7 +649,7 @@ ExitPolicy reject *:*
     try {
       final url = await _getTorDownloadUrl();
       if (url == null) {
-        debugPrint('❌ No Tor download URL for ${Platform.operatingSystem}');
+        losLog('❌ No Tor download URL for ${Platform.operatingSystem}');
         return null;
       }
 
@@ -658,8 +659,8 @@ ExitPolicy reject *:*
 
       final downloadPath = path.join(torBinDir, 'tor-expert-bundle.tar.gz');
 
-      debugPrint('📥 Downloading Tor Expert Bundle...');
-      debugPrint('   URL: $url');
+      losLog('📥 Downloading Tor Expert Bundle...');
+      losLog('   URL: $url');
 
       // Download using curl (Win10+, macOS, Linux) or PowerShell fallback
       ProcessResult curlResult;
@@ -672,7 +673,7 @@ ExitPolicy reject *:*
       } catch (_) {
         // curl not available — try PowerShell on Windows
         if (Platform.isWindows) {
-          debugPrint('⚠️ curl not found, using PowerShell...');
+          losLog('⚠️ curl not found, using PowerShell...');
           curlResult = await Process.run(
             'powershell',
             [
@@ -687,17 +688,17 @@ ExitPolicy reject *:*
       }
 
       if (curlResult.exitCode != 0) {
-        debugPrint('❌ Download failed: ${curlResult.stderr}');
+        losLog('❌ Download failed: ${curlResult.stderr}');
         return null;
       }
 
       final downloadFile = File(downloadPath);
       if (!await downloadFile.exists() || await downloadFile.length() < 1000) {
-        debugPrint('❌ Download appears incomplete or empty');
+        losLog('❌ Download appears incomplete or empty');
         return null;
       }
 
-      debugPrint('📦 Extracting Tor binary...');
+      losLog('📦 Extracting Tor binary...');
 
       // Extract the tarball
       // `tar` is available natively on Windows 10+, macOS, and Linux
@@ -710,7 +711,7 @@ ExitPolicy reject *:*
       if (extractResult.exitCode != 0) {
         // Windows fallback: try PowerShell extraction if tar fails
         if (Platform.isWindows) {
-          debugPrint('⚠️ tar failed, trying PowerShell extraction...');
+          losLog('⚠️ tar failed, trying PowerShell extraction...');
           final psResult = await Process.run(
             'powershell',
             [
@@ -720,11 +721,11 @@ ExitPolicy reject *:*
             runInShell: true,
           );
           if (psResult.exitCode != 0) {
-            debugPrint('❌ Extraction failed: ${psResult.stderr}');
+            losLog('❌ Extraction failed: ${psResult.stderr}');
             return null;
           }
         } else {
-          debugPrint('❌ Extraction failed: ${extractResult.stderr}');
+          losLog('❌ Extraction failed: ${extractResult.stderr}');
           return null;
         }
       }
@@ -750,14 +751,14 @@ ExitPolicy reject *:*
           await downloadFile.delete();
         } catch (_) {}
 
-        debugPrint('✅ Tor downloaded and cached: $stablePath');
+        losLog('✅ Tor downloaded and cached: $stablePath');
         return stablePath;
       }
 
-      debugPrint('❌ Could not find tor binary in extracted archive');
+      losLog('❌ Could not find tor binary in extracted archive');
       return null;
     } catch (e) {
-      debugPrint('❌ Download/extract failed: $e');
+      losLog('❌ Download/extract failed: $e');
       return null;
     }
   }
@@ -826,12 +827,12 @@ ExitPolicy reject *:*
       await for (final entity
           in Directory(dir).list(recursive: true, followLinks: false)) {
         if (entity is File && path.basename(entity.path) == binaryName) {
-          debugPrint('✅ Found tor binary: ${entity.path}');
+          losLog('✅ Found tor binary: ${entity.path}');
           return entity.path;
         }
       }
     } catch (e) {
-      debugPrint('⚠️ _findExtractedTorBinary scan error: $e');
+      losLog('⚠️ _findExtractedTorBinary scan error: $e');
     }
 
     return null;
@@ -844,9 +845,9 @@ ExitPolicy reject *:*
   /// Start a Tor process with custom configuration
   Future<bool> _startTorProcess(String torBinary) async {
     try {
-      debugPrint('🚀 Starting Tor daemon...');
-      debugPrint('   Binary: $torBinary');
-      debugPrint('   SOCKS: localhost:$_socksPort');
+      losLog('🚀 Starting Tor daemon...');
+      losLog('   Binary: $torBinary');
+      losLog('   SOCKS: localhost:$_socksPort');
 
       // Setup data directory
       final appDir = await getApplicationSupportDirectory();
@@ -870,21 +871,21 @@ ExitPolicy reject *:*
             output.contains('Tor has successfully opened a circuit')) {
           _isRunning = true;
           _activeProxy = 'localhost:$_socksPort';
-          debugPrint('✅ Tor ready! SOCKS proxy: $_activeProxy');
+          losLog('✅ Tor ready! SOCKS proxy: $_activeProxy');
         }
       });
 
       _torProcess!.stderr.listen((data) {
         final error = String.fromCharCodes(data);
         if (error.contains('error') || error.contains('Error')) {
-          debugPrint('⚠️  Tor: $error');
+          losLog('⚠️  Tor: $error');
         }
       });
 
       // Handle process exit
       _torProcess!.exitCode.then((code) {
         if (code != 0 && _isRunning) {
-          debugPrint('⚠️  Tor process exited with code $code');
+          losLog('⚠️  Tor process exited with code $code');
         }
         _isRunning = false;
       });
@@ -898,14 +899,14 @@ ExitPolicy reject *:*
       }
 
       if (!_isRunning) {
-        debugPrint('❌ Tor failed to bootstrap within 120 seconds');
+        losLog('❌ Tor failed to bootstrap within 120 seconds');
         await stop();
         return false;
       }
 
       return true;
     } catch (e) {
-      debugPrint('❌ Failed to start Tor: $e');
+      losLog('❌ Failed to start Tor: $e');
       return false;
     }
   }
@@ -1011,11 +1012,11 @@ UseBridges 0
 
       // Valid SOCKS5 response: [0x05, 0x00] (version 5, auth accepted)
       if (response.length >= 2 && response[0] == 0x05) {
-        debugPrint('✅ SOCKS5 verified on $host:$port');
+        losLog('✅ SOCKS5 verified on $host:$port');
         return true;
       }
 
-      debugPrint('⚠️ Port $host:$port open but NOT SOCKS5 (got: $response)');
+      losLog('⚠️ Port $host:$port open but NOT SOCKS5 (got: $response)');
       return false;
     } catch (e) {
       socket?.destroy();

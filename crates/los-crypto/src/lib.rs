@@ -155,10 +155,13 @@ pub fn sign_message(message: &[u8], secret_key_bytes: &[u8]) -> Result<Vec<u8>, 
 /// - Dilithium5: public_key = 2592 bytes, signature = 4627 bytes
 /// - Ed25519:    public_key = 32 bytes,   signature = 64 bytes
 ///
-/// MAINNET NOTE: On mainnet, the Flutter native library MUST be available,
-/// so all signatures will be Dilithium5. Ed25519 is testnet-only fallback.
+/// MAINNET SECURITY: Ed25519 is NOT post-quantum secure and is disabled on
+/// mainnet builds (`--features mainnet`). Only Dilithium5 is accepted.
+/// Ed25519 is a testnet-only fallback for Flutter desktop wallets where
+/// native Dilithium5 FFI is not yet available.
 pub fn verify_signature(message: &[u8], signature_bytes: &[u8], public_key_bytes: &[u8]) -> bool {
-    // Route by key length — unambiguous detection
+    // MAINNET: Only Dilithium5 signatures accepted (post-quantum enforcement)
+    #[cfg(not(feature = "mainnet"))]
     if public_key_bytes.len() == 32 && signature_bytes.len() == 64 {
         // Ed25519 verification (TESTNET fallback for Flutter desktop)
         return verify_ed25519(message, signature_bytes, public_key_bytes);
@@ -187,6 +190,7 @@ fn verify_dilithium5(message: &[u8], signature_bytes: &[u8], public_key_bytes: &
 
 /// Ed25519 signature verification (TESTNET fallback for Flutter desktop)
 /// Uses ed25519-dalek which follows RFC 8032 — compatible with Dart `cryptography` package.
+#[cfg(not(feature = "mainnet"))]
 fn verify_ed25519(message: &[u8], signature_bytes: &[u8], public_key_bytes: &[u8]) -> bool {
     use ed25519_dalek::{Signature, Verifier, VerifyingKey};
 

@@ -9,7 +9,7 @@
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 
 /// Spam detection threshold (transactions per second)
 pub const SPAM_THRESHOLD_TX_PER_SEC: u32 = 10;
@@ -51,7 +51,7 @@ impl Default for AddressSpamState {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SpamDetector {
     /// Per-address spam tracking
-    address_states: HashMap<String, AddressSpamState>,
+    address_states: BTreeMap<String, AddressSpamState>,
 
     /// Spam threshold (tx/sec)
     spam_threshold: u32,
@@ -64,7 +64,7 @@ impl SpamDetector {
     /// Create new spam detector with custom thresholds
     pub fn new(threshold: u32, factor: u32) -> Self {
         Self {
-            address_states: HashMap::new(),
+            address_states: BTreeMap::new(),
             spam_threshold: threshold,
             scaling_factor: factor,
         }
@@ -395,19 +395,19 @@ mod tests {
         let mut burn_state = BlockBurnState::new(1);
 
         // Empty: 0%
-        assert_eq!(burn_state.get_capacity_percentage(), 0.0);
+        assert_eq!(burn_state.get_capacity_percentage_bps(), 0);
 
         // Half full
         burn_state
             .try_add_burn(BURN_LIMIT_PER_BLOCK_CIL / 2)
             .unwrap();
-        assert_eq!(burn_state.get_capacity_percentage(), 50.0);
+        assert_eq!(burn_state.get_capacity_percentage_bps(), 5000); // 50.00%
 
         // Full
         burn_state
             .try_add_burn(BURN_LIMIT_PER_BLOCK_CIL / 2)
             .unwrap();
-        assert_eq!(burn_state.get_capacity_percentage(), 100.0);
+        assert_eq!(burn_state.get_capacity_percentage_bps(), 10000); // 100.00%
     }
 
     #[test]

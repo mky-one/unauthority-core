@@ -1,3 +1,4 @@
+import '../utils/log.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../models/account_profile.dart';
@@ -37,7 +38,7 @@ class _AccountSwitcherState extends State<AccountSwitcher> {
         _accounts = accountsList.accounts;
       });
     } catch (e) {
-      debugPrint('Error loading active account: $e');
+      losLog('Error loading active account: $e');
     }
   }
 
@@ -62,7 +63,7 @@ class _AccountSwitcherState extends State<AccountSwitcher> {
         );
       }
     } catch (e) {
-      debugPrint('⚠️ [AccountSwitcher] Switch failed: $e');
+      losLog('⚠️ [AccountSwitcher] Switch failed: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Error: $e')),

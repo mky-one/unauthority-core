@@ -1,3 +1,4 @@
+import 'utils/log.dart';
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -19,8 +20,8 @@ void main() async {
 
     // Global Flutter error handler — log but don't crash
     FlutterError.onError = (details) {
-      debugPrint('⚠️ FlutterError: ${details.exceptionAsString()}');
-      debugPrint(
+      losLog('⚠️ FlutterError: ${details.exceptionAsString()}');
+      losLog(
           '   ${details.stack?.toString().split('\n').take(3).join('\n   ')}');
     };
 
@@ -32,8 +33,8 @@ void main() async {
   }, (error, stackTrace) {
     // Catches uncaught async exceptions from zones without error handlers
     // (e.g. socks5_proxy RangeError from non-SOCKS5 port responses)
-    debugPrint('⚠️ Uncaught async error: $error');
-    debugPrint('   ${stackTrace.toString().split('\n').take(3).join('\n   ')}');
+    losLog('⚠️ Uncaught async error: $error');
+    losLog('   ${stackTrace.toString().split('\n').take(3).join('\n   ')}');
   });
 }
 

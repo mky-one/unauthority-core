@@ -1,3 +1,4 @@
+import '../utils/log.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../services/api_service.dart';
@@ -27,7 +28,7 @@ class _NetworkInfoScreenState extends State<NetworkInfoScreen> {
   }
 
   Future<void> _loadAll() async {
-    debugPrint('🌐 [NetworkInfo] Loading all network data...');
+    losLog('🌐 [NetworkInfo] Loading all network data...');
     setState(() {
       _isLoading = true;
       _error = null;
@@ -37,25 +38,25 @@ class _NetworkInfoScreenState extends State<NetworkInfoScreen> {
       final api = context.read<ApiService>();
       final results = await Future.wait([
         api.getSupply().catchError((e) {
-          debugPrint('⚠️ [NetworkInfo] getSupply failed: $e');
+          losLog('⚠️ [NetworkInfo] getSupply failed: $e');
           return <String, dynamic>{};
         }),
         api.getConsensus().catchError((e) {
-          debugPrint('⚠️ [NetworkInfo] getConsensus failed: $e');
+          losLog('⚠️ [NetworkInfo] getConsensus failed: $e');
           return <String, dynamic>{};
         }),
         api.getRewardInfo().catchError((e) {
-          debugPrint('⚠️ [NetworkInfo] getRewardInfo failed: $e');
+          losLog('⚠️ [NetworkInfo] getRewardInfo failed: $e');
           return <String, dynamic>{};
         }),
         api.getNodeInfo().catchError((e) {
-          debugPrint('⚠️ [NetworkInfo] getNodeInfo failed: $e');
+          losLog('⚠️ [NetworkInfo] getNodeInfo failed: $e');
           return <String, dynamic>{};
         }),
       ]);
 
       if (!mounted) return;
-      debugPrint('🌐 [NetworkInfo] All data loaded successfully');
+      losLog('🌐 [NetworkInfo] All data loaded successfully');
       setState(() {
         _supply = results[0];
         _consensus = results[1];
@@ -64,7 +65,7 @@ class _NetworkInfoScreenState extends State<NetworkInfoScreen> {
         _isLoading = false;
       });
     } catch (e) {
-      debugPrint('❌ [NetworkInfo] _loadAll error: $e');
+      losLog('❌ [NetworkInfo] _loadAll error: $e');
       if (!mounted) return;
       setState(() {
         _error = e.toString();

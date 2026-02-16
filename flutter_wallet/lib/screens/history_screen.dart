@@ -1,3 +1,4 @@
+import '../utils/log.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
@@ -27,7 +28,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
   }
 
   Future<void> _loadTransactionHistory() async {
-    debugPrint(
+    losLog(
         '💰 [HistoryScreen._loadTransactionHistory] Loading transaction history...');
     try {
       final walletService = context.read<WalletService>();
@@ -47,14 +48,14 @@ class _HistoryScreenState extends State<HistoryScreen> {
       final history = await apiService.getHistory(_address!);
 
       if (!mounted) return;
-      debugPrint(
+      losLog(
           '💰 [HistoryScreen._loadTransactionHistory] Loaded ${history.length} transactions for $_address');
       setState(() {
         _transactions = history;
         _isLoading = false;
       });
     } catch (e) {
-      debugPrint('💰 [HistoryScreen._loadTransactionHistory] ERROR: $e');
+      losLog('💰 [HistoryScreen._loadTransactionHistory] ERROR: $e');
       if (!mounted) return;
       setState(() {
         _error = e.toString();

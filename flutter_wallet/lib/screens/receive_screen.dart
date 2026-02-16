@@ -1,3 +1,4 @@
+import '../utils/log.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:qr_flutter/qr_flutter.dart';
@@ -22,7 +23,7 @@ class _ReceiveScreenState extends State<ReceiveScreen> {
   }
 
   Future<void> _loadAddress() async {
-    debugPrint('💰 [ReceiveScreen._loadAddress] Loading address...');
+    losLog('💰 [ReceiveScreen._loadAddress] Loading address...');
     try {
       final walletService = context.read<WalletService>();
       final wallet = await walletService.getCurrentWallet();
@@ -32,7 +33,7 @@ class _ReceiveScreenState extends State<ReceiveScreen> {
           _address = wallet['address'];
           _isLoading = false;
         });
-        debugPrint('💰 [ReceiveScreen._loadAddress] Address: $_address');
+        losLog('💰 [ReceiveScreen._loadAddress] Address: $_address');
       }
     } catch (e) {
       if (mounted) {

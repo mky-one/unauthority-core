@@ -32,7 +32,7 @@
 //! ```
 
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 
 // ─────────────────────────────────────────────────────────────
 // u128 ↔ String serialization (JSON doesn't support 128-bit integers)
@@ -163,17 +163,11 @@ pub enum Usp01Action {
     },
 
     // ── Read-only queries (gas cost ≤ 50) ──
-
     /// Return balance of `account` in atomic units.
-    BalanceOf {
-        account: String,
-    },
+    BalanceOf { account: String },
 
     /// Return allowance granted by `owner` to `spender`.
-    AllowanceOf {
-        owner: String,
-        spender: String,
-    },
+    AllowanceOf { owner: String, spender: String },
 
     /// Return total supply in atomic units.
     TotalSupply,
@@ -182,7 +176,6 @@ pub enum Usp01Action {
     TokenInfo,
 
     // ── Wrapped Asset Operations (optional, for is_wrapped = true) ──
-
     /// Mint wrapped tokens when a deposit is confirmed on the source chain.
     /// Only callable by the designated bridge operator / multisig.
     WrapMint {
@@ -380,9 +373,11 @@ pub fn validate_action(action: &Usp01Action) -> Result<(), String> {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Usp01Token {
     pub metadata: TokenMetadata,
-    pub balances: HashMap<String, u128>,
+    /// MAINNET: BTreeMap for deterministic serialization across validators
+    pub balances: BTreeMap<String, u128>,
     /// (owner, spender) → allowance
-    pub allowances: HashMap<(String, String), u128>,
+    /// MAINNET: BTreeMap for deterministic serialization across validators
+    pub allowances: BTreeMap<(String, String), u128>,
     /// Designated bridge operator for wrapped assets (empty = no bridge)
     pub bridge_operator: String,
 }
@@ -407,13 +402,13 @@ impl Usp01Token {
         };
         metadata.validate()?;
 
-        let mut balances = HashMap::new();
+        let mut balances = BTreeMap::new();
         balances.insert(creator, total_supply);
 
         Ok(Self {
             metadata,
             balances,
-            allowances: HashMap::new(),
+            allowances: BTreeMap::new(),
             bridge_operator: String::new(),
         })
     }
@@ -445,18 +440,14 @@ impl Usp01Token {
 
         Ok(Self {
             metadata,
-            balances: HashMap::new(),
-            allowances: HashMap::new(),
+            balances: BTreeMap::new(),
+            allowances: BTreeMap::new(),
             bridge_operator,
         })
     }
 
     /// Execute a USP-01 action. `caller` is the verified LOS address.
-    pub fn execute(
-        &mut self,
-        caller: &str,
-        action: Usp01Action,
-    ) -> Usp01Response {
+    pub fn execute(&mut self, caller: &str, action: Usp01Action) -> Usp01Response {
         match action {
             Usp01Action::Init { .. } => {
                 // Init is handled at deployment — reject runtime calls
@@ -481,10 +472,16 @@ impl Usp01Token {
                         events: Vec::new(),
                     };
                 }
-                // Debit sender
-                *self.balances.entry(caller.to_string()).or_insert(0) -= amount;
-                // Credit recipient
-                *self.balances.entry(to.clone()).or_insert(0) += amount;
+                // Debit sender (checked_sub for defense-in-depth)
+                {
+                    let bal = self.balances.entry(caller.to_string()).or_insert(0);
+                    *bal = bal.checked_sub(amount).unwrap_or(0);
+                }
+                // Credit recipient (checked_add prevents u128 overflow)
+                {
+                    let bal = self.balances.entry(to.clone()).or_insert(0);
+                    *bal = bal.checked_add(amount).unwrap_or(u128::MAX);
+                }
 
                 Usp01Response {
                     success: true,
@@ -523,10 +520,7 @@ impl Usp01Token {
                     return Usp01Response {
                         success: false,
                         data: None,
-                        message: format!(
-                            "Allowance exceeded: have {} need {}",
-                            allowance, amount
-                        ),
+                        message: format!("Allowance exceeded: have {} need {}", allowance, amount),
                         events: Vec::new(),
                     };
                 }
@@ -542,15 +536,24 @@ impl Usp01Token {
                         events: Vec::new(),
                     };
                 }
-                // Debit
-                *self.balances.entry(from.clone()).or_insert(0) -= amount;
-                // Credit
-                *self.balances.entry(to.clone()).or_insert(0) += amount;
-                // Reduce allowance
-                *self
-                    .allowances
-                    .entry((from.clone(), caller.to_string()))
-                    .or_insert(0) -= amount;
+                // Debit (checked_sub for defense-in-depth)
+                {
+                    let bal = self.balances.entry(from.clone()).or_insert(0);
+                    *bal = bal.checked_sub(amount).unwrap_or(0);
+                }
+                // Credit (checked_add prevents u128 overflow)
+                {
+                    let bal = self.balances.entry(to.clone()).or_insert(0);
+                    *bal = bal.checked_add(amount).unwrap_or(u128::MAX);
+                }
+                // Reduce allowance (checked_sub for defense-in-depth)
+                {
+                    let allow = self
+                        .allowances
+                        .entry((from.clone(), caller.to_string()))
+                        .or_insert(0);
+                    *allow = allow.checked_sub(amount).unwrap_or(0);
+                }
 
                 Usp01Response {
                     success: true,
@@ -573,10 +576,12 @@ impl Usp01Token {
                         events: Vec::new(),
                     };
                 }
-                *self.balances.entry(caller.to_string()).or_insert(0) -= amount;
+                {
+                    let bal = self.balances.entry(caller.to_string()).or_insert(0);
+                    *bal = bal.checked_sub(amount).unwrap_or(0);
+                }
                 // Decrease total supply permanently
-                self.metadata.total_supply =
-                    self.metadata.total_supply.saturating_sub(amount);
+                self.metadata.total_supply = self.metadata.total_supply.saturating_sub(amount);
 
                 Usp01Response {
                     success: true,
@@ -623,8 +628,7 @@ impl Usp01Token {
             Usp01Action::TokenInfo => Usp01Response {
                 success: true,
                 data: Some(
-                    serde_json::to_string(&self.metadata)
-                        .unwrap_or_else(|_| "{}".to_string()),
+                    serde_json::to_string(&self.metadata).unwrap_or_else(|_| "{}".to_string()),
                 ),
                 message: "Token info".to_string(),
                 events: Vec::new(),
@@ -647,10 +651,12 @@ impl Usp01Token {
                         events: Vec::new(),
                     };
                 }
-                // Mint tokens
-                *self.balances.entry(to.clone()).or_insert(0) += amount;
-                self.metadata.total_supply =
-                    self.metadata.total_supply.saturating_add(amount);
+                // Mint tokens (checked_add prevents u128 overflow)
+                {
+                    let bal = self.balances.entry(to.clone()).or_insert(0);
+                    *bal = bal.checked_add(amount).unwrap_or(u128::MAX);
+                }
+                self.metadata.total_supply = self.metadata.total_supply.saturating_add(amount);
 
                 Usp01Response {
                     success: true,
@@ -684,9 +690,11 @@ impl Usp01Token {
                         events: Vec::new(),
                     };
                 }
-                *self.balances.entry(caller.to_string()).or_insert(0) -= amount;
-                self.metadata.total_supply =
-                    self.metadata.total_supply.saturating_sub(amount);
+                {
+                    let bal = self.balances.entry(caller.to_string()).or_insert(0);
+                    *bal = bal.checked_sub(amount).unwrap_or(0);
+                }
+                self.metadata.total_supply = self.metadata.total_supply.saturating_sub(amount);
 
                 Usp01Response {
                     success: true,
@@ -822,10 +830,7 @@ mod tests {
         assert_eq!(token.metadata.name, "TestToken");
         assert_eq!(token.metadata.symbol, "TST");
         assert_eq!(token.metadata.total_supply, 1_000_000);
-        assert_eq!(
-            token.balances.get(ALICE).copied().unwrap_or(0),
-            1_000_000
-        );
+        assert_eq!(token.balances.get(ALICE).copied().unwrap_or(0), 1_000_000);
     }
 
     #[test]
@@ -967,8 +972,7 @@ mod tests {
         let mut token = make_token(1_000_000);
         let resp = token.execute(ALICE, Usp01Action::TokenInfo);
         assert!(resp.success);
-        let meta: TokenMetadata =
-            serde_json::from_str(resp.data.as_ref().unwrap()).unwrap();
+        let meta: TokenMetadata = serde_json::from_str(resp.data.as_ref().unwrap()).unwrap();
         assert_eq!(meta.name, "TestToken");
         assert_eq!(meta.symbol, "TST");
     }
@@ -1149,10 +1153,7 @@ mod tests {
             },
         );
         assert!(resp.success);
-        assert_eq!(
-            token.balances[ALICE],
-            big_supply - 10_000_000_000_000
-        );
+        assert_eq!(token.balances[ALICE], big_supply - 10_000_000_000_000);
         assert_eq!(token.balances[BOB], 10_000_000_000_000);
     }
 }

@@ -1,3 +1,4 @@
+import '../utils/log.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
@@ -100,7 +101,7 @@ class NodeProcessService extends ChangeNotifier {
 
       // Phase 1: SIGTERM — graceful shutdown (sled flushes + releases flock)
       for (final pid in allPids) {
-        debugPrint('🧹 Killing orphaned los-node (PID $pid)...');
+        losLog('🧹 Killing orphaned los-node (PID $pid)...');
         Process.killPid(pid, ProcessSignal.sigterm);
       }
       await Future.delayed(const Duration(seconds: 1));
@@ -136,17 +137,17 @@ class NodeProcessService extends ChangeNotifier {
           }
         }
         if (!anyAlive) {
-          debugPrint(
+          losLog(
               '✅ All orphaned los-node processes confirmed dead (${waited}ms)');
           // Extra 200ms grace for OS to release file descriptors / flock
           await Future.delayed(const Duration(milliseconds: 200));
           return;
         }
       }
-      debugPrint(
+      losLog(
           '⚠️ Some orphaned processes may still be alive after ${maxWaitMs}ms');
     } catch (e) {
-      debugPrint('⚠️ _killOrphanedNode: $e');
+      losLog('⚠️ _killOrphanedNode: $e');
     }
   }
 
@@ -177,7 +178,7 @@ class NodeProcessService extends ChangeNotifier {
           final check = await Process.run('kill', ['-0', pid.toString()]);
           if (check.exitCode != 0) {
             // PID doesn't exist → stale lockfile from crash. Clean up.
-            debugPrint('🗑️ Stale PID lockfile (PID $pid dead) — removing');
+            losLog('🗑️ Stale PID lockfile (PID $pid dead) — removing');
             await pidFile.delete();
             // Lock was released when process died — DB should be openable
             return;
@@ -192,16 +193,14 @@ class NodeProcessService extends ChangeNotifier {
           if (state.startsWith('U') || state.startsWith('Z')) {
             // UE/Zombie process — it STILL holds the flock but can't release it.
             // MUST nuke the DB so the new node can start fresh.
-            debugPrint(
-                '💀 PID $pid is in $state state (unkillable) — nuking DB');
+            losLog('💀 PID $pid is in $state state (unkillable) — nuking DB');
             await _nukeDatabaseDirs(dataDir);
             await pidFile.delete();
             return;
           }
 
           // Process is alive and healthy — don't nuke
-          debugPrint(
-              '⚠️ PID $pid is still running (state: $state) — DB in use');
+          losLog('⚠️ PID $pid is still running (state: $state) — DB in use');
           return;
         }
       }
@@ -237,7 +236,7 @@ class NodeProcessService extends ChangeNotifier {
         // This is the critical fix: the old code skipped the nuke for UE,
         // but UE processes DO hold flock, causing the next los-node to also
         // enter UE state → cascading zombie chain.
-        debugPrint(
+        losLog(
             '💀 Found UE/zombie los-node processes holding DB flock — nuking DB');
         await _nukeDatabaseDirs(dataDir);
         return;
@@ -245,12 +244,11 @@ class NodeProcessService extends ChangeNotifier {
 
       if (hasRealProcesses) {
         // Real alive processes — DB is actively in use. Don't nuke.
-        debugPrint(
-            '⚠️ Active los-node process found — DB in use, skipping nuke');
+        losLog('⚠️ Active los-node process found — DB in use, skipping nuke');
         return;
       }
     } catch (e) {
-      debugPrint('⚠️ _clearStaleLockIfNeeded: $e');
+      losLog('⚠️ _clearStaleLockIfNeeded: $e');
     }
   }
 
@@ -260,20 +258,20 @@ class NodeProcessService extends ChangeNotifier {
     final dbDir = Directory('$dataDir/los_database');
     if (await dbDir.exists()) {
       await dbDir.delete(recursive: true);
-      debugPrint('🗑️ Removed stale los_database (zombie flock detected)');
+      losLog('🗑️ Removed stale los_database (zombie flock detected)');
       _addLog('⚠️ Cleaned stale DB lock from zombie process — will resync');
     }
     final cpDir = Directory('$dataDir/checkpoints');
     if (await cpDir.exists()) {
       await cpDir.delete(recursive: true);
-      debugPrint('🗑️ Removed stale checkpoints DB');
+      losLog('🗑️ Removed stale checkpoints DB');
     }
   }
 
   /// Find an available port starting from [preferred].
   /// Returns the first port that's not already in use.
   static Future<int> findAvailablePort({int preferred = 3035}) async {
-    debugPrint(
+    losLog(
         '🖥️ [NodeProcessService.findAvailablePort] Searching from port $preferred...');
     for (int port = preferred; port < preferred + 20; port++) {
       try {
@@ -283,14 +281,14 @@ class NodeProcessService extends ChangeNotifier {
           shared: false,
         );
         await socket.close();
-        debugPrint(
+        losLog(
             '🖥️ [NodeProcessService.findAvailablePort] Found available port: $port');
         return port;
       } catch (_) {
         // Port in use, try next
       }
     }
-    debugPrint(
+    losLog(
         '🖥️ [NodeProcessService.findAvailablePort] No free port found, fallback: $preferred');
     return preferred; // Fallback
   }
@@ -319,7 +317,7 @@ class NodeProcessService extends ChangeNotifier {
     String testnetLevel = 'consensus',
   }) async {
     if (_status == NodeStatus.starting || _status == NodeStatus.running) {
-      debugPrint('⚠️ Node already running or starting');
+      losLog('⚠️ Node already running or starting');
       return false;
     }
 
@@ -363,11 +361,11 @@ class NodeProcessService extends ChangeNotifier {
       final env = <String, String>{
         'LOS_TESTNET_LEVEL': testnetLevel,
       };
+      // SECURITY FIX S-01: Seed phrase is NO LONGER passed via environment variable.
+      // It is now sent via stdin pipe (see below) to prevent exposure via
+      // /proc/[pid]/environ on Linux. We only save it for auto-restart.
       if (seedPhrase != null && seedPhrase.isNotEmpty) {
-        env['LOS_SEED_PHRASE'] = seedPhrase;
         _seedPhrase = seedPhrase; // Save for auto-restart
-      } else if (_seedPhrase != null) {
-        env['LOS_SEED_PHRASE'] = _seedPhrase!; // Reuse from previous start
       }
       if (onionAddress != null) {
         env['LOS_ONION_ADDRESS'] = onionAddress;
@@ -408,7 +406,7 @@ class NodeProcessService extends ChangeNotifier {
         '--json-log',
       ];
 
-      debugPrint('🚀 Starting los-node: $binaryPath ${args.join(' ')}');
+      losLog('🚀 Starting los-node: $binaryPath ${args.join(' ')}');
       _addLog('Starting los-node on port $port...');
 
       // 5. Spawn process
@@ -419,10 +417,15 @@ class NodeProcessService extends ChangeNotifier {
         workingDirectory: await _getWorkingDir(),
       );
 
-      // SECURITY FIX F5: Write wallet password to stdin pipe then close.
-      // This avoids exposing the password in /proc/[pid]/environ.
-      if (hasWalletPassword) {
-        _process!.stdin.writeln(walletPassword);
+      // SECURITY FIX F5+S-01: Write secrets to stdin pipe then close.
+      // Protocol: line 1 = wallet_password, line 2 = seed_phrase.
+      // This avoids exposing secrets in /proc/[pid]/environ on Linux.
+      // Empty lines are sent for missing values (Rust side skips empty lines).
+      {
+        final effectiveSeedPhrase = _seedPhrase ?? '';
+        final effectivePassword = hasWalletPassword ? walletPassword : '';
+        _process!.stdin.writeln(effectivePassword);
+        _process!.stdin.writeln(effectiveSeedPhrase);
         await _process!.stdin.flush();
         await _process!.stdin.close();
       }
@@ -433,7 +436,7 @@ class NodeProcessService extends ChangeNotifier {
           .transform(const LineSplitter())
           .listen(
             _handleStdout,
-            onError: (e) => debugPrint('⚠️ stdout error: $e'),
+            onError: (e) => losLog('⚠️ stdout error: $e'),
           );
 
       _process!.stderr
@@ -441,7 +444,7 @@ class NodeProcessService extends ChangeNotifier {
           .transform(const LineSplitter())
           .listen(
             _handleStderr,
-            onError: (e) => debugPrint('⚠️ stderr error: $e'),
+            onError: (e) => losLog('⚠️ stderr error: $e'),
           );
 
       // 7. Monitor process exit
@@ -461,7 +464,7 @@ class NodeProcessService extends ChangeNotifier {
 
       _crashCount = 0; // Reset crash counter on successful start
       final elapsed = DateTime.now().difference(startTime).inMilliseconds;
-      debugPrint(
+      losLog(
           '🖥️ [NodeProcessService.start] Node started in ${elapsed}ms on port $_apiPort');
       return true;
     } catch (e) {
@@ -487,16 +490,16 @@ class NodeProcessService extends ChangeNotifier {
       final exitCode = await _process!.exitCode.timeout(
         const Duration(seconds: 10),
         onTimeout: () {
-          debugPrint('⚠️ Node did not exit in 10s, sending SIGKILL');
+          losLog('⚠️ Node did not exit in 10s, sending SIGKILL');
           _process!.kill(ProcessSignal.sigkill);
           return -1;
         },
       );
 
-      debugPrint('🛑 Node exited with code $exitCode');
+      losLog('🛑 Node exited with code $exitCode');
       _addLog('Node stopped (exit code: $exitCode)');
     } catch (e) {
-      debugPrint('⚠️ Error stopping node: $e');
+      losLog('⚠️ Error stopping node: $e');
       _process?.kill(ProcessSignal.sigkill);
     }
 
@@ -506,7 +509,7 @@ class NodeProcessService extends ChangeNotifier {
         final pidFile = File('$_dataDir/.los-node.pid');
         if (await pidFile.exists()) {
           await pidFile.delete();
-          debugPrint('🗑️ Removed PID lockfile');
+          losLog('🗑️ Removed PID lockfile');
         }
       }
     } catch (_) {}
@@ -633,15 +636,15 @@ class NodeProcessService extends ChangeNotifier {
           userMsg += '\nPath: $errorPath';
         }
         _setError(userMsg);
-        debugPrint('🛑 Fatal JSON event: $errorCode (path: $errorPath)');
+        losLog('🛑 Fatal JSON event: $errorCode (path: $errorPath)');
         break;
       default:
-        debugPrint('Unknown JSON event: $type');
+        losLog('Unknown JSON event: $type');
     }
   }
 
   void _handleProcessExit(int exitCode) {
-    debugPrint('💀 los-node exited with code $exitCode');
+    losLog('💀 los-node exited with code $exitCode');
     _addLog('⚠️ Node process exited (code: $exitCode)');
 
     if (_status == NodeStatus.stopping || _status == NodeStatus.stopped) {
@@ -717,7 +720,7 @@ class NodeProcessService extends ChangeNotifier {
     ];
     for (final p in bundledPaths) {
       if (await File(p).exists()) {
-        debugPrint('✅ Found bundled los-node: $p');
+        losLog('✅ Found bundled los-node: $p');
         return p;
       }
     }
@@ -730,7 +733,7 @@ class NodeProcessService extends ChangeNotifier {
     ];
     for (final p in cargoPaths) {
       if (await File(p).exists()) {
-        debugPrint('✅ Found cargo-built los-node: $p');
+        losLog('✅ Found cargo-built los-node: $p');
         return p;
       }
     }
@@ -742,13 +745,13 @@ class NodeProcessService extends ChangeNotifier {
       if (result.exitCode == 0) {
         final p = result.stdout.toString().trim().split('\n').first;
         if (p.isNotEmpty && await File(p).exists()) {
-          debugPrint('✅ Found los-node in PATH: $p');
+          losLog('✅ Found los-node in PATH: $p');
           return p;
         }
       }
     } catch (_) {}
 
-    debugPrint('❌ los-node binary not found anywhere');
+    losLog('❌ los-node binary not found anywhere');
     return null;
   }
 

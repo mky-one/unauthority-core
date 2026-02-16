@@ -10,7 +10,7 @@ use los_core::{AccountState, Block, BlockType, Ledger, CIL_PER_LOS, MIN_VALIDATO
 use los_network::{LosNode, NetworkEvent};
 use los_vm::{ContractCall, WasmEngine};
 use rate_limiter::{filters::rate_limit, RateLimiter};
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard};
 use tokio::io::{self, AsyncBufReadExt, BufReader};
@@ -188,15 +188,15 @@ struct BurnRequest {
 #[derive(serde::Deserialize, serde::Serialize)]
 struct DeployContractRequest {
     owner: String,
-    bytecode: String,                          // base64 encoded WASM
-    initial_state: Option<HashMap<String, String>>,
-    amount_cil: Option<u128>,                  // Initial CIL funding for contract
-    signature: Option<String>,                 // Client-signed: Dilithium5 sig
-    public_key: Option<String>,                // Client-signed: deployer's pubkey (hex)
-    previous: Option<String>,                  // Client-signed: previous block hash
-    work: Option<u64>,                         // Client-signed: PoW nonce
-    timestamp: Option<u64>,                    // Client-signed: block timestamp
-    fee: Option<u128>,                         // Client-signed: fee in CIL
+    bytecode: String, // base64 encoded WASM
+    initial_state: Option<BTreeMap<String, String>>,
+    amount_cil: Option<u128>,   // Initial CIL funding for contract
+    signature: Option<String>,  // Client-signed: Dilithium5 sig
+    public_key: Option<String>, // Client-signed: deployer's pubkey (hex)
+    previous: Option<String>,   // Client-signed: previous block hash
+    work: Option<u64>,          // Client-signed: PoW nonce
+    timestamp: Option<u64>,     // Client-signed: block timestamp
+    fee: Option<u128>,          // Client-signed: fee in CIL
 }
 
 #[derive(serde::Deserialize, serde::Serialize)]
@@ -205,14 +205,14 @@ struct CallContractRequest {
     function: String,
     args: Vec<String>,
     gas_limit: Option<u64>,
-    caller: Option<String>,                    // Caller address (if empty, use node's address)
-    amount_cil: Option<u128>,                  // CIL to send to contract (msg.value)
-    signature: Option<String>,                 // Client-signed: Dilithium5 sig
-    public_key: Option<String>,                // Client-signed: caller's pubkey (hex)
-    previous: Option<String>,                  // Client-signed: previous block hash
-    work: Option<u64>,                         // Client-signed: PoW nonce
-    timestamp: Option<u64>,                    // Client-signed: block timestamp
-    fee: Option<u128>,                         // Client-signed: fee in CIL
+    caller: Option<String>,    // Caller address (if empty, use node's address)
+    amount_cil: Option<u128>,  // CIL to send to contract (msg.value)
+    signature: Option<String>, // Client-signed: Dilithium5 sig
+    public_key: Option<String>, // Client-signed: caller's pubkey (hex)
+    previous: Option<String>,  // Client-signed: previous block hash
+    work: Option<u64>,         // Client-signed: PoW nonce
+    timestamp: Option<u64>,    // Client-signed: block timestamp
+    fee: Option<u128>,         // Client-signed: fee in CIL
 }
 
 /// Per-address endpoint rate limiter
@@ -930,7 +930,20 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
                         // blk.fee is what's in the signed block (may be >= final_fee)
                         let actual_fee = blk.fee;
                         if let Some(sender_state) = l_guard.accounts.get_mut(&sender_addr) {
-                            let total_debit = amt + actual_fee;
+                            // SECURITY FIX M-10: Chain-sequence validation — prevents double-spend.
+                            // In block-lattice, each block references its predecessor. If two
+                            // blocks claim the same `previous`, only the first can be applied.
+                            // Without this check, a malicious client could submit conflicting
+                            // sends to the same node and both would succeed (balance check
+                            // alone is insufficient if the first tx hasn't been processed yet).
+                            if sender_state.head != blk.previous {
+                                return api_json(serde_json::json!({
+                                    "status": "error",
+                                    "msg": format!("Chain sequence error: expected previous={}, got={}",
+                                        sender_state.head, blk.previous)
+                                }));
+                            }
+                            let total_debit = amt.saturating_add(actual_fee);
                             if sender_state.balance < total_debit {
                                 return api_json(serde_json::json!({
                                     "status": "error",
@@ -948,7 +961,7 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
                         // Insert block
                         l_guard.blocks.insert(hash.clone(), blk.clone());
                         // Accumulate fees
-                        l_guard.accumulated_fees_cil += actual_fee;
+                        l_guard.accumulated_fees_cil = l_guard.accumulated_fees_cil.saturating_add(actual_fee);
                     }
                     SAVE_DIRTY.store(true, Ordering::Relaxed);
                     let reason = if client_signed { "client-signed" } else { "functional testnet" };
@@ -1010,7 +1023,7 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
                             // because the node's public_key doesn't match the target's account address.
                             let recv_hash = recv_blk.calculate_hash();
                             if let Some(recv_acct) = l_guard.accounts.get_mut(&target) {
-                                recv_acct.balance += amt;
+                                recv_acct.balance = recv_acct.balance.saturating_add(amt);
                                 recv_acct.head = recv_hash.clone();
                                 recv_acct.block_count += 1;
                             }
@@ -1751,6 +1764,7 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
                     args: req.args.clone(),
                     gas_limit,
                     caller: account.clone(),
+                    block_timestamp: block.timestamp,
                 };
 
                 let exec_result = match engine.call_contract(call) {
@@ -1816,18 +1830,17 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
 
         // 9b. GET /contracts (list all deployed contracts)
         let engine_list = wasm_engine.clone();
-        let list_contracts_route = warp::path("contracts")
-            .and(with_state(engine_list))
-            .map(|engine: Arc<WasmEngine>| {
-                match engine.list_contracts() {
+        let list_contracts_route =
+            warp::path("contracts")
+                .and(with_state(engine_list))
+                .map(|engine: Arc<WasmEngine>| match engine.list_contracts() {
                     Ok(addrs) => api_json(serde_json::json!({
                         "status": "success",
                         "count": addrs.len(),
                         "contracts": addrs
                     })),
                     Err(e) => api_json(serde_json::json!({"status":"error","msg":e})),
-                }
-            });
+                });
 
         deploy
             .boxed()
@@ -4541,48 +4554,78 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     };
 
+    // ── SECURITY: Read secrets from stdin pipe (preferred) or env vars (fallback) ──
+    // When launched from Flutter or a secure process manager, secrets are piped via
+    // stdin to avoid exposure in /proc/[pid]/environ on Linux.
+    // Protocol: line 1 = wallet_password, line 2 = seed_phrase (empty = skip).
+    // If stdin is a TTY (interactive), skip and read from env vars as before.
+    let (stdin_wallet_pw, stdin_seed_phrase) = {
+        use std::io::IsTerminal;
+        if !std::io::stdin().is_terminal() {
+            // stdin is piped — read secrets line by line (blocking, before async runtime)
+            let mut line1 = String::new();
+            let mut line2 = String::new();
+            let _ = std::io::BufRead::read_line(&mut std::io::stdin().lock(), &mut line1);
+            let _ = std::io::BufRead::read_line(&mut std::io::stdin().lock(), &mut line2);
+            let pw = line1.trim().to_string();
+            let sp = line2.trim().to_string();
+            (
+                if pw.is_empty() { None } else { Some(pw) },
+                if sp.is_empty() { None } else { Some(sp) },
+            )
+        } else {
+            (None, None)
+        }
+    };
+
     // Use node-specific wallet file path
     // SECURITY: Wallet keys are encrypted at rest using age encryption.
     // The encryption password is derived from the node ID (for automated startup).
     // MAINNET: operators MUST set LOS_WALLET_PASSWORD — weak auto-key is rejected.
     let wallet_path = format!("{}/wallet.json", &base_data_dir);
-    let wallet_password = match std::env::var("LOS_WALLET_PASSWORD") {
-        Ok(pw) if pw.len() >= 12 => pw,
-        Ok(pw) if !pw.is_empty() => {
-            if los_core::is_mainnet_build() {
-                eprintln!(
-                    "❌ FATAL: LOS_WALLET_PASSWORD must be at least 12 characters on mainnet."
-                );
-                return Err(Box::<dyn std::error::Error>::from(
-                    "LOS_WALLET_PASSWORD too short for mainnet (min 12 chars)",
-                ));
+    let wallet_password =
+        match stdin_wallet_pw.or_else(|| std::env::var("LOS_WALLET_PASSWORD").ok()) {
+            Some(pw) if pw.len() >= 12 => pw,
+            Some(pw) if !pw.is_empty() => {
+                if los_core::is_mainnet_build() {
+                    eprintln!(
+                        "❌ FATAL: LOS_WALLET_PASSWORD must be at least 12 characters on mainnet."
+                    );
+                    return Err(Box::<dyn std::error::Error>::from(
+                        "LOS_WALLET_PASSWORD too short for mainnet (min 12 chars)",
+                    ));
+                }
+                pw // Testnet: allow shorter passwords
             }
-            pw // Testnet: allow shorter passwords
-        }
-        _ => {
-            if los_core::is_mainnet_build() {
-                eprintln!(
+            _ => {
+                if los_core::is_mainnet_build() {
+                    eprintln!(
                     "❌ FATAL: LOS_WALLET_PASSWORD environment variable is REQUIRED on mainnet."
                 );
-                eprintln!("   export LOS_WALLET_PASSWORD='<strong-password-here>'");
-                return Err(Box::<dyn std::error::Error>::from(
-                    "LOS_WALLET_PASSWORD required for mainnet build",
-                ));
+                    eprintln!("   export LOS_WALLET_PASSWORD='<strong-password-here>'");
+                    return Err(Box::<dyn std::error::Error>::from(
+                        "LOS_WALLET_PASSWORD required for mainnet build",
+                    ));
+                }
+                // Testnet: auto-generate weak password (acceptable for testing)
+                let auto = format!("los-node-{}-autokey", &node_id);
+                println!("⚠️  Using auto-generated wallet password (testnet only)");
+                auto
             }
-            // Testnet: auto-generate weak password (acceptable for testing)
-            let auto = format!("los-node-{}-autokey", &node_id);
-            println!("⚠️  Using auto-generated wallet password (testnet only)");
-            auto
-        }
-    };
-    let keys: los_crypto::KeyPair = if let Ok(seed_phrase) = std::env::var("LOS_SEED_PHRASE") {
+        };
+    let keys: los_crypto::KeyPair = if let Some(seed_phrase) =
+        stdin_seed_phrase.or_else(|| std::env::var("LOS_SEED_PHRASE").ok())
+    {
         // DETERMINISTIC KEYPAIR: Derive from BIP39 mnemonic (genesis validator identity)
         // This ensures the node's runtime address matches its genesis address.
+        // SECURITY: Prefer stdin pipe over env var to avoid /proc/[pid]/environ exposure.
         let mnemonic = match bip39::Mnemonic::parse_normalized(&seed_phrase) {
             Ok(m) => m,
             Err(e) => {
-                eprintln!("FATAL: LOS_SEED_PHRASE contains invalid BIP39 mnemonic: {e}");
-                eprintln!("Please check the environment variable and try again.");
+                eprintln!("FATAL: Seed phrase contains invalid BIP39 mnemonic: {e}");
+                eprintln!(
+                    "Please check the seed phrase (stdin or LOS_SEED_PHRASE env) and try again."
+                );
                 std::process::exit(1);
             }
         };
@@ -4648,6 +4691,36 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let secret_key = Zeroizing::new(keys.secret_key.clone());
     json_event!("wallet_ready", "address" => &my_address, "short" => &my_short);
 
+    // ══════════════════════════════════════════════════════════════════════
+    // MAINNET SAFETY (M-6): Tor & network security enforcement
+    // ══════════════════════════════════════════════════════════════════════
+    if los_core::is_mainnet_build() {
+        // T-1: Mainnet MUST have Tor SOCKS5 proxy configured
+        let has_tor = std::env::var("LOS_SOCKS5_PROXY")
+            .or_else(|_| std::env::var("LOS_TOR_SOCKS5"))
+            .is_ok();
+        if !has_tor {
+            eprintln!(
+                "❌ FATAL: Mainnet requires Tor. Set LOS_SOCKS5_PROXY=socks5h://127.0.0.1:9050"
+            );
+            eprintln!("   Unauthority mainnet runs EXCLUSIVELY on Tor Hidden Services.");
+            return Err(Box::<dyn std::error::Error>::from(
+                "LOS_SOCKS5_PROXY or LOS_TOR_SOCKS5 required for mainnet build",
+            ));
+        }
+        // R-2: Mainnet MUST NOT bind to 0.0.0.0 (IP deanonymization risk)
+        if std::env::var("LOS_BIND_ALL").unwrap_or_default() == "1" {
+            eprintln!(
+                "❌ FATAL: LOS_BIND_ALL=1 is forbidden on mainnet (IP deanonymization risk)."
+            );
+            eprintln!("   Mainnet validators MUST bind to 127.0.0.1 only (accessed via Tor hidden service).");
+            return Err(Box::<dyn std::error::Error>::from(
+                "LOS_BIND_ALL=1 forbidden on mainnet — use Tor hidden service instead",
+            ));
+        }
+        println!("🧅 Mainnet Tor enforcement: PASSED");
+    }
+
     // FIX: Load ledger and genesis BEFORE wrapping in Arc to prevent race condition
     let mut ledger_state = load_from_disk(&database);
 
@@ -4671,6 +4744,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // bootstrap_validators: Populated from genesis — used by /validators and /node-info
     // to avoid hardcoding testnet-specific addresses that would break mainnet.
     let mut bootstrap_validators: Vec<String> = Vec::new();
+    let mut genesis_ts_from_config: Option<u64> = None;
     {
         let genesis_path = if los_core::is_mainnet_build() {
             "genesis_config.json"
@@ -4729,6 +4803,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 bootstrap_validators.len()
                             );
                         }
+                        // Store genesis_timestamp for reward pool initialization
+                        // (avoids re-reading the file and eliminates stale fallback risk)
+                        genesis_ts_from_config = genesis_config.genesis_timestamp;
                         println!("✅ Genesis config validated (supply, network, addresses)");
                     }
                     match genesis::load_genesis_from_file(genesis_path) {
@@ -4866,16 +4943,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // ══════════════════════════════════════════════════════════════════════
     // VALIDATOR REWARD POOL — Initialize and register known validators
     // ══════════════════════════════════════════════════════════════════════
-    // Uses genesis_timestamp from genesis_config.json (mainnet) or hardcoded (testnet).
+    // Uses genesis_timestamp from validated GenesisConfig (mainnet) or system time (testnet).
     // Bootstrap validators are registered as is_genesis=true (excluded from rewards).
     // Pool is initialized from VALIDATOR_REWARD_POOL_CIL constant.
     let genesis_ts: u64 = if los_core::is_mainnet_build() {
-        // Re-parse genesis config for timestamp (lightweight — already validated above)
-        std::fs::read_to_string("genesis_config.json")
-            .ok()
-            .and_then(|json| serde_json::from_str::<serde_json::Value>(&json).ok())
-            .and_then(|v| v["genesis_timestamp"].as_u64())
-            .unwrap_or(1_770_580_908)
+        // Use timestamp stored during genesis validation above (no redundant file I/O)
+        genesis_ts_from_config.unwrap_or_else(|| {
+            eprintln!(
+                "❌ FATAL: genesis_timestamp missing after validation — this should never happen"
+            );
+            std::process::exit(1);
+        })
     } else {
         // Testnet: use current time as genesis to avoid epoch backlog.
         // This means rewards start fresh each time the node is restarted with a clean DB.
@@ -5378,12 +5456,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let wasm_engine = Arc::new(WasmEngine::new());
     // Restore contract state from DB (if any contracts were previously deployed)
     match database.load_contracts() {
-        Ok(Some(vm_data)) => {
-            match wasm_engine.deserialize_all(&vm_data) {
-                Ok(count) => println!("✅ Restored {} smart contracts from database", count),
-                Err(e) => eprintln!("⚠️ Failed to restore contracts: {}", e),
-            }
-        }
+        Ok(Some(vm_data)) => match wasm_engine.deserialize_all(&vm_data) {
+            Ok(count) => println!("✅ Restored {} smart contracts from database", count),
+            Err(e) => eprintln!("⚠️ Failed to restore contracts: {}", e),
+        },
         Ok(None) => { /* No contracts deployed yet */ }
         Err(e) => eprintln!("⚠️ Failed to load contracts from DB: {}", e),
     }
@@ -7795,7 +7871,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                                             // because the node's public_key doesn't match the target's account address.
                                                             let recv_hash = recv_blk.calculate_hash();
                                                             if let Some(recv_acct) = l.accounts.get_mut(&target) {
-                                                                recv_acct.balance += blk_to_finalize.amount;
+                                                                recv_acct.balance = recv_acct.balance.saturating_add(blk_to_finalize.amount);
                                                                 recv_acct.head = recv_hash.clone();
                                                                 recv_acct.block_count += 1;
                                                             }
@@ -8211,14 +8287,43 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                                     head: "0".to_string(), balance: 0, block_count: 0, is_validator: false,
                                                 });
                                             }
+                                            // SECURITY FIX M-10: Chain-sequence + balance validation
+                                            // for BLOCK_CONFIRMED. Without these checks, a malicious
+                                            // originator could broadcast conflicting BLOCK_CONFIRMED
+                                            // messages (double-spend) — receiving nodes would apply
+                                            // both via saturating_sub, creating money from nothing.
+                                            let send_rejected = if let Some(sender) = l.accounts.get(&send_blk.account) {
+                                                let total_debit = send_blk.amount.saturating_add(send_blk.fee);
+                                                if sender.head != send_blk.previous {
+                                                    println!("🚫 Rejected BLOCK_CONFIRMED: chain fork detected \
+                                                        (sender={}, head={}, block.previous={})",
+                                                        get_short_addr(&send_blk.account),
+                                                        get_short_addr(&sender.head),
+                                                        get_short_addr(&send_blk.previous));
+                                                    true
+                                                } else if sender.balance < total_debit {
+                                                    println!("🚫 Rejected BLOCK_CONFIRMED: insufficient sender \
+                                                        balance ({} < {}) for {}",
+                                                        sender.balance, total_debit,
+                                                        get_short_addr(&send_blk.account));
+                                                    true
+                                                } else {
+                                                    false
+                                                }
+                                            } else {
+                                                false // New account — will be created below
+                                            };
+                                            if send_rejected {
+                                                // Skip this BLOCK_CONFIRMED entirely
+                                            } else {
                                             if let Some(sender) = l.accounts.get_mut(&send_blk.account) {
                                                 let total_debit = send_blk.amount.saturating_add(send_blk.fee);
-                                                sender.balance = sender.balance.saturating_sub(total_debit);
+                                                sender.balance -= total_debit; // Safe: checked above
                                                 sender.head = send_hash.clone();
                                                 sender.block_count += 1;
                                             }
                                             // Track fees for validator redistribution
-                                            l.accumulated_fees_cil += send_blk.fee;
+                                            l.accumulated_fees_cil = l.accumulated_fees_cil.saturating_add(send_blk.fee);
                                             l.blocks.insert(send_hash.clone(), send_blk.clone());
 
                                             // Apply Receive: credit recipient
@@ -8228,7 +8333,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                                 });
                                             }
                                             if let Some(recipient) = l.accounts.get_mut(&recv_blk.account) {
-                                                recipient.balance += recv_blk.amount;
+                                                recipient.balance = recipient.balance.saturating_add(recv_blk.amount);
                                                 recipient.head = recv_hash.clone();
                                                 recipient.block_count += 1;
                                             }
@@ -8242,6 +8347,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                             SAVE_DIRTY.store(true, Ordering::Relaxed);
                                             println!("✅ Applied BLOCK_CONFIRMED: {} → {} ({} CIL)",
                                                 get_short_addr(&send_blk.account), get_short_addr(&recv_blk.account), send_blk.amount);
+                                        } // end if !send_rejected
                                         }
                                     }
                                 }
@@ -8270,55 +8376,79 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                         let deploy_hash = deploy_blk.calculate_hash();
                                         let mut l = safe_lock(&ledger);
                                         if !l.blocks.contains_key(&deploy_hash) {
-                                            // Apply block to ledger (debit fees)
+                                            // Ensure deployer account exists
                                             if !l.accounts.contains_key(&deploy_blk.account) {
                                                 l.accounts.insert(deploy_blk.account.clone(), AccountState {
                                                     head: "0".to_string(), balance: 0, block_count: 0, is_validator: false,
                                                 });
                                             }
-                                            if let Some(deployer) = l.accounts.get_mut(&deploy_blk.account) {
+                                            // SECURITY FIX M-10: Chain-sequence + balance validation
+                                            // for CONTRACT_DEPLOYED — same pattern as BLOCK_CONFIRMED fix.
+                                            let deploy_rejected = if let Some(deployer) = l.accounts.get(&deploy_blk.account) {
                                                 let total_debit = deploy_blk.amount.saturating_add(deploy_blk.fee);
-                                                deployer.balance = deployer.balance.saturating_sub(total_debit);
-                                                deployer.head = deploy_hash.clone();
-                                                deployer.block_count += 1;
-                                            }
-                                            l.accumulated_fees_cil += deploy_blk.fee;
-                                            l.blocks.insert(deploy_hash, deploy_blk.clone());
-                                            drop(l); // Release ledger lock before VM operations
-
-                                            // Deploy to local WASM engine
-                                            let code_hash = WasmEngine::compute_code_hash(&bytecode);
-                                            let expected_hash = &deploy_blk.link[7..]; // After "DEPLOY:"
-                                            if code_hash.starts_with(expected_hash) || expected_hash.starts_with(&code_hash[..expected_hash.len().min(code_hash.len())]) {
-                                                let now_ts = std::time::SystemTime::now()
-                                                    .duration_since(std::time::UNIX_EPOCH)
-                                                    .unwrap_or_default()
-                                                    .as_secs();
-                                                match wasm_engine.deploy_contract(
-                                                    deploy_blk.account.clone(),
-                                                    bytecode,
-                                                    HashMap::new(),
-                                                    now_ts,
-                                                ) {
-                                                    Ok(addr) => {
-                                                        // Fund contract if amount > 0
-                                                        if deploy_blk.amount > 0 {
-                                                            let _ = wasm_engine.send_to_contract(&addr, deploy_blk.amount);
-                                                        }
-                                                        // Persist VM state
-                                                        if let Ok(vm_data) = wasm_engine.serialize_all() {
-                                                            let _ = database.save_contracts(&vm_data);
-                                                        }
-                                                        println!("✅ Replicated CONTRACT_DEPLOYED: {} (owner: {})",
-                                                            addr, get_short_addr(&deploy_blk.account));
-                                                    }
-                                                    Err(e) => eprintln!("⚠️ Failed to replicate contract deploy: {}", e),
+                                                if deployer.head != deploy_blk.previous {
+                                                    println!("🚫 Rejected CONTRACT_DEPLOYED: chain fork \
+                                                        (deployer={}, head={}, block.previous={})",
+                                                        get_short_addr(&deploy_blk.account),
+                                                        get_short_addr(&deployer.head),
+                                                        get_short_addr(&deploy_blk.previous));
+                                                    true
+                                                } else if deployer.balance < total_debit {
+                                                    println!("🚫 Rejected CONTRACT_DEPLOYED: insufficient \
+                                                        deployer balance ({} < {})",
+                                                        deployer.balance, total_debit);
+                                                    true
+                                                } else {
+                                                    false
                                                 }
                                             } else {
-                                                eprintln!("🚫 CONTRACT_DEPLOYED: code hash mismatch");
-                                            }
+                                                false
+                                            };
+                                            if !deploy_rejected {
+                                                if let Some(deployer) = l.accounts.get_mut(&deploy_blk.account) {
+                                                    let total_debit = deploy_blk.amount.saturating_add(deploy_blk.fee);
+                                                    deployer.balance -= total_debit; // Safe: checked above
+                                                    deployer.head = deploy_hash.clone();
+                                                    deployer.block_count += 1;
+                                                }
+                                                l.accumulated_fees_cil = l.accumulated_fees_cil.saturating_add(deploy_blk.fee);
+                                                l.blocks.insert(deploy_hash, deploy_blk.clone());
+                                                drop(l); // Release ledger lock before VM operations
 
-                                            SAVE_DIRTY.store(true, Ordering::Relaxed);
+                                                // Deploy to local WASM engine
+                                                let code_hash = WasmEngine::compute_code_hash(&bytecode);
+                                                let expected_hash = &deploy_blk.link[7..]; // After "DEPLOY:"
+                                                if code_hash.starts_with(expected_hash) || expected_hash.starts_with(&code_hash[..expected_hash.len().min(code_hash.len())]) {
+                                                    let now_ts = std::time::SystemTime::now()
+                                                        .duration_since(std::time::UNIX_EPOCH)
+                                                        .unwrap_or_default()
+                                                        .as_secs();
+                                                    match wasm_engine.deploy_contract(
+                                                        deploy_blk.account.clone(),
+                                                        bytecode,
+                                                        BTreeMap::new(),
+                                                        now_ts,
+                                                    ) {
+                                                        Ok(addr) => {
+                                                            // Fund contract if amount > 0
+                                                            if deploy_blk.amount > 0 {
+                                                                let _ = wasm_engine.send_to_contract(&addr, deploy_blk.amount);
+                                                            }
+                                                            // Persist VM state
+                                                            if let Ok(vm_data) = wasm_engine.serialize_all() {
+                                                                let _ = database.save_contracts(&vm_data);
+                                                            }
+                                                            println!("✅ Replicated CONTRACT_DEPLOYED: {} (owner: {})",
+                                                                addr, get_short_addr(&deploy_blk.account));
+                                                        }
+                                                        Err(e) => eprintln!("⚠️ Failed to replicate contract deploy: {}", e),
+                                                    }
+                                                } else {
+                                                    eprintln!("🚫 CONTRACT_DEPLOYED: code hash mismatch");
+                                                }
+
+                                                SAVE_DIRTY.store(true, Ordering::Relaxed);
+                                            } // end if !deploy_rejected
                                         }
                                     }
                                 }
@@ -8344,70 +8474,94 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                         let call_hash = call_blk.calculate_hash();
                                         let mut l = safe_lock(&ledger);
                                         if !l.blocks.contains_key(&call_hash) {
-                                            // Apply block to ledger (debit fees + value)
+                                            // Ensure caller account exists
                                             if !l.accounts.contains_key(&call_blk.account) {
                                                 l.accounts.insert(call_blk.account.clone(), AccountState {
                                                     head: "0".to_string(), balance: 0, block_count: 0, is_validator: false,
                                                 });
                                             }
-                                            if let Some(caller_acct) = l.accounts.get_mut(&call_blk.account) {
+                                            // SECURITY FIX M-10: Chain-sequence + balance validation
+                                            // for CONTRACT_CALLED — same pattern as BLOCK_CONFIRMED fix.
+                                            let call_rejected = if let Some(caller) = l.accounts.get(&call_blk.account) {
                                                 let total_debit = call_blk.amount.saturating_add(call_blk.fee);
-                                                caller_acct.balance = caller_acct.balance.saturating_sub(total_debit);
-                                                caller_acct.head = call_hash.clone();
-                                                caller_acct.block_count += 1;
-                                            }
-                                            l.accumulated_fees_cil += call_blk.fee;
-                                            l.blocks.insert(call_hash, call_blk.clone());
-                                            drop(l);
-
-                                            // Parse call data from link: "CALL:{addr}:{func}:{args_b64}"
-                                            let call_data = &call_blk.link[5..];
-                                            let call_parts: Vec<&str> = call_data.splitn(3, ':').collect();
-                                            if call_parts.len() >= 2 {
-                                                let contract_addr = call_parts[0];
-                                                let function = call_parts[1];
-                                                let args: Vec<String> = if call_parts.len() == 3 {
-                                                    base64::engine::general_purpose::STANDARD
-                                                        .decode(call_parts[2]).ok()
-                                                        .and_then(|bytes| serde_json::from_slice(&bytes).ok())
-                                                        .unwrap_or_default()
+                                                if caller.head != call_blk.previous {
+                                                    println!("🚫 Rejected CONTRACT_CALLED: chain fork \
+                                                        (caller={}, head={}, block.previous={})",
+                                                        get_short_addr(&call_blk.account),
+                                                        get_short_addr(&caller.head),
+                                                        get_short_addr(&call_blk.previous));
+                                                    true
+                                                } else if caller.balance < total_debit {
+                                                    println!("🚫 Rejected CONTRACT_CALLED: insufficient \
+                                                        caller balance ({} < {})",
+                                                        caller.balance, total_debit);
+                                                    true
                                                 } else {
-                                                    Vec::new()
-                                                };
-                                                let gas_limit = call_blk.fee / los_core::GAS_PRICE_CIL.max(1);
-
-                                                // Value transfer to contract
-                                                if call_blk.amount > 0 {
-                                                    let _ = wasm_engine.send_to_contract(contract_addr, call_blk.amount);
+                                                    false
                                                 }
+                                            } else {
+                                                false
+                                            };
+                                            if !call_rejected {
+                                                if let Some(caller_acct) = l.accounts.get_mut(&call_blk.account) {
+                                                    let total_debit = call_blk.amount.saturating_add(call_blk.fee);
+                                                    caller_acct.balance -= total_debit; // Safe: checked above
+                                                    caller_acct.head = call_hash.clone();
+                                                    caller_acct.block_count += 1;
+                                                }
+                                                l.accumulated_fees_cil = l.accumulated_fees_cil.saturating_add(call_blk.fee);
+                                                l.blocks.insert(call_hash, call_blk.clone());
+                                                drop(l);
 
-                                                // Execute deterministically (same result on all nodes)
-                                                let call = ContractCall {
-                                                    contract: contract_addr.to_string(),
-                                                    function: function.to_string(),
-                                                    args,
-                                                    gas_limit: gas_limit as u64,
-                                                    caller: call_blk.account.clone(),
-                                                };
-                                                match wasm_engine.call_contract(call) {
-                                                    Ok(result) => {
-                                                        if let Ok(vm_data) = wasm_engine.serialize_all() {
-                                                            let _ = database.save_contracts(&vm_data);
-                                                        }
-                                                        println!("✅ Replicated CONTRACT_CALLED: {}::{} → {}",
-                                                            contract_addr, function,
-                                                            if result.success { "OK" } else { "FAIL" });
+                                                // Parse call data from link: "CALL:{addr}:{func}:{args_b64}"
+                                                let call_data = &call_blk.link[5..];
+                                                let call_parts: Vec<&str> = call_data.splitn(3, ':').collect();
+                                                if call_parts.len() >= 2 {
+                                                    let contract_addr = call_parts[0];
+                                                    let function = call_parts[1];
+                                                    let args: Vec<String> = if call_parts.len() == 3 {
+                                                        base64::engine::general_purpose::STANDARD
+                                                            .decode(call_parts[2]).ok()
+                                                            .and_then(|bytes| serde_json::from_slice(&bytes).ok())
+                                                            .unwrap_or_default()
+                                                    } else {
+                                                        Vec::new()
+                                                    };
+                                                    let gas_limit = call_blk.fee / los_core::GAS_PRICE_CIL.max(1);
+
+                                                    // Value transfer to contract
+                                                    if call_blk.amount > 0 {
+                                                        let _ = wasm_engine.send_to_contract(contract_addr, call_blk.amount);
                                                     }
-                                                    Err(e) => eprintln!("⚠️ Failed to replicate contract call: {}", e),
-                                                }
-                                            }
 
-                                            SAVE_DIRTY.store(true, Ordering::Relaxed);
+                                                    // Execute deterministically (same result on all nodes)
+                                                    let call = ContractCall {
+                                                        contract: contract_addr.to_string(),
+                                                        function: function.to_string(),
+                                                        args,
+                                                        gas_limit: gas_limit as u64,
+                                                        caller: call_blk.account.clone(),
+                                                        block_timestamp: call_blk.timestamp,
+                                                    };
+                                                    match wasm_engine.call_contract(call) {
+                                                        Ok(result) => {
+                                                            if let Ok(vm_data) = wasm_engine.serialize_all() {
+                                                                let _ = database.save_contracts(&vm_data);
+                                                            }
+                                                            println!("✅ Replicated CONTRACT_CALLED: {}::{} → {}",
+                                                                contract_addr, function,
+                                                                if result.success { "OK" } else { "FAIL" });
+                                                        }
+                                                        Err(e) => eprintln!("⚠️ Failed to replicate contract call: {}", e),
+                                                    }
+                                                }
+
+                                                SAVE_DIRTY.store(true, Ordering::Relaxed);
+                                            } // end if !call_rejected
                                         }
                                     }
                                 }
-                            }
-                        } else if let Ok(inc) = serde_json::from_str::<Block>(&data) {
+                            }                        } else if let Ok(inc) = serde_json::from_str::<Block>(&data) {
                             // FIX C12-01: Mint/Slash blocks from P2P are accepted ONLY if they
                             // carry a valid validator signature + valid PoW. Previously blanket-
                             // rejected, which caused minted tokens to exist only on the originating

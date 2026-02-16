@@ -1,3 +1,4 @@
+import '../utils/log.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../models/address_book_entry.dart';
@@ -32,7 +33,7 @@ class _AddressBookScreenState extends State<AddressBookScreen> {
   }
 
   Future<void> _loadEntries() async {
-    debugPrint('📒 [AddressBookScreen._loadEntries] Loading entries...');
+    losLog('📒 [AddressBookScreen._loadEntries] Loading entries...');
     setState(() => _isLoading = true);
     try {
       final entries = await _addressBookService.getEntriesSortedByName();
@@ -42,7 +43,7 @@ class _AddressBookScreenState extends State<AddressBookScreen> {
         _filteredEntries = entries;
         _isLoading = false;
       });
-      debugPrint(
+      losLog(
           '📒 [AddressBookScreen._loadEntries] Loaded ${entries.length} entries');
     } catch (e) {
       if (!mounted) return;
@@ -143,7 +144,7 @@ class _AddressBookScreenState extends State<AddressBookScreen> {
               if (!formKey.currentState!.validate()) return;
 
               try {
-                debugPrint(
+                losLog(
                     '📒 [AddressBookScreen._showAddDialog] Adding: ${nameController.text.trim()}');
                 await _addressBookService.addEntry(
                   name: nameController.text.trim(),
@@ -161,12 +162,12 @@ class _AddressBookScreenState extends State<AddressBookScreen> {
                       backgroundColor: Colors.green,
                     ),
                   );
-                  debugPrint(
+                  losLog(
                       '📒 [AddressBookScreen._showAddDialog] Added successfully');
                   _loadEntries();
                 }
               } catch (e) {
-                debugPrint('📒 [AddressBookScreen._showAddDialog] ERROR: $e');
+                losLog('📒 [AddressBookScreen._showAddDialog] ERROR: $e');
                 if (dialogContext.mounted) {
                   ScaffoldMessenger.of(dialogContext).showSnackBar(
                     SnackBar(
@@ -271,12 +272,12 @@ class _AddressBookScreenState extends State<AddressBookScreen> {
                       backgroundColor: Colors.green,
                     ),
                   );
-                  debugPrint(
+                  losLog(
                       '📒 [AddressBookScreen._showEditDialog] Updated successfully');
                   _loadEntries();
                 }
               } catch (e) {
-                debugPrint('📒 [AddressBookScreen._showEditDialog] ERROR: $e');
+                losLog('📒 [AddressBookScreen._showEditDialog] ERROR: $e');
                 if (dialogContext.mounted) {
                   ScaffoldMessenger.of(dialogContext).showSnackBar(
                     SnackBar(
@@ -318,7 +319,7 @@ class _AddressBookScreenState extends State<AddressBookScreen> {
 
     if (confirmed == true) {
       try {
-        debugPrint(
+        losLog(
             '📒 [AddressBookScreen._deleteEntry] Deleting ${entry.name}...');
         await _addressBookService.deleteEntry(entry.id);
         if (mounted) {
@@ -328,7 +329,7 @@ class _AddressBookScreenState extends State<AddressBookScreen> {
               backgroundColor: Colors.green,
             ),
           );
-          debugPrint(
+          losLog(
               '📒 [AddressBookScreen._deleteEntry] Deleted ${entry.name}');
           _loadEntries();
         }

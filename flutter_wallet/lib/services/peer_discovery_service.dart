@@ -1,5 +1,5 @@
+import '../utils/log.dart';
 import 'dart:convert';
-import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 /// Persistent Peer Discovery Service — "Memory" for discovered nodes.
@@ -39,11 +39,11 @@ class PeerDiscoveryService {
         return onion.contains('://') ? onion : 'http://$onion';
       }).toList();
 
-      debugPrint(
+      losLog(
           '📚 PeerDiscovery: loaded ${peers.length} saved peer(s) from storage');
       return peers;
     } catch (e) {
-      debugPrint('⚠️ PeerDiscovery: failed to load saved peers: $e');
+      losLog('⚠️ PeerDiscovery: failed to load saved peers: $e');
       return [];
     }
   }
@@ -89,9 +89,9 @@ class PeerDiscoveryService {
       final capped = sorted.take(_maxSavedPeers).toList();
 
       await prefs.setString(_storageKey, json.encode(capped));
-      debugPrint('💾 PeerDiscovery: saved ${capped.length} peer(s) to storage');
+      losLog('💾 PeerDiscovery: saved ${capped.length} peer(s) to storage');
     } catch (e) {
-      debugPrint('⚠️ PeerDiscovery: failed to save peers: $e');
+      losLog('⚠️ PeerDiscovery: failed to save peers: $e');
     }
   }
 
@@ -104,7 +104,7 @@ class PeerDiscoveryService {
       final List<dynamic> decoded = json.decode(raw);
       return decoded.length;
     } catch (e) {
-      debugPrint('⚠️ PeerDiscovery: getSavedPeerCount error: $e');
+      losLog('⚠️ PeerDiscovery: getSavedPeerCount error: $e');
       return 0;
     }
   }
@@ -113,7 +113,7 @@ class PeerDiscoveryService {
   static Future<void> clearSavedPeers() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(_storageKey);
-    debugPrint('🗑️ PeerDiscovery: cleared all saved peers');
+    losLog('🗑️ PeerDiscovery: cleared all saved peers');
   }
 
   static Future<List<Map<String, dynamic>>> _loadRawPeers(
@@ -124,7 +124,7 @@ class PeerDiscoveryService {
       final List<dynamic> decoded = json.decode(raw);
       return decoded.whereType<Map<String, dynamic>>().toList();
     } catch (e) {
-      debugPrint('⚠️ PeerDiscovery: _loadRawPeers decode error: $e');
+      losLog('⚠️ PeerDiscovery: _loadRawPeers decode error: $e');
       return [];
     }
   }

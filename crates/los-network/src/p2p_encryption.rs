@@ -10,7 +10,7 @@
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 use zeroize::Zeroize;
 
 use chacha20poly1305::{
@@ -152,7 +152,7 @@ pub enum NodeType {
 pub struct SentryNode {
     pub identity: NodeIdentity,
     pub public_address: String, // IP:port accessible from network
-    pub active_sessions: HashMap<String, NoiseSession>,
+    pub active_sessions: BTreeMap<String, NoiseSession>,
     pub connected_peers: Vec<String>,
     pub messages_relayed: u64,
     pub created_at: u64,
@@ -170,7 +170,7 @@ impl SentryNode {
         Ok(Self {
             identity,
             public_address,
-            active_sessions: HashMap::new(),
+            active_sessions: BTreeMap::new(),
             connected_peers: Vec::new(),
             messages_relayed: 0,
             created_at: timestamp,
@@ -252,7 +252,7 @@ pub struct SignerNode {
     pub sentry_tunnel: Option<String>, // Session ID to sentry
     pub private_address: String,       // Only accessible via VPN/encrypted tunnel
     pub stake_address: String,         // Associated validator address
-    pub active_sessions: HashMap<String, NoiseSession>,
+    pub active_sessions: BTreeMap<String, NoiseSession>,
     pub messages_signed: u64,
     pub created_at: u64,
 }
@@ -272,7 +272,7 @@ impl SignerNode {
             sentry_tunnel: None,
             private_address,
             stake_address,
-            active_sessions: HashMap::new(),
+            active_sessions: BTreeMap::new(),
             messages_signed: 0,
             created_at: timestamp,
         })
@@ -388,8 +388,8 @@ impl SignerNode {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NoiseProtocolManager {
     pub node_identity: NodeIdentity,
-    pub sessions: HashMap<String, NoiseSession>,
-    pub peer_keys: HashMap<String, Vec<u8>>, // Known peer public keys
+    pub sessions: BTreeMap<String, NoiseSession>,
+    pub peer_keys: BTreeMap<String, Vec<u8>>, // Known peer public keys
     pub handshake_pattern: NoisePattern,
 }
 
@@ -397,8 +397,8 @@ impl NoiseProtocolManager {
     pub fn new(node_identity: NodeIdentity, pattern: NoisePattern) -> Self {
         Self {
             node_identity,
-            sessions: HashMap::new(),
-            peer_keys: HashMap::new(),
+            sessions: BTreeMap::new(),
+            peer_keys: BTreeMap::new(),
             handshake_pattern: pattern,
         }
     }

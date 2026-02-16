@@ -73,8 +73,8 @@ Total and circulating supply data.
 {
   "total_supply_cil": 2193623600000000000,
   "total_supply_los": 21936236,
-  "remaining_supply_cil": 2125841300000000000,
-  "circulating_cil": 67782300000000000,
+  "remaining_supply_cil": 2115841300000000000,
+  "circulating_cil": 77782300000000000,
   "total_burned_usd": 0
 }
 ```

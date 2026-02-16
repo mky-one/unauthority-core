@@ -1,13 +1,14 @@
-/// UNAUTHORITY Testnet Genesis Generator v10.0
+/// UNAUTHORITY Testnet Genesis Generator v11.0
 /// Uses CRYSTALS-Dilithium5 (Post-Quantum) via los_crypto
 ///
 /// DETERMINISTIC: Keypairs ARE derived from BIP39 seeds via
 /// domain-separated SHA-256 → ChaCha20 DRBG → pqcrypto_dilithium::keypair()
 /// Same seed phrase → same keypair → same address → importable in wallet!
 ///
-/// v10.0 CHANGES:
-///   - Corrected to 6 wallets: 2 Dev Treasury + 4 Bootstrap (~3% dev / ~97% public)
+/// v11.0 CHANGES:
+///   - Corrected to 8 wallets: 4 Dev Treasury + 4 Bootstrap (~3.5% dev / ~96.5% public)
 ///   - Dev Treasury 1: 428,113 LOS, Dev Treasury 2: 245,710 LOS
+///   - Dev Treasury 3: 50,000 LOS, Dev Treasury 4: 50,000 LOS
 ///   - Bootstrap: 4 x 1,000 LOS
 ///   - Domain separator: "los-dilithium5-keygen-v1"
 ///
@@ -20,25 +21,31 @@ use std::fs;
 const CIL_PER_LOS: u128 = 100_000_000_000;
 const TOTAL_SUPPLY_LOS: u128 = 21_936_236;
 
-// Genesis Allocation (~3% DEV / ~97% PUBLIC) per copilot-instructions.md
+// Genesis Allocation (~3.5% DEV / ~96.5% PUBLIC) per copilot-instructions.md
 const DEV_TREASURY_1_LOS: u128 = 428_113;
 const DEV_TREASURY_2_LOS: u128 = 245_710;
-const DEV_TREASURY_TOTAL_LOS: u128 = DEV_TREASURY_1_LOS + DEV_TREASURY_2_LOS; // 673,823
+const DEV_TREASURY_3_LOS: u128 = 50_000;
+const DEV_TREASURY_4_LOS: u128 = 50_000;
+const DEV_TREASURY_TOTAL_LOS: u128 = DEV_TREASURY_1_LOS + DEV_TREASURY_2_LOS + DEV_TREASURY_3_LOS + DEV_TREASURY_4_LOS; // 773,823
 const BOOTSTRAP_NODE_COUNT: usize = 4;
 const BOOTSTRAP_NODE_STAKE_LOS: u128 = 1_000;
 const TOTAL_BOOTSTRAP_LOS: u128 = BOOTSTRAP_NODE_STAKE_LOS * (BOOTSTRAP_NODE_COUNT as u128); // 4,000
-const DEV_SUPPLY_TOTAL_LOS: u128 = DEV_TREASURY_TOTAL_LOS + TOTAL_BOOTSTRAP_LOS; // 677,823
-const PUBLIC_SUPPLY_LOS: u128 = TOTAL_SUPPLY_LOS - DEV_SUPPLY_TOTAL_LOS; // 21,258,413
+const DEV_SUPPLY_TOTAL_LOS: u128 = DEV_TREASURY_TOTAL_LOS + TOTAL_BOOTSTRAP_LOS; // 777,823
+const PUBLIC_SUPPLY_LOS: u128 = TOTAL_SUPPLY_LOS - DEV_SUPPLY_TOTAL_LOS; // 21,158,413
 
-const DEV_TREASURY_COUNT: usize = 2;
+const DEV_TREASURY_COUNT: usize = 4;
 
-// TESTNET v10.0 SEED PHRASES — 6 wallets (2 dev treasury + 4 bootstrap)
+// TESTNET v11.0 SEED PHRASES — 8 wallets (4 dev treasury + 4 bootstrap)
 // PUBLIC — Safe to share. These seeds have ZERO real-world value.
-const TESTNET_SEEDS: [&str; 6] = [
+const TESTNET_SEEDS: [&str; 8] = [
     // Dev Treasury #1 (428,113 LOS)
     "wrist dad desert long gorilla glove artefact fatigue sleep math victory roast cry embody burger wagon order add nominee library ethics stem clip endless",
     // Dev Treasury #2 (245,710 LOS)
     "scrub rail silk lab various silk food fan subway slide equal broom frame cloth laptop owner coconut alpha run square wool session canoe donate",
+    // Dev Treasury #3 (50,000 LOS)
+    "real genuine half swap vague bargain curve level input soap wolf action much inner before hire panther pair theory sample tennis sentence head embark",
+    // Dev Treasury #4 (50,000 LOS)
+    "year coconut innocent alert ugly nice leave agree similar easily neglect simple home illegal method riot pudding clean thumb actual install quantum magic distance",
     // Bootstrap Validator #1 (1,000 LOS)
     "hurt shuffle ring barely want stock neither siren vapor stomach desert design antenna spread envelope remove joy faith veteran dinosaur they spin guess various",
     // Bootstrap Validator #2 (1,000 LOS)
@@ -51,12 +58,12 @@ const TESTNET_SEEDS: [&str; 6] = [
 
 fn main() {
     println!("\n╔════════════════════════════════════════════════════════════╗");
-    println!("║   UNAUTHORITY TESTNET GENESIS GENERATOR v10.0             ║");
+    println!("║   UNAUTHORITY TESTNET GENESIS GENERATOR v11.0             ║");
     println!("║   Dilithium5 Post-Quantum Crypto                          ║");
-    println!("║   ~3% Dev / ~97% Public — 6 Wallets                       ║");
+    println!("║   ~3.5% Dev / ~96.5% Public — 8 Wallets                   ║");
     println!("║   PUBLIC - Safe to Share and Commit                       ║");
     println!("╚════════════════════════════════════════════════════════════╝");
-    println!("\n6 Wallets: 2 Dev Treasury + 4 Bootstrap Validators\n");
+    println!("\n8 Wallets: 4 Dev Treasury + 4 Bootstrap Validators\n");
 
     // Supply validation assertions
     assert_eq!(
@@ -65,19 +72,19 @@ fn main() {
     );
     assert_eq!(CIL_PER_LOS, 100_000_000_000, "CIL_PER_LOS must be 10^11");
     assert_eq!(
-        DEV_TREASURY_TOTAL_LOS, 673_823,
-        "Dev treasury must be 673,823 LOS"
+        DEV_TREASURY_TOTAL_LOS, 773_823,
+        "Dev treasury must be 773,823 LOS"
     );
     assert_eq!(
-        DEV_SUPPLY_TOTAL_LOS, 677_823,
-        "Dev supply total must be 677,823 LOS"
+        DEV_SUPPLY_TOTAL_LOS, 777_823,
+        "Dev supply total must be 777,823 LOS"
     );
     assert_eq!(
-        PUBLIC_SUPPLY_LOS, 21_258_413,
-        "Public supply must be 21,258,413 LOS"
+        PUBLIC_SUPPLY_LOS, 21_158_413,
+        "Public supply must be 21,158,413 LOS"
     );
 
-    let dev_balances_los: [u128; 2] = [DEV_TREASURY_1_LOS, DEV_TREASURY_2_LOS];
+    let dev_balances_los: [u128; 4] = [DEV_TREASURY_1_LOS, DEV_TREASURY_2_LOS, DEV_TREASURY_3_LOS, DEV_TREASURY_4_LOS];
     let mut wallet_entries: Vec<String> = Vec::new();
 
     println!("===================================================");
@@ -156,8 +163,8 @@ fn main() {
     println!("===================================================");
     println!("Total Supply:     {} LOS", TOTAL_SUPPLY_LOS);
     println!(
-        "Dev Treasury:     {} LOS (Treasury 1: {} + Treasury 2: {})",
-        DEV_TREASURY_TOTAL_LOS, DEV_TREASURY_1_LOS, DEV_TREASURY_2_LOS
+        "Dev Treasury:     {} LOS (T1: {} + T2: {} + T3: {} + T4: {})",
+        DEV_TREASURY_TOTAL_LOS, DEV_TREASURY_1_LOS, DEV_TREASURY_2_LOS, DEV_TREASURY_3_LOS, DEV_TREASURY_4_LOS
     );
     println!(
         "Bootstrap:        {} x {} LOS = {} LOS",
@@ -170,7 +177,7 @@ fn main() {
     // Build JSON manually
     let wallets_json = wallet_entries.join(",\n");
     let json = format!(
-        "{{\n  \"version\": \"10.0\",\n  \"network\": \"testnet\",\n  \"description\": \"Public testnet genesis v10.0 - 6 wallets (2 dev treasury + 4 bootstrap validators)\",\n  \"warning\": \"FOR TESTNET ONLY - NEVER use these seeds on mainnet!\",\n  \"crypto\": \"CRYSTALS-Dilithium5 (Post-Quantum)\",\n  \"note\": \"BIP39 seeds deterministically derive Dilithium5 keypairs. Same seed = same address.\",\n  \"allocation\": {{\n    \"total_supply_los\": \"{}\",\n    \"dev_treasury_total_los\": \"{}\",\n    \"dev_supply_total_los\": \"{}\",\n    \"public_supply_los\": \"{}\",\n    \"dev_percent\": \"~3%\"\n  }},\n  \"wallets\": [\n{}\n  ]\n}}",
+        "{{\n  \"version\": \"11.0\",\n  \"network\": \"testnet\",\n  \"description\": \"Public testnet genesis v11.0 - 8 wallets (4 dev treasury + 4 bootstrap validators)\",\n  \"warning\": \"FOR TESTNET ONLY - NEVER use these seeds on mainnet!\",\n  \"crypto\": \"CRYSTALS-Dilithium5 (Post-Quantum)\",\n  \"note\": \"BIP39 seeds deterministically derive Dilithium5 keypairs. Same seed = same address.\",\n  \"allocation\": {{\n    \"total_supply_los\": \"{}\",\n    \"dev_treasury_total_los\": \"{}\",\n    \"dev_supply_total_los\": \"{}\",\n    \"public_supply_los\": \"{}\",\n    \"dev_percent\": \"~3.5%\"\n  }},\n  \"wallets\": [\n{}\n  ]\n}}",
         TOTAL_SUPPLY_LOS,
         DEV_TREASURY_TOTAL_LOS,
         DEV_SUPPLY_TOTAL_LOS,
@@ -185,6 +192,6 @@ fn main() {
     fs::write(output_path, &json).expect("Failed to write testnet_wallets.json");
 
     println!("Testnet genesis saved to: {}", output_path);
-    println!("6 wallets with Dilithium5 post-quantum addresses");
+    println!("8 wallets with Dilithium5 post-quantum addresses");
     println!("Safe to commit to git - these are PUBLIC testnet seeds\n");
 }

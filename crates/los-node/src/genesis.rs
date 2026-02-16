@@ -246,9 +246,9 @@ pub fn validate_genesis(config: &GenesisConfig) -> Result<(), String> {
     }
 
     // FIX C11-04: Validate dev_supply_cil if present
-    // ~3% allocation: Dev Treasury (673,823) + Bootstrap (4,000) = 677,823 LOS
+    // ~3.5% allocation: Dev Treasury (773,823) + Bootstrap (4,000) = 777,823 LOS
     if let Some(dsv) = config.dev_supply_cil {
-        let expected_dev = 677_823u128 * CIL_PER_LOS;
+        let expected_dev = 777_823u128 * CIL_PER_LOS;
         if dsv != expected_dev {
             return Err(format!(
                 "Invalid dev_supply_cil: {} (expected {})",
@@ -313,7 +313,7 @@ mod tests {
             network: Some(network.to_string()),
             genesis_timestamp: Some(1770341710),
             total_supply: Some(total_supply.to_string()),
-            dev_allocation: Some("677823".to_string()),
+            dev_allocation: Some("777823".to_string()),
             wallets: Some(vec![]),
             network_id: None,
             chain_name: None,
@@ -341,7 +341,7 @@ mod tests {
             genesis_timestamp: Some(1770580908),
             total_supply_cil: Some(total_supply_cil),
             chain_name: Some("Unauthority".to_string()),
-            dev_supply_cil: Some(677_823 * 100_000_000_000),
+            dev_supply_cil: Some(777_823 * 100_000_000_000),
             bootstrap_nodes: Some(vec![
                 make_node("1234567890"),
                 make_node("2345678901"),

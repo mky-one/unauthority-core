@@ -155,7 +155,7 @@ async fn test_proof_of_burn_distribution() {
     println!("============================================\n");
 
     let total_supply = 21_936_236 * 100_000_000_000u128; // 10^11 CIL per LOS
-    let dev_allocation = 677_823 * 100_000_000_000u128; // ~3%: 673,823 treasury + 4,000 bootstrap
+    let dev_allocation = 777_823 * 100_000_000_000u128; // ~3.5%: 773,823 treasury + 4,000 bootstrap
     let public_supply = total_supply - dev_allocation;
     let mut remaining_public = public_supply;
     let total_burned_usd = 0.0_f64;

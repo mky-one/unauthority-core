@@ -1,4 +1,4 @@
-/// UNAUTHORITY Mainnet Genesis Generator v2.0
+/// UNAUTHORITY Mainnet Genesis Generator v3.0
 /// Uses CRYSTALS-Dilithium5 (Post-Quantum) via los_crypto
 ///
 /// SECURITY CRITICAL - READ BEFORE RUNNING:
@@ -10,9 +10,10 @@
 ///   5. NEVER commit mainnet genesis to version control
 ///   6. The .gitignore already blocks mainnet-genesis/ from being committed
 ///
-/// v2.0 CHANGES:
-///   - Corrected to 6 wallets: 2 Dev Treasury + 4 Bootstrap (~3% dev / ~97% public)
+/// v3.0 CHANGES:
+///   - Corrected to 8 wallets: 4 Dev Treasury + 4 Bootstrap (~3.5% dev / ~96.5% public)
 ///   - Dev Treasury 1: 428,113 LOS, Dev Treasury 2: 245,710 LOS
+///   - Dev Treasury 3: 50,000 LOS, Dev Treasury 4: 50,000 LOS
 ///   - Bootstrap: 4 x 1,000 LOS
 ///   - Domain separator: "los-dilithium5-keygen-v1"
 ///
@@ -27,17 +28,19 @@ use std::fs;
 const CIL_PER_LOS: u128 = 100_000_000_000;
 const TOTAL_SUPPLY_LOS: u128 = 21_936_236;
 
-// Genesis Allocation (~3% DEV / ~97% PUBLIC) per copilot-instructions.md
+// Genesis Allocation (~3.5% DEV / ~96.5% PUBLIC) per copilot-instructions.md
 const DEV_TREASURY_1_LOS: u128 = 428_113;
 const DEV_TREASURY_2_LOS: u128 = 245_710;
-const DEV_TREASURY_TOTAL_LOS: u128 = DEV_TREASURY_1_LOS + DEV_TREASURY_2_LOS; // 673,823
+const DEV_TREASURY_3_LOS: u128 = 50_000;
+const DEV_TREASURY_4_LOS: u128 = 50_000;
+const DEV_TREASURY_TOTAL_LOS: u128 = DEV_TREASURY_1_LOS + DEV_TREASURY_2_LOS + DEV_TREASURY_3_LOS + DEV_TREASURY_4_LOS; // 773,823
 const BOOTSTRAP_NODE_COUNT: usize = 4;
 const BOOTSTRAP_NODE_STAKE_LOS: u128 = 1_000;
 const TOTAL_BOOTSTRAP_LOS: u128 = BOOTSTRAP_NODE_STAKE_LOS * (BOOTSTRAP_NODE_COUNT as u128); // 4,000
-const DEV_SUPPLY_TOTAL_LOS: u128 = DEV_TREASURY_TOTAL_LOS + TOTAL_BOOTSTRAP_LOS; // 677,823
-const PUBLIC_SUPPLY_LOS: u128 = TOTAL_SUPPLY_LOS - DEV_SUPPLY_TOTAL_LOS; // 21,258,413
+const DEV_SUPPLY_TOTAL_LOS: u128 = DEV_TREASURY_TOTAL_LOS + TOTAL_BOOTSTRAP_LOS; // 777,823
+const PUBLIC_SUPPLY_LOS: u128 = TOTAL_SUPPLY_LOS - DEV_SUPPLY_TOTAL_LOS; // 21,158,413
 
-const DEV_TREASURY_COUNT: usize = 2;
+const DEV_TREASURY_COUNT: usize = 4;
 
 /// Structured wallet data for building multiple output formats
 #[allow(dead_code)]
@@ -54,7 +57,7 @@ struct WalletData {
 fn main() {
     eprintln!();
     eprintln!("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
-    eprintln!("!!  MAINNET GENESIS GENERATOR v2.0 - EXTREME SECURITY    !!");
+    eprintln!("!!  MAINNET GENESIS GENERATOR v3.0 - EXTREME SECURITY    !!");
     eprintln!("!!                                                        !!");
     eprintln!("!!  This produces REAL mainnet keys with REAL value.      !!");
     eprintln!("!!  Ensure you are on an AIR-GAPPED machine.              !!");
@@ -71,26 +74,26 @@ fn main() {
     );
     assert_eq!(CIL_PER_LOS, 100_000_000_000, "CIL_PER_LOS must be 10^11");
     assert_eq!(
-        DEV_TREASURY_TOTAL_LOS, 673_823,
-        "Dev treasury must be 673,823 LOS"
+        DEV_TREASURY_TOTAL_LOS, 773_823,
+        "Dev treasury must be 773,823 LOS"
     );
     assert_eq!(
-        DEV_SUPPLY_TOTAL_LOS, 677_823,
-        "Dev supply total must be 677,823 LOS"
+        DEV_SUPPLY_TOTAL_LOS, 777_823,
+        "Dev supply total must be 777,823 LOS"
     );
     assert_eq!(
-        PUBLIC_SUPPLY_LOS, 21_258_413,
-        "Public supply must be 21,258,413 LOS"
+        PUBLIC_SUPPLY_LOS, 21_158_413,
+        "Public supply must be 21,158,413 LOS"
     );
 
-    let dev_balances_los: [u128; 2] = [DEV_TREASURY_1_LOS, DEV_TREASURY_2_LOS];
+    let dev_balances_los: [u128; 4] = [DEV_TREASURY_1_LOS, DEV_TREASURY_2_LOS, DEV_TREASURY_3_LOS, DEV_TREASURY_4_LOS];
 
     println!();
     println!("===========================================================");
-    println!("  UNAUTHORITY MAINNET GENESIS GENERATOR v2.0");
+    println!("  UNAUTHORITY MAINNET GENESIS GENERATOR v3.0");
     println!("  Dilithium5 Post-Quantum Crypto | OsRng Random Keys");
-    println!("  6 Wallets: 2 Dev Treasury + 4 Bootstrap Validators");
-    println!("  ~3% Dev / ~97% Public");
+    println!("  8 Wallets: 4 Dev Treasury + 4 Bootstrap Validators");
+    println!("  ~3.5% Dev / ~96.5% Public");
     println!("===========================================================");
     println!();
 
@@ -229,8 +232,8 @@ fn main() {
         TOTAL_SUPPLY_LOS * CIL_PER_LOS
     );
     println!(
-        "Dev Treasury:     {} LOS (Treasury 1: {} + Treasury 2: {})",
-        DEV_TREASURY_TOTAL_LOS, DEV_TREASURY_1_LOS, DEV_TREASURY_2_LOS
+        "Dev Treasury:     {} LOS (T1: {} + T2: {} + T3: {} + T4: {})",
+        DEV_TREASURY_TOTAL_LOS, DEV_TREASURY_1_LOS, DEV_TREASURY_2_LOS, DEV_TREASURY_3_LOS, DEV_TREASURY_4_LOS
     );
     println!(
         "Bootstrap:        {} x {} LOS = {} LOS",

@@ -343,6 +343,8 @@ mod tests {
             public_key: None,
             private_key: None,
             onion_address: None,
+            rest_port: None,
+            p2p_port: None,
         };
         GenesisConfig {
             network_id: Some(network_id),
@@ -446,6 +448,8 @@ mod tests {
                 public_key: None,
                 private_key: None,
                 onion_address: None,
+                rest_port: None,
+                p2p_port: None,
             }]),
             network: Some("testnet".to_string()),
             genesis_timestamp: Some(1770341710),

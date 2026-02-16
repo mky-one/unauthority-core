@@ -1,16 +1,11 @@
 use crate::{print_error, print_info, print_success, TokenCommands};
 use colored::*;
 
-pub async fn handle(
-    action: TokenCommands,
-    rpc: &str,
-) -> Result<(), Box<dyn std::error::Error>> {
+pub async fn handle(action: TokenCommands, rpc: &str) -> Result<(), Box<dyn std::error::Error>> {
     match action {
         TokenCommands::List => list_tokens(rpc).await?,
         TokenCommands::Info { address } => token_info(&address, rpc).await?,
-        TokenCommands::Balance { token, holder } => {
-            token_balance(&token, &holder, rpc).await?
-        }
+        TokenCommands::Balance { token, holder } => token_balance(&token, &holder, rpc).await?,
         TokenCommands::Allowance {
             token,
             owner,
@@ -114,18 +109,36 @@ async fn token_info(address: &str, rpc: &str) -> Result<(), Box<dyn std::error::
                 println!();
                 println!("{}", "USP-01 Token Info".bold().underline());
                 println!();
-                println!("  {}: {} ({})", "Name".bold(), name.green(), symbol.yellow());
+                println!(
+                    "  {}: {} ({})",
+                    "Name".bold(),
+                    name.green(),
+                    symbol.yellow()
+                );
                 println!("  {}: {}", "Contract".bold(), contract.green());
                 println!("  {}: {}", "Owner".bold(), owner);
                 println!("  {}: {}", "Decimals".bold(), decimals);
-                println!("  {}: {}", "Total Supply".bold(), total_supply.to_string().cyan());
+                println!(
+                    "  {}: {}",
+                    "Total Supply".bold(),
+                    total_supply.to_string().cyan()
+                );
                 if max_supply > 0 {
-                    println!("  {}: {}", "Max Supply".bold(), max_supply.to_string().cyan());
+                    println!(
+                        "  {}: {}",
+                        "Max Supply".bold(),
+                        max_supply.to_string().cyan()
+                    );
                 }
                 if is_wrapped {
                     let origin = token["wrapped_origin"].as_str().unwrap_or("unknown");
                     let bridge = token["bridge_operator"].as_str().unwrap_or("none");
-                    println!("  {}: {} ({})", "Type".bold(), "Wrapped Asset".yellow(), origin);
+                    println!(
+                        "  {}: {} ({})",
+                        "Type".bold(),
+                        "Wrapped Asset".yellow(),
+                        origin
+                    );
                     println!("  {}: {}", "Bridge Operator".bold(), bridge);
                 }
                 println!("  {}: {}", "Standard".bold(), "USP-01".cyan());

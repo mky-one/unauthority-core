@@ -58,9 +58,7 @@ pub struct TokenInfo {
 /// `usp01:init` = "1" and `usp01:symbol` is non-empty.
 pub fn is_usp01_token(state: &BTreeMap<String, String>) -> bool {
     state.get("usp01:init") == Some(&"1".to_string())
-        && state
-            .get("usp01:symbol")
-            .is_some_and(|v| !v.is_empty())
+        && state.get("usp01:symbol").is_some_and(|v| !v.is_empty())
 }
 
 /// Extract USP-01 token info from contract state (no WASM execution).
@@ -83,7 +81,10 @@ pub fn token_info_from_state(
     let max_supply = parse_state_u128(state, "usp01:max_supply");
 
     let is_wrapped = state.get("usp01:is_wrapped") == Some(&"1".to_string());
-    let wrapped_origin = state.get("usp01:wrapped_origin").cloned().unwrap_or_default();
+    let wrapped_origin = state
+        .get("usp01:wrapped_origin")
+        .cloned()
+        .unwrap_or_default();
     let bridge_operator = state
         .get("usp01:bridge_operator")
         .cloned()

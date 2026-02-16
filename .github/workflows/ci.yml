@@ -48,7 +48,7 @@ jobs:
         run: cargo test --workspace --all-features --verbose --exclude los-vm --exclude unauthority-integration-tests
 
       - name: Run E2E tests (serial — Dilithium5 CPU-intensive)
-        run: cargo test --all-features -p unauthority-integration-tests -- --test-threads=1 --verbose
+        run: cargo test --all-features --test e2e_los_mainnet --test integration_test -- --test-threads=1
 
       - name: Run doc tests
         run: cargo test --doc --workspace

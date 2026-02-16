@@ -129,33 +129,84 @@ fn insert_validator_endpoint(ve: &mut HashMap<String, String>, address: String, 
     ve.insert(address, onion);
 }
 
-/// Bootstrap nodes loaded from LOS_BOOTSTRAP_NODES environment variable
-/// Format: comma-separated multiaddresses or .onion:port addresses
-/// Example: LOS_BOOTSTRAP_NODES=abc123.onion:4001,def456.onion:4001
+/// Bootstrap nodes — resolved from env var OR auto-discovered from genesis config.
+///
+/// Priority:
+///   1. LOS_BOOTSTRAP_NODES env var (operator override)
+///   2. genesis_config.json bootstrap_nodes[].onion_address + p2p_port
+///
+/// Returns: Vec of dial-able addresses (onion:port or /ip4/.../tcp/...)
 fn get_bootstrap_nodes() -> Vec<String> {
-    match std::env::var("LOS_BOOTSTRAP_NODES") {
-        Ok(val) if !val.trim().is_empty() => val
-            .split(',')
-            .map(|s| {
-                let trimmed = s.trim().to_string();
-                // Convert host:port format to libp2p multiaddr format.
-                // "127.0.0.1:4001" → "/ip4/127.0.0.1/tcp/4001"
-                // Already-valid multiaddrs (starting with /) are left as-is.
-                // .onion addresses are also left as-is for Tor handling.
-                if !trimmed.starts_with('/') && !trimmed.contains(".onion") {
-                    if let Some((host, port)) = trimmed.split_once(':') {
-                        format!("/ip4/{}/tcp/{}", host, port)
+    // Priority 1: Explicit env var (operator override, e.g. for local dev or custom topology)
+    if let Ok(val) = std::env::var("LOS_BOOTSTRAP_NODES") {
+        if !val.trim().is_empty() {
+            let nodes: Vec<String> = val
+                .split(',')
+                .map(|s| {
+                    let trimmed = s.trim().to_string();
+                    // Convert host:port format to libp2p multiaddr format.
+                    // "127.0.0.1:4001" → "/ip4/127.0.0.1/tcp/4001"
+                    // Already-valid multiaddrs (starting with /) are left as-is.
+                    // .onion addresses are also left as-is for Tor handling.
+                    if !trimmed.starts_with('/') && !trimmed.contains(".onion") {
+                        if let Some((host, port)) = trimmed.split_once(':') {
+                            format!("/ip4/{}/tcp/{}", host, port)
+                        } else {
+                            trimmed
+                        }
                     } else {
                         trimmed
                     }
-                } else {
-                    trimmed
-                }
-            })
-            .filter(|s| !s.is_empty())
-            .collect(),
-        _ => Vec::new(),
+                })
+                .filter(|s| !s.is_empty())
+                .collect();
+            if !nodes.is_empty() {
+                return nodes;
+            }
+        }
     }
+
+    // Priority 2: Auto-discover from genesis config bootstrap_nodes[].onion_address
+    let genesis_path = if los_core::is_mainnet_build() {
+        "genesis_config.json"
+    } else {
+        "testnet-genesis/testnet_wallets.json"
+    };
+    if let Ok(json_data) = std::fs::read_to_string(genesis_path) {
+        if let Ok(config) = serde_json::from_str::<genesis::GenesisConfig>(&json_data) {
+            if let Some(ref nodes) = config.bootstrap_nodes {
+                // Filter out our own onion address to avoid self-dialing
+                let our_onion = std::env::var("LOS_ONION_ADDRESS").ok();
+                let peers: Vec<String> = nodes
+                    .iter()
+                    .filter_map(|node| {
+                        node.onion_address.as_ref().and_then(|onion| {
+                            if !onion.ends_with(".onion") {
+                                return None;
+                            }
+                            // Skip our own address
+                            if let Some(ref ours) = our_onion {
+                                if onion == ours {
+                                    return None;
+                                }
+                            }
+                            let port = node.p2p_port.unwrap_or(4001);
+                            Some(format!("{}:{}", onion, port))
+                        })
+                    })
+                    .collect();
+                if !peers.is_empty() {
+                    println!(
+                        "🧅 Auto-discovered {} bootstrap peers from genesis config",
+                        peers.len()
+                    );
+                    return peers;
+                }
+            }
+        }
+    }
+
+    Vec::new()
 }
 
 // Request body structure for sending LOS
@@ -6198,7 +6249,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let bootstrap_list = get_bootstrap_nodes();
         if bootstrap_list.is_empty() {
             println!(
-                "📡 No bootstrap nodes configured (set LOS_BOOTSTRAP_NODES for multi-node testnet)"
+                "📡 No bootstrap nodes found (checked LOS_BOOTSTRAP_NODES env and genesis config)"
+            );
+            println!(
+                "   To connect manually: export LOS_BOOTSTRAP_NODES=peer1.onion:4030,peer2.onion:4031"
             );
         }
         for addr in &bootstrap_list {

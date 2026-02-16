@@ -16,6 +16,42 @@ Running a validator node on Unauthority means hosting a Tor hidden service that 
 | **Stake** | 1,000 LOS minimum |
 | **Uptime** | ≥95% for reward eligibility |
 
+## Quick Start (Mainnet)
+
+The node auto-discovers bootstrap peers from the genesis config and auto-detects Tor.
+You only need **one environment variable** to get started:
+
+```bash
+# 1. Install Tor
+sudo apt install -y tor          # Linux
+brew install tor                  # macOS
+
+# 2. Start Tor
+sudo systemctl enable --now tor   # Linux
+brew services start tor           # macOS
+
+# 3. Build
+./install.sh --mainnet
+
+# 4. Configure Tor hidden service (for validator participation)
+sudo tee -a /etc/tor/torrc << 'EOF'
+HiddenServiceDir /var/lib/tor/los-validator/
+HiddenServicePort 3030 127.0.0.1:3030
+HiddenServicePort 4001 127.0.0.1:4001
+EOF
+sudo systemctl restart tor
+
+# 5. Run!
+export LOS_WALLET_PASSWORD='your-strong-password'
+./target/release/los-node --port 3030 --data-dir /opt/los-node
+```
+
+**What happens automatically:**
+- **Bootstrap peers:** Loaded from `genesis_config.json` (4 genesis validators)
+- **Tor SOCKS5 proxy:** Auto-detected at `127.0.0.1:9050`
+- **Onion address:** Read from Tor hidden service directory
+- **Wallet:** Created on first run (Dilithium5 post-quantum keypair)
+
 ## Building
 
 ```bash
@@ -60,28 +96,38 @@ export LOS_ONION_ADDRESS=$(cat /var/lib/tor/los-validator/hostname)
 
 The node will announce this address to the network for peer discovery.
 
+## Environment Variables
+
+| Variable | Required? | Default | Description |
+|---|---|---|---|
+| `LOS_WALLET_PASSWORD` | **Yes** | — | Password for encrypted wallet |
+| `LOS_ONION_ADDRESS` | Optional | Auto-read from Tor | Your .onion address |
+| `LOS_SOCKS5_PROXY` | Optional | Auto-detect `127.0.0.1:9050` | Tor SOCKS5 proxy |
+| `LOS_BOOTSTRAP_NODES` | Optional | Auto from genesis config | Comma-separated peer list |
+| `LOS_NODE_ID` | Optional | `validator-1` | Node identifier for logs |
+| `LOS_P2P_PORT` | Optional | `4001` | libp2p listen port |
+
 ## Starting a Validator Node
 
-### Testnet (Consensus Level)
+### Testnet
 ```bash
-export LOS_NODE_ID='my-validator'
-export LOS_TESTNET_LEVEL='consensus'
-export LOS_ONION_ADDRESS='your-onion-address.onion'
-export LOS_SOCKS5_PROXY='socks5h://127.0.0.1:9050'
-export LOS_BOOTSTRAP_NODES='peer1.onion:4001,peer2.onion:4001'
-
+export LOS_WALLET_PASSWORD='test-password'
 ./target/release/los-node --port 3030 --data-dir node_data/my-validator
 ```
 
-### Mainnet
+### Mainnet (Minimal — auto-bootstrap)
 ```bash
 export LOS_WALLET_PASSWORD='your-strong-password'
-export LOS_NODE_ID='my-validator'
+./target/release/los-node --port 3030 --data-dir /opt/los-node
+```
+
+### Mainnet (Full control — manual overrides)
+```bash
+export LOS_WALLET_PASSWORD='your-strong-password'
 export LOS_ONION_ADDRESS='your-onion-address.onion'
 export LOS_SOCKS5_PROXY='socks5h://127.0.0.1:9050'
-export LOS_BOOTSTRAP_NODES='boot1.onion:4001,boot2.onion:4001'
-
-./target/release/los-node --port 3030 --data-dir node_data/my-validator
+export LOS_BOOTSTRAP_NODES='peer1.onion:4030,peer2.onion:4031'
+./target/release/los-node --port 3030 --data-dir /opt/los-node
 ```
 
 ## Registering as a Validator

@@ -30,6 +30,8 @@ pub mod oracle_connector;
 pub mod host;
 // USP-01: Unauthority Standard for Permissionless Tokens
 pub mod usp01;
+// Token Registry: node-level USP-01 discovery and query helpers
+pub mod token_registry;
 
 /// Unauthority Virtual Machine (UVM)
 /// Executes WebAssembly smart contracts with permissionless deployment
@@ -370,6 +372,7 @@ impl WasmEngine {
     ///   Args are read via `host_get_arg()`, return data via `host_set_return()`.
     /// - Legacy contracts: exported function takes `i32` params directly, returns `i32` result.
     ///   Detected automatically by checking the function's WASM type signature.
+    #[allow(clippy::too_many_arguments)]
     pub fn execute_wasm_hosted(
         &self,
         bytecode: &[u8],

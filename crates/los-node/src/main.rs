@@ -1,3 +1,5 @@
+#![recursion_limit = "512"]
+
 use base64::Engine as _;
 use los_consensus::abft::ABFTConsensus; // aBFT engine for consensus stats & safety validation
 use los_consensus::checkpoint::{CheckpointManager, FinalityCheckpoint, CHECKPOINT_INTERVAL}; // Finality checkpoints
@@ -8,7 +10,7 @@ use los_core::oracle_consensus::OracleConsensus; // NEW: Oracle consensus
 use los_core::validator_rewards::ValidatorRewardPool;
 use los_core::{AccountState, Block, BlockType, Ledger, CIL_PER_LOS, MIN_VALIDATOR_STAKE_CIL};
 use los_network::{LosNode, NetworkEvent};
-use los_vm::{ContractCall, WasmEngine};
+use los_vm::{ContractCall, WasmEngine, token_registry};
 use rate_limiter::{filters::rate_limit, RateLimiter};
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -1901,6 +1903,78 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
             .boxed()
     };
 
+    // ── USP-01 Token Routes ──
+
+    // GET /tokens — List all deployed USP-01 tokens
+    let engine_tokens = wasm_engine.clone();
+    let list_tokens_route = warp::path("tokens")
+        .and(with_state(engine_tokens))
+        .map(|engine: Arc<WasmEngine>| {
+            let tokens = token_registry::list_usp01_tokens(&engine);
+            api_json(serde_json::json!({
+                "status": "success",
+                "count": tokens.len(),
+                "tokens": tokens
+            }))
+        });
+
+    // GET /token/:address — Get USP-01 token metadata
+    let engine_token_info = wasm_engine.clone();
+    let token_info_route = warp::path!("token" / String)
+        .and(warp::get())
+        .and(with_state(engine_token_info))
+        .map(|addr: String, engine: Arc<WasmEngine>| {
+            match token_registry::query_token_info(&engine, &addr) {
+                Some(info) => api_json(serde_json::json!({
+                    "status": "success",
+                    "token": info
+                })),
+                None => api_json(serde_json::json!({
+                    "status": "error",
+                    "msg": "Contract not found or not a USP-01 token"
+                })),
+            }
+        });
+
+    // GET /token/:address/balance/:holder — Get token balance for a holder
+    let engine_token_bal = wasm_engine.clone();
+    let token_balance_route = warp::path!("token" / String / "balance" / String)
+        .and(with_state(engine_token_bal))
+        .map(|contract: String, holder: String, engine: Arc<WasmEngine>| {
+            match token_registry::query_token_balance(&engine, &contract, &holder) {
+                Ok(balance) => api_json(serde_json::json!({
+                    "status": "success",
+                    "contract": contract,
+                    "holder": holder,
+                    "balance": balance.to_string()
+                })),
+                Err(e) => api_json(serde_json::json!({
+                    "status": "error",
+                    "msg": e
+                })),
+            }
+        });
+
+    // GET /token/:address/allowance/:owner/:spender — Get token allowance
+    let engine_token_allow = wasm_engine.clone();
+    let token_allowance_route = warp::path!("token" / String / "allowance" / String / String)
+        .and(with_state(engine_token_allow))
+        .map(|contract: String, owner: String, spender: String, engine: Arc<WasmEngine>| {
+            match token_registry::query_token_allowance(&engine, &contract, &owner, &spender) {
+                Ok(allowance) => api_json(serde_json::json!({
+                    "status": "success",
+                    "contract": contract,
+                    "owner": owner,
+                    "spender": spender,
+                    "allowance": allowance.to_string()
+                })),
+                Err(e) => api_json(serde_json::json!({
+                    "status": "error",
+                    "msg": e
+                })),
+            }
+        });
+
     // 10. GET /metrics (Prometheus endpoint)
     let metrics_clone = metrics.clone();
     let ledger_metrics = ledger.clone();
@@ -2611,7 +2685,11 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
                 "reset_burn_txid": "POST /reset-burn-txid - Reset stuck burn TXID",
                 "deploy_contract": "POST /deploy-contract - Deploy WASM smart contract",
                 "call_contract": "POST /call-contract - Call smart contract method",
-                "contract": "GET /contract/{address} - Contract info and state"
+                "contract": "GET /contract/{address} - Contract info and state",
+                "tokens": "GET /tokens - List all USP-01 tokens",
+                "token_info": "GET /token/{address} - USP-01 token metadata",
+                "token_balance": "GET /token/{address}/balance/{holder} - Token balance",
+                "token_allowance": "GET /token/{address}/allowance/{owner}/{spender} - Token allowance"
             },
             "docs": "https://github.com/unauthoritymky-6236/unauthority-core",
             "status": "operational"
@@ -3677,10 +3755,19 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
         .or(validator_api::validator_routes().boxed())
         .boxed();
 
+    // Token routes (USP-01)
+    let group5 = list_tokens_route
+        .boxed()
+        .or(token_balance_route.boxed())
+        .or(token_allowance_route.boxed())
+        .or(token_info_route.boxed())
+        .boxed();
+
     let routes = group1
         .or(group2)
         .or(group3)
         .or(group4)
+        .or(group5)
         .with(cors) // Apply CORS
         .with(warp::log("api"))
         .recover(handle_rejection);

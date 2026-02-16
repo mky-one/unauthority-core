@@ -45,7 +45,19 @@ COPY --from=builder /build/target/release/los-cli ./los-cli
 
 # Copy genesis config (stripped of secrets)
 COPY --from=builder /build/genesis_config_stripped.json ./genesis_config.json
-COPY testnet-genesis/ ./testnet-genesis/
+# Strip secrets from testnet-genesis (same treatment as mainnet genesis)
+COPY testnet-genesis/ ./testnet-genesis-raw/
+RUN if [ -f testnet-genesis-raw/testnet_wallets.json ]; then \
+      jq '[.wallets[] | del(.private_key, .seed_phrase, .secret_key)]' \
+        testnet-genesis-raw/testnet_wallets.json > /tmp/tw.json && \
+      mkdir -p testnet-genesis && \
+      mv /tmp/tw.json testnet-genesis/testnet_wallets.json && \
+      cp testnet-genesis-raw/*.json testnet-genesis/ 2>/dev/null || true && \
+      cp testnet-genesis/testnet_wallets.json testnet-genesis/testnet_wallets.json; \
+    else \
+      cp -r testnet-genesis-raw testnet-genesis; \
+    fi && \
+    rm -rf testnet-genesis-raw
 
 USER los
 

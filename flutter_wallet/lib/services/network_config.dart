@@ -1,6 +1,6 @@
+import '../utils/log.dart';
 import 'dart:convert';
 import 'package:flutter/services.dart' show rootBundle;
-import 'package:flutter/foundation.dart';
 
 /// Loads bootstrap node addresses from assets/network_config.json.
 ///
@@ -22,13 +22,13 @@ class NetworkConfig {
       _testnetNodes = _parseNodes(_config!['testnet']);
       _mainnetNodes = _parseNodes(_config!['mainnet']);
 
-      debugPrint(
+      losLog(
         '🌐 NetworkConfig loaded: '
         '${_testnetNodes!.length} testnet node(s), '
         '${_mainnetNodes!.length} mainnet node(s)',
       );
     } catch (e) {
-      debugPrint('⚠️ NetworkConfig load failed: $e');
+      losLog('⚠️ NetworkConfig load failed: $e');
       _testnetNodes = [];
       _mainnetNodes = [];
     }

@@ -1,7 +1,7 @@
+import '../utils/log.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
-import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/io_client.dart';
 import 'package:socks5_proxy/socks_client.dart';
@@ -150,7 +150,7 @@ class ApiService {
           : _getBaseUrl(this.environment);
     }
     _clientReady = _initializeClient();
-    debugPrint('🔗 LOS ApiService initialized with baseUrl: $baseUrl '
+    losLog('🔗 LOS ApiService initialized with baseUrl: $baseUrl '
         '(${_bootstrapUrls.length} bootstrap nodes available)');
   }
 
@@ -171,7 +171,7 @@ class ApiService {
         .where((url) {
       // SECURITY: Mainnet requires .onion-only connections (Tor network)
       if (env == NetworkEnvironment.mainnet && !url.contains('.onion')) {
-        debugPrint('🚫 Rejected non-.onion URL for mainnet: $url');
+        losLog('🚫 Rejected non-.onion URL for mainnet: $url');
         return false;
       }
       return true;
@@ -189,7 +189,7 @@ class ApiService {
           .toList();
       if (newPeers.isNotEmpty) {
         _bootstrapUrls = [...newPeers, ..._bootstrapUrls];
-        debugPrint('🔗 PeerDiscovery: added ${newPeers.length} saved peer(s) '
+        losLog('🔗 PeerDiscovery: added ${newPeers.length} saved peer(s) '
             '(total: ${_bootstrapUrls.length} endpoints)');
       }
     }
@@ -233,17 +233,17 @@ class ApiService {
 
         // Check if host is too slow (degraded)
         if (rtt > _slowThresholdMs) {
-          debugPrint(
+          losLog(
               '🔌 [HealthCheck] Current host $baseUrl is SLOW (${rtt}ms > ${_slowThresholdMs}ms) '
               '— searching for faster host...');
           _triggerFullProbe();
         } else {
-          debugPrint('🔌 [HealthCheck] Current host $baseUrl OK (${rtt}ms) ✓');
+          losLog('🔌 [HealthCheck] Current host $baseUrl OK (${rtt}ms) ✓');
         }
       } else {
         // HTTP error (4xx/5xx) → host unhealthy
         _getHealth(baseUrl).recordFailure();
-        debugPrint(
+        losLog(
             '🔌 [HealthCheck] Current host $baseUrl returned HTTP ${response.statusCode} '
             '— searching for new host...');
         _triggerFullProbe();
@@ -251,7 +251,7 @@ class ApiService {
     } catch (e) {
       // Timeout or connection error → host is DOWN
       _getHealth(baseUrl).recordFailure();
-      debugPrint('🔌 [HealthCheck] Current host $baseUrl UNREACHABLE ($e) '
+      losLog('🔌 [HealthCheck] Current host $baseUrl UNREACHABLE ($e) '
           '— searching for new host...');
       _triggerFullProbe();
     }
@@ -269,7 +269,7 @@ class ApiService {
   /// NOT called periodically — only triggered when needed.
   Future<void> probeAndSelectBestNode() async {
     if (_disposed || _bootstrapUrls.isEmpty) return;
-    debugPrint(
+    losLog(
         '📡 [Probe] Searching for best host across ${_bootstrapUrls.length} node(s)...');
 
     final results = <String, int>{};
@@ -279,7 +279,7 @@ class ApiService {
     final nodesToProbe = _bootstrapUrls.where((url) {
       final health = _nodeHealthMap[url];
       if (health != null && health.isInCooldown) {
-        debugPrint(
+        losLog(
             '📡 [Probe] $url — skipped (cooldown, ${health.consecutiveFailures} failures)');
         return false;
       }
@@ -300,21 +300,21 @@ class ApiService {
           if (response.statusCode >= 200 && response.statusCode < 300) {
             results[url] = sw.elapsedMilliseconds;
             _getHealth(url).recordSuccess(sw.elapsedMilliseconds);
-            debugPrint('📡 [Probe] $url — ${sw.elapsedMilliseconds}ms ✓');
+            losLog('📡 [Probe] $url — ${sw.elapsedMilliseconds}ms ✓');
           } else {
             _getHealth(url).recordFailure();
-            debugPrint('📡 [Probe] $url — HTTP ${response.statusCode} ✗');
+            losLog('📡 [Probe] $url — HTTP ${response.statusCode} ✗');
           }
         } catch (e) {
           _getHealth(url).recordFailure();
-          debugPrint('📡 [Probe] $url — unreachable ($e) ✗');
+          losLog('📡 [Probe] $url — unreachable ($e) ✗');
         }
       });
       await Future.wait(futures);
     }
 
     if (results.isEmpty) {
-      debugPrint(
+      losLog(
           '📡 [Probe] No responsive nodes found — keeping current: $baseUrl');
       return;
     }
@@ -331,11 +331,11 @@ class ApiService {
       baseUrl = bestUrl;
       _currentNodeIndex =
           _bootstrapUrls.indexOf(bestUrl).clamp(0, _bootstrapUrls.length - 1);
-      debugPrint(
+      losLog(
           '🏆 [Probe] Switched to $bestUrl (${bestLatency}ms) from $oldUrl');
       onNodeSwitched?.call(baseUrl);
     } else {
-      debugPrint(
+      losLog(
           '🏆 [Probe] Best node unchanged: $baseUrl (${bestLatency}ms) — '
           '${sorted.length}/${_bootstrapUrls.length} responsive');
     }
@@ -364,7 +364,7 @@ class ApiService {
       if (_getHealth(candidate).isInCooldown) continue;
       if (candidate != baseUrl) {
         baseUrl = candidate;
-        debugPrint(
+        losLog(
             '🔄 Failover: switched to node ${_currentNodeIndex + 1}/${_bootstrapUrls.length}: $baseUrl');
         onNodeSwitched?.call(baseUrl);
         return true;
@@ -372,7 +372,7 @@ class ApiService {
     } while (_currentNodeIndex != startIndex);
     // All nodes in cooldown — reset cooldowns and try round-robin
     if (_allNodesInCooldown()) {
-      debugPrint(
+      losLog(
           '⚠️ All nodes in cooldown — resetting cooldowns for fresh retry');
       for (final h in _nodeHealthMap.values) {
         h.consecutiveFailures = 0;
@@ -428,7 +428,7 @@ class ApiService {
 
         // HTTP 5xx = server error → treat as node failure, try next
         if (response.statusCode >= 500) {
-          debugPrint(
+          losLog(
               '⚠️ Node ${_currentNodeIndex + 1} returned HTTP ${response.statusCode} for $endpoint');
           _getHealth(baseUrl).recordFailure();
           final isLastAttempt = attempts >= maxAttempts - 1;
@@ -448,15 +448,15 @@ class ApiService {
       } on Exception catch (e) {
         _getHealth(baseUrl).recordFailure();
         final isLastAttempt = attempts >= maxAttempts - 1;
-        debugPrint('⚠️ Node ${_currentNodeIndex + 1} failed for $endpoint: $e');
+        losLog('⚠️ Node ${_currentNodeIndex + 1} failed for $endpoint: $e');
         if (isLastAttempt) {
-          debugPrint(
+          losLog(
               '❌ All ${attempts + 1} bootstrap nodes failed for $endpoint');
           rethrow;
         }
         _switchToNextNode();
         attempts++;
-        debugPrint('🔄 Retrying $endpoint on node ${_currentNodeIndex + 1}...');
+        losLog('🔄 Retrying $endpoint on node ${_currentNodeIndex + 1}...');
       }
     }
     throw Exception('All bootstrap nodes unreachable for $endpoint');
@@ -473,7 +473,7 @@ class ApiService {
       await discoverAndSavePeers();
       await probeAndSelectBestNode();
     } catch (e) {
-      debugPrint('⚠️ Initial discovery/probe failed (non-critical): $e');
+      losLog('⚠️ Initial discovery/probe failed (non-critical): $e');
     }
     // Start periodic background timers
     _startBackgroundTimers();
@@ -494,7 +494,7 @@ class ApiService {
       if (!_disposed) _checkCurrentHostHealth();
     });
 
-    debugPrint('⏰ Background timers started: '
+    losLog('⏰ Background timers started: '
         'discovery every ${_rediscoveryInterval.inMinutes}m, '
         'current-host health check every ${_healthCheckInterval.inMinutes}m');
   }
@@ -503,7 +503,7 @@ class ApiService {
   /// Triggers a full probe to find a better node.
   void onHealthDegraded() {
     if (_disposed) return;
-    debugPrint('🔌 Health degraded — searching for new host...');
+    losLog('🔌 Health degraded — searching for new host...');
     _getHealth(baseUrl).recordFailure();
     _triggerFullProbe();
   }
@@ -520,15 +520,15 @@ class ApiService {
     try {
       _client = await _createTorClient();
       if (_hasTor) {
-        debugPrint('✅ Tor SOCKS5 client ready (can reach .onion peers)');
+        losLog('✅ Tor SOCKS5 client ready (can reach .onion peers)');
       }
     } catch (e) {
-      debugPrint('⚠️ Tor init failed ($e) — falling back to direct HTTP');
+      losLog('⚠️ Tor init failed ($e) — falling back to direct HTTP');
       _client = http.Client();
       _hasTor = false;
     }
     if (!_hasTor && !baseUrl.contains('.onion')) {
-      debugPrint('✅ Direct HTTP client for $baseUrl (Tor unavailable)');
+      losLog('✅ Direct HTTP client for $baseUrl (Tor unavailable)');
     }
     // After client is ready, load saved peers into bootstrap list
     await _loadSavedPeers();
@@ -544,7 +544,7 @@ class ApiService {
     // AND sets _isRunning=true, which is critical for shared TorService state.
     final started = await _torService.start();
     if (!started) {
-      debugPrint('⚠️ Tor unavailable — no SOCKS5 proxy detected on any port. '
+      losLog('⚠️ Tor unavailable — no SOCKS5 proxy detected on any port. '
           'Falling back to direct HTTP (cannot reach .onion addresses).');
       _hasTor = false;
       return http.Client();
@@ -564,7 +564,7 @@ class ApiService {
     httpClient.idleTimeout = const Duration(seconds: 30);
 
     _hasTor = true;
-    debugPrint('✅ Tor SOCKS5 proxy configured (localhost:$socksPort)');
+    losLog('✅ Tor SOCKS5 proxy configured (localhost:$socksPort)');
     return IOClient(httpClient);
   }
 
@@ -574,7 +574,7 @@ class ApiService {
 
     // Mainnet guard: refuse switch if no mainnet nodes are configured
     if (newEnv == NetworkEnvironment.mainnet && _bootstrapUrls.isEmpty) {
-      debugPrint('🚫 Cannot switch to mainnet: no bootstrap nodes configured');
+      losLog('🚫 Cannot switch to mainnet: no bootstrap nodes configured');
       // Revert to testnet
       _loadBootstrapUrls(NetworkEnvironment.testnet);
       throw StateError(
@@ -593,13 +593,13 @@ class ApiService {
     baseUrl =
         _bootstrapUrls.isNotEmpty ? _bootstrapUrls.first : _getBaseUrl(newEnv);
     _clientReady = _initializeClient();
-    debugPrint('🔄 Switched to ${newEnv.name.toUpperCase()}: $baseUrl '
+    losLog('🔄 Switched to ${newEnv.name.toUpperCase()}: $baseUrl '
         '(${_bootstrapUrls.length} nodes)');
   }
 
   // Node Info
   Future<Map<String, dynamic>> getNodeInfo() async {
-    debugPrint('🌐 [ApiService.getNodeInfo] Fetching node info...');
+    losLog('🌐 [ApiService.getNodeInfo] Fetching node info...');
     try {
       final response = await _requestWithFailover(
         (url) => _client.get(Uri.parse('$url/node-info')),
@@ -607,13 +607,13 @@ class ApiService {
       );
       if (response.statusCode >= 200 && response.statusCode < 300) {
         final data = json.decode(response.body);
-        debugPrint(
+        losLog(
             '🌐 [ApiService.getNodeInfo] SUCCESS block_height=${data['block_height'] ?? data['protocol']?['block_height'] ?? 'N/A'}');
         return data;
       }
       throw Exception('Failed to get node info: ${response.statusCode}');
     } catch (e) {
-      debugPrint('❌ getNodeInfo error: $e');
+      losLog('❌ getNodeInfo error: $e');
       rethrow;
     }
   }
@@ -622,7 +622,7 @@ class ApiService {
   /// Returns the estimated fee in CIL, accounting for anti-whale scaling.
   /// Wallet MUST call this before constructing a signed block.
   Future<Map<String, dynamic>> getFeeEstimate(String address) async {
-    debugPrint(
+    losLog(
         '🌐 [ApiService.getFeeEstimate] Fetching fee estimate for $address...');
     try {
       final response = await _requestWithFailover(
@@ -631,13 +631,13 @@ class ApiService {
       );
       if (response.statusCode >= 200 && response.statusCode < 300) {
         final data = json.decode(response.body);
-        debugPrint(
+        losLog(
             '🌐 [ApiService.getFeeEstimate] SUCCESS fee=${data['estimated_fee_cil']} CIL');
         return data;
       }
       throw Exception('Failed to get fee estimate: ${response.statusCode}');
     } catch (e) {
-      debugPrint('⚠️ getFeeEstimate error: $e');
+      losLog('⚠️ getFeeEstimate error: $e');
       // Re-throw so callers can show the user a proper error
       // instead of silently using a stale hardcoded fee.
       rethrow;
@@ -646,7 +646,7 @@ class ApiService {
 
   // Health Check
   Future<Map<String, dynamic>> getHealth() async {
-    debugPrint('🌐 [ApiService.getHealth] Fetching health...');
+    losLog('🌐 [ApiService.getHealth] Fetching health...');
     try {
       final response = await _requestWithFailover(
         (url) => _client.get(Uri.parse('$url/health')),
@@ -654,19 +654,19 @@ class ApiService {
       );
       if (response.statusCode >= 200 && response.statusCode < 300) {
         final data = json.decode(response.body);
-        debugPrint('🌐 [ApiService.getHealth] SUCCESS');
+        losLog('🌐 [ApiService.getHealth] SUCCESS');
         return data;
       }
       throw Exception('Failed to get health: ${response.statusCode}');
     } catch (e) {
-      debugPrint('❌ getHealth error: $e');
+      losLog('❌ getHealth error: $e');
       rethrow;
     }
   }
 
   // Get Balance
   Future<Account> getBalance(String address) async {
-    debugPrint('🌐 [ApiService.getBalance] Fetching balance for $address...');
+    losLog('🌐 [ApiService.getBalance] Fetching balance for $address...');
     try {
       final response = await _requestWithFailover(
         (url) => _client.get(Uri.parse('$url/bal/$address')),
@@ -674,7 +674,7 @@ class ApiService {
       );
       if (response.statusCode >= 200 && response.statusCode < 300) {
         final data = json.decode(response.body);
-        debugPrint(
+        losLog(
             '🌐 [ApiService.getBalance] SUCCESS balance=${data['balance_cil'] ?? 0} CIL');
         // Prefer balance_cil_str (string) over balance_cil (number) for
         // JSON precision safety: numbers > 2^53 may lose precision in JSON parsing.
@@ -695,14 +695,14 @@ class ApiService {
       }
       throw Exception('Failed to get balance: ${response.statusCode}');
     } catch (e) {
-      debugPrint('❌ getBalance error: $e');
+      losLog('❌ getBalance error: $e');
       rethrow;
     }
   }
 
   // Get Account (with history)
   Future<Account> getAccount(String address) async {
-    debugPrint('🌐 [ApiService.getAccount] Fetching account for $address...');
+    losLog('🌐 [ApiService.getAccount] Fetching account for $address...');
     try {
       final response = await _requestWithFailover(
         (url) => _client.get(Uri.parse('$url/account/$address')),
@@ -714,19 +714,19 @@ class ApiService {
         if (data is Map<String, dynamic> && !data.containsKey('address')) {
           data['address'] = address;
         }
-        debugPrint('🌐 [ApiService.getAccount] SUCCESS for $address');
+        losLog('🌐 [ApiService.getAccount] SUCCESS for $address');
         return Account.fromJson(data);
       }
       throw Exception('Failed to get account: ${response.statusCode}');
     } catch (e) {
-      debugPrint('❌ getAccount error: $e');
+      losLog('❌ getAccount error: $e');
       rethrow;
     }
   }
 
   // Request Faucet
   Future<Map<String, dynamic>> requestFaucet(String address) async {
-    debugPrint('🚠 [API] requestFaucet -> $baseUrl/faucet  address=$address');
+    losLog('🚠 [API] requestFaucet -> $baseUrl/faucet  address=$address');
     try {
       final response = await _requestWithFailover(
         (url) => _client.post(
@@ -742,14 +742,14 @@ class ApiService {
       // Critical: Check BOTH status code AND response body status
       // Backend returns 200 on success, >= 400 on errors (400 for validation, 429 for rate limit)
       if (response.statusCode >= 400 || data['status'] == 'error') {
-        debugPrint('🚠 [API] faucet FAILED: ${data['msg']}');
+        losLog('🚠 [API] faucet FAILED: ${data['msg']}');
         throw Exception(data['msg'] ?? 'Faucet request failed');
       }
 
-      debugPrint('🚠 [API] faucet SUCCESS: $data');
+      losLog('🚠 [API] faucet SUCCESS: $data');
       return data;
     } catch (e) {
-      debugPrint('❌ requestFaucet error: $e');
+      losLog('❌ requestFaucet error: $e');
       rethrow;
     }
   }
@@ -770,7 +770,7 @@ class ApiService {
     int?
         amountCil, // Amount already in CIL (for sub-LOS precision). Backend expects u128 integer.
   }) async {
-    debugPrint(
+    losLog(
         '💸 [API] sendTransaction -> $baseUrl/send  from=$from to=$to amount=$amount sig=${signature != null}');
     try {
       final body = <String, dynamic>{
@@ -818,14 +818,14 @@ class ApiService {
       // Critical: Check BOTH status code AND response body status
       // Backend returns 200 on success, >= 400 on errors
       if (response.statusCode >= 400 || data['status'] == 'error') {
-        debugPrint('💸 [API] send FAILED: ${data['msg']}');
+        losLog('💸 [API] send FAILED: ${data['msg']}');
         throw Exception(data['msg'] ?? 'Transaction failed');
       }
 
-      debugPrint('💸 [API] send SUCCESS: ${data['tx_hash'] ?? data['txid']}');
+      losLog('💸 [API] send SUCCESS: ${data['tx_hash'] ?? data['txid']}');
       return data;
     } catch (e) {
-      debugPrint('❌ sendTransaction error: $e');
+      losLog('❌ sendTransaction error: $e');
       rethrow;
     }
   }
@@ -838,7 +838,7 @@ class ApiService {
     String? signature,
     String? publicKey,
   }) async {
-    debugPrint(
+    losLog(
         '🔥 [API] submitBurn -> $baseUrl/burn  coin=$coinType txid=$txid');
     try {
       final body = <String, dynamic>{
@@ -870,21 +870,21 @@ class ApiService {
       // Critical: Check BOTH status code AND response body status
       // Backend returns 200 on success, >= 400 on errors
       if (response.statusCode >= 400 || data['status'] == 'error') {
-        debugPrint('🔥 [API] burn FAILED: ${data['msg']}');
+        losLog('🔥 [API] burn FAILED: ${data['msg']}');
         throw Exception(data['msg'] ?? 'Burn submission failed');
       }
 
-      debugPrint('🔥 [API] burn SUCCESS: $data');
+      losLog('🔥 [API] burn SUCCESS: $data');
       return data;
     } catch (e) {
-      debugPrint('❌ submitBurn error: $e');
+      losLog('❌ submitBurn error: $e');
       rethrow;
     }
   }
 
   // Get Validators
   Future<List<ValidatorInfo>> getValidators() async {
-    debugPrint('🌐 [ApiService.getValidators] Fetching validators...');
+    losLog('🌐 [ApiService.getValidators] Fetching validators...');
     try {
       final response = await _requestWithFailover(
         (url) => _client.get(Uri.parse('$url/validators')),
@@ -897,20 +897,20 @@ class ApiService {
             ? decoded
             : (decoded['validators'] as List<dynamic>?) ?? [];
         final validators = data.map((v) => ValidatorInfo.fromJson(v)).toList();
-        debugPrint(
+        losLog(
             '🌐 [ApiService.getValidators] SUCCESS count=${validators.length}');
         return validators;
       }
       throw Exception('Failed to get validators: ${response.statusCode}');
     } catch (e) {
-      debugPrint('❌ getValidators error: $e');
+      losLog('❌ getValidators error: $e');
       rethrow;
     }
   }
 
   // Get Latest Block — uses /blocks/recent endpoint which returns timestamp
   Future<BlockInfo> getLatestBlock() async {
-    debugPrint('🌐 [ApiService.getLatestBlock] Fetching latest block...');
+    losLog('🌐 [ApiService.getLatestBlock] Fetching latest block...');
     try {
       final response = await _requestWithFailover(
         (url) => _client.get(Uri.parse('$url/blocks/recent')),
@@ -923,7 +923,7 @@ class ApiService {
             : (decoded['blocks'] as List<dynamic>?) ?? [];
         if (blocks.isNotEmpty) {
           final block = BlockInfo.fromJson(blocks[0] as Map<String, dynamic>);
-          debugPrint(
+          losLog(
               '🌐 [ApiService.getLatestBlock] SUCCESS height=${block.height}');
           return block;
         }
@@ -932,14 +932,14 @@ class ApiService {
       }
       throw Exception('Failed to get latest block: ${response.statusCode}');
     } catch (e) {
-      debugPrint('❌ getLatestBlock error: $e');
+      losLog('❌ getLatestBlock error: $e');
       rethrow;
     }
   }
 
   // Get Recent Blocks
   Future<List<BlockInfo>> getRecentBlocks() async {
-    debugPrint('🌐 [ApiService.getRecentBlocks] Fetching recent blocks...');
+    losLog('🌐 [ApiService.getRecentBlocks] Fetching recent blocks...');
     try {
       final response = await _requestWithFailover(
         (url) => _client.get(Uri.parse('$url/blocks/recent')),
@@ -952,13 +952,13 @@ class ApiService {
             ? decoded
             : (decoded['blocks'] as List<dynamic>?) ?? [];
         final blocks = data.map((b) => BlockInfo.fromJson(b)).toList();
-        debugPrint(
+        losLog(
             '🌐 [ApiService.getRecentBlocks] SUCCESS count=${blocks.length}');
         return blocks;
       }
       throw Exception('Failed to get recent blocks: ${response.statusCode}');
     } catch (e) {
-      debugPrint('❌ getRecentBlocks error: $e');
+      losLog('❌ getRecentBlocks error: $e');
       rethrow;
     }
   }
@@ -966,7 +966,7 @@ class ApiService {
   // Get Peers
   // Backend returns {"peers": [{...}], "peer_count": N, ...}
   Future<List<String>> getPeers() async {
-    debugPrint('🌐 [ApiService.getPeers] Fetching peers...');
+    losLog('🌐 [ApiService.getPeers] Fetching peers...');
     try {
       final response = await _requestWithFailover(
         (url) => _client.get(Uri.parse('$url/peers')),
@@ -992,19 +992,19 @@ class ApiService {
         } else {
           peers = [];
         }
-        debugPrint('🌐 [ApiService.getPeers] SUCCESS count=${peers.length}');
+        losLog('🌐 [ApiService.getPeers] SUCCESS count=${peers.length}');
         return peers;
       }
       throw Exception('Failed to get peers: ${response.statusCode}');
     } catch (e) {
-      debugPrint('❌ getPeers error: $e');
+      losLog('❌ getPeers error: $e');
       rethrow;
     }
   }
 
   // Get Transaction History for address
   Future<List<Transaction>> getHistory(String address) async {
-    debugPrint('🌐 [ApiService.getHistory] Fetching history for $address...');
+    losLog('🌐 [ApiService.getHistory] Fetching history for $address...');
     try {
       final response = await _requestWithFailover(
         (url) => _client.get(Uri.parse('$url/history/$address')),
@@ -1018,12 +1018,12 @@ class ApiService {
             ? decoded
             : (decoded['transactions'] as List<dynamic>?) ?? [];
         final txList = data.map((tx) => Transaction.fromJson(tx)).toList();
-        debugPrint('🌐 [ApiService.getHistory] SUCCESS count=${txList.length}');
+        losLog('🌐 [ApiService.getHistory] SUCCESS count=${txList.length}');
         return txList;
       }
       throw Exception('Failed to get history: ${response.statusCode}');
     } catch (e) {
-      debugPrint('❌ getHistory error: $e');
+      losLog('❌ getHistory error: $e');
       rethrow;
     }
   }
@@ -1034,7 +1034,7 @@ class ApiService {
 
   /// Get supply information: remaining supply, total burned USD, circulating supply.
   Future<Map<String, dynamic>> getSupply() async {
-    debugPrint('🌐 [ApiService.getSupply] Fetching supply info...');
+    losLog('🌐 [ApiService.getSupply] Fetching supply info...');
     try {
       final response = await _requestWithFailover(
         (url) => _client.get(Uri.parse('$url/supply')),
@@ -1042,12 +1042,12 @@ class ApiService {
       );
       if (response.statusCode >= 200 && response.statusCode < 300) {
         final data = json.decode(response.body);
-        debugPrint('🌐 [ApiService.getSupply] SUCCESS');
+        losLog('🌐 [ApiService.getSupply] SUCCESS');
         return data;
       }
       throw Exception('Failed to get supply: ${response.statusCode}');
     } catch (e) {
-      debugPrint('❌ getSupply error: $e');
+      losLog('❌ getSupply error: $e');
       rethrow;
     }
   }
@@ -1055,7 +1055,7 @@ class ApiService {
   /// Look up a specific transaction by its hash.
   /// Returns: { status, transaction: { hash, from, to, type, amount, amount_cil, timestamp, signature, confirmed } }
   Future<Map<String, dynamic>> getTransaction(String hash) async {
-    debugPrint('🌐 [ApiService.getTransaction] Fetching transaction $hash...');
+    losLog('🌐 [ApiService.getTransaction] Fetching transaction $hash...');
     try {
       final response = await _requestWithFailover(
         (url) => _client.get(Uri.parse('$url/transaction/$hash')),
@@ -1063,12 +1063,12 @@ class ApiService {
       );
       if (response.statusCode >= 200 && response.statusCode < 300) {
         final data = json.decode(response.body);
-        debugPrint('🌐 [ApiService.getTransaction] SUCCESS');
+        losLog('🌐 [ApiService.getTransaction] SUCCESS');
         return data;
       }
       throw Exception('Failed to get transaction: ${response.statusCode}');
     } catch (e) {
-      debugPrint('❌ getTransaction error: $e');
+      losLog('❌ getTransaction error: $e');
       rethrow;
     }
   }
@@ -1076,7 +1076,7 @@ class ApiService {
   /// Look up a specific block by its hash.
   /// Returns: { status, block: { hash, account, previous, type, amount, amount_cil, ... } }
   Future<Map<String, dynamic>> getBlock(String hash) async {
-    debugPrint('🌐 [ApiService.getBlock] Fetching block $hash...');
+    losLog('🌐 [ApiService.getBlock] Fetching block $hash...');
     try {
       final response = await _requestWithFailover(
         (url) => _client.get(Uri.parse('$url/block/$hash')),
@@ -1084,12 +1084,12 @@ class ApiService {
       );
       if (response.statusCode >= 200 && response.statusCode < 300) {
         final data = json.decode(response.body);
-        debugPrint('🌐 [ApiService.getBlock] SUCCESS');
+        losLog('🌐 [ApiService.getBlock] SUCCESS');
         return data;
       }
       throw Exception('Failed to get block: ${response.statusCode}');
     } catch (e) {
-      debugPrint('❌ getBlock error: $e');
+      losLog('❌ getBlock error: $e');
       rethrow;
     }
   }
@@ -1097,7 +1097,7 @@ class ApiService {
   /// Search for addresses, transactions, or blocks by query string.
   /// Returns: { query, results: [{ type, address, balance, block_count }], count }
   Future<Map<String, dynamic>> search(String query) async {
-    debugPrint('🌐 [ApiService.search] Searching for "$query"...');
+    losLog('🌐 [ApiService.search] Searching for "$query"...');
     try {
       final response = await _requestWithFailover(
         (url) => _client.get(Uri.parse('$url/search/$query')),
@@ -1105,20 +1105,20 @@ class ApiService {
       );
       if (response.statusCode >= 200 && response.statusCode < 300) {
         final data = json.decode(response.body);
-        debugPrint(
+        losLog(
             '🌐 [ApiService.search] SUCCESS count=${data['count'] ?? 0}');
         return data;
       }
       throw Exception('Failed to search: ${response.statusCode}');
     } catch (e) {
-      debugPrint('❌ search error: $e');
+      losLog('❌ search error: $e');
       rethrow;
     }
   }
 
   /// Get network consensus status: protocol info, safety metrics, finality times.
   Future<Map<String, dynamic>> getConsensus() async {
-    debugPrint('🌐 [ApiService.getConsensus] Fetching consensus...');
+    losLog('🌐 [ApiService.getConsensus] Fetching consensus...');
     try {
       final response = await _requestWithFailover(
         (url) => _client.get(Uri.parse('$url/consensus')),
@@ -1126,19 +1126,19 @@ class ApiService {
       );
       if (response.statusCode >= 200 && response.statusCode < 300) {
         final data = json.decode(response.body);
-        debugPrint('🌐 [ApiService.getConsensus] SUCCESS');
+        losLog('🌐 [ApiService.getConsensus] SUCCESS');
         return data;
       }
       throw Exception('Failed to get consensus: ${response.statusCode}');
     } catch (e) {
-      debugPrint('❌ getConsensus error: $e');
+      losLog('❌ getConsensus error: $e');
       rethrow;
     }
   }
 
   /// Get reward pool information: epoch, distribution, validator eligibility.
   Future<Map<String, dynamic>> getRewardInfo() async {
-    debugPrint('🌐 [ApiService.getRewardInfo] Fetching reward info...');
+    losLog('🌐 [ApiService.getRewardInfo] Fetching reward info...');
     try {
       final response = await _requestWithFailover(
         (url) => _client.get(Uri.parse('$url/reward-info')),
@@ -1146,25 +1146,25 @@ class ApiService {
       );
       if (response.statusCode >= 200 && response.statusCode < 300) {
         final data = json.decode(response.body);
-        debugPrint('🌐 [ApiService.getRewardInfo] SUCCESS');
+        losLog('🌐 [ApiService.getRewardInfo] SUCCESS');
         return data;
       }
       throw Exception('Failed to get reward info: ${response.statusCode}');
     } catch (e) {
-      debugPrint('❌ getRewardInfo error: $e');
+      losLog('❌ getRewardInfo error: $e');
       rethrow;
     }
   }
 
   /// Cleanup: stop bundled Tor and cancel background timers
   Future<void> dispose() async {
-    debugPrint('🌐 [ApiService.dispose] Disposing...');
+    losLog('🌐 [ApiService.dispose] Disposing...');
     _disposed = true;
     _rediscoveryTimer?.cancel();
     _healthCheckTimer?.cancel();
     _client.close();
     await _torService.stop();
-    debugPrint('🌐 [ApiService.dispose] Disposed');
+    losLog('🌐 [ApiService.dispose] Disposed');
   }
 
   /// Discover new validator endpoints from the network and save locally.
@@ -1196,12 +1196,12 @@ class ApiService {
               }
             }
           }
-          debugPrint('🌐 Discovery: ${endpoints.length} endpoint(s), '
+          losLog('🌐 Discovery: ${endpoints.length} endpoint(s), '
               'total URLs: ${_bootstrapUrls.length}');
         }
       }
     } catch (e) {
-      debugPrint('⚠️ Peer discovery failed (non-critical): $e');
+      losLog('⚠️ Peer discovery failed (non-critical): $e');
     }
   }
 

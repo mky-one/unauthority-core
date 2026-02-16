@@ -4648,6 +4648,32 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let secret_key = Zeroizing::new(keys.secret_key.clone());
     json_event!("wallet_ready", "address" => &my_address, "short" => &my_short);
 
+    // ══════════════════════════════════════════════════════════════════════
+    // MAINNET SAFETY (M-6): Tor & network security enforcement
+    // ══════════════════════════════════════════════════════════════════════
+    if los_core::is_mainnet_build() {
+        // T-1: Mainnet MUST have Tor SOCKS5 proxy configured
+        let has_tor = std::env::var("LOS_SOCKS5_PROXY")
+            .or_else(|_| std::env::var("LOS_TOR_SOCKS5"))
+            .is_ok();
+        if !has_tor {
+            eprintln!("❌ FATAL: Mainnet requires Tor. Set LOS_SOCKS5_PROXY=socks5h://127.0.0.1:9050");
+            eprintln!("   Unauthority mainnet runs EXCLUSIVELY on Tor Hidden Services.");
+            return Err(Box::<dyn std::error::Error>::from(
+                "LOS_SOCKS5_PROXY or LOS_TOR_SOCKS5 required for mainnet build",
+            ));
+        }
+        // R-2: Mainnet MUST NOT bind to 0.0.0.0 (IP deanonymization risk)
+        if std::env::var("LOS_BIND_ALL").unwrap_or_default() == "1" {
+            eprintln!("❌ FATAL: LOS_BIND_ALL=1 is forbidden on mainnet (IP deanonymization risk).");
+            eprintln!("   Mainnet validators MUST bind to 127.0.0.1 only (accessed via Tor hidden service).");
+            return Err(Box::<dyn std::error::Error>::from(
+                "LOS_BIND_ALL=1 forbidden on mainnet — use Tor hidden service instead",
+            ));
+        }
+        println!("🧅 Mainnet Tor enforcement: PASSED");
+    }
+
     // FIX: Load ledger and genesis BEFORE wrapping in Arc to prevent race condition
     let mut ledger_state = load_from_disk(&database);
 

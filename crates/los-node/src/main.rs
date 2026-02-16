@@ -10,7 +10,7 @@ use los_core::{AccountState, Block, BlockType, Ledger, CIL_PER_LOS, MIN_VALIDATO
 use los_network::{LosNode, NetworkEvent};
 use los_vm::{ContractCall, WasmEngine};
 use rate_limiter::{filters::rate_limit, RateLimiter};
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard};
 use tokio::io::{self, AsyncBufReadExt, BufReader};
@@ -189,7 +189,7 @@ struct BurnRequest {
 struct DeployContractRequest {
     owner: String,
     bytecode: String,                          // base64 encoded WASM
-    initial_state: Option<HashMap<String, String>>,
+    initial_state: Option<BTreeMap<String, String>>,
     amount_cil: Option<u128>,                  // Initial CIL funding for contract
     signature: Option<String>,                 // Client-signed: Dilithium5 sig
     public_key: Option<String>,                // Client-signed: deployer's pubkey (hex)
@@ -8297,7 +8297,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                                 match wasm_engine.deploy_contract(
                                                     deploy_blk.account.clone(),
                                                     bytecode,
-                                                    HashMap::new(),
+                                                    BTreeMap::new(),
                                                     now_ts,
                                                 ) {
                                                     Ok(addr) => {

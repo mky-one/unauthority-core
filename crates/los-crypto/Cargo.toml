@@ -21,3 +21,6 @@ digest = "0.10"
 # TESTNET: Ed25519 fallback verification for Flutter desktop wallets
 # (native Dilithium5 FFI not available on macOS)
 ed25519-dalek = { version = "2", features = ["alloc"] }
+
+[features]
+mainnet = []

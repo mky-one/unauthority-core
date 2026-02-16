@@ -168,12 +168,7 @@ extern "C" {
 
     fn host_emit_event(type_ptr: *const u8, type_len: u32, data_ptr: *const u8, data_len: u32);
 
-    fn host_transfer(
-        addr_ptr: *const u8,
-        addr_len: u32,
-        amount_lo: i64,
-        amount_hi: i64,
-    ) -> i32;
+    fn host_transfer(addr_ptr: *const u8, addr_len: u32, amount_lo: i64, amount_hi: i64) -> i32;
 
     fn host_get_caller(out_ptr: *mut u8, out_max: u32) -> i32;
     fn host_get_self_address(out_ptr: *mut u8, out_max: u32) -> i32;
@@ -286,9 +281,7 @@ pub mod state {
     pub fn exists(key: &str) -> bool {
         // Try reading 1 byte — if result >= 0, key exists
         let mut buf = [0u8; 1];
-        let len = unsafe {
-            host_get_state(key.as_ptr(), key.len() as u32, buf.as_mut_ptr(), 0)
-        };
+        let len = unsafe { host_get_state(key.as_ptr(), key.len() as u32, buf.as_mut_ptr(), 0) };
         len >= 0
     }
 }
@@ -377,7 +370,11 @@ pub fn timestamp() -> u64 {
 /// Get the number of arguments passed to this function call.
 pub fn arg_count() -> u32 {
     let n = unsafe { host_get_arg_count() };
-    if n < 0 { 0 } else { n as u32 }
+    if n < 0 {
+        0
+    } else {
+        n as u32
+    }
 }
 
 /// Get an argument by index. Returns `None` if index is out of bounds.
@@ -400,14 +397,7 @@ pub fn arg(idx: u32) -> Option<String> {
 pub fn transfer(recipient: &str, amount: u128) -> Result<(), &'static str> {
     let lo = (amount & 0xFFFF_FFFF_FFFF_FFFF) as u64 as i64;
     let hi = (amount >> 64) as u64 as i64;
-    let result = unsafe {
-        host_transfer(
-            recipient.as_ptr(),
-            recipient.len() as u32,
-            lo,
-            hi,
-        )
-    };
+    let result = unsafe { host_transfer(recipient.as_ptr(), recipient.len() as u32, lo, hi) };
     match result {
         0 => Ok(()),
         1 => Err("Insufficient contract balance"),

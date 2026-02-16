@@ -26,8 +26,8 @@ const MILLITOKEN: u64 = 1000;
 #[derive(Clone)]
 pub struct RateLimiter {
     buckets: Arc<Mutex<HashMap<IpAddr, TokenBucket>>>,
-    max_tokens_milli: u64,      // Maximum tokens in millitokens (burst capacity)
-    refill_rate: u32,           // Tokens per second
+    max_tokens_milli: u64, // Maximum tokens in millitokens (burst capacity)
+    refill_rate: u32,      // Tokens per second
     cleanup_interval: Duration, // How often to cleanup old entries
     last_cleanup: Arc<Mutex<Instant>>,
 }
@@ -75,7 +75,8 @@ impl RateLimiter {
         // Simplifies to: elapsed_ms * refill_rate (since MILLITOKEN = 1000)
         let tokens_to_add_milli = elapsed_ms * self.refill_rate as u64;
 
-        bucket.tokens_milli = (bucket.tokens_milli + tokens_to_add_milli).min(self.max_tokens_milli);
+        bucket.tokens_milli =
+            (bucket.tokens_milli + tokens_to_add_milli).min(self.max_tokens_milli);
         bucket.last_refill = now;
 
         // Check if we have at least 1 token (1000 millitokens)

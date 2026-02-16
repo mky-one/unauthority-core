@@ -188,15 +188,15 @@ struct BurnRequest {
 #[derive(serde::Deserialize, serde::Serialize)]
 struct DeployContractRequest {
     owner: String,
-    bytecode: String,                          // base64 encoded WASM
+    bytecode: String, // base64 encoded WASM
     initial_state: Option<BTreeMap<String, String>>,
-    amount_cil: Option<u128>,                  // Initial CIL funding for contract
-    signature: Option<String>,                 // Client-signed: Dilithium5 sig
-    public_key: Option<String>,                // Client-signed: deployer's pubkey (hex)
-    previous: Option<String>,                  // Client-signed: previous block hash
-    work: Option<u64>,                         // Client-signed: PoW nonce
-    timestamp: Option<u64>,                    // Client-signed: block timestamp
-    fee: Option<u128>,                         // Client-signed: fee in CIL
+    amount_cil: Option<u128>,   // Initial CIL funding for contract
+    signature: Option<String>,  // Client-signed: Dilithium5 sig
+    public_key: Option<String>, // Client-signed: deployer's pubkey (hex)
+    previous: Option<String>,   // Client-signed: previous block hash
+    work: Option<u64>,          // Client-signed: PoW nonce
+    timestamp: Option<u64>,     // Client-signed: block timestamp
+    fee: Option<u128>,          // Client-signed: fee in CIL
 }
 
 #[derive(serde::Deserialize, serde::Serialize)]
@@ -205,14 +205,14 @@ struct CallContractRequest {
     function: String,
     args: Vec<String>,
     gas_limit: Option<u64>,
-    caller: Option<String>,                    // Caller address (if empty, use node's address)
-    amount_cil: Option<u128>,                  // CIL to send to contract (msg.value)
-    signature: Option<String>,                 // Client-signed: Dilithium5 sig
-    public_key: Option<String>,                // Client-signed: caller's pubkey (hex)
-    previous: Option<String>,                  // Client-signed: previous block hash
-    work: Option<u64>,                         // Client-signed: PoW nonce
-    timestamp: Option<u64>,                    // Client-signed: block timestamp
-    fee: Option<u128>,                         // Client-signed: fee in CIL
+    caller: Option<String>,    // Caller address (if empty, use node's address)
+    amount_cil: Option<u128>,  // CIL to send to contract (msg.value)
+    signature: Option<String>, // Client-signed: Dilithium5 sig
+    public_key: Option<String>, // Client-signed: caller's pubkey (hex)
+    previous: Option<String>,  // Client-signed: previous block hash
+    work: Option<u64>,         // Client-signed: PoW nonce
+    timestamp: Option<u64>,    // Client-signed: block timestamp
+    fee: Option<u128>,         // Client-signed: fee in CIL
 }
 
 /// Per-address endpoint rate limiter
@@ -1830,18 +1830,17 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
 
         // 9b. GET /contracts (list all deployed contracts)
         let engine_list = wasm_engine.clone();
-        let list_contracts_route = warp::path("contracts")
-            .and(with_state(engine_list))
-            .map(|engine: Arc<WasmEngine>| {
-                match engine.list_contracts() {
+        let list_contracts_route =
+            warp::path("contracts")
+                .and(with_state(engine_list))
+                .map(|engine: Arc<WasmEngine>| match engine.list_contracts() {
                     Ok(addrs) => api_json(serde_json::json!({
                         "status": "success",
                         "count": addrs.len(),
                         "contracts": addrs
                     })),
                     Err(e) => api_json(serde_json::json!({"status":"error","msg":e})),
-                }
-            });
+                });
 
         deploy
             .boxed()
@@ -4584,36 +4583,39 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // The encryption password is derived from the node ID (for automated startup).
     // MAINNET: operators MUST set LOS_WALLET_PASSWORD — weak auto-key is rejected.
     let wallet_path = format!("{}/wallet.json", &base_data_dir);
-    let wallet_password = match stdin_wallet_pw.or_else(|| std::env::var("LOS_WALLET_PASSWORD").ok()) {
-        Some(pw) if pw.len() >= 12 => pw,
-        Some(pw) if !pw.is_empty() => {
-            if los_core::is_mainnet_build() {
-                eprintln!(
-                    "❌ FATAL: LOS_WALLET_PASSWORD must be at least 12 characters on mainnet."
-                );
-                return Err(Box::<dyn std::error::Error>::from(
-                    "LOS_WALLET_PASSWORD too short for mainnet (min 12 chars)",
-                ));
+    let wallet_password =
+        match stdin_wallet_pw.or_else(|| std::env::var("LOS_WALLET_PASSWORD").ok()) {
+            Some(pw) if pw.len() >= 12 => pw,
+            Some(pw) if !pw.is_empty() => {
+                if los_core::is_mainnet_build() {
+                    eprintln!(
+                        "❌ FATAL: LOS_WALLET_PASSWORD must be at least 12 characters on mainnet."
+                    );
+                    return Err(Box::<dyn std::error::Error>::from(
+                        "LOS_WALLET_PASSWORD too short for mainnet (min 12 chars)",
+                    ));
+                }
+                pw // Testnet: allow shorter passwords
             }
-            pw // Testnet: allow shorter passwords
-        }
-        _ => {
-            if los_core::is_mainnet_build() {
-                eprintln!(
+            _ => {
+                if los_core::is_mainnet_build() {
+                    eprintln!(
                     "❌ FATAL: LOS_WALLET_PASSWORD environment variable is REQUIRED on mainnet."
                 );
-                eprintln!("   export LOS_WALLET_PASSWORD='<strong-password-here>'");
-                return Err(Box::<dyn std::error::Error>::from(
-                    "LOS_WALLET_PASSWORD required for mainnet build",
-                ));
+                    eprintln!("   export LOS_WALLET_PASSWORD='<strong-password-here>'");
+                    return Err(Box::<dyn std::error::Error>::from(
+                        "LOS_WALLET_PASSWORD required for mainnet build",
+                    ));
+                }
+                // Testnet: auto-generate weak password (acceptable for testing)
+                let auto = format!("los-node-{}-autokey", &node_id);
+                println!("⚠️  Using auto-generated wallet password (testnet only)");
+                auto
             }
-            // Testnet: auto-generate weak password (acceptable for testing)
-            let auto = format!("los-node-{}-autokey", &node_id);
-            println!("⚠️  Using auto-generated wallet password (testnet only)");
-            auto
-        }
-    };
-    let keys: los_crypto::KeyPair = if let Some(seed_phrase) = stdin_seed_phrase.or_else(|| std::env::var("LOS_SEED_PHRASE").ok()) {
+        };
+    let keys: los_crypto::KeyPair = if let Some(seed_phrase) =
+        stdin_seed_phrase.or_else(|| std::env::var("LOS_SEED_PHRASE").ok())
+    {
         // DETERMINISTIC KEYPAIR: Derive from BIP39 mnemonic (genesis validator identity)
         // This ensures the node's runtime address matches its genesis address.
         // SECURITY: Prefer stdin pipe over env var to avoid /proc/[pid]/environ exposure.
@@ -4621,7 +4623,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             Ok(m) => m,
             Err(e) => {
                 eprintln!("FATAL: Seed phrase contains invalid BIP39 mnemonic: {e}");
-                eprintln!("Please check the seed phrase (stdin or LOS_SEED_PHRASE env) and try again.");
+                eprintln!(
+                    "Please check the seed phrase (stdin or LOS_SEED_PHRASE env) and try again."
+                );
                 std::process::exit(1);
             }
         };
@@ -4696,7 +4700,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             .or_else(|_| std::env::var("LOS_TOR_SOCKS5"))
             .is_ok();
         if !has_tor {
-            eprintln!("❌ FATAL: Mainnet requires Tor. Set LOS_SOCKS5_PROXY=socks5h://127.0.0.1:9050");
+            eprintln!(
+                "❌ FATAL: Mainnet requires Tor. Set LOS_SOCKS5_PROXY=socks5h://127.0.0.1:9050"
+            );
             eprintln!("   Unauthority mainnet runs EXCLUSIVELY on Tor Hidden Services.");
             return Err(Box::<dyn std::error::Error>::from(
                 "LOS_SOCKS5_PROXY or LOS_TOR_SOCKS5 required for mainnet build",
@@ -4704,7 +4710,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
         // R-2: Mainnet MUST NOT bind to 0.0.0.0 (IP deanonymization risk)
         if std::env::var("LOS_BIND_ALL").unwrap_or_default() == "1" {
-            eprintln!("❌ FATAL: LOS_BIND_ALL=1 is forbidden on mainnet (IP deanonymization risk).");
+            eprintln!(
+                "❌ FATAL: LOS_BIND_ALL=1 is forbidden on mainnet (IP deanonymization risk)."
+            );
             eprintln!("   Mainnet validators MUST bind to 127.0.0.1 only (accessed via Tor hidden service).");
             return Err(Box::<dyn std::error::Error>::from(
                 "LOS_BIND_ALL=1 forbidden on mainnet — use Tor hidden service instead",
@@ -4941,7 +4949,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let genesis_ts: u64 = if los_core::is_mainnet_build() {
         // Use timestamp stored during genesis validation above (no redundant file I/O)
         genesis_ts_from_config.unwrap_or_else(|| {
-            eprintln!("❌ FATAL: genesis_timestamp missing after validation — this should never happen");
+            eprintln!(
+                "❌ FATAL: genesis_timestamp missing after validation — this should never happen"
+            );
             std::process::exit(1);
         })
     } else {
@@ -5446,12 +5456,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let wasm_engine = Arc::new(WasmEngine::new());
     // Restore contract state from DB (if any contracts were previously deployed)
     match database.load_contracts() {
-        Ok(Some(vm_data)) => {
-            match wasm_engine.deserialize_all(&vm_data) {
-                Ok(count) => println!("✅ Restored {} smart contracts from database", count),
-                Err(e) => eprintln!("⚠️ Failed to restore contracts: {}", e),
-            }
-        }
+        Ok(Some(vm_data)) => match wasm_engine.deserialize_all(&vm_data) {
+            Ok(count) => println!("✅ Restored {} smart contracts from database", count),
+            Err(e) => eprintln!("⚠️ Failed to restore contracts: {}", e),
+        },
         Ok(None) => { /* No contracts deployed yet */ }
         Err(e) => eprintln!("⚠️ Failed to load contracts from DB: {}", e),
     }
@@ -8397,51 +8405,51 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                                 false
                                             };
                                             if !deploy_rejected {
-                                            if let Some(deployer) = l.accounts.get_mut(&deploy_blk.account) {
-                                                let total_debit = deploy_blk.amount.saturating_add(deploy_blk.fee);
-                                                deployer.balance -= total_debit; // Safe: checked above
-                                                deployer.head = deploy_hash.clone();
-                                                deployer.block_count += 1;
-                                            }
-                                            l.accumulated_fees_cil = l.accumulated_fees_cil.saturating_add(deploy_blk.fee);
-                                            l.blocks.insert(deploy_hash, deploy_blk.clone());
-                                            drop(l); // Release ledger lock before VM operations
-
-                                            // Deploy to local WASM engine
-                                            let code_hash = WasmEngine::compute_code_hash(&bytecode);
-                                            let expected_hash = &deploy_blk.link[7..]; // After "DEPLOY:"
-                                            if code_hash.starts_with(expected_hash) || expected_hash.starts_with(&code_hash[..expected_hash.len().min(code_hash.len())]) {
-                                                let now_ts = std::time::SystemTime::now()
-                                                    .duration_since(std::time::UNIX_EPOCH)
-                                                    .unwrap_or_default()
-                                                    .as_secs();
-                                                match wasm_engine.deploy_contract(
-                                                    deploy_blk.account.clone(),
-                                                    bytecode,
-                                                    BTreeMap::new(),
-                                                    now_ts,
-                                                ) {
-                                                    Ok(addr) => {
-                                                        // Fund contract if amount > 0
-                                                        if deploy_blk.amount > 0 {
-                                                            let _ = wasm_engine.send_to_contract(&addr, deploy_blk.amount);
-                                                        }
-                                                        // Persist VM state
-                                                        if let Ok(vm_data) = wasm_engine.serialize_all() {
-                                                            let _ = database.save_contracts(&vm_data);
-                                                        }
-                                                        println!("✅ Replicated CONTRACT_DEPLOYED: {} (owner: {})",
-                                                            addr, get_short_addr(&deploy_blk.account));
-                                                    }
-                                                    Err(e) => eprintln!("⚠️ Failed to replicate contract deploy: {}", e),
+                                                if let Some(deployer) = l.accounts.get_mut(&deploy_blk.account) {
+                                                    let total_debit = deploy_blk.amount.saturating_add(deploy_blk.fee);
+                                                    deployer.balance -= total_debit; // Safe: checked above
+                                                    deployer.head = deploy_hash.clone();
+                                                    deployer.block_count += 1;
                                                 }
-                                            } else {
-                                                eprintln!("🚫 CONTRACT_DEPLOYED: code hash mismatch");
-                                            }
+                                                l.accumulated_fees_cil = l.accumulated_fees_cil.saturating_add(deploy_blk.fee);
+                                                l.blocks.insert(deploy_hash, deploy_blk.clone());
+                                                drop(l); // Release ledger lock before VM operations
 
-                                            SAVE_DIRTY.store(true, Ordering::Relaxed);
-                                        } // end if !deploy_rejected
-                                    }
+                                                // Deploy to local WASM engine
+                                                let code_hash = WasmEngine::compute_code_hash(&bytecode);
+                                                let expected_hash = &deploy_blk.link[7..]; // After "DEPLOY:"
+                                                if code_hash.starts_with(expected_hash) || expected_hash.starts_with(&code_hash[..expected_hash.len().min(code_hash.len())]) {
+                                                    let now_ts = std::time::SystemTime::now()
+                                                        .duration_since(std::time::UNIX_EPOCH)
+                                                        .unwrap_or_default()
+                                                        .as_secs();
+                                                    match wasm_engine.deploy_contract(
+                                                        deploy_blk.account.clone(),
+                                                        bytecode,
+                                                        BTreeMap::new(),
+                                                        now_ts,
+                                                    ) {
+                                                        Ok(addr) => {
+                                                            // Fund contract if amount > 0
+                                                            if deploy_blk.amount > 0 {
+                                                                let _ = wasm_engine.send_to_contract(&addr, deploy_blk.amount);
+                                                            }
+                                                            // Persist VM state
+                                                            if let Ok(vm_data) = wasm_engine.serialize_all() {
+                                                                let _ = database.save_contracts(&vm_data);
+                                                            }
+                                                            println!("✅ Replicated CONTRACT_DEPLOYED: {} (owner: {})",
+                                                                addr, get_short_addr(&deploy_blk.account));
+                                                        }
+                                                        Err(e) => eprintln!("⚠️ Failed to replicate contract deploy: {}", e),
+                                                    }
+                                                } else {
+                                                    eprintln!("🚫 CONTRACT_DEPLOYED: code hash mismatch");
+                                                }
+
+                                                SAVE_DIRTY.store(true, Ordering::Relaxed);
+                                            } // end if !deploy_rejected
+                                        }
                                     }
                                 }
                             }
@@ -8495,65 +8503,65 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                                 false
                                             };
                                             if !call_rejected {
-                                            if let Some(caller_acct) = l.accounts.get_mut(&call_blk.account) {
-                                                let total_debit = call_blk.amount.saturating_add(call_blk.fee);
-                                                caller_acct.balance -= total_debit; // Safe: checked above
-                                                caller_acct.head = call_hash.clone();
-                                                caller_acct.block_count += 1;
-                                            }
-                                            l.accumulated_fees_cil = l.accumulated_fees_cil.saturating_add(call_blk.fee);
-                                            l.blocks.insert(call_hash, call_blk.clone());
-                                            drop(l);
-
-                                            // Parse call data from link: "CALL:{addr}:{func}:{args_b64}"
-                                            let call_data = &call_blk.link[5..];
-                                            let call_parts: Vec<&str> = call_data.splitn(3, ':').collect();
-                                            if call_parts.len() >= 2 {
-                                                let contract_addr = call_parts[0];
-                                                let function = call_parts[1];
-                                                let args: Vec<String> = if call_parts.len() == 3 {
-                                                    base64::engine::general_purpose::STANDARD
-                                                        .decode(call_parts[2]).ok()
-                                                        .and_then(|bytes| serde_json::from_slice(&bytes).ok())
-                                                        .unwrap_or_default()
-                                                } else {
-                                                    Vec::new()
-                                                };
-                                                let gas_limit = call_blk.fee / los_core::GAS_PRICE_CIL.max(1);
-
-                                                // Value transfer to contract
-                                                if call_blk.amount > 0 {
-                                                    let _ = wasm_engine.send_to_contract(contract_addr, call_blk.amount);
+                                                if let Some(caller_acct) = l.accounts.get_mut(&call_blk.account) {
+                                                    let total_debit = call_blk.amount.saturating_add(call_blk.fee);
+                                                    caller_acct.balance -= total_debit; // Safe: checked above
+                                                    caller_acct.head = call_hash.clone();
+                                                    caller_acct.block_count += 1;
                                                 }
+                                                l.accumulated_fees_cil = l.accumulated_fees_cil.saturating_add(call_blk.fee);
+                                                l.blocks.insert(call_hash, call_blk.clone());
+                                                drop(l);
 
-                                                // Execute deterministically (same result on all nodes)
-                                                let call = ContractCall {
-                                                    contract: contract_addr.to_string(),
-                                                    function: function.to_string(),
-                                                    args,
-                                                    gas_limit: gas_limit as u64,
-                                                    caller: call_blk.account.clone(),
-                                                    block_timestamp: call_blk.timestamp,
-                                                };
-                                                match wasm_engine.call_contract(call) {
-                                                    Ok(result) => {
-                                                        if let Ok(vm_data) = wasm_engine.serialize_all() {
-                                                            let _ = database.save_contracts(&vm_data);
-                                                        }
-                                                        println!("✅ Replicated CONTRACT_CALLED: {}::{} → {}",
-                                                            contract_addr, function,
-                                                            if result.success { "OK" } else { "FAIL" });
+                                                // Parse call data from link: "CALL:{addr}:{func}:{args_b64}"
+                                                let call_data = &call_blk.link[5..];
+                                                let call_parts: Vec<&str> = call_data.splitn(3, ':').collect();
+                                                if call_parts.len() >= 2 {
+                                                    let contract_addr = call_parts[0];
+                                                    let function = call_parts[1];
+                                                    let args: Vec<String> = if call_parts.len() == 3 {
+                                                        base64::engine::general_purpose::STANDARD
+                                                            .decode(call_parts[2]).ok()
+                                                            .and_then(|bytes| serde_json::from_slice(&bytes).ok())
+                                                            .unwrap_or_default()
+                                                    } else {
+                                                        Vec::new()
+                                                    };
+                                                    let gas_limit = call_blk.fee / los_core::GAS_PRICE_CIL.max(1);
+
+                                                    // Value transfer to contract
+                                                    if call_blk.amount > 0 {
+                                                        let _ = wasm_engine.send_to_contract(contract_addr, call_blk.amount);
                                                     }
-                                                    Err(e) => eprintln!("⚠️ Failed to replicate contract call: {}", e),
-                                                }
-                                            }
 
-                                            SAVE_DIRTY.store(true, Ordering::Relaxed);
-                                        } // end if !call_rejected
+                                                    // Execute deterministically (same result on all nodes)
+                                                    let call = ContractCall {
+                                                        contract: contract_addr.to_string(),
+                                                        function: function.to_string(),
+                                                        args,
+                                                        gas_limit: gas_limit as u64,
+                                                        caller: call_blk.account.clone(),
+                                                        block_timestamp: call_blk.timestamp,
+                                                    };
+                                                    match wasm_engine.call_contract(call) {
+                                                        Ok(result) => {
+                                                            if let Ok(vm_data) = wasm_engine.serialize_all() {
+                                                                let _ = database.save_contracts(&vm_data);
+                                                            }
+                                                            println!("✅ Replicated CONTRACT_CALLED: {}::{} → {}",
+                                                                contract_addr, function,
+                                                                if result.success { "OK" } else { "FAIL" });
+                                                        }
+                                                        Err(e) => eprintln!("⚠️ Failed to replicate contract call: {}", e),
+                                                    }
+                                                }
+
+                                                SAVE_DIRTY.store(true, Ordering::Relaxed);
+                                            } // end if !call_rejected
+                                        }
                                     }
                                 }
-                            }
-                        } else if let Ok(inc) = serde_json::from_str::<Block>(&data) {
+                            }                        } else if let Ok(inc) = serde_json::from_str::<Block>(&data) {
                             // FIX C12-01: Mint/Slash blocks from P2P are accepted ONLY if they
                             // carry a valid validator signature + valid PoW. Previously blanket-
                             // rejected, which caused minted tokens to exist only on the originating

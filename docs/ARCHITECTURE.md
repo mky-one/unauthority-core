@@ -1,33 +1,37 @@
 # Architecture — Unauthority (LOS) v1.0.9
 
+System design, crate structure, data flow, and technical decisions for the Unauthority blockchain.
+
+---
+
 ## System Overview
 
-Unauthority is a block-lattice (DAG) blockchain where each account maintains its own chain of blocks. A global ledger state is maintained via aBFT consensus across validators communicating over Tor hidden services.
+Unauthority is a block-lattice (DAG) blockchain where each account maintains its own chain of blocks. A global ledger state is maintained via aBFT consensus across validators communicating exclusively over Tor hidden services.
 
 ```
-┌──────────────────────────────────────────────────────────┐
-│                    Flutter Wallet / Validator             │
-│                 (Dart + Rust via flutter_rust_bridge)     │
-└─────────────────────────┬────────────────────────────────┘
-                          │ REST / gRPC
-┌─────────────────────────▼────────────────────────────────┐
-│                      los-node                            │
-│  ┌──────────┐ ┌───────────┐ ┌──────────┐ ┌───────────┐  │
-│  │ REST API │ │ gRPC API  │ │ P2P      │ │ CLI REPL  │  │
-│  │ (Warp)   │ │ (Tonic)   │ │ Gossip   │ │ (stdin)   │  │
-│  └────┬─────┘ └─────┬─────┘ └────┬─────┘ └─────┬─────┘  │
-│       └──────────────┴────────────┴─────────────┘        │
-│                          │                                │
-│  ┌───────────────────────▼────────────────────────────┐  │
-│  │              Shared State (Arc<Mutex<>>)            │  │
-│  │  Ledger · Mempool · Oracle · Slashing · Rewards    │  │
-│  └────────────────────────────────────────────────────┘  │
-│                          │                                │
-│  ┌──────────┐ ┌──────────┤ ┌──────────┐ ┌────────────┐  │
-│  │ los-core │ │los-consen│ │los-crypto│ │ los-vm     │  │
-│  │          │ │sus       │ │          │ │            │  │
-│  └──────────┘ └──────────┘ └──────────┘ └────────────┘  │
-└──────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────┐
+│              Flutter Wallet / Validator Dashboard             │
+│           (Dart + Rust crypto via flutter_rust_bridge)        │
+└─────────────────────────┬────────────────────────────────────┘
+                          │ REST / gRPC over Tor (.onion)
+┌─────────────────────────▼────────────────────────────────────┐
+│                        los-node                              │
+│  ┌──────────┐ ┌───────────┐ ┌──────────┐ ┌───────────┐      │
+│  │ REST API │ │ gRPC API  │ │ P2P      │ │ CLI REPL  │      │
+│  │ (Warp)   │ │ (Tonic)   │ │ Gossip   │ │ (stdin)   │      │
+│  └────┬─────┘ └─────┬─────┘ └────┬─────┘ └─────┬─────┘      │
+│       └──────────────┴────────────┴─────────────┘            │
+│                          │                                    │
+│  ┌───────────────────────▼──────────────────────────────┐    │
+│  │           Shared State (Arc<RwLock<>>)                │    │
+│  │   Ledger · Mempool · Oracle · Slashing · Rewards     │    │
+│  └──────────────────────────────────────────────────────┘    │
+│                          │                                    │
+│  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌────────────┐      │
+│  │ los-core │ │los-consen│ │los-crypto│ │  los-vm    │      │
+│  │          │ │   sus    │ │          │ │            │      │
+│  └──────────┘ └──────────┘ └──────────┘ └────────────┘      │
+└──────────────────────────────────────────────────────────────┘
                           │
               ┌───────────▼───────────┐
               │   Tor Hidden Service  │
@@ -35,146 +39,221 @@ Unauthority is a block-lattice (DAG) blockchain where each account maintains its
               └───────────────────────┘
 ```
 
+---
+
 ## Crate Dependency Graph
 
 ```
-los-node (main binary)
-├── los-core         (blockchain primitives)
-├── los-consensus    (aBFT, slashing, checkpoints)
+los-node (main binary, ~9000 lines)
+├── los-core         (blockchain primitives, ~3000 lines)
+├── los-consensus    (aBFT, slashing, checkpoints, ~2500 lines)
 │   └── los-core
-├── los-network      (P2P, Tor transport, fee scaling)
+├── los-network      (P2P, Tor transport, fee scaling, ~1800 lines)
 │   └── los-core
-├── los-crypto       (Dilithium5, SHA-3)
-├── los-vm           (WASM smart contracts)
+├── los-crypto       (Dilithium5, SHA-3, ~800 lines)
+├── los-vm           (WASM smart contracts, ~1200 lines)
 │   └── los-core
-└── los-cli          (CLI wallet)
-    ├── los-core
-    └── los-crypto
+├── los-cli          (CLI wallet, ~500 lines)
+│   ├── los-core
+│   └── los-crypto
+└── los-sdk          (External integration SDK, ~300 lines)
 ```
+
+---
 
 ## Crate Details
 
 ### los-core
-Blockchain primitives and core state management.
+
+Core blockchain primitives and state management. No I/O — pure logic.
 
 | Module | Purpose |
 |---|---|
-| `lib.rs` | Block, AccountState, Ledger, BlockType, PoW, genesis loading |
-| `distribution.rs` | Supply distribution tracking & burn accounting |
-| `oracle_consensus.rs` | Decentralized oracle BFT median aggregation (u128 micro-USD) |
-| `bonding_curve.rs` | LOS pricing curve for Proof-of-Burn |
-| `anti_whale.rs` | Anti-whale rate limiting and burn caps |
+| `lib.rs` | `Block`, `AccountState`, `Ledger`, `BlockType`, PoW, genesis loading |
+| `distribution.rs` | Supply distribution tracking, burn accounting (u128 arithmetic) |
+| `oracle_consensus.rs` | Decentralized oracle BFT median aggregation (micro-USD u128) |
+| `bonding_curve.rs` | LOS pricing curve for Proof-of-Burn conversions |
+| `anti_whale.rs` | Anti-whale rate limiting, burn caps, quadratic scaling |
 | `validator_config.rs` | Validator configuration structures |
-| `validator_rewards.rs` | Reward pool distribution (√stake formula) |
+| `validator_rewards.rs` | Reward pool distribution: `budget × isqrt(stake) / Σisqrt(all)` |
+
+**Key design decisions:**
+- All monetary values stored as `u128` CIL (atomic units)
+- All price values stored as `u128` micro-USD (1 USD = 1,000,000)
+- Zero `f32`/`f64` in any consensus-critical path
+- `Ledger` is the central state: `HashMap<String, AccountState>`
 
 ### los-consensus
-aBFT consensus engine, checkpointing, and slashing.
+
+aBFT consensus engine, validator coordination, and accountability.
 
 | Module | Purpose |
 |---|---|
-| `abft.rs` | Asynchronous BFT consensus rounds |
-| `checkpoint.rs` | Periodic state checkpointing (RocksDB) |
-| `slashing.rs` | Validator slashing for misbehavior |
-| `voting.rs` | Quadratic voting (√stake) |
+| `abft.rs` | Asynchronous BFT consensus rounds, block finalization |
+| `checkpoint.rs` | Periodic state checkpointing (RocksDB snapshots) |
+| `slashing.rs` | Validator slashing: double-sign, fake burns, oracle manipulation |
+| `voting.rs` | Quadratic voting: `vote_weight = isqrt(stake)` |
 
 ### los-network
-Networking layer with Tor integration.
+
+Networking layer — all traffic over Tor.
 
 | Module | Purpose |
 |---|---|
-| `tor_transport.rs` | SOCKS5 proxy connections for Tor |
-| `p2p_integration.rs` | Peer management, connection tracking |
-| `p2p_encryption.rs` | Noise Protocol encryption for P2P |
-| `fee_scaling.rs` | Dynamic fee calculation based on congestion |
-| `slashing_integration.rs` | Network-level slashing triggers |
-| `validator_rewards.rs` | Network-level reward distribution |
+| `tor_transport.rs` | SOCKS5 proxy connections, Tor auto-detection, onion address management |
+| `p2p_integration.rs` | Peer management, connection tracking, peer table maintenance |
+| `p2p_encryption.rs` | Noise Protocol encryption for P2P gossip channels |
+| `fee_scaling.rs` | Dynamic fee calculation based on network congestion |
+| `slashing_integration.rs` | Network-level slashing event propagation |
+| `validator_rewards.rs` | Network-level reward distribution coordination |
+
+**Key design decisions:**
+- Auto-detects Tor SOCKS5 at `127.0.0.1:9050` with 500ms connection timeout
+- Auto-discovers bootstrap peers from genesis config `.onion` addresses
+- Gossip over HTTP POST through Tor — reliable at the cost of ~2s latency per hop
 
 ### los-crypto
-Post-quantum cryptography via Dilithium5.
+
+Post-quantum cryptography via Dilithium5 (NIST FIPS 204).
 
 | Function | Purpose |
 |---|---|
-| `generate_keypair()` | Dilithium5 key generation with BIP39 seed |
-| `sign_message()` | Message signing |
-| `verify_signature()` | Signature verification |
-| `public_key_to_address()` | Derive LOS address from public key |
+| `generate_keypair()` | Dilithium5 key generation with deterministic BIP39 seed |
+| `sign_message()` | Sign arbitrary bytes, returns hex signature |
+| `verify_signature()` | Verify Dilithium5 signature against public key |
+| `public_key_to_address()` | Derive LOS address from public key (SHA-3 hash, Base58) |
+
+**Key specs:**
+- Public key: ~2.5 KB
+- Signature: ~4.6 KB
+- Security level: 256-bit classical, 128-bit quantum
 
 ### los-node
-Main validator binary — the heart of the system.
+
+Main validator binary — the heart of the system. Single binary, ~9000 lines.
 
 | Module | Purpose |
 |---|---|
-| `main.rs` | REST API (Warp), P2P gossip, burn pipeline, CLI REPL |
-| `grpc_server.rs` | gRPC API (Tonic) |
-| `genesis.rs` | Genesis block loading from `genesis_config.json` |
-| `db.rs` | RocksDB database layer |
-| `mempool.rs` | Transaction mempool management |
-| `metrics.rs` | Prometheus metrics (45+ gauges/counters) |
-| `rate_limiter.rs` | API rate limiting |
-| `testnet_config.rs` | Graduated testnet level configuration |
-| `validator_api.rs` | Validator-specific API handlers |
-| `validator_rewards.rs` | Epoch reward processing |
+| `main.rs` | REST API (Warp), P2P gossip, burn pipeline, epoch processing, CLI REPL |
+| `grpc_server.rs` | gRPC API (Tonic) for structured client access |
+| `genesis.rs` | Genesis config parsing, validation, account initialization |
+| `db.rs` | RocksDB database layer for persistent ledger storage |
+| `mempool.rs` | Transaction mempool management and prioritization |
+| `metrics.rs` | Prometheus metrics (45+ gauges/counters/histograms) |
+| `rate_limiter.rs` | API rate limiting per-IP and per-address |
+| `testnet_config.rs` | Graduated testnet levels: functional / consensus / production |
+| `validator_api.rs` | Validator-specific API handlers (register, unregister) |
+| `validator_rewards.rs` | Epoch reward processing and distribution |
 
 ### los-vm
-WebAssembly Virtual Machine for smart contracts.
+
+WASM Virtual Machine for smart contracts (Unauthority Virtual Machine — UVM).
 
 | Module | Purpose |
 |---|---|
-| `lib.rs` | WASM runtime, contract deployment & execution |
-| `oracle_connector.rs` | Oracle price feed for contracts |
+| `lib.rs` | WASM runtime, contract deployment, execution, state management |
+| `oracle_connector.rs` | Oracle price feed interface for smart contracts |
 
 ### los-cli
+
 Command-line interface for wallet and node management.
 
 | Command | Purpose |
 |---|---|
-| `wallet` | Create/import wallet, check balance |
-| `tx` | Send transactions |
-| `query` | Query blocks, accounts, supply |
-| `validator` | Register/unregister validator |
+| `wallet` | Create/import wallet, check balance, export keys |
+| `tx` | Send transactions, check status |
+| `query` | Query blocks, accounts, supply, history |
+| `validator` | Register/unregister as validator |
+
+---
 
 ## Block-Lattice Structure
 
+Unlike traditional blockchains (single chain of global blocks), Unauthority uses a block-lattice where each account has its own chain:
+
 ```
-Account A:    [Genesis] → [Send 50] → [Send 20] → ...
-Account B:    [Genesis] → [Receive 50] → [Send 10] → ...
-Account C:    [Mint 100] → [Receive 10] → ...
+Account A:  [Genesis] ──→ [Send 50 to B] ──→ [Send 20 to C] ──→ ...
+                              │
+Account B:  [Genesis] ──→ [Receive 50 from A] ──→ [Send 10 to C] ──→ ...
+                                                       │
+Account C:  [Mint 100] ──→ [Receive 20 from A] ──→ [Receive 10 from B] ──→ ...
 ```
 
-Each account has its own chain. Cross-account operations (Send → Receive) reference the counterpart block via the `link` field. This enables lock-free parallel processing — transactions on different accounts don't contend.
+**Benefits:**
+- Lock-free parallel processing — transactions on different accounts don't contend
+- Instant sender-side confirmation — no waiting for global block
+- Scalable throughput — adding accounts doesn't slow existing ones
 
-## Block Types
+### Block Types
 
-| Type | Description |
-|---|---|
-| `Send` | Debit from sender account |
-| `Receive` | Credit to receiver account |
-| `Mint` | New tokens from genesis or burn rewards |
-| `Burn` | Proof-of-Burn external asset destruction |
-| `Change` | Representative/validator change |
-
-## Gossip Protocol
-
-Nodes communicate via HTTP-based gossip over Tor:
-
-| Message | Format | Purpose |
+| Type | Description | `link` field contains |
 |---|---|---|
-| `ID:` | `ID:addr:supply:burned:ts` | Node identity announcement |
-| `BLOCK:` | `BLOCK:{json}` | Block propagation |
-| `CONFIRM_REQ:` | `CONFIRM_REQ:hash:sender:amt:ts:block_b64` | Block confirmation request |
-| `VOTE_REQ:` | `VOTE_REQ:txid:requester:coin:ts:sig:pk` | Burn vote request |
-| `VOTE_RES:` | `VOTE_RES:txid:requester:YES:voter:ts:sig:pk` | Burn vote response |
-| `ORACLE_SUBMIT:` | `ORACLE_SUBMIT:addr:eth_micro:btc_micro:sig:pk` | Oracle price submission |
-| `VALIDATOR_REG:` | `VALIDATOR_REG:{json}:sig:pk` | Validator registration |
-| `SLASH_REQ:` | `SLASH_REQ:cheater:txid:proposer:ts:sig:pk` | Slashing proposal |
+| `Send` | Debit from sender | Recipient address |
+| `Receive` | Credit to receiver | Hash of the Send block |
+| `Mint` | Token creation (genesis, burn reward) | Source reference |
+| `Burn` | Proof-of-Burn event | External TX hash |
+| `Change` | Representative/validator delegation | New representative |
 
-All gossip messages carrying state changes are signed with Dilithium5.
+### Block Fields
+
+```rust
+Block {
+    account:    String,    // Owner address (LOS...)
+    previous:   String,    // Hash of previous block in this account's chain
+    block_type: BlockType, // Send | Receive | Mint | Burn | Change
+    amount:     u128,      // Amount in CIL (atomic units)
+    link:       String,    // Context-dependent reference
+    signature:  String,    // Dilithium5 hex signature
+    public_key: String,    // Dilithium5 hex public key
+    work:       u64,       // Proof-of-Work nonce (anti-spam)
+    timestamp:  u64,       // Unix timestamp
+    fee:        u128,      // Transaction fee in CIL
+}
+```
+
+---
+
+## Data Flow: Send Transaction
+
+```
+1. Client creates Send block → signs with Dilithium5
+2. POST /send → los-node REST API
+3. los-node validates: signature, balance, PoW, fee, previous block hash
+4. Block added to sender's account chain in Ledger
+5. Gossip CONFIRM_REQ to all peers
+6. Peers validate and return votes (weighted by √stake)
+7. Once ≥2/3 quorum reached → block finalized
+8. Receive block auto-created on recipient's chain
+9. Broadcast BLOCK message to all peers for ledger sync
+```
+
+## Data Flow: Proof-of-Burn
+
+```
+1. User burns ETH/BTC to dead address on source chain
+2. POST /burn with TXID → los-node
+3. Node gossips VOTE_REQ to all validators
+4. Each validator independently:
+   a. Fetches burn TX from blockchain explorer
+   b. Fetches ETH/BTC price from oracle
+   c. Submits signed oracle price (ORACLE_SUBMIT)
+   d. Returns signed vote (VOTE_RES)
+5. BFT median aggregation of all price submissions
+6. Once ≥2 validators confirm → Mint block created
+7. LOS minted to recipient = burn_usd_value / bonding_curve_price
+```
+
+---
 
 ## Security Model
 
-1. **Post-Quantum:** All signatures use Dilithium5 (NIST PQC standard)
-2. **Byzantine Tolerance:** aBFT consensus tolerates f < n/3 faulty validators
-3. **Tor-Only:** No clearnet exposure — all traffic over .onion
-4. **Anti-Whale:** Quadratic voting prevents stake centralization
-5. **Integer Math:** All consensus-critical arithmetic uses u128 — zero floating-point in the pipeline
-6. **Slashing:** Validators penalized for double-signing and fake burn claims
+| Layer | Mechanism |
+|---|---|
+| **Cryptography** | Dilithium5 (NIST PQC) — 256-bit classical, 128-bit quantum security |
+| **Consensus** | aBFT — tolerates f < n/3 Byzantine validators |
+| **Network** | Tor-only — no IP exposure, `.onion` hidden services |
+| **Anti-Whale** | Quadratic voting: `√Stake` prevents centralization |
+| **Determinism** | u128 integer math everywhere — zero `f32`/`f64` in consensus |
+| **Anti-Spam** | Proof-of-Work nonce per block + dynamic fee scaling |
+| **Accountability** | Slashing for double-signing, fake burns, oracle manipulation |
+| **Privacy** | No KYC, no clearnet, Tor SOCKS5 for all traffic |

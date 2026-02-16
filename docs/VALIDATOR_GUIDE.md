@@ -1,183 +1,400 @@
 # Validator Guide — Unauthority (LOS) v1.0.9
 
-## Overview
+This guide covers everything you need to run a validator node on the Unauthority network: installation, Tor setup, configuration, registration, rewards, monitoring, and maintenance.
 
-Running a validator node on Unauthority means hosting a Tor hidden service that participates in aBFT consensus. This guide covers setup for both testnet and mainnet.
+---
+
+## Table of Contents
+
+1. [Requirements](#requirements)
+2. [Installation](#installation)
+3. [Tor Hidden Service Setup](#tor-hidden-service-setup)
+4. [Running the Node](#running-the-node)
+5. [Registering as a Validator](#registering-as-a-validator)
+6. [Systemd Service (Production)](#systemd-service-production)
+7. [Configuration Reference](#configuration-reference)
+8. [Validator Rewards](#validator-rewards)
+9. [Slashing & Penalties](#slashing--penalties)
+10. [Monitoring](#monitoring)
+11. [Maintenance & Upgrades](#maintenance--upgrades)
+12. [Troubleshooting](#troubleshooting)
+
+---
 
 ## Requirements
 
-| Component | Minimum |
-|---|---|
-| **OS** | Linux / macOS |
-| **Rust** | 1.75+ |
-| **RAM** | 2 GB |
-| **Disk** | 10 GB SSD |
-| **Tor** | Installed and running |
-| **Stake** | 1,000 LOS minimum |
-| **Uptime** | ≥95% for reward eligibility |
+| Component | Minimum | Recommended |
+|---|---|---|
+| **OS** | Linux (Ubuntu 22.04+) / macOS | Ubuntu 24.04 LTS |
+| **Rust** | 1.75+ | Latest stable |
+| **CPU** | 2 cores | 4 cores |
+| **RAM** | 2 GB | 4 GB |
+| **Disk** | 10 GB SSD | 50 GB SSD |
+| **Tor** | Installed and running | Latest stable |
+| **Stake** | 1,000 LOS | 1,000+ LOS |
+| **Uptime** | ≥95% for rewards | 99%+ |
+| **Network** | Any internet connection | Stable, low latency |
 
-## Quick Start (Mainnet)
+---
 
-The node auto-discovers bootstrap peers from the genesis config and auto-detects Tor.
-You only need **one environment variable** to get started:
+## Installation
 
-```bash
-# 1. Install Tor
-sudo apt install -y tor          # Linux
-brew install tor                  # macOS
-
-# 2. Start Tor
-sudo systemctl enable --now tor   # Linux
-brew services start tor           # macOS
-
-# 3. Build
-./install.sh --mainnet
-
-# 4. Configure Tor hidden service (for validator participation)
-sudo tee -a /etc/tor/torrc << 'EOF'
-HiddenServiceDir /var/lib/tor/los-validator/
-HiddenServicePort 3030 127.0.0.1:3030
-HiddenServicePort 4001 127.0.0.1:4001
-EOF
-sudo systemctl restart tor
-
-# 5. Run!
-export LOS_WALLET_PASSWORD='your-strong-password'
-./target/release/los-node --port 3030 --data-dir /opt/los-node
-```
-
-**What happens automatically:**
-- **Bootstrap peers:** Loaded from `genesis_config.json` (4 genesis validators)
-- **Tor SOCKS5 proxy:** Auto-detected at `127.0.0.1:9050`
-- **Onion address:** Read from Tor hidden service directory
-- **Wallet:** Created on first run (Dilithium5 post-quantum keypair)
-
-## Building
+### Quick Install (Recommended)
 
 ```bash
 # Clone the repository
-git clone https://github.com/your-org/unauthority-core.git
+git clone https://github.com/mky-one/unauthority-core.git
 cd unauthority-core
 
-# Testnet build
-cargo build --release
-
-# Mainnet build (strict: no faucet, no mock oracle, signature validation enforced)
-cargo build --release -p los-node -p los-cli --features los-core/mainnet
+# Build for mainnet
+./install.sh --mainnet
 ```
 
-The binary is at `target/release/los-node`.
+The `install.sh` script will:
+1. Check that Rust is installed (prompts to install if not)
+2. Check that Tor is installed and SOCKS5 proxy is reachable
+3. Build the `los-node` binary with mainnet features
+4. Display the binary location
+
+### Manual Build
+
+```bash
+# Install Rust (if not already installed)
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+source ~/.cargo/env
+
+# Install Tor
+sudo apt install -y tor          # Ubuntu/Debian
+brew install tor                  # macOS
+
+# Build mainnet binary
+cargo build --release -p los-node --features mainnet
+
+# Binary location
+ls -la target/release/los-node
+```
+
+### Install Tor
+
+**Ubuntu/Debian:**
+```bash
+sudo apt install -y tor
+sudo systemctl enable --now tor
+```
+
+**macOS (Homebrew):**
+```bash
+brew install tor
+brew services start tor
+```
+
+**Verify Tor is running:**
+```bash
+# Check SOCKS5 proxy
+curl --socks5-hostname 127.0.0.1:9050 https://check.torproject.org/api/ip
+```
+
+---
 
 ## Tor Hidden Service Setup
 
-Each validator MUST have its own `.onion` address. The node automatically generates one on startup if Tor is configured, but you can also set it up manually.
+Each validator MUST have its own unique `.onion` address to participate in the network. This is how other nodes identify and reach your validator.
 
-### Option 1: Manual Tor Configuration
+### Step 1: Configure Tor Hidden Service
 
-Add to your `torrc`:
+Edit the Tor configuration file:
+
+**Linux:** `/etc/tor/torrc`  
+**macOS (Homebrew):** `/opt/homebrew/etc/tor/torrc`
+
+Add these lines:
+
 ```
+# Unauthority Validator Hidden Service
 HiddenServiceDir /var/lib/tor/los-validator/
-HiddenServicePort 3030 127.0.0.1:3030
-HiddenServicePort 4001 127.0.0.1:4001
+HiddenServicePort 3030 127.0.0.1:3030    # REST API
+HiddenServicePort 4030 127.0.0.1:4030    # P2P Gossip
+HiddenServicePort 23030 127.0.0.1:23030  # gRPC
 ```
 
-Restart Tor:
+> **Important:** The port numbers must match your node's `--port` flag. If you use `--port 3030`, then:
+> - REST API = 3030
+> - P2P Gossip = 4030 (REST + 1000)
+> - gRPC = 23030 (REST + 20000)
+
+### Step 2: Restart Tor
+
 ```bash
-sudo systemctl restart tor
+sudo systemctl restart tor       # Linux
+brew services restart tor         # macOS
 ```
 
-Your `.onion` address is in `/var/lib/tor/los-validator/hostname`.
-
-### Option 2: Environment Variable
+### Step 3: Get Your .onion Address
 
 ```bash
-export LOS_ONION_ADDRESS=$(cat /var/lib/tor/los-validator/hostname)
+sudo cat /var/lib/tor/los-validator/hostname
+# Example output: abc123def456ghi789jkl012mno345pqr678stu901vwxyz.onion
 ```
 
-The node will announce this address to the network for peer discovery.
+Save this address — it is your validator's network identity.
 
-## Environment Variables
+### Step 4: Set Environment Variable (Optional)
 
-| Variable | Required? | Default | Description |
-|---|---|---|---|
-| `LOS_WALLET_PASSWORD` | **Yes** | — | Password for encrypted wallet |
-| `LOS_ONION_ADDRESS` | Optional | Auto-read from Tor | Your .onion address |
-| `LOS_SOCKS5_PROXY` | Optional | Auto-detect `127.0.0.1:9050` | Tor SOCKS5 proxy |
-| `LOS_BOOTSTRAP_NODES` | Optional | Auto from genesis config | Comma-separated peer list |
-| `LOS_NODE_ID` | Optional | `validator-1` | Node identifier for logs |
-| `LOS_P2P_PORT` | Optional | `4001` | libp2p listen port |
+The node can auto-read the `.onion` address from the Tor hidden service directory. If auto-detection doesn't work, set it manually:
 
-## Starting a Validator Node
-
-### Testnet
 ```bash
-export LOS_WALLET_PASSWORD='test-password'
-./target/release/los-node --port 3030 --data-dir node_data/my-validator
+export LOS_ONION_ADDRESS=$(sudo cat /var/lib/tor/los-validator/hostname)
 ```
 
-### Mainnet (Minimal — auto-bootstrap)
+---
+
+## Running the Node
+
+### Minimal Start (Auto-Bootstrap)
+
 ```bash
 export LOS_WALLET_PASSWORD='your-strong-password'
 ./target/release/los-node --port 3030 --data-dir /opt/los-node
 ```
 
-### Mainnet (Full control — manual overrides)
+The node will:
+1. **Auto-discover bootstrap peers** from `genesis_config.json` (4 genesis validators with `.onion` addresses)
+2. **Auto-detect Tor SOCKS5** proxy at `127.0.0.1:9050`
+3. **Create a wallet** on first run — a Dilithium5 post-quantum keypair encrypted with your password
+4. **Connect to peers** and begin syncing the ledger
+5. **Participate in consensus** once synced and registered
+
+### Full Control (Manual Overrides)
+
 ```bash
 export LOS_WALLET_PASSWORD='your-strong-password'
 export LOS_ONION_ADDRESS='your-onion-address.onion'
 export LOS_SOCKS5_PROXY='socks5h://127.0.0.1:9050'
 export LOS_BOOTSTRAP_NODES='peer1.onion:4030,peer2.onion:4031'
-./target/release/los-node --port 3030 --data-dir /opt/los-node
+export LOS_NODE_ID='my-validator'
+
+./target/release/los-node \
+  --port 3030 \
+  --data-dir /opt/los-node \
+  --node-id my-validator
 ```
+
+### First Run Output
+
+On first start, you'll see:
+```
+🔑 New wallet created: LOSW...
+🧅 Auto-detected Tor SOCKS5 proxy at 127.0.0.1:9050
+🌐 Bootstrapping from 4 genesis validators...
+✅ Connected to 4 peers
+📊 Genesis loaded: 8 accounts, supply 21,936,236 LOS
+```
+
+---
 
 ## Registering as a Validator
 
-After your node is running and funded with ≥1,000 LOS:
+After your node is running and your account has ≥1,000 LOS:
+
+### Via REST API
 
 ```bash
 curl -X POST http://localhost:3030/register-validator \
   -H "Content-Type: application/json" \
   -d '{
     "address": "YOUR_LOS_ADDRESS",
-    "public_key": "YOUR_HEX_PUBLIC_KEY",
+    "public_key": "HEX_DILITHIUM5_PUBLIC_KEY",
     "signature": "HEX_SIGNATURE_OF_REGISTER_PAYLOAD",
     "endpoint": "your-onion-address.onion:3030"
   }'
 ```
 
-The registration is signed with Dilithium5 and gossiped to all peers.
+The signature must be a Dilithium5 signature over the registration payload. The registration is gossiped to all peers and takes effect immediately.
 
-## Validator Responsibilities
+### Via CLI (Coming Soon)
 
-1. **Block Confirmation:** Vote on incoming blocks from peers
-2. **Burn Verification:** Verify ETH/BTC burn transactions via oracle
-3. **Oracle Submission:** Submit price feeds for burn valuation
-4. **Uptime:** Maintain ≥95% uptime for reward eligibility
+```bash
+los-cli validator register --endpoint your-onion.onion:3030
+```
 
-## Reward Distribution
+### Check Your Registration
+
+```bash
+curl http://localhost:3030/validators | python3 -m json.tool
+```
+
+---
+
+## Systemd Service (Production)
+
+For production deployments, run the node as a systemd service:
+
+### Step 1: Create Service File
+
+```bash
+sudo tee /etc/systemd/system/los-node.service << 'EOF'
+[Unit]
+Description=Unauthority (LOS) Validator Node
+After=network-online.target tor.service
+Wants=network-online.target
+Requires=tor.service
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/unauthority-core
+Environment=LOS_WALLET_PASSWORD=your-strong-password
+Environment=LOS_NODE_ID=my-validator
+ExecStart=/usr/local/bin/los-node --port 3030 --data-dir /opt/los-node
+Restart=always
+RestartSec=10
+LimitNOFILE=65535
+
+[Install]
+WantedBy=multi-user.target
+EOF
+```
+
+### Step 2: Copy Binary & Enable Service
+
+```bash
+# Copy binary to system path
+sudo cp target/release/los-node /usr/local/bin/los-node
+
+# Reload systemd and enable
+sudo systemctl daemon-reload
+sudo systemctl enable --now los-node
+
+# Check status
+sudo systemctl status los-node
+```
+
+### Step 3: View Logs
+
+```bash
+# Follow logs in real-time
+journalctl -u los-node -f
+
+# Last 100 lines
+journalctl -u los-node -n 100 --no-pager
+```
+
+---
+
+## Configuration Reference
+
+### Environment Variables (Complete)
+
+| Variable | Required | Default | Description |
+|---|---|---|---|
+| `LOS_WALLET_PASSWORD` | **Yes (mainnet)** | — | Password to encrypt/decrypt wallet keypair |
+| `LOS_ONION_ADDRESS` | No | Auto from Tor dir | This node's `.onion` address for network identity |
+| `LOS_SOCKS5_PROXY` | No | Auto `127.0.0.1:9050` | Tor SOCKS5 proxy for outbound connections |
+| `LOS_BOOTSTRAP_NODES` | No | Auto from genesis | Comma-separated `host:port` list of bootstrap peers |
+| `LOS_NODE_ID` | No | `node-{port}` | Human-readable node identifier for logs |
+| `LOS_P2P_PORT` | No | REST + 1000 | P2P gossip listen port |
+| `LOS_BIND_ALL` | No | `0` | Set to `1` to bind `0.0.0.0` (not recommended) |
+| `LOS_TESTNET_LEVEL` | No | `consensus` | Testnet mode: `functional` / `consensus` / `production` |
+
+### CLI Flags
+
+| Flag | Description | Default |
+|---|---|---|
+| `--port <PORT>` | REST API listen port | `3030` |
+| `--data-dir <DIR>` | Data directory for ledger, wallet, checkpoints | `node_data/node-{port}/` |
+| `--node-id <ID>` | Node identifier | `node-{port}` |
+| `--json-log` | Output logs as JSON (for Flutter dashboard parsing) | off |
+| `--config <FILE>` | Load additional config from TOML file | none |
+
+### Port Derivation
+
+Given `--port 3030`:
+
+| Service | Port | How |
+|---|---|---|
+| REST API | 3030 | `--port` value |
+| P2P Gossip | 4030 | `--port` + 1000 |
+| gRPC | 23030 | `--port` + 20000 |
+
+---
+
+## Validator Rewards
+
+### How Rewards Work
+
+Rewards come from a fixed pool of 500,000 LOS (non-inflationary — already part of the total supply). They are distributed each epoch to eligible validators.
 
 | Parameter | Value |
 |---|---|
 | **Total Pool** | 500,000 LOS |
-| **Per Epoch** | 5,000 LOS (halving every 48 epochs) |
-| **Formula** | `reward = budget × √(your_stake) / Σ√(all_stakes)` |
+| **Per Epoch** | 5,000 LOS (halves every 48 epochs) |
+| **Formula** | `reward_i = budget × √(stake_i) / Σ√(all_stakes)` |
+| **Math** | Integer square root (`isqrt`) — no floating-point |
 | **Min Stake** | 1,000 LOS |
-| **Min Uptime** | 95% |
+| **Min Uptime** | ≥95% |
 
-Rewards use integer square root (`isqrt`) — never floating-point.
+### Halving Schedule
 
-## Slashing Conditions
-
-| Offense | Penalty |
+| Epoch Range | Reward Per Epoch |
 |---|---|
-| Double-signing a block | Stake reduction |
-| Submitting fake burn TXID | Stake reduction + blacklist |
-| Extended downtime (>5%) | Reward ineligibility |
-| Oracle price manipulation | Outlier detection + penalty |
+| 0–47 | 5,000 LOS |
+| 48–95 | 2,500 LOS |
+| 96–143 | 1,250 LOS |
+| 144–191 | 625 LOS |
+| ... | Continues halving |
+
+### Check Reward Status
+
+```bash
+curl http://localhost:3030/reward-info | python3 -m json.tool
+```
+
+---
+
+## Slashing & Penalties
+
+Validators are held accountable for misbehavior:
+
+| Offense | Detection | Penalty |
+|---|---|---|
+| **Double-signing** | Conflicting block signatures | Stake reduction |
+| **Fake burn TXID** | Multi-validator verification | Stake reduction + blacklist |
+| **Oracle manipulation** | Outlier detection (>20% from median) | Penalty + exclusion |
+| **Extended downtime** | Uptime tracking (>5% downtime) | Reward ineligibility |
+
+### Check Slashing Status
+
+```bash
+# Global slashing stats
+curl http://localhost:3030/slashing | python3 -m json.tool
+
+# Your validator's slashing profile
+curl http://localhost:3030/slashing/YOUR_ADDRESS | python3 -m json.tool
+```
+
+---
 
 ## Monitoring
 
+### Health Check
+
+```bash
+curl http://localhost:3030/health
+```
+
+Response:
+```json
+{
+  "status": "healthy",
+  "version": "1.0.9",
+  "uptime_seconds": 86400,
+  "chain": { "accounts": 8, "blocks": 42, "id": "los-mainnet" },
+  "database": { "accounts_count": 8, "blocks_count": 42, "size_on_disk": 524287 }
+}
+```
+
 ### Prometheus Metrics
+
 ```bash
 curl http://localhost:3030/metrics
 ```
@@ -187,35 +404,92 @@ Key metrics:
 - `los_blocks_total` — Total blocks processed
 - `los_accounts_total` — Total accounts
 - `los_consensus_rounds` — aBFT rounds completed
+- `los_peer_count` — Connected peers
+- `los_uptime_seconds` — Node uptime
 
-### Health Check
+### Peer Connectivity
+
 ```bash
-curl http://localhost:3030/health
+curl http://localhost:3030/peers | python3 -m json.tool
 ```
 
-### Node Status
+### Consensus Status
+
 ```bash
-curl http://localhost:3030/node-info
+curl http://localhost:3030/consensus | python3 -m json.tool
 ```
 
-## Data Directory Structure
+---
 
+## Maintenance & Upgrades
+
+### Upgrading the Node
+
+```bash
+cd /opt/unauthority-core
+git pull
+source ~/.cargo/env
+cargo build --release -p los-node --features mainnet
+sudo systemctl stop los-node
+sudo cp target/release/los-node /usr/local/bin/los-node
+sudo systemctl start los-node
 ```
-node_data/my-validator/
+
+### Backup
+
+The data directory contains:
+```
+/opt/los-node/
 ├── los_database/          # RocksDB ledger data
 ├── checkpoints/           # Periodic state checkpoints
-├── wallet.json.enc        # Encrypted wallet (Dilithium5 keypair)
-└── pid.txt                # Process ID file
+├── wallet.json.enc        # Encrypted wallet (KEEP THIS SAFE)
+└── pid.txt                # Process ID (auto-generated)
 ```
 
-## Unregistering
+**Critical:** Back up `wallet.json.enc` — it contains your Dilithium5 keypair. If lost, your validator identity and staked tokens are unrecoverable.
+
+### Unregistering
 
 ```bash
 curl -X POST http://localhost:3030/unregister-validator \
   -H "Content-Type: application/json" \
   -d '{
     "address": "YOUR_LOS_ADDRESS",
-    "public_key": "YOUR_HEX_PUBLIC_KEY",
+    "public_key": "HEX_PUBLIC_KEY",
     "signature": "HEX_SIGNATURE"
   }'
 ```
+
+---
+
+## Troubleshooting
+
+### Node won't start
+
+| Symptom | Cause | Fix |
+|---|---|---|
+| `Error: wallet password required` | Missing `LOS_WALLET_PASSWORD` | Set the env variable |
+| `Error: cannot bind to port` | Port already in use | Change `--port` or kill conflicting process |
+| `Error: database locked` | Another instance running | Stop the other instance first |
+
+### No peers connecting
+
+| Check | Command | Expected |
+|---|---|---|
+| Tor running | `systemctl status tor` | Active (running) |
+| SOCKS5 reachable | `curl --socks5-hostname 127.0.0.1:9050 http://check.torproject.org` | HTML response |
+| Health endpoint | `curl http://localhost:3030/health` | JSON with `"status":"healthy"` |
+| Peer list | `curl http://localhost:3030/peers` | `peer_count > 0` |
+
+### Tor hidden service not reachable
+
+1. Check `/var/lib/tor/los-validator/` permissions — must be owned by the Tor user
+2. Verify port mappings in `torrc` match your `--port`
+3. Wait 30–60 seconds after Tor restart for the hidden service to propagate
+4. Test from another machine: `curl --socks5-hostname 127.0.0.1:9050 http://YOUR_ONION.onion:3030/health`
+
+### Node syncing slowly
+
+- Tor adds latency (2–5 seconds per hop). This is by design for privacy.
+- Ensure your Tor relay has good bandwidth settings
+- Check peer count — more peers = faster sync

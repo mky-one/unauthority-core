@@ -1,199 +1,622 @@
-# Whitepaper — Unauthority (LOS) v1.0.9
+# Technical Whitepaper — Unauthority (LOS) v1.0.9
 
-**Lattice Of Sovereignty: A Post-Quantum, Tor-Native Block-Lattice Blockchain**
+**Lattice Of Sovereignty: A Post-Quantum, Privacy-First Block-Lattice Blockchain**
 
-*February 2026*
+---
+
+## Table of Contents
+
+1. [Abstract](#abstract)
+2. [Design Principles](#design-principles)
+3. [Block-Lattice Architecture](#block-lattice-architecture)
+4. [Consensus: aBFT](#consensus-abft)
+5. [Token Economics](#token-economics)
+6. [Proof-of-Burn Bridge](#proof-of-burn-bridge)
+7. [Oracle Consensus](#oracle-consensus)
+8. [Validator Rewards](#validator-rewards)
+9. [Anti-Whale Mechanisms](#anti-whale-mechanisms)
+10. [Slashing & Accountability](#slashing--accountability)
+11. [Post-Quantum Cryptography](#post-quantum-cryptography)
+12. [Network Layer: Tor-Only](#network-layer-tor-only)
+13. [Smart Contracts (UVM)](#smart-contracts-uvm)
+14. [Security Analysis](#security-analysis)
+15. [Performance](#performance)
 
 ---
 
 ## Abstract
 
-Unauthority (LOS) is a decentralized, permissionless blockchain built on a block-lattice (DAG) structure with asynchronous Byzantine Fault Tolerant (aBFT) consensus. It operates exclusively over Tor hidden services, ensuring censorship resistance and network-level privacy. All cryptographic operations use Dilithium5 (NIST Post-Quantum Cryptography standard), and all consensus-critical arithmetic uses fixed-point integer math (u128) to guarantee cross-node determinism.
+Unauthority (ticker: **LOS** — Lattice Of Sovereignty) is a fully decentralized, permissionless blockchain that operates exclusively over Tor hidden services. It uses a block-lattice (DAG) structure where each account maintains its own chain, enabling lock-free parallel transaction processing. Consensus is achieved via an asynchronous Byzantine Fault Tolerant (aBFT) protocol using post-quantum Dilithium5 signatures. The native token has a fixed supply of 21,936,236 LOS with no inflation.
 
-## 1. Design Principles
+Key differentiators:
+- **100% Tor-native** — no clearnet, no IP exposure, no DNS
+- **Post-quantum** — Dilithium5 (NIST FIPS 204) with 256-bit classical security
+- **Deterministic** — all consensus math uses u128 integer arithmetic, zero floating-point
+- **Anti-whale** — quadratic voting (√Stake) prevents centralization
+- **Interoperable** — Proof-of-Burn bridges for wrapped assets (wBTC, wETH)
 
-1. **Privacy First:** No clearnet. All validators and clients communicate over `.onion` addresses.
-2. **Post-Quantum Security:** Dilithium5 signatures resist both classical and quantum attacks.
-3. **Deterministic Consensus:** Zero floating-point in the consensus pipeline. All values stored as integer representations (CIL for balances, micro-USD for prices, wei/satoshi for burn amounts).
-4. **Fixed Supply:** 21,936,236 LOS — no inflation, no minting beyond the genesis allocation and Proof-of-Burn mechanism.
-5. **Anti-Centralization:** Quadratic voting (√Stake) prevents whale dominance.
+---
 
-## 2. Block-Lattice Structure
+## Design Principles
 
-Unlike traditional blockchains where all transactions compete for space in global blocks, Unauthority uses a block-lattice structure (inspired by Nano/Block Lattice designs):
+1. **Immutability** — No governance override, no admin keys, no emergency pauses
+2. **Permissionless** — Anyone can run a validator with 1,000 LOS stake
+3. **Privacy** — All traffic routed through Tor; no KYC, no clearnet dependency
+4. **Determinism** — Integer-only math in all consensus-critical paths
+5. **Simplicity** — Single binary (`uat-node`), auto-bootstrap, minimal configuration
 
-- Each account maintains its own chain of blocks
-- Transactions between accounts create linked block pairs (Send → Receive)
-- Accounts can be updated in parallel without global contention
-- A global ledger state tracks all account balances and block hashes
+---
+
+## Block-Lattice Architecture
+
+### Structure
+
+Unlike traditional blockchains (single global chain), Unauthority uses a block-lattice where each account has its own chain of blocks:
+
+```
+Account A: [Genesis] → [Send 50 to B] → [Send 20 to C] → ...
+                            │
+Account B: [Genesis] → [Receive 50]   → [Send 10 to C] → ...
+                                              │
+Account C: [Mint]   → [Receive 20]    → [Receive 10]   → ...
+```
+
+Each block references its `previous` block hash, forming per-account chains. Cross-account references (send→receive links) create the lattice structure.
 
 ### Block Types
 
-| Type | Description |
-|---|---|
-| `Send` | Debit from sender, `link` field references the recipient |
-| `Receive` | Credit to receiver, `link` references the sending block |
-| `Mint` | Token creation (genesis or burn rewards) |
-| `Burn` | Proof-of-Burn destruction event |
-| `Change` | Representative/validator delegation change |
+| Type | Description | `link` field |
+|---|---|---|
+| **Send** | Debit from sender's balance | Recipient address |
+| **Receive** | Credit to receiver's balance | Hash of the Send block |
+| **Mint** | Token creation (genesis or burn reward) | Source reference |
+| **Burn** | Proof-of-Burn event recording | External TX hash |
+| **Change** | Representative/validator delegation | New representative |
 
 ### Block Fields
 
+| Field | Type | Description |
+|---|---|---|
+| `account` | String | Owner address (LOS...) |
+| `previous` | String | Hash of previous block in this chain |
+| `block_type` | Enum | Send, Receive, Mint, Burn, Change |
+| `amount` | u128 | Amount in CIL (atomic units) |
+| `link` | String | Context-dependent reference |
+| `signature` | String | Dilithium5 hex signature |
+| `public_key` | String | Dilithium5 hex public key |
+| `work` | u64 | Proof-of-Work nonce (anti-spam) |
+| `timestamp` | u64 | Unix timestamp |
+| `fee` | u128 | Dynamic fee in CIL |
+
+### Benefits
+
+- **Lock-free parallelism** — transactions on different accounts process concurrently
+- **Instant sender confirmation** — no global block wait
+- **Scalable** — throughput scales with account count, not block size
+- **Lightweight** — each account's chain is small; no need to process the full DAG
+
+---
+
+## Consensus: aBFT
+
+Unauthority uses a 3-phase aBFT protocol (based on PBFT structure):
+
+### Phases
+
+1. **Pre-Prepare** — Leader proposes a block for consensus
+2. **Prepare** — Validators verify and broadcast prepare votes
+3. **Commit** — Once quorum reached, validators commit the block
+
+### Byzantine Fault Tolerance
+
 ```
-Block {
-    account:    String,     // Owner address (LOSW... or LOSX...)
-    previous:   String,     // Hash of previous block in this chain
-    block_type: BlockType,  // Send | Receive | Mint | Burn | Change
-    amount:     u128,       // Amount in CIL (atomic units)
-    link:       String,     // Context-dependent (recipient, source, burn proof)
-    signature:  String,     // Dilithium5 hex signature
-    public_key: String,     // Dilithium5 hex public key
-    work:       u64,        // Proof-of-Work nonce (spam prevention)
-    timestamp:  u64,        // Unix timestamp
-    fee:        u128,       // Transaction fee in CIL
+f = (n - 1) / 3        # Maximum faulty validators tolerated
+quorum = 2f + 1         # Minimum votes to finalize
+safety: 3f < n          # Safety guarantee (cannot finalize conflicting blocks)
+```
+
+| Validators (n) | Max Faulty (f) | Quorum (2f+1) |
+|---|---|---|
+| 4 | 1 | 3 |
+| 7 | 2 | 5 |
+| 13 | 4 | 9 |
+| 100 | 33 | 67 |
+
+### Leader Selection
+
+Round-robin based on the current view number:
+
+```
+leader_index = view % total_validators
+```
+
+Validators are sorted deterministically by address, ensuring all nodes agree on the leader.
+
+### View Change
+
+If the leader fails (timeout after 5,000ms), a **view change** is triggered:
+- View number increments
+- Prepare/commit votes for the old view are cleared
+- New leader is selected via round-robin
+- Consensus restarts for the pending block
+
+### Timing
+
+| Parameter | Value |
+|---|---|
+| Block timeout | 3,000 ms |
+| View change timeout | 5,000 ms |
+| Finality target | < 3 seconds |
+| Finalized block memory cap | 10,000 blocks |
+
+---
+
+## Token Economics
+
+### Supply
+
+| Parameter | Value |
+|---|---|
+| **Total Supply** | 21,936,236 LOS (Fixed, non-inflationary) |
+| **Atomic Unit** | CIL (1 LOS = 10^11 CIL) |
+| **Dev Treasury** | 773,823 LOS (~3.5%) |
+| **Public Allocation** | 21,158,413 LOS (~96.5%) |
+| **Reward Pool** | 500,000 LOS (from Dev Treasury, non-inflationary) |
+
+### Dev Treasury Breakdown
+
+| Allocation | Amount (LOS) | Purpose |
+|---|---|---|
+| Dev Treasury 1 | 428,113 | Core development |
+| Dev Treasury 2 | 245,710 | Development operations |
+| Dev Treasury 3 | 50,000 | Community grants |
+| Dev Treasury 4 | 50,000 | Emergency fund |
+| Bootstrap Validators | 4,000 | 4 validators × 1,000 LOS stake |
+| **Total** | **773,823** | |
+
+### Public Supply Distribution
+
+The public allocation (21,158,413 LOS) is distributed exclusively through Proof-of-Burn:
+
+```
+Public Supply Cap = 21,158,413 × 10^11 CIL = 2,115,841,300,000,000,000 CIL
+```
+
+No other mechanism exists to create new tokens. Once the public supply is fully distributed, no more LOS can be minted.
+
+---
+
+## Proof-of-Burn Bridge
+
+### Mechanism
+
+Users burn external cryptocurrency (BTC, ETH) to receive LOS tokens:
+
+1. User sends BTC/ETH to a provably unspendable dead address
+2. User submits burn transaction hash to an Unauthority validator
+3. Validators independently verify the burn on the source chain
+4. Oracle consensus determines the USD value at burn time
+5. LOS yield calculated based on remaining public supply
+6. Once ≥2 validators confirm, a Mint block is created
+
+### Yield Formula (Integer-Only)
+
+```
+yield_cil = (burn_amount_usd × remaining_supply) / PUBLIC_SUPPLY_CAP
+
+where:
+  burn_amount_usd  = USD value in $0.01 units (integer)
+  remaining_supply = remaining public supply in CIL
+  PUBLIC_SUPPLY_CAP = 21,158,413 × 10^11 CIL
+```
+
+All arithmetic uses `u128` with `checked_mul` to prevent overflow. Maximum values:
+- `burn_amount_usd`: ~10^12 (practical max: burning $10B worth)
+- `remaining_supply`: ~10^22 (at genesis)
+- Product: ~10^34 (fits in u128, max ~10^38)
+
+### Scarcity Curve
+
+As more LOS is distributed, the yield per dollar burned decreases:
+
+```
+At 0% distributed:  yield_cil ≈ burn_usd (1:1 ratio)
+At 50% distributed: yield_cil ≈ burn_usd × 0.5
+At 90% distributed: yield_cil ≈ burn_usd × 0.1
+At 99% distributed: yield_cil ≈ burn_usd × 0.01
+```
+
+This creates a fair, market-driven token distribution — early participants get better rates, but anyone can participate at any time.
+
+---
+
+## Oracle Consensus
+
+### Purpose
+
+The decentralized oracle provides real-time price feeds (ETH/USD, BTC/USD) needed for Proof-of-Burn yield calculations. All prices are determined by validator consensus — no external oracle service.
+
+### Price Format
+
+All prices stored as **micro-USD (u128)**:
+
+```
+1 USD = 1,000,000 micro-USD
+$2,500.00 ETH = 2,500,000,000 micro-USD
+$83,000.00 BTC = 83,000,000,000 micro-USD
+```
+
+### Aggregation: BFT Median
+
+```
+1. Each validator fetches ETH/BTC prices from public APIs
+2. Submits signed price to peers (ORACLE_SUBMIT message)
+3. Within 60-second window, collect all submissions
+4. Sort prices, calculate median:
+   - Odd count: exact middle element
+   - Even count: integer average of two middle elements
+5. Reject outliers: |price - median| / median > 20%
+6. Minimum 2 valid submissions required (BFT: 2f+1 for n≥3)
+```
+
+### Security
+
+- Zero-price submissions are rejected
+- Outlier threshold: 20% (2,000 basis points) deviation from median
+- Uses u128 integer — cannot be NaN, Infinity, or negative
+- Signed with Dilithium5 — submissions are attributable
+- Oracle manipulation triggers slashing
+
+---
+
+## Validator Rewards
+
+### Pool
+
+| Parameter | Value |
+|---|---|
+| Total Pool | 500,000 LOS (non-inflationary) |
+| Initial Rate | 5,000 LOS per epoch |
+| Epoch Duration | 30 days (mainnet), 2 minutes (testnet) |
+| Halving Interval | Every 48 epochs (~4 years) |
+| Pool Lifespan | ~16-20 years (asymptotic) |
+
+### Halving Schedule
+
+```
+epoch_reward_rate = 5,000 LOS >> (current_epoch / 48)
+```
+
+| Epoch Range | Rate (LOS/epoch) | Period |
+|---|---|---|
+| 0 – 47 | 5,000 | Years 0–4 |
+| 48 – 95 | 2,500 | Years 4–8 |
+| 96 – 143 | 1,250 | Years 8–12 |
+| 144 – 191 | 625 | Years 12–16 |
+| 192 – 239 | 312 | Years 16–20 |
+| ... | ... | Asymptotic → 0 |
+
+After 128 halvings (bit shift to zero), no further rewards are distributed. Total distributed asymptotically approaches ~480,000 LOS.
+
+### Distribution Formula
+
+Per-validator reward within an epoch:
+
+```
+budget = min(epoch_reward_rate, remaining_pool)
+reward_i = budget × isqrt(stake_i) / Σ isqrt(stake_all)
+```
+
+Where `isqrt` is the deterministic integer square root (Newton's method):
+
+```rust
+fn isqrt(n: u128) -> u128 {
+    if n == 0 { return 0; }
+    let mut x = n;
+    let mut y = x.div_ceil(2);
+    while y < x {
+        x = y;
+        y = (x + n / x) / 2;
+    }
+    x
 }
 ```
 
-## 3. Consensus: Asynchronous BFT
+### Eligibility
 
-Unauthority uses aBFT consensus for block finalization:
+All conditions must be met:
 
-1. **Block Proposal:** A validator creates a block and gossips a `CONFIRM_REQ` to peers
-2. **Voting:** Peers validate the block (signature, balance, PoW) and send votes
-3. **Finalization:** Once ≥2/3 of validators (by quadratic stake weight) confirm, the block is finalized
-4. **Safety:** The system tolerates f < n/3 Byzantine (malicious/faulty) validators
-
-### Quadratic Voting
-
-Instead of raw stake-weighted voting:
-```
-vote_weight = √(stake)
-```
-
-This prevents any single whale from dominating consensus while still rewarding larger stakes.
-
-## 4. Token Economics
-
-### Supply Distribution
-
-| Allocation | Amount (LOS) | Amount (CIL) | Percentage |
-|---|---|---|---|
-| Public (Proof-of-Burn) | 21,158,413 | 2,115,841,300,000,000,000 | ~96.5% |
-| Dev Treasury 1 | 428,113 | 42,811,300,000,000,000 | ~1.95% |
-| Dev Treasury 2 | 245,710 | 24,571,000,000,000,000 | ~1.12% |
-| Dev Treasury 3 | 50,000 | 5,000,000,000,000,000 | ~0.23% |
-| Dev Treasury 4 | 50,000 | 5,000,000,000,000,000 | ~0.23% |
-| Bootstrap Validators (4) | 4,000 | 400,000,000,000,000 | ~0.02% |
-| **Total** | **21,936,236** | **2,193,623,600,000,000,000** | **100%** |
-
-### Unit System
-
-| Unit | CIL Value |
+| Requirement | Threshold |
 |---|---|
-| 1 LOS | 100,000,000,000 CIL (10¹¹) |
-| 1 CIL | 1 (atomic unit) |
+| Minimum stake | 1,000 LOS |
+| Minimum uptime | 95% of epoch heartbeats |
+| Probation | 1 epoch after registration |
+| Genesis bootstrap | Not eligible (mainnet only) |
 
-### Validator Reward Pool
+Uptime is calculated as integer basis points:
+```
+uptime_pct = min((heartbeats × 100) / expected_heartbeats, 100)
+eligible = uptime_pct >= 95
+```
 
-- **Budget:** 500,000 LOS (allocated from dev treasury, non-inflationary)
-- **Per Epoch:** 5,000 LOS, halving every 48 epochs
-- **Distribution Formula:**
-  ```
-  reward_i = epoch_budget × isqrt(stake_i) / Σ isqrt(stake_all)
-  ```
-  Where `isqrt` is integer square root — no floating-point.
-- **Eligibility:** Minimum 1,000 LOS stake, ≥95% uptime
+---
 
-## 5. Proof-of-Burn
+## Anti-Whale Mechanisms
 
-Users acquire LOS by burning ETH or BTC to provably unspendable addresses:
+### Quadratic Voting Power
 
-| Asset | Burn Address |
+Voting weight is the integer square root of stake:
+
+```
+voting_power = isqrt(staked_amount_cil)
+```
+
+| Scenario | Stake | Voting Power |
+|---|---|---|
+| 1 whale | 10,000 LOS | ~31,623 |
+| 10 small validators | 1,000 LOS each | 10 × ~10,000 = ~100,000 |
+
+**Result:** 10 small validators with the same total stake have **3× more voting power** than a single whale. This inherently incentivizes decentralization.
+
+### Whale Detection
+
+A whale is defined as any entity holding >1% of total supply:
+
+```
+whale_threshold = total_supply / 100 = 219,362 LOS
+```
+
+### Dynamic Fee Scaling
+
+Transactions per block are rate-limited. Exceeding the threshold triggers exponential fee scaling:
+
+```
+threshold = 5 transactions per 60-second window
+excess = tx_count - threshold (if > 0)
+fee = base_fee × 2^(excess + 1)
+```
+
+| Transactions | Fee Multiplier |
 |---|---|
-| ETH | `0x000000000000000000000000000000000000dEaD` |
-| BTC | `1BitcoinEaterAddressDontSendf59kuE` |
+| 1–5 | 1× (base fee) |
+| 6 | 2× |
+| 7 | 4× |
+| 8 | 8× |
+| 9 | 16× |
+| 10 | 32× |
 
-### Burn Pipeline (Deterministic Integer Math)
+### Burn Cap
 
-1. **Submit TXID:** User submits a burn TX hash via `/burn` API
-2. **Oracle Consensus:** Multiple validators fetch prices from external APIs, submit prices as micro-USD (u128, 1 USD = 1,000,000 micro-USD)
-3. **Median Aggregation:** BFT median of all validator price submissions (resists manipulation)
-4. **Amount Verification:** Burn amount fetched from blockchain explorer (wei for ETH, satoshi for BTC)
-5. **CIL Calculation:** Pure u128 arithmetic — `cil = amount_base × price_micro / base_divisor × cil_per_los / 1_000_000`
-6. **Multi-Validator Vote:** ≥2 independent validators must verify the TXID
-7. **Mint Block:** Created on consensus achievement
+Maximum burn per block: 1,000 LOS. Prevents rapid supply draining.
 
-### Anti-Manipulation
+### Governance Quorum
 
-- **Outlier Detection:** Oracle prices deviating >20% from median (in basis points) are flagged
-- **Double-Claim Prevention:** Each TXID can only be claimed once (globally deduplicated)
-- **Slashing:** Validators submitting fake TXIDs or manipulated prices face stake reduction
+Proposal consensus uses quadratic-weighted votes:
 
-## 6. Smart Contracts (UVM)
+```
+votes_for_bps = (Σ voting_power_for × 10,000) / total_voting_power
+consensus = votes_for_bps > 5,000  (strictly > 50%)
+```
 
-Unauthority supports smart contracts compiled to WebAssembly (WASM):
+Concentration ratio tracked per validator: `validator_power × 10,000 / total_power`.
 
-- **USP-01:** Native Fungible Token Standard (enables wrapped assets: wBTC, wETH)
-- **Runtime:** UVM (Unauthority Virtual Machine) executes WASM bytecode
-- **Deployment:** Via `/deploy-contract` API endpoint
-- **Execution:** Via `/call-contract` API endpoint
-- **Oracle Access:** Contracts can query oracle price feeds
+---
 
-## 7. Network Layer
+## Slashing & Accountability
 
-### Transport
+### Violation Types
 
-All inter-node communication occurs over Tor hidden services:
+| Violation | Penalty | Result |
+|---|---|---|
+| **Double Signing** | 100% of stake | Permanent ban |
+| **Fraudulent Transaction** | 100% of stake | Permanent ban |
+| **Extended Downtime** | 1% of stake | Status → Slashed |
 
-- Each validator hosts a `.onion` address
-- Gossip protocol uses HTTP POST over Tor SOCKS5
-- Signed gossip messages prevent spoofing (Dilithium5)
+### Double Signing Detection
 
-### Peer Discovery
+The node maintains the last 1,000 block signatures per validator. If two different blocks are signed at the same height by the same validator, it is flagged as double signing.
 
-1. Bootstrap from hardcoded seed nodes
-2. Exchange peer tables during ID handshake
-3. Maintain dynamic peer table sorted by latency/uptime
-4. Automatic reconnection on failure
+### Downtime Detection
 
-### Gossip Messages
+```
+observation_window = 50,000 blocks (~5 hours)
+downtime_threshold = 10,000 blocks (~1 hour)
+
+uptime_bps = (blocks_participated × 10,000) / total_blocks_observed
+
+if total_blocks_observed >= 50,000 AND uptime_bps < 9,500:
+    slash 1% of stake
+```
+
+### Multi-Validator Slash Proposal
+
+Slashing requires consensus:
+
+```
+threshold = (total_validators × 2 / 3) + 1
+```
+
+- Proposer auto-confirms
+- Evidence hash prevents duplicate proposals
+- Stake amount read from ledger at confirmation time (prevents front-running)
+
+### Validator State Machine
+
+```
+Active → Slashed (via downtime violation)
+Active → Banned (via double-signing or fraud)
+Active → Unstaking (voluntary exit)
+```
+
+---
+
+## Post-Quantum Cryptography
+
+### Algorithm: Dilithium5
+
+Unauthority uses **CRYSTALS-Dilithium** at security level 5 (NIST FIPS 204):
+
+| Property | Value |
+|---|---|
+| Security (classical) | 256-bit |
+| Security (quantum) | 128-bit (against Grover/Shor) |
+| Public key size | ~2,592 bytes |
+| Signature size | ~4,627 bytes |
+| Sign time | ~1ms |
+| Verify time | ~0.5ms |
+
+### Hash Function: SHA-3 (Keccak)
+
+All block hashing uses SHA-3 (FIPS 202):
+
+```
+block_hash = SHA3-256(account || previous || block_type || amount || ...)
+address = Base58(SHA3-256(public_key))
+```
+
+### Key Derivation
+
+Keys are derived from BIP39 mnemonic seeds using deterministic Dilithium5 key generation. The seed is expanded using SHA-3 before feeding into the key generation algorithm.
+
+### Why Post-Quantum?
+
+Quantum computers threaten ECDSA/Ed25519 via Shor's algorithm. By using lattice-based cryptography from day one, Unauthority:
+- Protects against future quantum attacks
+- Avoids a disruptive migration later
+- Ensures long-term security of all addresses and signatures
+
+---
+
+## Network Layer: Tor-Only
+
+### Architecture
+
+All network traffic is routed through Tor hidden services:
+
+```
+Node A (.onion) ←→ Tor Network ←→ Node B (.onion)
+```
+
+- **No clearnet** — validators have no public IP exposure
+- **No DNS** — `.onion` addresses are derived from Tor keys
+- **NAT traversal** — works behind any firewall/router
+
+### Peer Discovery (v1.0.9+)
+
+1. Node starts and reads genesis config (embedded at compile-time)
+2. Extracts `.onion` addresses of bootstrap validators
+3. Auto-detects Tor SOCKS5 proxy at `127.0.0.1:9050` (500ms timeout)
+4. Connects to bootstrap peers via SOCKS5
+5. Downloads dynamic peer table from connected peers
+6. Maintains peer table sorted by latency/uptime
+
+### P2P Communication
+
+All gossip messages are HTTP POST requests routed through Tor:
 
 | Message | Purpose |
 |---|---|
-| `ID` | Node identity and supply announcement |
-| `BLOCK` | Block propagation |
-| `CONFIRM_REQ` / `CONFIRM_RES` | Block confirmation voting |
-| `VOTE_REQ` / `VOTE_RES` | Burn verification voting |
-| `ORACLE_SUBMIT` | Price oracle submissions |
-| `VALIDATOR_REG` / `VALIDATOR_UNREG` | Validator set changes |
-| `SLASH_REQ` | Slashing proposals |
+| `ID` | Node identity announcement |
+| `BLOCK` | New block broadcast |
+| `CONFIRM_REQ` | Request confirmation votes |
+| `VOTE_REQ` | Request burn verification votes |
+| `VOTE_RES` | Burn verification vote response |
+| `ORACLE_SUBMIT` | Oracle price submission |
 
-## 8. Security Analysis
+### Encryption
 
-### Post-Quantum Resistance
-Dilithium5 is a NIST-standardized lattice-based signature scheme. It provides:
-- 256-bit classical security
-- 128-bit quantum security (against Grover/Shor)
-- Compact signatures (~4.6 KB)
+P2P channels use **Noise Protocol** (XX handshake pattern) for end-to-end encryption, layered on top of Tor's transport encryption.
+
+---
+
+## Smart Contracts (UVM)
+
+### Architecture
+
+The Unauthority Virtual Machine (UVM) executes WASM smart contracts:
+
+```
+Rust source → cargo build --target wasm32-unknown-unknown → .wasm
+    → Deploy via /contract/deploy
+    → Execute via /contract/execute
+    → State stored in contract-specific key-value store
+```
+
+### Token Standard: USP-01
+
+Native fungible token standard enables:
+- Custom token creation
+- Wrapped assets (wBTC, wETH)
+- Standard `transfer`, `approve`, `balance_of` interface
+
+### Oracle Connector
+
+Smart contracts can access oracle price feeds:
+
+```rust
+// Inside a WASM contract
+let eth_price = oracle_get_price("ETH/USD");
+let btc_price = oracle_get_price("BTC/USD");
+```
+
+### Decentralized Exchange (DEX)
+
+The DEX runs as Layer 2 smart contracts:
+- AMM (Automated Market Maker) model
+- MEV resistant (ordered by block-lattice finality, not miner choice)
+- Permissionless — anyone can deploy a DEX contract
+- Multiple DEXs can coexist independently
+
+---
+
+## Security Analysis
+
+### Threat Model
+
+| Threat | Mitigation |
+|---|---|
+| Quantum computers | Dilithium5 (lattice-based, 128-bit quantum security) |
+| DDoS | Tor hidden services — no IP to target |
+| 51% attack | aBFT requires 2/3 + 1 honest; quadratic voting prevents stake concentration |
+| Oracle manipulation | BFT median, 20% outlier rejection, slashing for fraud |
+| Floating-point non-determinism | Zero f32/f64 in consensus; all u128 integer math |
+| Double spending | Per-account chain with `previous` hash linking; aBFT finality |
+| Front-running (MEV) | Block-lattice doesn't have a mempool ordering advantage |
+| Sybil attack | 1,000 LOS minimum stake for validators |
+| Inflation bug | Fixed supply with checked arithmetic and u128 overflow protection |
+| Network partition | aBFT liveness requires ≥2/3 validators; view change on leader failure |
 
 ### Determinism Guarantee
-All consensus-critical computation uses `u128` integer arithmetic:
-- Prices: micro-USD (6 decimal places)
-- ETH amounts: wei (18 decimal places)
-- BTC amounts: satoshi (8 decimal places)
-- Outlier detection: basis points (0-10000)
-- No `f32`/`f64` in the consensus pipeline
 
-### Tor Privacy
-- No IP addresses exposed — only `.onion`
-- SOCKS5 proxy prevents DNS and IP leaks
-- Each validator is a distinct hidden service
+All consensus-critical computation uses:
+- `u128` integer arithmetic (no floating-point)
+- `checked_mul`, `checked_add` (overflow protection)
+- `isqrt` via Newton's method (deterministic across all platforms)
+- Sorted arrays for median (deterministic ordering)
+- Basis points (10,000 = 100%) instead of percentages
 
-### Anti-Whale Mechanisms
-- √Stake quadratic voting limits whale influence
-- Dynamic fee scaling increases costs during congestion
-- Burn rate limits per address prevent rapid accumulation
+This ensures all validators compute identical results regardless of CPU architecture, OS, or compiler version.
 
-## 9. Conclusion
+---
 
-Unauthority (LOS) combines post-quantum cryptography, Tor-native networking, DAG structure, and aBFT consensus to create a blockchain that is genuinely decentralized, private, and resistant to both classical and quantum adversaries. The fixed supply and Proof-of-Burn distribution ensure fair token allocation without centralized gatekeeping.
+## Performance
+
+### Target Metrics
+
+| Metric | Target | Achieved |
+|---|---|---|
+| Transaction finality | < 3 seconds | ~2s (over Tor) |
+| API response (Tor) | < 2 seconds | 500ms–2s |
+| API response (local) | < 5ms | <5ms |
+| P2P gossip round-trip | < 3 seconds | 1s–3s (over Tor) |
+| Validator uptime | > 95% | Monitored per epoch |
+| Concurrent accounts | Unlimited | Per-account chains scale horizontally |
+
+### Bottleneck: Tor Latency
+
+Tor adds ~500ms–2s per hop. This is the primary performance constraint and is an explicit trade-off for privacy. The block-lattice structure mitigates this — since each account has its own chain, parallel transactions on different accounts don't wait for each other.
+
+---
+
+*Unauthority (LOS) — Lattice Of Sovereignty*
+*100% Immutable. 100% Permissionless. 100% Decentralized.*

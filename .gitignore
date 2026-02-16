@@ -232,8 +232,6 @@ debug_*.log
 # GitHub workflows
 !.github/
 
-# Dev-only documentation (not for public repo)
-dev_docs/
 **/INSTALLER_*.md
 **/FAQ_*.md
 **/LAUNCH_GUIDE.md

@@ -1,3 +1,4 @@
+import '../utils/log.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
@@ -21,14 +22,13 @@ class _WalletSetupScreenState extends State<WalletSetupScreen> {
   int _mode = 0;
 
   Future<void> _generateWallet() async {
-    debugPrint(
-        '💰 [WalletSetupScreen._generateWallet] Generating new wallet...');
+    losLog('💰 [WalletSetupScreen._generateWallet] Generating new wallet...');
     setState(() => _isLoading = true);
 
     try {
       final walletService = context.read<WalletService>();
       final wallet = await walletService.generateWallet();
-      debugPrint(
+      losLog(
           '💰 [WalletSetupScreen._generateWallet] SUCCESS address=${wallet['address']}');
 
       if (!mounted) return;
@@ -71,9 +71,15 @@ class _WalletSetupScreenState extends State<WalletSetupScreen> {
                     onPressed: () {
                       Clipboard.setData(
                           ClipboardData(text: wallet['mnemonic']!));
+                      // SECURITY FIX M-6: Auto-clear clipboard after 30 seconds
+                      Future.delayed(const Duration(seconds: 30), () {
+                        Clipboard.setData(const ClipboardData(text: ''));
+                      });
                       ScaffoldMessenger.of(context).showSnackBar(
                         const SnackBar(
-                          content: Text('Seed phrase copied to clipboard'),
+                          content:
+                              Text('Seed phrase copied (auto-clears in 30s)'),
+                          backgroundColor: Colors.orange,
                           duration: Duration(seconds: 2),
                         ),
                       );
@@ -110,7 +116,7 @@ class _WalletSetupScreenState extends State<WalletSetupScreen> {
         ),
       );
     } catch (e) {
-      debugPrint('💰 [WalletSetupScreen._generateWallet] ERROR: $e');
+      losLog('💰 [WalletSetupScreen._generateWallet] ERROR: $e');
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
@@ -123,14 +129,14 @@ class _WalletSetupScreenState extends State<WalletSetupScreen> {
   Future<void> _importWallet() async {
     if (!_formKey.currentState!.validate()) return;
 
-    debugPrint(
+    losLog(
         '💰 [WalletSetupScreen._importWallet] Importing wallet from mnemonic...');
     setState(() => _isLoading = true);
 
     try {
       final walletService = context.read<WalletService>();
       await walletService.importWallet(_mnemonicController.text.trim());
-      debugPrint('💰 [WalletSetupScreen._importWallet] SUCCESS');
+      losLog('💰 [WalletSetupScreen._importWallet] SUCCESS');
 
       if (!mounted) return;
 
@@ -139,7 +145,7 @@ class _WalletSetupScreenState extends State<WalletSetupScreen> {
         MaterialPageRoute(builder: (_) => const HomeScreen()),
       );
     } catch (e) {
-      debugPrint('💰 [WalletSetupScreen._importWallet] ERROR: $e');
+      losLog('💰 [WalletSetupScreen._importWallet] ERROR: $e');
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
@@ -153,14 +159,13 @@ class _WalletSetupScreenState extends State<WalletSetupScreen> {
   Future<void> _importByAddress() async {
     if (!_formKey.currentState!.validate()) return;
 
-    debugPrint(
-        '💰 [WalletSetupScreen._importByAddress] Importing by address...');
+    losLog('💰 [WalletSetupScreen._importByAddress] Importing by address...');
     setState(() => _isLoading = true);
 
     try {
       final walletService = context.read<WalletService>();
       await walletService.importByAddress(_addressController.text.trim());
-      debugPrint('💰 [WalletSetupScreen._importByAddress] SUCCESS');
+      losLog('💰 [WalletSetupScreen._importByAddress] SUCCESS');
 
       if (!mounted) return;
 
@@ -169,7 +174,7 @@ class _WalletSetupScreenState extends State<WalletSetupScreen> {
         MaterialPageRoute(builder: (_) => const HomeScreen()),
       );
     } catch (e) {
-      debugPrint('💰 [WalletSetupScreen._importByAddress] ERROR: $e');
+      losLog('💰 [WalletSetupScreen._importByAddress] ERROR: $e');
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),

@@ -1,3 +1,4 @@
+import '../utils/log.dart';
 // Network Status Service - Monitors blockchain connection and sync status.
 // Wired to ApiService: when health degrades, proactively triggers failover
 // so the next user request goes to a healthy node.
@@ -35,7 +36,7 @@ class NetworkStatusService extends ChangeNotifier {
   Timer? _statusCheckTimer;
 
   NetworkStatusService(this._apiService) {
-    debugPrint('🔌 [NetworkStatus] Service created, starting status checks...');
+    losLog('🔌 [NetworkStatus] Service created, starting status checks...');
     _apiService.onNodeSwitched = (newUrl) {
       _connectedNodeName = _apiService.connectedNodeName;
       notifyListeners();
@@ -91,10 +92,10 @@ class NetworkStatusService extends ChangeNotifier {
         notifyListeners();
       }
 
-      debugPrint('🔌 [NetworkStatus] Checking health...');
+      losLog('🔌 [NetworkStatus] Checking health...');
 
       final health = await _apiService.getHealth();
-      debugPrint('🔌 [NetworkStatus] Health response: ${health['status']}');
+      losLog('🔌 [NetworkStatus] Health response: ${health['status']}');
 
       if (health['status'] == 'healthy' || health['status'] == 'degraded') {
         _status = ConnectionStatus.connected;
@@ -114,16 +115,16 @@ class NetworkStatusService extends ChangeNotifier {
           _nodeVersion = nodeInfo['version'] ?? '0.0.0';
           _peerCount = nodeInfo['peer_count'] ?? 0;
           _blockHeight = nodeInfo['block_height'] ?? _blockHeight;
-          debugPrint('🔌 [NetworkStatus] Connected to $_connectedNodeName: '
+          losLog('🔌 [NetworkStatus] Connected to $_connectedNodeName: '
               'v$_nodeVersion, height=$_blockHeight, peers=$_peerCount, net=$_networkType');
         } catch (e) {
-          debugPrint('⚠️ [NetworkStatus] Node info failed: $e');
+          losLog('⚠️ [NetworkStatus] Node info failed: $e');
         }
       } else {
         _status = ConnectionStatus.error;
         _errorMessage = 'Node unhealthy';
         _consecutiveHealthFailures++;
-        debugPrint('🔌 [NetworkStatus] Node unhealthy: ${health['status']}');
+        losLog('🔌 [NetworkStatus] Node unhealthy: ${health['status']}');
         _maybeFailover();
       }
 
@@ -134,7 +135,7 @@ class NetworkStatusService extends ChangeNotifier {
       _status = ConnectionStatus.disconnected;
       _errorMessage = 'Connection failed';
       _consecutiveHealthFailures++;
-      debugPrint('🔌 [NetworkStatus] Connection failed: $e');
+      losLog('🔌 [NetworkStatus] Connection failed: $e');
 
       _maybeFailover();
 
@@ -146,7 +147,7 @@ class NetworkStatusService extends ChangeNotifier {
 
   void _maybeFailover() {
     if (_consecutiveHealthFailures >= _failoverThreshold) {
-      debugPrint('🔌 [NetworkStatus] $_consecutiveHealthFailures consecutive '
+      losLog('🔌 [NetworkStatus] $_consecutiveHealthFailures consecutive '
           'failures — triggering proactive failover');
       _apiService.onHealthDegraded();
       _consecutiveHealthFailures = 0;

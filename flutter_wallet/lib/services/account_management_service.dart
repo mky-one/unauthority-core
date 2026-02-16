@@ -1,5 +1,5 @@
+import '../utils/log.dart';
 import 'dart:convert';
-import 'package:flutter/foundation.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:uuid/uuid.dart';
@@ -50,10 +50,10 @@ class AccountManagementService {
       if (migrated) {
         // Re-save without seed phrases
         await prefs.setString(_storageKey, json.encode(data));
-        debugPrint('🔒 Migrated account seed phrases to SecureStorage');
+        losLog('🔒 Migrated account seed phrases to SecureStorage');
       }
     } catch (e) {
-      debugPrint('Migration error (non-fatal): $e');
+      losLog('Migration error (non-fatal): $e');
     }
   }
 
@@ -61,7 +61,7 @@ class AccountManagementService {
   /// Account metadata is in SharedPreferences (no secrets).
   /// Seed phrases are loaded separately from FlutterSecureStorage.
   Future<AccountsList> loadAccounts() async {
-    debugPrint(
+    losLog(
         '👤 [AccountManagementService.loadAccounts] Loading accounts...');
     final prefs = await SharedPreferences.getInstance();
     final accountsJson = prefs.getString(_storageKey);
@@ -89,12 +89,12 @@ class AccountManagementService {
         );
       }
 
-      debugPrint(
+      losLog(
           '👤 [AccountManagementService.loadAccounts] Loaded ${accounts.length} accounts, active: $activeAccountId');
       return AccountsList(accounts: accounts, activeAccountId: activeAccountId);
     } catch (e) {
-      debugPrint('👤 [AccountManagementService.loadAccounts] Error: $e');
-      debugPrint('Error loading accounts: $e');
+      losLog('👤 [AccountManagementService.loadAccounts] Error: $e');
+      losLog('Error loading accounts: $e');
       return AccountsList(accounts: [], activeAccountId: null);
     }
   }
@@ -103,7 +103,7 @@ class AccountManagementService {
   /// Metadata (no secrets) → SharedPreferences.
   /// Seed phrases → FlutterSecureStorage keyed by account ID.
   Future<void> saveAccounts(AccountsList accountsList) async {
-    debugPrint(
+    losLog(
         '👤 [AccountManagementService.saveAccounts] Saving ${accountsList.accounts.length} accounts...');
     final prefs = await SharedPreferences.getInstance();
     // toJson() on AccountProfile now excludes seed_phrase
@@ -128,7 +128,7 @@ class AccountManagementService {
     } else {
       await prefs.remove(_activeAccountKey);
     }
-    debugPrint(
+    losLog(
         '👤 [AccountManagementService.saveAccounts] Saved ${accountsList.accounts.length} accounts');
   }
 
@@ -139,7 +139,7 @@ class AccountManagementService {
     required String seedPhrase,
     String? publicKey,
   }) async {
-    debugPrint(
+    losLog(
         '👤 [AccountManagementService.createAccount] Creating account: $name');
     final account = AccountProfile(
       id: _uuid.v4(),
@@ -160,7 +160,7 @@ class AccountManagementService {
       await saveAccounts(updatedList);
     }
 
-    debugPrint(
+    losLog(
         '👤 [AccountManagementService.createAccount] Created account ${account.id}: $address');
     return account;
   }
@@ -172,7 +172,7 @@ class AccountManagementService {
     required String seedPhrase,
     String? publicKey,
   }) async {
-    debugPrint(
+    losLog(
         '👤 [AccountManagementService.importAccount] Importing account: $name, $address');
     // Check if account already exists
     final accountsList = await loadAccounts();
@@ -188,7 +188,7 @@ class AccountManagementService {
       seedPhrase: seedPhrase,
       publicKey: publicKey,
     );
-    debugPrint(
+    losLog(
         '👤 [AccountManagementService.importAccount] Imported account: $name, $address');
     return result;
   }
@@ -226,7 +226,7 @@ class AccountManagementService {
   /// from the widget tree.
   Future<void> switchAccount(String accountId,
       {WalletService? walletService}) async {
-    debugPrint(
+    losLog(
         '👤 [AccountManagementService.switchAccount] Switching to account: $accountId');
     final accountsList = await loadAccounts();
 
@@ -250,13 +250,13 @@ class AccountManagementService {
       // Address-only account — restore address via importByAddress
       await ws.importByAddress(account.address);
     }
-    debugPrint(
+    losLog(
         '👤 [AccountManagementService.switchAccount] Switched to account: ${account.name}');
   }
 
   /// Rename account
   Future<void> renameAccount(String accountId, String newName) async {
-    debugPrint(
+    losLog(
         '👤 [AccountManagementService.renameAccount] Renaming account $accountId to $newName');
     final accountsList = await loadAccounts();
     final account = accountsList.accounts.firstWhere(
@@ -267,13 +267,13 @@ class AccountManagementService {
     final updatedAccount = account.copyWith(name: newName);
     final updatedList = accountsList.updateAccount(updatedAccount);
     await saveAccounts(updatedList);
-    debugPrint(
+    losLog(
         '👤 [AccountManagementService.renameAccount] Renamed account $accountId to $newName');
   }
 
   /// Delete account
   Future<void> deleteAccount(String accountId) async {
-    debugPrint(
+    losLog(
         '👤 [AccountManagementService.deleteAccount] Deleting account: $accountId');
     final accountsList = await loadAccounts();
 
@@ -296,7 +296,7 @@ class AccountManagementService {
     } else {
       await saveAccounts(updatedList);
     }
-    debugPrint(
+    losLog(
         '👤 [AccountManagementService.deleteAccount] Deleted account: $accountId');
   }
 

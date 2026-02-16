@@ -1,21 +1,14 @@
-security: pre-mainnet deep audit fixes (M-5)
+security: full mainnet audit M-6 - strip genesis secrets, enforce Tor, harden Flutter apps
 
-CRITICAL FIXES:
-- Gate Ed25519 behind cfg(not(feature=mainnet)) in los-crypto
-  Mainnet ONLY accepts Dilithium5 post-quantum signatures
-- Replace all HashMap with BTreeMap in VM engine and network layer
-  for deterministic state serialization across validators
-- Add checked_add/checked_sub for all USP-01 token balance operations
-  Prevents u128 overflow/underflow in transfer, transferFrom, mint, burn
+M-6 Audit Fixes:
+- G-1 CRITICAL: Strip all private_key + seed_phrase from 4 genesis files (48 fields)
+- T-1 HIGH: Mainnet refuses startup without Tor (LOS_SOCKS5_PROXY required)
+- R-2 MEDIUM: Block LOS_BIND_ALL=1 on mainnet builds
+- N-2 MEDIUM: Fix testnet genesis network_id from 1 to 2
+- S-03 HIGH: Replace 400+ debugPrint with losLog() (no-op in release mode)
+- D-1/D-2: Docker testnet-genesis stripping via jq
+- Clipboard auto-clear 30s on wallet_setup_screen
+- Validator standalone mode gate on mainnet (refuse without Tor)
 
-HIGH FIXES:
-- Clamp oracle deviation_bps to u16 range before cast
-
-AUDIT VERIFIED (290 tests, 0 failures):
-- Genesis: 21,936,236 LOS supply math verified, 8 unique addresses
-- Ledger: BTreeMap + BTreeSet, checked_add, double-receive prevention
-- Consensus: aBFT keyed MAC, dedup by sender, integer-only isqrt
-- Rewards: 500K pool, integer sqrt weight, probation, halving
-- Crypto: Dilithium5 + SHA3, key zeroization, deterministic derivation
-- VM: Gas metering, bytecode limit, mainnet mock kill-switch
-- Zero unwrap/panic/todo in production, zero f64 in consensus paths
+Rust: 0 warnings, 294 tests passing
+Flutter: 0 analysis issues, all tests passing

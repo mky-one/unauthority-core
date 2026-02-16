@@ -1,3 +1,4 @@
+import '../utils/log.dart';
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
@@ -72,7 +73,7 @@ class WalletService {
       await prefs.remove(_seedKey);
       await prefs.remove(_publicKeyKey);
       await prefs.remove(_secretKeyKey);
-      debugPrint('🔒 Migrated wallet secrets to secure storage');
+      losLog('🔒 Migrated wallet secrets to secure storage');
     }
   }
 
@@ -80,13 +81,13 @@ class WalletService {
   Future<bool> isDilithium5Wallet() async {
     final prefs = await SharedPreferences.getInstance();
     final result = prefs.getString(_cryptoModeKey) == 'dilithium5';
-    debugPrint('💰 [WalletService.isDilithium5Wallet] Result: $result');
+    losLog('💰 [WalletService.isDilithium5Wallet] Result: $result');
     return result;
   }
 
   /// Generate new wallet with real Dilithium5 keypair (if available)
   Future<Map<String, String>> generateWallet() async {
-    debugPrint('💰 [WalletService.generateWallet] Generating wallet...');
+    losLog('💰 [WalletService.generateWallet] Generating wallet...');
     final mnemonic = bip39.generateMnemonic(strength: 256);
     String address;
     String cryptoMode;
@@ -116,9 +117,9 @@ class WalletService {
         await prefs.setString(_importModeKey, 'mnemonic');
         await prefs.setString(_cryptoModeKey, cryptoMode);
 
-        debugPrint('🔐 Dilithium5 wallet created (deterministic from seed)');
-        debugPrint('   Address: $address');
-        debugPrint('   PK: ${keypair.publicKey.length} bytes');
+        losLog('🔐 Dilithium5 wallet created (deterministic from seed)');
+        losLog('   Address: $address');
+        losLog('   PK: ${keypair.publicKey.length} bytes');
       } finally {
         // FIX M-04: Zero BIP39 seed bytes in Dart memory after keypair generation
         seed.fillRange(0, seed.length, 0);
@@ -157,7 +158,7 @@ class WalletService {
         await prefs.setString(_importModeKey, 'mnemonic');
         await prefs.setString(_cryptoModeKey, cryptoMode);
 
-        debugPrint(
+        losLog(
           '⚠️ Ed25519 fallback wallet — TESTNET ONLY (Dilithium5 native lib not loaded)',
         );
       } finally {
@@ -166,7 +167,7 @@ class WalletService {
       }
     }
 
-    debugPrint(
+    losLog(
         '💰 [WalletService.generateWallet] Wallet generated: $address, mode: $cryptoMode');
     return {
       'mnemonic': mnemonic,
@@ -180,7 +181,7 @@ class WalletService {
   /// Dilithium5: Deterministic from seed — same mnemonic = same address.
   /// SHA256 fallback: Also deterministic.
   Future<Map<String, String>> importWallet(String mnemonic) async {
-    debugPrint(
+    losLog(
         '💰 [WalletService.importWallet] Importing wallet from mnemonic (${mnemonic.split(' ').length} words)...');
     if (!bip39.validateMnemonic(mnemonic)) {
       throw Exception('Invalid mnemonic phrase');
@@ -214,10 +215,10 @@ class WalletService {
         await prefs.setString(_importModeKey, 'mnemonic');
         await prefs.setString(_cryptoModeKey, cryptoMode);
 
-        debugPrint(
+        losLog(
           '🔐 Dilithium5 wallet restored from mnemonic (deterministic)',
         );
-        debugPrint('   Address: $address');
+        losLog('   Address: $address');
       } finally {
         // FIX M-04: Zero BIP39 seed bytes in Dart memory
         seed.fillRange(0, seed.length, 0);
@@ -258,7 +259,7 @@ class WalletService {
       }
     }
 
-    debugPrint(
+    losLog(
         '💰 [WalletService.importWallet] Imported: $address, mode: $cryptoMode');
     return {
       'mnemonic': mnemonic,
@@ -269,7 +270,7 @@ class WalletService {
 
   /// Import by address only (testnet genesis accounts)
   Future<Map<String, String>> importByAddress(String address) async {
-    debugPrint(
+    losLog(
         '💰 [WalletService.importByAddress] Importing address-only: $address');
     if (!address.startsWith('LOS') || address.length < 30) {
       throw Exception('Invalid LOS address format');
@@ -284,11 +285,11 @@ class WalletService {
       try {
         await _secureStorage.delete(key: key);
       } catch (e) {
-        debugPrint('⚠️ SecureStorage.delete($key) failed during import: $e');
+        losLog('⚠️ SecureStorage.delete($key) failed during import: $e');
       }
     }
 
-    debugPrint(
+    losLog(
         '💰 [WalletService.importByAddress] Address-only import success');
     return {'address': address};
   }
@@ -299,12 +300,12 @@ class WalletService {
   Future<Map<String, String>?> getCurrentWallet({
     bool includeMnemonic = false,
   }) async {
-    debugPrint(
+    losLog(
         '💰 [WalletService.getCurrentWallet] includeMnemonic=$includeMnemonic');
     final prefs = await SharedPreferences.getInstance();
     final address = prefs.getString(_addressKey);
     if (address == null) {
-      debugPrint('💰 [WalletService.getCurrentWallet] No wallet found');
+      losLog('💰 [WalletService.getCurrentWallet] No wallet found');
       return null;
     }
 
@@ -318,22 +319,22 @@ class WalletService {
     final mode = prefs.getString(_cryptoModeKey);
     if (mode != null) result['crypto_mode'] = mode;
 
-    debugPrint('💰 [WalletService.getCurrentWallet] Address: $address');
+    losLog('💰 [WalletService.getCurrentWallet] Address: $address');
     return result;
   }
 
   /// Get hex-encoded public key (for sending with transactions)
   Future<String?> getPublicKeyHex() async {
-    debugPrint('💰 [WalletService.getPublicKeyHex] Fetching public key hex...');
+    losLog('💰 [WalletService.getPublicKeyHex] Fetching public key hex...');
     final pk = await _secureStorage.read(key: _publicKeyKey);
-    debugPrint(
+    losLog(
         '💰 [WalletService.getPublicKeyHex] Result: ${pk != null ? '${pk.length} hex chars' : 'null'}');
     return pk;
   }
 
   /// Delete wallet — wipes all sensitive and non-sensitive data
   Future<void> deleteWallet() async {
-    debugPrint('💰 [WalletService.deleteWallet] Deleting wallet...');
+    losLog('💰 [WalletService.deleteWallet] Deleting wallet...');
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(_addressKey);
     await prefs.remove(_importModeKey);
@@ -346,16 +347,16 @@ class WalletService {
       try {
         await _secureStorage.delete(key: key);
       } catch (e) {
-        debugPrint(
+        losLog(
             '⚠️ [WalletService.deleteWallet] SecureStorage.delete($key) failed: $e');
         // On macOS, try deleteAll as nuclear fallback
         try {
           await _secureStorage.deleteAll();
-          debugPrint(
+          losLog(
               '⚠️ [WalletService.deleteWallet] deleteAll() succeeded as fallback');
           break; // All keys wiped — no need to continue the loop
         } catch (e2) {
-          debugPrint(
+          losLog(
               '⚠️ [WalletService.deleteWallet] deleteAll() also failed: $e2');
           // Continue — prefs are cleared, wallet state is reset even if
           // Keychain items are orphaned. They won't be readable without
@@ -363,21 +364,21 @@ class WalletService {
         }
       }
     }
-    debugPrint('💰 [WalletService.deleteWallet] Wallet deleted');
+    losLog('💰 [WalletService.deleteWallet] Wallet deleted');
   }
 
   /// Clear wallet — alias for deleteWallet
   Future<void> clearWallet() async {
-    debugPrint('💰 [WalletService.clearWallet] Clearing wallet...');
+    losLog('💰 [WalletService.clearWallet] Clearing wallet...');
     await deleteWallet();
-    debugPrint('💰 [WalletService.clearWallet] Wallet cleared');
+    losLog('💰 [WalletService.clearWallet] Wallet cleared');
   }
 
   /// Check if wallet was imported by address only
   Future<bool> isAddressOnlyImport() async {
     final prefs = await SharedPreferences.getInstance();
     final result = prefs.getString(_importModeKey) == 'address';
-    debugPrint('💰 [WalletService.isAddressOnlyImport] Result: $result');
+    losLog('💰 [WalletService.isAddressOnlyImport] Result: $result');
     return result;
   }
 
@@ -387,7 +388,7 @@ class WalletService {
 
   /// Sign transaction data with Dilithium5 or SHA256 fallback.
   Future<String> signTransaction(String txData) async {
-    debugPrint(
+    losLog(
         '💰 [WalletService.signTransaction] Signing tx (${txData.length} bytes)...');
     final wallet = await getCurrentWallet();
     if (wallet == null) throw Exception('No wallet found');
@@ -410,7 +411,7 @@ class WalletService {
       try {
         final signature = DilithiumService.sign(message, secretKey);
         final sigHex = DilithiumService.bytesToHex(signature);
-        debugPrint(
+        losLog(
             '💰 [WalletService.signTransaction] Signed (sig: ${sigHex.length} hex chars), mode: dilithium5');
         return sigHex;
       } finally {
@@ -445,7 +446,7 @@ class WalletService {
         final sigHex = signature.bytes
             .map((b) => b.toRadixString(16).padLeft(2, '0'))
             .join('');
-        debugPrint(
+        losLog(
             '💰 [WalletService.signTransaction] Signed (sig: ${sigHex.length} hex chars), mode: ed25519');
         return sigHex;
       } finally {
@@ -540,7 +541,7 @@ class WalletService {
   /// Uses seed[0:32] as Ed25519 private seed → public key → BLAKE2b address.
   /// This matches los-crypto's address format for Ed25519 keys.
   Future<String> _deriveAddressEd25519(List<int> seed) async {
-    debugPrint(
+    losLog(
         '💰 [WalletService._deriveAddressEd25519] Deriving Ed25519 address...');
     final privateSeed = Uint8List.fromList(seed.sublist(0, 32));
     try {
@@ -551,7 +552,7 @@ class WalletService {
 
       final address =
           _deriveAddressFromPublicKey(Uint8List.fromList(pubKey.bytes));
-      debugPrint('💰 [WalletService._deriveAddressEd25519] Address: $address');
+      losLog('💰 [WalletService._deriveAddressEd25519] Address: $address');
       return address;
     } finally {
       privateSeed.fillRange(0, privateSeed.length, 0);
@@ -562,12 +563,12 @@ class WalletService {
   /// Used by AccountManagementScreen to create new sub-accounts
   /// without overwriting the primary wallet's SecureStorage keys.
   Future<String> deriveAddressFromMnemonic(String mnemonic) async {
-    debugPrint(
+    losLog(
         '💰 [WalletService.deriveAddressFromMnemonic] Deriving address from mnemonic (${mnemonic.split(' ').length} words)...');
     final seed = bip39.mnemonicToSeed(mnemonic);
     try {
       final address = await _deriveAddressEd25519(seed);
-      debugPrint(
+      losLog(
           '💰 [WalletService.deriveAddressFromMnemonic] Address: $address');
       return address;
     } finally {

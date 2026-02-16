@@ -1,3 +1,4 @@
+import '../utils/log.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:bip39/bip39.dart' as bip39;
@@ -28,7 +29,7 @@ class _AccountManagementScreenState extends State<AccountManagementScreen> {
   }
 
   Future<void> _loadAccounts() async {
-    debugPrint(
+    losLog(
         '👤 [AccountManagementScreen._loadAccounts] Loading accounts...');
     setState(() => _isLoading = true);
     try {
@@ -39,7 +40,7 @@ class _AccountManagementScreenState extends State<AccountManagementScreen> {
         _activeAccountId = accountsList.activeAccountId;
         _isLoading = false;
       });
-      debugPrint(
+      losLog(
           '👤 [AccountManagementScreen._loadAccounts] Loaded ${_accounts.length} accounts, active: $_activeAccountId');
     } catch (e) {
       if (!mounted) return;
@@ -53,14 +54,14 @@ class _AccountManagementScreenState extends State<AccountManagementScreen> {
   }
 
   Future<void> _switchAccount(AccountProfile account) async {
-    debugPrint(
+    losLog(
         '👤 [AccountManagementScreen._switchAccount] Switching to ${account.name}...');
     try {
       await _accountService.switchAccount(account.id,
           walletService: context.read<WalletService>());
       if (!mounted) return;
       setState(() => _activeAccountId = account.id);
-      debugPrint(
+      losLog(
           '👤 [AccountManagementScreen._switchAccount] Switched to ${account.name}');
 
       if (mounted) {
@@ -117,11 +118,11 @@ class _AccountManagementScreenState extends State<AccountManagementScreen> {
 
     if (newName != null && newName != account.name) {
       try {
-        debugPrint(
+        losLog(
             '👤 [AccountManagementScreen._showRenameDialog] Renaming ${account.name} to $newName');
         await _accountService.renameAccount(account.id, newName);
         await _loadAccounts();
-        debugPrint(
+        losLog(
             '👤 [AccountManagementScreen._showRenameDialog] Renamed successfully');
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -191,11 +192,11 @@ class _AccountManagementScreenState extends State<AccountManagementScreen> {
 
     if (confirmed == true) {
       try {
-        debugPrint(
+        losLog(
             '👤 [AccountManagementScreen._deleteAccount] Deleting ${account.name}...');
         await _accountService.deleteAccount(account.id);
         await _loadAccounts();
-        debugPrint(
+        losLog(
             '👤 [AccountManagementScreen._deleteAccount] Deleted ${account.name}');
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -273,7 +274,7 @@ class _AccountManagementScreenState extends State<AccountManagementScreen> {
 
     if (accountName != null) {
       try {
-        debugPrint(
+        losLog(
             '👤 [AccountManagementScreen._createNewAccount] Creating account: $accountName');
         // Check if name is taken
         final isTaken = await _accountService.isNameTaken(accountName);
@@ -317,7 +318,7 @@ class _AccountManagementScreenState extends State<AccountManagementScreen> {
 
         await _loadAccounts();
 
-        debugPrint(
+        losLog(
             '👤 [AccountManagementScreen._createNewAccount] Created account: $accountName, address: $address');
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(

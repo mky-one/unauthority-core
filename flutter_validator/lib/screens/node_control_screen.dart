@@ -1,3 +1,4 @@
+import '../utils/log.dart';
 import '../constants/colors.dart';
 import 'dart:async';
 import 'package:flutter/material.dart';
@@ -40,8 +41,7 @@ class _NodeControlScreenState extends State<NodeControlScreen>
   }
 
   Future<void> _loadWalletInfo() async {
-    debugPrint(
-        '🖥️ [NodeControlScreen._loadWalletInfo] Loading wallet info...');
+    losLog('🖥️ [NodeControlScreen._loadWalletInfo] Loading wallet info...');
     final walletService = context.read<WalletService>();
     final wallet = await walletService.getCurrentWallet();
     final monitorMode = await walletService.isMonitorMode();
@@ -50,7 +50,7 @@ class _NodeControlScreenState extends State<NodeControlScreen>
         _walletAddress = wallet['address'];
         _isMonitorMode = monitorMode;
       });
-      debugPrint(
+      losLog(
           '🖥️ [NodeControlScreen._loadWalletInfo] Address: ${wallet['address']}, monitorMode: $monitorMode');
       _refreshBalance();
       // Auto-register as validator on the bootstrap node if not already registered.
@@ -80,7 +80,7 @@ class _NodeControlScreenState extends State<NodeControlScreen>
       final validators = await apiService.getValidators();
       final alreadyRegistered = validators.any((v) => v.address == address);
       if (alreadyRegistered) {
-        debugPrint('✅ Validator already registered on bootstrap node');
+        losLog('✅ Validator already registered on bootstrap node');
         return;
       }
 
@@ -101,7 +101,7 @@ class _NodeControlScreenState extends State<NodeControlScreen>
         timestamp: timestamp,
         onionAddress: myOnion,
       );
-      debugPrint('✅ Auto-registered on bootstrap: ${result['msg']}');
+      losLog('✅ Auto-registered on bootstrap: ${result['msg']}');
 
       // Also register on local node if running
       if (nodeService.isRunning) {
@@ -117,29 +117,29 @@ class _NodeControlScreenState extends State<NodeControlScreen>
             timestamp: timestamp,
             onionAddress: myOnion,
           );
-          debugPrint('✅ Auto-registered on local node');
+          losLog('✅ Auto-registered on local node');
         } catch (e) {
-          debugPrint('⚠️ Local registration: $e');
+          losLog('⚠️ Local registration: $e');
         } finally {
           localApi.dispose();
         }
       }
     } catch (e) {
-      debugPrint('⚠️ Auto-registration deferred: $e');
+      losLog('⚠️ Auto-registration deferred: $e');
     }
   }
 
   Future<void> _refreshBalance() async {
-    debugPrint('💰 [NodeControlScreen._refreshBalance] Refreshing balance...');
+    losLog('💰 [NodeControlScreen._refreshBalance] Refreshing balance...');
     if (_walletAddress == null) return;
     try {
       final apiService = context.read<ApiService>();
       final account = await apiService.getBalance(_walletAddress!);
       if (mounted) setState(() => _balanceCil = account.balance);
-      debugPrint(
+      losLog(
           '💰 [NodeControlScreen._refreshBalance] Balance: ${account.balance} CIL');
     } catch (e) {
-      debugPrint('Balance refresh error: $e');
+      losLog('Balance refresh error: $e');
     }
   }
 
@@ -519,7 +519,7 @@ class _NodeControlScreenState extends State<NodeControlScreen>
   }
 
   Future<void> _startNode(NodeProcessService node) async {
-    debugPrint('🖥️ [NodeControlScreen._startNode] Starting node...');
+    losLog('🖥️ [NodeControlScreen._startNode] Starting node...');
     if (_isMonitorMode) return; // Monitor mode — CLI manages the node
     if (_isStartingNode) return; // Already starting — prevent double-click
 
@@ -564,23 +564,40 @@ class _NodeControlScreenState extends State<NodeControlScreen>
       String? bootstrapNodes;
       if (activeNodes.isNotEmpty) {
         bootstrapNodes = activeNodes.map((n) => n.p2pAddress).join(',');
-        debugPrint('\ud83c\udf10 Bootstrap nodes (.onion): $bootstrapNodes');
+        losLog('\ud83c\udf10 Bootstrap nodes (.onion): $bootstrapNodes');
       }
 
       // P2P port: auto-derived from API port + 1000 (matches los-node dynamic port)
       final p2pPort = node.apiPort + 1000;
-      debugPrint('📡 P2P port: $p2pPort');
+      losLog('📡 P2P port: $p2pPort');
 
       // Tor SOCKS5 proxy: MANDATORY for dialing .onion bootstrap peers.
       // MAINNET PARITY: Without SOCKS5, los-node cannot reach any peer.
       if (!torService.isRunning) {
-        debugPrint(
+        const isMainnet =
+            String.fromEnvironment('NETWORK', defaultValue: 'testnet') ==
+                'mainnet';
+        if (isMainnet) {
+          // MAINNET SAFETY (M-6): Refuse to start without Tor
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content:
+                    Text('❌ Mainnet requires Tor. Please start Tor first.'),
+                backgroundColor: Colors.red,
+              ),
+            );
+          }
+          setState(() => _isStartingNode = false);
+          return;
+        }
+        losLog(
             '⚠️ Tor not running — node will start without SOCKS5 (standalone mode)');
       }
       final torSocks5 = torService.isRunning
           ? '127.0.0.1:${torService.activeSocksPort}'
           : null;
-      debugPrint('🧅 Tor SOCKS5: $torSocks5');
+      losLog('🧅 Tor SOCKS5: $torSocks5');
 
       final started = await node.start(
         port: node.apiPort,
@@ -598,7 +615,7 @@ class _NodeControlScreenState extends State<NodeControlScreen>
         apiService.setLocalNodeUrl(node.localApiUrl);
       }
 
-      debugPrint(
+      losLog(
           '🖥️ [NodeControlScreen._startNode] ${started ? 'Success' : 'Failed'}');
     } finally {
       if (mounted) setState(() => _isStartingNode = false);
@@ -606,19 +623,19 @@ class _NodeControlScreenState extends State<NodeControlScreen>
   }
 
   Future<void> _stopNode(NodeProcessService node) async {
-    debugPrint('🖥️ [NodeControlScreen._stopNode] Stopping node...');
+    losLog('🖥️ [NodeControlScreen._stopNode] Stopping node...');
     // Capture ApiService BEFORE async gap to satisfy use_build_context_synchronously
     final apiService = context.read<ApiService>();
     await node.stop();
     // Clear local fallback — node is gone, localhost won't respond.
     apiService.clearLocalNodeUrl();
-    debugPrint('🖥️ [NodeControlScreen._stopNode] Node stopped');
+    losLog('🖥️ [NodeControlScreen._stopNode] Node stopped');
   }
 
   Future<void> _restartNode(NodeProcessService node) async {
-    debugPrint('🖥️ [NodeControlScreen._restartNode] Restarting node...');
+    losLog('🖥️ [NodeControlScreen._restartNode] Restarting node...');
     await node.restart();
-    debugPrint('🖥️ [NodeControlScreen._restartNode] Node restarted');
+    losLog('🖥️ [NodeControlScreen._restartNode] Node restarted');
   }
 
   // ================================================================
@@ -840,8 +857,7 @@ class _NodeControlScreenState extends State<NodeControlScreen>
   }
 
   void _confirmLogout() {
-    debugPrint(
-        '⚙️ [NodeControlScreen._confirmLogout] Showing logout dialog...');
+    losLog('⚙️ [NodeControlScreen._confirmLogout] Showing logout dialog...');
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -858,13 +874,13 @@ class _NodeControlScreenState extends State<NodeControlScreen>
         actions: [
           TextButton(
               onPressed: () {
-                debugPrint('⚙️ [NodeControlScreen._confirmLogout] Cancelled');
+                losLog('⚙️ [NodeControlScreen._confirmLogout] Cancelled');
                 Navigator.pop(ctx);
               },
               child: const Text('CANCEL')),
           TextButton(
               onPressed: () async {
-                debugPrint('⚙️ [NodeControlScreen._confirmLogout] Confirmed');
+                losLog('⚙️ [NodeControlScreen._confirmLogout] Confirmed');
                 Navigator.pop(ctx);
 
                 // Capture context-dependent services before async gap
@@ -884,7 +900,7 @@ class _NodeControlScreenState extends State<NodeControlScreen>
                 try {
                   await walletService.deleteWallet();
                 } catch (e) {
-                  debugPrint('⚠️ deleteWallet error: $e');
+                  losLog('⚠️ deleteWallet error: $e');
                 }
 
                 // 2. Navigate back to setup wizard IMMEDIATELY

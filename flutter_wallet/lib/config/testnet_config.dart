@@ -1,6 +1,6 @@
 library;
 
-import 'package:flutter/foundation.dart';
+import '../utils/log.dart';
 
 /// LOS FLUTTER WALLET - GRADUATED TESTNET CONFIGURATION
 ///
@@ -140,11 +140,10 @@ class WalletConfig {
   /// Switch network configuration
   static void setConfig(WalletTestnetConfig config) {
     _current = config;
-    debugPrint('🔄 Wallet switched to: ${config.networkName}');
-    debugPrint('   API: ${config.apiUrl}');
-    debugPrint(
-        '   Faucet: ${config.faucetAvailable ? "Available" : "Disabled"}');
-    debugPrint(
+    losLog('🔄 Wallet switched to: ${config.networkName}');
+    losLog('   API: ${config.apiUrl}');
+    losLog('   Faucet: ${config.faucetAvailable ? "Available" : "Disabled"}');
+    losLog(
         '   Confirmation: ${config.expectedConfirmationTime.inMilliseconds}ms');
   }
 
@@ -178,7 +177,7 @@ class WalletConfig {
         useMainnet();
         break;
       default:
-        debugPrint('⚠️ Unknown LOS_TESTNET_LEVEL: $env, using functional');
+        losLog('⚠️ Unknown LOS_TESTNET_LEVEL: $env, using functional');
         useFunctionalTestnet();
     }
   }

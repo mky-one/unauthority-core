@@ -1,3 +1,4 @@
+import '../utils/log.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
@@ -24,7 +25,7 @@ class _SendScreenState extends State<SendScreen> {
     if (!_formKey.currentState!.validate()) return;
 
     setState(() => _isLoading = true);
-    debugPrint('💸 [Send] Starting send transaction...');
+    losLog('💸 [Send] Starting send transaction...');
 
     try {
       final walletService = context.read<WalletService>();
@@ -32,7 +33,7 @@ class _SendScreenState extends State<SendScreen> {
       final wallet = await walletService.getCurrentWallet();
 
       if (wallet == null) throw Exception('No wallet found');
-      debugPrint('💸 [Send] From: ${wallet['address']}');
+      losLog('💸 [Send] From: ${wallet['address']}');
 
       // FIX C11-01: Backend expects LOS in `amount` field.
       // Support decimal amounts (e.g., 0.5 LOS) — BlockConstructionService
@@ -47,7 +48,7 @@ class _SendScreenState extends State<SendScreen> {
 
       // FIX H-06: Prevent sending to own address
       final toAddress = _toController.text.trim();
-      debugPrint('💸 [Send] To: $toAddress, Amount: $amountLosDouble LOS');
+      losLog('💸 [Send] To: $toAddress, Amount: $amountLosDouble LOS');
       if (toAddress == wallet['address']) {
         throw Exception('Cannot send to your own address');
       }
@@ -78,7 +79,7 @@ class _SendScreenState extends State<SendScreen> {
       Map<String, dynamic> result;
       if (hasKeys) {
         // Full client-side signing via BlockConstructionService
-        debugPrint('💸 [Send] Client-side signing with Dilithium5...');
+        losLog('💸 [Send] Client-side signing with Dilithium5...');
         result = await blockService.sendTransaction(
           to: toAddress,
           amountLosDouble: amountLosDouble,
@@ -95,7 +96,7 @@ class _SendScreenState extends State<SendScreen> {
         }
 
         // Address-only import — no keys, let node sign (TESTNET ONLY)
-        debugPrint(
+        losLog(
             '💸 [Send] No signing keys — node-signed (functional testnet)...');
         // FIX: Use amountCil for sub-LOS precision (0.5 LOS = 50_000_000_000 CIL).
         // floor() alone truncates sub-LOS amounts to 0 which the backend rejects.
@@ -111,7 +112,7 @@ class _SendScreenState extends State<SendScreen> {
 
       if (!mounted) return;
       final txHash = result['tx_hash'] ?? result['txid'] ?? 'N/A';
-      debugPrint('💸 [Send] SUCCESS: $txHash');
+      losLog('💸 [Send] SUCCESS: $txHash');
 
       Navigator.pop(context);
 
@@ -174,7 +175,7 @@ class _SendScreenState extends State<SendScreen> {
       }
     } catch (e) {
       if (!mounted) return;
-      debugPrint('💸 [Send] ERROR: $e');
+      losLog('💸 [Send] ERROR: $e');
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(e.toString()), backgroundColor: Colors.red),
       );

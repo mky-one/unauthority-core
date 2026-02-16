@@ -1,3 +1,4 @@
+import '../utils/log.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
@@ -44,7 +45,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       setState(() {
         _currentNetwork = apiService.environment;
       });
-      debugPrint(
+      losLog(
           '⚙️ [SettingsScreen._loadNetworkState] Current network: ${apiService.environment.name}');
     }
   }
@@ -52,7 +53,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   /// FIX H-02: Lazy-load seed phrase only when user taps reveal.
   /// Prevents keeping mnemonic in widget state longer than necessary.
   Future<void> _revealSeedPhrase() async {
-    debugPrint(
+    losLog(
         '⚙️ [SettingsScreen._revealSeedPhrase] Toggling seed phrase visibility...');
     if (_seedPhrase != null) {
       // Already loaded — just toggle visibility
@@ -66,7 +67,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         _seedPhrase = wallet['mnemonic'];
         _showSeedPhrase = true;
       });
-      debugPrint('⚙️ [SettingsScreen._revealSeedPhrase] Seed phrase revealed');
+      losLog('⚙️ [SettingsScreen._revealSeedPhrase] Seed phrase revealed');
     }
   }
 
@@ -88,7 +89,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   Future<void> _confirmLogout() async {
-    debugPrint(
+    losLog(
         '⚙️ [SettingsScreen._confirmLogout] Showing logout confirmation...');
     final confirmed = await showDialog<bool>(
       context: context,
@@ -112,7 +113,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
 
     if (confirmed == true && mounted) {
-      debugPrint('⚙️ [SettingsScreen._confirmLogout] Logout confirmed');
+      losLog('⚙️ [SettingsScreen._confirmLogout] Logout confirmed');
       final walletService = context.read<WalletService>();
       await walletService.clearWallet();
 
@@ -126,7 +127,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   void _switchNetwork(NetworkEnvironment network) {
-    debugPrint(
+    losLog(
         '⚙️ [SettingsScreen._switchNetwork] Switching from ${_currentNetwork.name} to ${network.name}');
     final apiService = context.read<ApiService>();
     try {

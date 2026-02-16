@@ -1,6 +1,8 @@
 version: '3.8'
 
 # Unauthority (LOS) — 4-Validator Testnet via Docker
+# SECURITY: genesis_config.json has been stripped of private_key/seed_phrase.
+# If you regenerate genesis, re-strip secrets before deployment.
 #
 # Ports per container:
 #   REST API:  --port (3030, 3031, 3032, 3033)

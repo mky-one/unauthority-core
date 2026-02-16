@@ -1,3 +1,4 @@
+import '../utils/log.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../config/testnet_config.dart';
@@ -24,7 +25,7 @@ class _BurnScreenState extends State<BurnScreen> {
     if (!_formKey.currentState!.validate()) return;
 
     setState(() => _isLoading = true);
-    debugPrint('🔥 [Burn] Starting burn submission...');
+    losLog('🔥 [Burn] Starting burn submission...');
 
     try {
       final walletService = context.read<WalletService>();
@@ -41,17 +42,17 @@ class _BurnScreenState extends State<BurnScreen> {
       }
       cleanTxid = cleanTxid.toLowerCase();
 
-      debugPrint('🔥 [Burn] Coin: $_selectedCoin, TXID: $cleanTxid');
-      debugPrint('🔥 [Burn] Recipient: $recipientAddress');
+      losLog('🔥 [Burn] Coin: $_selectedCoin, TXID: $cleanTxid');
+      losLog('🔥 [Burn] Recipient: $recipientAddress');
 
       // FIX F3: Sign burn message for authenticated burns.
       // Backend expects: "BURN:{coin_type}:{txid}:{recipient}"
       String? signature;
       if (publicKeyHex != null) {
         final burnMessage = 'BURN:$_selectedCoin:$cleanTxid:$recipientAddress';
-        debugPrint('🔥 [Burn] Signing message: $burnMessage');
+        losLog('🔥 [Burn] Signing message: $burnMessage');
         signature = await walletService.signTransaction(burnMessage);
-        debugPrint('🔥 [Burn] Signature: ${signature.length} hex chars');
+        losLog('🔥 [Burn] Signature: ${signature.length} hex chars');
       }
 
       final result = await apiService.submitBurn(
@@ -63,7 +64,7 @@ class _BurnScreenState extends State<BurnScreen> {
       );
 
       if (!mounted) return;
-      debugPrint('🔥 [Burn] SUCCESS: ${result['msg']}');
+      losLog('🔥 [Burn] SUCCESS: ${result['msg']}');
 
       Navigator.pop(context);
       ScaffoldMessenger.of(context).showSnackBar(
@@ -76,7 +77,7 @@ class _BurnScreenState extends State<BurnScreen> {
       );
     } catch (e) {
       if (!mounted) return;
-      debugPrint('🔥 [Burn] ERROR: $e');
+      losLog('🔥 [Burn] ERROR: $e');
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(e.toString()), backgroundColor: Colors.red),
       );

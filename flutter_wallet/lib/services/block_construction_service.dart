@@ -1,3 +1,4 @@
+import '../utils/log.dart';
 import 'dart:convert';
 import 'dart:isolate';
 import 'package:flutter/foundation.dart';
@@ -90,19 +91,19 @@ class BlockConstructionService {
         final nodeChainId =
             (protocol['chain_id_numeric'] as num?)?.toInt() ?? chainId;
         if (nodeChainId != chainId) {
-          debugPrint(
+          losLog(
               '⚠️ Chain ID mismatch: wallet=$chainId, node=$nodeChainId — updating to node value');
           chainId = nodeChainId;
         }
         _protocolFetched = true;
-        debugPrint(
+        losLog(
             '✅ Protocol params from node: base_fee=$_baseFeeCil CIL, pow=$_powDifficultyBits bits, chain_id=$chainId');
       } else {
         throw Exception(
             '/node-info missing "protocol" field — node upgrade required');
       }
     } catch (e) {
-      debugPrint('⚠️ Failed to fetch protocol params: $e');
+      losLog('⚠️ Failed to fetch protocol params: $e');
       if (_baseFeeCil == null) {
         throw Exception(
             'Cannot send: protocol parameters unavailable from node. '
@@ -131,7 +132,7 @@ class BlockConstructionService {
     required String to,
     required double amountLosDouble,
   }) async {
-    debugPrint(
+    losLog(
         '📦 [BlockConstruction.sendTransaction] from=pending, to=$to, amount=$amountLosDouble LOS');
     // 0. Fetch protocol params from node (base_fee, pow_difficulty, chain_id)
     await _ensureProtocolParams();
@@ -142,7 +143,7 @@ class BlockConstructionService {
     if (walletInfo == null) throw Exception('No wallet found');
 
     final address = walletInfo['address']!;
-    debugPrint('📦 [BlockConstruction.sendTransaction] from=$address');
+    losLog('📦 [BlockConstruction.sendTransaction] from=$address');
     final publicKeyHex = walletInfo['public_key'];
     if (publicKeyHex == null) {
       throw Exception(
@@ -154,7 +155,7 @@ class BlockConstructionService {
     try {
       feeData = await _api.getFeeEstimate(address);
     } catch (e) {
-      debugPrint('⚠️ Fee endpoint unreachable, using last-resort base fee: $e');
+      losLog('⚠️ Fee endpoint unreachable, using last-resort base fee: $e');
       // Only as a last resort — callers should be aware this is a fallback
       feeData = {
         'base_fee_cil': _baseFeeCil ?? defaultBaseFeeCil,
@@ -166,10 +167,10 @@ class BlockConstructionService {
     }
     final fee = (feeData['estimated_fee_cil'] as num).toInt();
     final multiplier = (feeData['fee_multiplier'] as num).toInt();
-    debugPrint(
+    losLog(
         '📦 [BlockConstruction.sendTransaction] Fee: $fee CIL (multiplier: ${multiplier}x)');
     if (multiplier > 1) {
-      debugPrint(
+      losLog(
           '⚠️ Anti-whale fee scaling active: $multiplier× base fee ($fee CIL)');
     }
 
@@ -189,7 +190,7 @@ class BlockConstructionService {
     // 4. Current timestamp
     final timestamp = DateTime.now().millisecondsSinceEpoch ~/ 1000;
 
-    debugPrint('⛏️ [Send] Mining PoW ($powBits-bit difficulty)...');
+    losLog('⛏️ [Send] Mining PoW ($powBits-bit difficulty)...');
     final powStart = DateTime.now();
 
     // 5. Mine PoW in a background isolate (FIX U1: prevents UI freeze)
@@ -206,7 +207,7 @@ class BlockConstructionService {
     );
 
     final powMs = DateTime.now().difference(powStart).inMilliseconds;
-    debugPrint('⛏️ [Send] PoW completed in ${powMs}ms');
+    losLog('⛏️ [Send] PoW completed in ${powMs}ms');
 
     if (powResult == null) {
       throw Exception(
@@ -215,16 +216,16 @@ class BlockConstructionService {
 
     final work = powResult['work'] as int;
     final signingHash = powResult['hash'] as String;
-    debugPrint('🔏 [Send] Signing with Dilithium5...');
+    losLog('🔏 [Send] Signing with Dilithium5...');
 
     // 6. Sign the signing_hash with Dilithium5
     final signStart = DateTime.now();
     final signature = await _wallet.signTransaction(signingHash);
     final signMs = DateTime.now().difference(signStart).inMilliseconds;
-    debugPrint('🔏 [Send] Signature done in ${signMs}ms');
+    losLog('🔏 [Send] Signature done in ${signMs}ms');
 
     // 7. Submit pre-signed block to node
-    debugPrint('📡 [Send] Submitting to node...');
+    losLog('📡 [Send] Submitting to node...');
 
     // 7. Submit pre-signed block to node
     // Pass amount_cil so backend uses exact CIL amount (supports sub-LOS precision)
@@ -240,7 +241,7 @@ class BlockConstructionService {
       fee: fee,
       amountCil: amountCil.toInt(),
     );
-    debugPrint(
+    losLog(
         '📦 [BlockConstruction.sendTransaction] SUCCESS txid=${txResult['tx_hash'] ?? txResult['txid']}');
     return txResult;
   }
@@ -331,7 +332,7 @@ class BlockConstructionService {
 
     // Try native Rust PoW first (100-1000x faster)
     if (DilithiumService.isAvailable) {
-      debugPrint('⚡ [PoW] Using native Rust Keccak-256');
+      losLog('⚡ [PoW] Using native Rust Keccak-256');
       final result = DilithiumService.minePow(
         buffer: buffer,
         workOffset: workOffset,
@@ -339,12 +340,12 @@ class BlockConstructionService {
         maxIterations: maxPowIterations,
       );
       if (result != null) {
-        debugPrint('⚡ [PoW] Native: nonce=${result['work']}');
+        losLog('⚡ [PoW] Native: nonce=${result['work']}');
         return result;
       }
-      debugPrint('⚠️ [PoW] Native mining failed, falling back to Dart');
+      losLog('⚠️ [PoW] Native mining failed, falling back to Dart');
     } else {
-      debugPrint('⚠️ [PoW] Native library not available, using pure Dart');
+      losLog('⚠️ [PoW] Native library not available, using pure Dart');
     }
 
     // Fallback: pure Dart PoW in isolate
@@ -368,8 +369,8 @@ class BlockConstructionService {
       final result = await Isolate.run(() => _minePoWSync(params));
       return result;
     } catch (e) {
-      debugPrint('⚠️ [PoW] Isolate.run failed: $e');
-      debugPrint('⚠️ [PoW] Falling back to main-thread PoW (will block UI)...');
+      losLog('⚠️ [PoW] Isolate.run failed: $e');
+      losLog('⚠️ [PoW] Falling back to main-thread PoW (will block UI)...');
       // Last-resort fallback: run in main thread rather than lose the transaction
       return _minePoWSync(params);
     }
@@ -465,12 +466,12 @@ class BlockConstructionService {
         final elapsed = sw.elapsedMilliseconds;
         final hashHex =
             output.map((b) => b.toRadixString(16).padLeft(2, '0')).join('');
-        debugPrint(
+        losLog(
             '⛏️ PoW found! nonce=$nonce, ${elapsed}ms, ${(nonce / (elapsed / 1000)).round()} H/s');
         return {'work': nonce, 'hash': hashHex};
       }
     }
-    debugPrint(
+    losLog(
         '❌ PoW FAILED after $maxIter iterations (${sw.elapsedMilliseconds}ms)');
     return null; // Failed to find valid nonce
   }

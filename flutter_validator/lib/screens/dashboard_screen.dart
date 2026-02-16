@@ -1,3 +1,4 @@
+import '../utils/log.dart';
 import 'package:flutter/material.dart';
 import 'dart:async';
 import 'package:provider/provider.dart';
@@ -76,7 +77,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   int _zeroTickCount = 0;
 
   void _startCountdownTimer() {
-    debugPrint(
+    losLog(
         '📊 [DashboardScreen._startCountdownTimer] Starting countdown timer');
     _countdownTimer = Timer.periodic(const Duration(seconds: 1), (_) {
       if (!mounted) return;
@@ -104,7 +105,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
         _zeroTickCount++;
         if (_zeroTickCount >= 15 && !_isDashboardLoading) {
           _zeroTickCount = 0;
-          debugPrint(
+          losLog(
               '📊 [DashboardScreen] Countdown stuck at 0 — force re-fetching epoch data');
           _loadDashboard();
         }
@@ -113,12 +114,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 
   Future<void> _loadMyAddress() async {
-    debugPrint('📊 [DashboardScreen._loadMyAddress] Loading address...');
+    losLog('📊 [DashboardScreen._loadMyAddress] Loading address...');
     final walletService = context.read<WalletService>();
     final wallet = await walletService.getCurrentWallet();
     if (wallet != null && mounted) {
       setState(() => _myAddress = wallet['address']);
-      debugPrint(
+      losLog(
           '📊 [DashboardScreen._loadMyAddress] Address: ${wallet['address']}');
     }
   }
@@ -130,7 +131,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     if (_isDashboardLoading) return;
     _isDashboardLoading = true;
 
-    debugPrint('📊 [DashboardScreen._loadDashboard] Loading dashboard...');
+    losLog('📊 [DashboardScreen._loadDashboard] Loading dashboard...');
     // Only show full-screen spinner on first load.
     // Subsequent refreshes update data silently in the background
     // to avoid annoying loading indicators.
@@ -178,7 +179,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
         _isLoading = false;
         _isFirstLoad = false;
       });
-      debugPrint(
+      losLog(
           '📊 [DashboardScreen._loadDashboard] Success: validators=${_validators.length}, block_height=${_nodeInfo?['block_height']}, peers=${_peers.length}');
     } catch (e) {
       if (!mounted) {

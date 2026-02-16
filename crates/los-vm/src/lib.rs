@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 use std::sync::atomic::{AtomicUsize, Ordering as AtomicOrdering};
 use std::sync::{Arc, Mutex};
 use wasmer::{imports, CompilerConfig, FunctionEnv, Instance, Module, Store, Value};
@@ -46,7 +46,8 @@ pub struct Contract {
     pub address: String,
     pub code_hash: String,
     pub bytecode: Vec<u8>,
-    pub state: HashMap<String, String>,
+    /// MAINNET: BTreeMap for deterministic contract state serialization
+    pub state: BTreeMap<String, String>,
     pub balance: u128,
     pub created_at_block: u64,
     pub owner: String,
@@ -62,6 +63,12 @@ pub struct ContractCall {
     /// Empty string if not set (testnet mock dispatch only).
     #[serde(default)]
     pub caller: String,
+    /// Block timestamp (seconds since epoch) for deterministic execution.
+    /// All validators MUST use the SAME timestamp (from the block being processed)
+    /// to ensure identical WASM execution results across the network.
+    /// If 0, falls back to SystemTime::now() (backward-compatible, but non-deterministic).
+    #[serde(default)]
+    pub block_timestamp: u64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -69,7 +76,7 @@ pub struct ContractResult {
     pub success: bool,
     pub output: String,
     pub gas_used: u64,
-    pub state_changes: HashMap<String, String>,
+    pub state_changes: BTreeMap<String, String>,
     /// Events emitted by the contract during execution
     #[serde(default)]
     pub events: Vec<ContractEvent>,
@@ -80,22 +87,22 @@ pub struct ContractResult {
 pub struct ContractEvent {
     pub contract: String,
     pub event_type: String,
-    pub data: HashMap<String, String>,
+    pub data: BTreeMap<String, String>,
     pub timestamp: u64,
 }
 
 /// WASM execution environment
 pub struct WasmEngine {
-    contracts: Arc<Mutex<HashMap<String, Contract>>>,
-    nonce: Arc<Mutex<HashMap<String, u64>>>,
+    contracts: Arc<Mutex<BTreeMap<String, Contract>>>,
+    nonce: Arc<Mutex<BTreeMap<String, u64>>>,
 }
 
 impl WasmEngine {
     /// Create new WASM execution engine
     pub fn new() -> Self {
         WasmEngine {
-            contracts: Arc::new(Mutex::new(HashMap::new())),
-            nonce: Arc::new(Mutex::new(HashMap::new())),
+            contracts: Arc::new(Mutex::new(BTreeMap::new())),
+            nonce: Arc::new(Mutex::new(BTreeMap::new())),
         }
     }
 
@@ -104,7 +111,7 @@ impl WasmEngine {
         &self,
         owner: String,
         bytecode: Vec<u8>,
-        initial_state: HashMap<String, String>,
+        initial_state: BTreeMap<String, String>,
         block_number: u64,
     ) -> Result<String, String> {
         // Validate WASM magic bytes (0x00 0x61 0x73 0x6d)
@@ -134,10 +141,7 @@ impl WasmEngine {
         // Format: "LOSCon" + first 32 hex chars of blake3 hash
         let addr_input = format!("{}:{}:{}", owner, contract_nonce, block_number);
         let addr_hash = blake3::hash(addr_input.as_bytes());
-        let address = format!(
-            "LOSCon{}",
-            hex::encode(&addr_hash.as_bytes()[0..16])
-        );
+        let address = format!("LOSCon{}", hex::encode(&addr_hash.as_bytes()[0..16]));
 
         // Calculate code hash
         let code_hash = hex::encode(&blake3::hash(&bytecode).as_bytes()[0..32]);
@@ -374,7 +378,7 @@ impl WasmEngine {
         gas_limit: u64,
         caller: &str,
         contract_addr: &str,
-        contract_state: &HashMap<String, String>,
+        contract_state: &BTreeMap<String, String>,
         balance: u128,
         timestamp: u64,
     ) -> Result<host::HostExecResult, String> {
@@ -406,7 +410,7 @@ impl WasmEngine {
         let remaining_gas = gas_limit - compile_gas;
 
         // Convert contract state (String→String) to byte state (String→Vec<u8>)
-        let state_bytes: HashMap<String, Vec<u8>> = contract_state
+        let state_bytes: BTreeMap<String, Vec<u8>> = contract_state
             .iter()
             .map(|(k, v)| (k.clone(), v.as_bytes().to_vec()))
             .collect();
@@ -436,8 +440,7 @@ impl WasmEngine {
         let abort_flag = Arc::new(std::sync::atomic::AtomicBool::new(false));
         let abort_clone = Arc::clone(&abort_flag);
 
-        let (result_tx, result_rx) =
-            std::sync::mpsc::channel::<Result<(i32, u64, bool), String>>();
+        let (result_tx, result_rx) = std::sync::mpsc::channel::<Result<(i32, u64, bool), String>>();
 
         let _handle = std::thread::spawn(move || {
             if abort_clone.load(std::sync::atomic::Ordering::Relaxed) {
@@ -446,8 +449,7 @@ impl WasmEngine {
 
             // Deterministic gas metering: 1 WASM instruction = 1 gas unit
             let cost_fn = |_operator: &wasmer::wasmparser::Operator| -> u64 { 1 };
-            let metering =
-                Arc::new(wasmer_middlewares::Metering::new(remaining_gas, cost_fn));
+            let metering = Arc::new(wasmer_middlewares::Metering::new(remaining_gas, cost_fn));
 
             let mut compiler = Cranelift::default();
             compiler.push_middleware(metering);
@@ -456,8 +458,7 @@ impl WasmEngine {
             let module = match Module::new(&store, &bytecode_owned) {
                 Ok(m) => m,
                 Err(e) => {
-                    let _ =
-                        result_tx.send(Err(format!("Failed to compile WASM: {}", e)));
+                    let _ = result_tx.send(Err(format!("Failed to compile WASM: {}", e)));
                     return;
                 }
             };
@@ -483,10 +484,8 @@ impl WasmEngine {
                     match Instance::new(&mut store, &module, &imports! {}) {
                         Ok(i) => i,
                         Err(e) => {
-                            let _ = result_tx.send(Err(format!(
-                                "Failed to instantiate WASM: {}",
-                                e
-                            )));
+                            let _ =
+                                result_tx.send(Err(format!("Failed to instantiate WASM: {}", e)));
                             return;
                         }
                     }
@@ -540,52 +539,40 @@ impl WasmEngine {
             }
 
             // Read remaining gas
-            let exec_gas = match wasmer_middlewares::metering::get_remaining_points(
-                &mut store,
-                &instance,
-            ) {
-                wasmer_middlewares::metering::MeteringPoints::Remaining(r) => {
-                    remaining_gas - r
-                }
-                wasmer_middlewares::metering::MeteringPoints::Exhausted => {
-                    let _ = result_tx.send(Err(format!(
-                        "Out of gas: execution exceeded {} instruction limit",
-                        remaining_gas
-                    )));
-                    return;
-                }
-            };
+            let exec_gas =
+                match wasmer_middlewares::metering::get_remaining_points(&mut store, &instance) {
+                    wasmer_middlewares::metering::MeteringPoints::Remaining(r) => remaining_gas - r,
+                    wasmer_middlewares::metering::MeteringPoints::Exhausted => {
+                        let _ = result_tx.send(Err(format!(
+                            "Out of gas: execution exceeded {} instruction limit",
+                            remaining_gas
+                        )));
+                        return;
+                    }
+                };
 
             match call_result {
                 Ok(results) => {
                     let return_code = results
                         .first()
-                        .and_then(
-                            |v| {
-                                if let Value::I32(x) = v {
-                                    Some(*x)
-                                } else {
-                                    None
-                                }
-                            },
-                        )
+                        .and_then(|v| {
+                            if let Value::I32(x) = v {
+                                Some(*x)
+                            } else {
+                                None
+                            }
+                        })
                         .unwrap_or(0);
-                    let _ =
-                        result_tx.send(Ok((return_code, exec_gas, is_sdk_mode)));
+                    let _ = result_tx.send(Ok((return_code, exec_gas, is_sdk_mode)));
                 }
                 Err(e) => {
                     let err_str = format!("{}", e);
                     if err_str.contains("unreachable") {
                         // Could be metering exhaustion OR contract abort
-                        let _ = result_tx.send(Err(format!(
-                            "WASM trap (abort or out of gas): {}",
-                            err_str
-                        )));
+                        let _ = result_tx
+                            .send(Err(format!("WASM trap (abort or out of gas): {}", err_str)));
                     } else {
-                        let _ = result_tx.send(Err(format!(
-                            "WASM execution failed: {}",
-                            e
-                        )));
+                        let _ = result_tx.send(Err(format!("WASM execution failed: {}", e)));
                     }
                 }
             }
@@ -604,15 +591,16 @@ impl WasmEngine {
                 }
 
                 // Extract results from shared host data
-                let data =
-                    host_data.lock().map_err(|_| "Failed to lock host data".to_string())?;
+                let data = host_data
+                    .lock()
+                    .map_err(|_| "Failed to lock host data".to_string())?;
 
                 if data.aborted {
                     return Err(format!("Contract aborted: {}", data.abort_message));
                 }
 
                 // Extract only dirty (modified) keys as state changes
-                let state_changes: HashMap<String, Vec<u8>> = data
+                let state_changes: BTreeMap<String, Vec<u8>> = data
                     .dirty_keys
                     .iter()
                     .filter_map(|k| data.state.get(k).map(|v| (k.clone(), v.clone())))
@@ -655,10 +643,7 @@ impl WasmEngine {
     /// Try hosted WASM execution for a contract call.
     /// Returns `Ok(Some(result))` on success, `Ok(None)` if fallback is needed,
     /// or `Err(e)` for fatal errors that should propagate immediately.
-    fn try_hosted_call(
-        &self,
-        call: &ContractCall,
-    ) -> Result<Option<ContractResult>, String> {
+    fn try_hosted_call(&self, call: &ContractCall) -> Result<Option<ContractResult>, String> {
         // Get contract snapshot (short lock, released before execution)
         let contract_snapshot = {
             let contracts = self
@@ -672,16 +657,22 @@ impl WasmEngine {
         }; // lock released
 
         // Must be valid WASM to attempt hosted execution
-        if contract_snapshot.bytecode.len() < 4
-            || !contract_snapshot.bytecode.starts_with(b"\0asm")
+        if contract_snapshot.bytecode.len() < 4 || !contract_snapshot.bytecode.starts_with(b"\0asm")
         {
             return Ok(None);
         }
 
-        let timestamp = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_secs();
+        // DETERMINISM FIX: Use block timestamp for reproducible execution.
+        // All validators processing the same block MUST get identical results.
+        // Fallback to SystemTime::now() only if block_timestamp is 0 (legacy calls).
+        let timestamp = if call.block_timestamp > 0 {
+            call.block_timestamp
+        } else {
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_secs()
+        };
 
         match self.execute_wasm_hosted(
             &contract_snapshot.bytecode,
@@ -696,9 +687,7 @@ impl WasmEngine {
         ) {
             Ok(exec_result) => {
                 // Apply state changes + transfers back to contract (short lock)
-                if !exec_result.state_changes.is_empty()
-                    || !exec_result.transfers.is_empty()
-                {
+                if !exec_result.state_changes.is_empty() || !exec_result.transfers.is_empty() {
                     let mut contracts = self
                         .contracts
                         .lock()
@@ -794,7 +783,7 @@ impl WasmEngine {
                                 success: true,
                                 output: result.to_string(),
                                 gas_used,
-                                state_changes: HashMap::new(),
+                                state_changes: BTreeMap::new(),
                                 events: Vec::new(),
                             });
                         }
@@ -846,7 +835,7 @@ impl WasmEngine {
                     }
 
                     contract.balance -= amount;
-                    (format!("Transferred {} cil", amount), 75, HashMap::new())
+                    (format!("Transferred {} cil", amount), 75, BTreeMap::new())
                 }
                 "mint" => {
                     // SECURITY P1-3: Minting via contract is DISABLED
@@ -870,7 +859,7 @@ impl WasmEngine {
                     }
 
                     contract.balance -= amount;
-                    (format!("Burned {} cil", amount), 100, HashMap::new())
+                    (format!("Burned {} cil", amount), 100, BTreeMap::new())
                 }
                 "set_state" => {
                     if call.args.len() < 2 {
@@ -879,7 +868,7 @@ impl WasmEngine {
                     let key = call.args[0].clone();
                     let value = call.args[1].clone();
 
-                    let mut sc: HashMap<String, String> = HashMap::new();
+                    let mut sc: BTreeMap<String, String> = BTreeMap::new();
                     sc.insert(key, value);
                     ("State updated".to_string(), 60, sc)
                 }
@@ -894,9 +883,9 @@ impl WasmEngine {
                         .cloned()
                         .unwrap_or_else(|| "null".to_string());
 
-                    (value, 30, HashMap::new())
+                    (value, 30, BTreeMap::new())
                 }
-                "get_balance" => (format!("{}", contract.balance), 20, HashMap::new()),
+                "get_balance" => (format!("{}", contract.balance), 20, BTreeMap::new()),
                 _ => {
                     return Err(format!("Unknown function: {}", call.function));
                 }
@@ -968,7 +957,7 @@ impl WasmEngine {
     }
 
     /// Get contract state
-    pub fn get_contract_state(&self, address: &str) -> Result<HashMap<String, String>, String> {
+    pub fn get_contract_state(&self, address: &str) -> Result<BTreeMap<String, String>, String> {
         let contracts = self
             .contracts
             .lock()
@@ -1013,8 +1002,8 @@ impl WasmEngine {
     pub fn deserialize_all(&self, data: &[u8]) -> Result<usize, String> {
         #[derive(Deserialize)]
         struct VmSnapshot {
-            contracts: HashMap<String, Contract>,
-            nonce: HashMap<String, u64>,
+            contracts: BTreeMap<String, Contract>,
+            nonce: BTreeMap<String, u64>,
         }
         let snapshot: VmSnapshot = serde_json::from_slice(data)
             .map_err(|e| format!("Failed to deserialize VM state: {}", e))?;
@@ -1061,7 +1050,7 @@ mod tests {
         let wasm_bytes = b"\0asm\x01\x00\x00\x00".to_vec();
         let owner = "alice".to_string();
 
-        let result = engine.deploy_contract(owner, wasm_bytes, HashMap::new(), 1);
+        let result = engine.deploy_contract(owner, wasm_bytes, BTreeMap::new(), 1);
         assert!(result.is_ok());
 
         let addr = result.unwrap();
@@ -1074,7 +1063,7 @@ mod tests {
         let engine = WasmEngine::new();
         let invalid_bytes = vec![0x00, 0x00, 0x00, 0x00];
 
-        let result = engine.deploy_contract("alice".to_string(), invalid_bytes, HashMap::new(), 1);
+        let result = engine.deploy_contract("alice".to_string(), invalid_bytes, BTreeMap::new(), 1);
 
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("Invalid WASM"));
@@ -1087,7 +1076,7 @@ mod tests {
         let owner = "bob".to_string();
 
         let addr = engine
-            .deploy_contract(owner.clone(), wasm_bytes, HashMap::new(), 1)
+            .deploy_contract(owner.clone(), wasm_bytes, BTreeMap::new(), 1)
             .unwrap();
         let contract = engine.get_contract(&addr).unwrap();
 
@@ -1101,7 +1090,7 @@ mod tests {
         let wasm_bytes = b"\0asm\x01\x00\x00\x00".to_vec();
 
         let addr = engine
-            .deploy_contract("charlie".to_string(), wasm_bytes, HashMap::new(), 1)
+            .deploy_contract("charlie".to_string(), wasm_bytes, BTreeMap::new(), 1)
             .unwrap();
 
         // Send balance to contract first
@@ -1113,6 +1102,7 @@ mod tests {
             args: vec!["500".to_string(), "recipient".to_string()],
             gas_limit: 1000,
             caller: "charlie".to_string(),
+            block_timestamp: 0,
         };
 
         let result = engine.call_contract(call).unwrap();
@@ -1126,7 +1116,7 @@ mod tests {
         let wasm_bytes = b"\0asm\x01\x00\x00\x00".to_vec();
 
         let addr = engine
-            .deploy_contract("dave".to_string(), wasm_bytes, HashMap::new(), 1)
+            .deploy_contract("dave".to_string(), wasm_bytes, BTreeMap::new(), 1)
             .unwrap();
 
         // Set state
@@ -1136,6 +1126,7 @@ mod tests {
             args: vec!["counter".to_string(), "42".to_string()],
             gas_limit: 1000,
             caller: "dave".to_string(),
+            block_timestamp: 0,
         };
 
         let result = engine.call_contract(set_call).unwrap();
@@ -1148,6 +1139,7 @@ mod tests {
             args: vec!["counter".to_string()],
             gas_limit: 1000,
             caller: "dave".to_string(),
+            block_timestamp: 0,
         };
 
         let result = engine.call_contract(get_call).unwrap();
@@ -1160,7 +1152,7 @@ mod tests {
         let wasm_bytes = b"\0asm\x01\x00\x00\x00".to_vec();
 
         let addr = engine
-            .deploy_contract("eve".to_string(), wasm_bytes, HashMap::new(), 1)
+            .deploy_contract("eve".to_string(), wasm_bytes, BTreeMap::new(), 1)
             .unwrap();
 
         engine.send_to_contract(&addr, 5000).unwrap();
@@ -1171,6 +1163,7 @@ mod tests {
             args: vec![],
             gas_limit: 100,
             caller: "eve".to_string(),
+            block_timestamp: 0,
         };
 
         let result = engine.call_contract(call).unwrap();
@@ -1186,6 +1179,7 @@ mod tests {
             args: vec![],
             gas_limit: 1000,
             caller: "nobody".to_string(),
+            block_timestamp: 0,
         };
 
         let result = engine.call_contract(call);
@@ -1198,7 +1192,7 @@ mod tests {
         let wasm_bytes = b"\0asm\x01\x00\x00\x00".to_vec();
 
         let addr = engine
-            .deploy_contract("frank".to_string(), wasm_bytes, HashMap::new(), 1)
+            .deploy_contract("frank".to_string(), wasm_bytes, BTreeMap::new(), 1)
             .unwrap();
 
         let result = engine.send_to_contract(&addr, 2500);
@@ -1215,10 +1209,10 @@ mod tests {
         let owner = "grace".to_string();
 
         let addr1 = engine
-            .deploy_contract(owner.clone(), wasm_bytes.clone(), HashMap::new(), 1)
+            .deploy_contract(owner.clone(), wasm_bytes.clone(), BTreeMap::new(), 1)
             .unwrap();
         let addr2 = engine
-            .deploy_contract(owner, wasm_bytes, HashMap::new(), 2)
+            .deploy_contract(owner, wasm_bytes, BTreeMap::new(), 2)
             .unwrap();
 
         assert_ne!(addr1, addr2);
@@ -1232,7 +1226,7 @@ mod tests {
 
         for i in 0..3 {
             let owner = format!("user_{}", i);
-            let _ = engine.deploy_contract(owner, wasm_bytes.clone(), HashMap::new(), i);
+            let _ = engine.deploy_contract(owner, wasm_bytes.clone(), BTreeMap::new(), i);
         }
 
         let contracts = engine.list_contracts().unwrap();
@@ -1245,7 +1239,7 @@ mod tests {
         let wasm_bytes = b"\0asm\x01\x00\x00\x00".to_vec();
 
         let addr = engine
-            .deploy_contract("henry".to_string(), wasm_bytes, HashMap::new(), 1)
+            .deploy_contract("henry".to_string(), wasm_bytes, BTreeMap::new(), 1)
             .unwrap();
 
         engine.send_to_contract(&addr, 1000).unwrap();
@@ -1257,6 +1251,7 @@ mod tests {
             args: vec!["500".to_string(), "recipient".to_string()],
             gas_limit: 50, // Too low
             caller: "henry".to_string(),
+            block_timestamp: 0,
         };
 
         let result = engine.call_contract(call);
@@ -1270,7 +1265,7 @@ mod tests {
         let wasm_bytes = b"\0asm\x01\x00\x00\x00".to_vec();
 
         let addr = engine
-            .deploy_contract("iris".to_string(), wasm_bytes, HashMap::new(), 1)
+            .deploy_contract("iris".to_string(), wasm_bytes, BTreeMap::new(), 1)
             .unwrap();
 
         let call = ContractCall {
@@ -1279,6 +1274,7 @@ mod tests {
             args: vec![],
             gas_limit: 1000,
             caller: "iris".to_string(),
+            block_timestamp: 0,
         };
 
         let result = engine.call_contract(call);
@@ -1292,7 +1288,7 @@ mod tests {
             success: true,
             output: "success".to_string(),
             gas_used: 100,
-            state_changes: HashMap::new(),
+            state_changes: BTreeMap::new(),
             events: Vec::new(),
         };
 
@@ -1309,7 +1305,7 @@ mod tests {
         let wasm_bytes = b"\0asm\x01\x00\x00\x00".to_vec();
 
         let addr = engine
-            .deploy_contract("jack".to_string(), wasm_bytes, HashMap::new(), 1)
+            .deploy_contract("jack".to_string(), wasm_bytes, BTreeMap::new(), 1)
             .unwrap();
 
         // Set some state
@@ -1319,6 +1315,7 @@ mod tests {
             args: vec!["name".to_string(), "test".to_string()],
             gas_limit: 100,
             caller: "jack".to_string(),
+            block_timestamp: 0,
         };
 
         engine.call_contract(call).unwrap();
@@ -1333,7 +1330,7 @@ mod tests {
         let wasm_bytes = b"\0asm\x01\x00\x00\x00".to_vec();
 
         let addr = engine
-            .deploy_contract("kate".to_string(), wasm_bytes, HashMap::new(), 1)
+            .deploy_contract("kate".to_string(), wasm_bytes, BTreeMap::new(), 1)
             .unwrap();
 
         assert!(engine.contract_exists(&addr).unwrap());
@@ -1358,7 +1355,7 @@ mod tests {
         ];
 
         let addr = engine
-            .deploy_contract("wasm_test".to_string(), wasm_bytes, HashMap::new(), 1)
+            .deploy_contract("wasm_test".to_string(), wasm_bytes, BTreeMap::new(), 1)
             .unwrap();
 
         let call = ContractCall {
@@ -1367,6 +1364,7 @@ mod tests {
             args: vec!["5".to_string(), "7".to_string()],
             gas_limit: 1000,
             caller: "wasm_tester".to_string(),
+            block_timestamp: 0,
         };
 
         let result = engine.call_contract(call).unwrap();

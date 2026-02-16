@@ -1,3 +1,4 @@
+import '../utils/log.dart';
 import '../constants/colors.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -58,7 +59,7 @@ class _SetupWizardScreenState extends State<SetupWizardScreen> {
   }
 
   Future<void> _importAndValidate() async {
-    debugPrint(
+    losLog(
         '🛡️ [SetupWizardScreen._importAndValidate] Import method: ${_importMethod.name}');
     setState(() {
       _isValidating = true;
@@ -105,7 +106,7 @@ class _SetupWizardScreenState extends State<SetupWizardScreen> {
         throw Exception('Failed to derive wallet address');
       }
 
-      debugPrint('Checking balance for $walletAddress...');
+      losLog('Checking balance for $walletAddress...');
       final account = await apiService.getBalance(walletAddress);
 
       // Compare in CIL integers — no f64 precision loss
@@ -129,10 +130,10 @@ class _SetupWizardScreenState extends State<SetupWizardScreen> {
         _isGenesisMonitor = isGenesisActive;
         _currentStep = 1;
       });
-      debugPrint(
+      losLog(
           '🛡️ [SetupWizardScreen._importAndValidate] Success: address=$walletAddress, balance=${account.balance} CIL');
     } catch (e) {
-      debugPrint('🛡️ [SetupWizardScreen._importAndValidate] Error: $e');
+      losLog('🛡️ [SetupWizardScreen._importAndValidate] Error: $e');
       if (!mounted) return;
       setState(() => _error = e.toString().replaceAll('Exception: ', ''));
     } finally {
@@ -208,7 +209,7 @@ class _SetupWizardScreenState extends State<SetupWizardScreen> {
       // Find an available port (avoid conflict with bootstrap nodes on 3030-3033)
       final nodePort =
           await NodeProcessService.findAvailablePort(preferred: 3035);
-      debugPrint('📡 Selected port $nodePort for validator node');
+      losLog('📡 Selected port $nodePort for validator node');
 
       final onionAddress = await torService.startWithHiddenService(
         localPort: nodePort,
@@ -254,11 +255,11 @@ class _SetupWizardScreenState extends State<SetupWizardScreen> {
           ? NetworkConfig.mainnetNodes
           : NetworkConfig.testnetNodes;
       final bootstrapAddresses = nodes.map((n) => n.p2pAddress).join(',');
-      debugPrint('\ud83c\udf10 Bootstrap nodes (.onion): $bootstrapAddresses');
+      losLog('\ud83c\udf10 Bootstrap nodes (.onion): $bootstrapAddresses');
 
       // P2P port: auto-derived from API port + 1000 (matches los-node)
       final p2pPort = nodePort + 1000;
-      debugPrint('📡 P2P port: $p2pPort');
+      losLog('📡 P2P port: $p2pPort');
 
       // Tor SOCKS5 proxy: MANDATORY for dialing .onion bootstrap peers.
       // MAINNET PARITY: Without SOCKS5, los-node cannot reach any peer.
@@ -269,7 +270,7 @@ class _SetupWizardScreenState extends State<SetupWizardScreen> {
         );
       }
       final torSocks5 = '127.0.0.1:${torService.activeSocksPort}';
-      debugPrint('🧅 Tor SOCKS5: $torSocks5');
+      losLog('🧅 Tor SOCKS5: $torSocks5');
 
       // Retrieve mnemonic so los-node can derive the same Dilithium5 keypair
       final walletWithMnemonic =
@@ -282,7 +283,7 @@ class _SetupWizardScreenState extends State<SetupWizardScreen> {
       int activePort = nodePort;
 
       if (nodeAlreadyRunning) {
-        debugPrint(
+        losLog(
             '✅ Node already running on port ${nodeService.apiPort}, skipping start');
         activePort = nodeService.apiPort;
       } else {
@@ -343,9 +344,9 @@ class _SetupWizardScreenState extends State<SetupWizardScreen> {
               timestamp: timestamp,
               onionAddress: myOnion,
             );
-            debugPrint('✅ Local registration: ${result['msg']}');
+            losLog('✅ Local registration: ${result['msg']}');
           } catch (e) {
-            debugPrint('⚠️ Local registration deferred: $e');
+            losLog('⚠️ Local registration deferred: $e');
           } finally {
             localApi.dispose();
           }
@@ -362,10 +363,10 @@ class _SetupWizardScreenState extends State<SetupWizardScreen> {
                 timestamp: timestamp,
                 onionAddress: myOnion,
               );
-              debugPrint('✅ Bootstrap registration: ${result['msg']}');
+              losLog('✅ Bootstrap registration: ${result['msg']}');
             } catch (e) {
               // Non-fatal: local node still runs, bootstrap may be unreachable
-              debugPrint('⚠️ Bootstrap registration deferred: $e');
+              losLog('⚠️ Bootstrap registration deferred: $e');
             }
           }
         }

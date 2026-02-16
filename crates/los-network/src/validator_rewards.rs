@@ -9,7 +9,7 @@
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 
 /// Base gas price in CIL (smallest unit)
 pub const BASE_GAS_PRICE_CIL: u128 = 1_000;
@@ -240,7 +240,7 @@ pub fn claim_rewards(reward_account: &mut RewardAccount, timestamp: u64) -> Resu
 /// Tracks validator's total fee collection per block
 pub fn accumulate_block_rewards(
     validator_address: &str,
-    rewards: &mut HashMap<String, RewardAccount>,
+    rewards: &mut BTreeMap<String, RewardAccount>,
     total_fees_cil: u128,
 ) -> ValidatorReward {
     let account = rewards.entry(validator_address.to_string()).or_default();
@@ -253,7 +253,7 @@ pub fn accumulate_block_rewards(
 /// Get validator's total pending rewards
 pub fn get_pending_rewards(
     validator_address: &str,
-    rewards: &HashMap<String, RewardAccount>,
+    rewards: &BTreeMap<String, RewardAccount>,
 ) -> Result<u128, String> {
     rewards
         .get(validator_address)
@@ -264,7 +264,7 @@ pub fn get_pending_rewards(
 /// Get validator's total accumulated rewards
 pub fn get_total_rewards(
     validator_address: &str,
-    rewards: &HashMap<String, RewardAccount>,
+    rewards: &BTreeMap<String, RewardAccount>,
 ) -> Result<u128, String> {
     rewards
         .get(validator_address)
@@ -291,7 +291,7 @@ pub fn get_total_rewards(
 pub fn finalize_block_rewards(
     validator_address: &str,
     transaction_fees: &[TransactionFee],
-    rewards: &mut HashMap<String, RewardAccount>,
+    rewards: &mut BTreeMap<String, RewardAccount>,
     block_height: u64,
 ) -> ValidatorReward {
     // Calculate total fees in block
@@ -339,7 +339,7 @@ pub struct ValidatorRewardStats {
 /// Get comprehensive statistics for a validator
 pub fn get_validator_stats(
     validator_address: &str,
-    rewards: &HashMap<String, RewardAccount>,
+    rewards: &BTreeMap<String, RewardAccount>,
 ) -> Result<ValidatorRewardStats, String> {
     let account = rewards
         .get(validator_address)
@@ -365,7 +365,7 @@ pub fn get_validator_stats(
 
 /// Get statistics for all validators
 pub fn get_all_validator_stats(
-    rewards: &HashMap<String, RewardAccount>,
+    rewards: &BTreeMap<String, RewardAccount>,
 ) -> Vec<ValidatorRewardStats> {
     rewards
         .iter()
@@ -437,7 +437,7 @@ mod tests {
 
     #[test]
     fn test_block_finalization() {
-        let mut rewards = HashMap::new();
+        let mut rewards = BTreeMap::new();
 
         // Create sample fees
         let fees = vec![

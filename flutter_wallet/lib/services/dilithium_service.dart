@@ -1,3 +1,4 @@
+import '../utils/log.dart';
 import 'dart:ffi';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
@@ -78,7 +79,7 @@ class DilithiumService {
     try {
       _lib = _loadNativeLibrary();
       if (_lib == null) {
-        debugPrint(
+        losLog(
             '⚠️  Dilithium5 native library not found — using SHA256 fallback');
         _available = false;
         return;
@@ -153,11 +154,11 @@ class DilithiumService {
       _maxAddrBytes = _losMaxAddressBytes();
 
       _available = true;
-      debugPrint('✅ Dilithium5 native library loaded');
-      debugPrint(
+      losLog('✅ Dilithium5 native library loaded');
+      losLog(
           '   PK: $_pkBytes bytes, SK: $_skBytes bytes, Sig: $_sigBytes bytes');
     } catch (e) {
-      debugPrint('⚠️  Failed to load Dilithium5 native library: $e');
+      losLog('⚠️  Failed to load Dilithium5 native library: $e');
       _available = false;
     }
   }
@@ -199,7 +200,7 @@ class DilithiumService {
     for (final path in searchPaths) {
       try {
         final lib = DynamicLibrary.open(path);
-        debugPrint('✅ Loaded native library from: $path');
+        losLog('✅ Loaded native library from: $path');
         return lib;
       } catch (_) {
         // Try next path
@@ -215,7 +216,7 @@ class DilithiumService {
   /// Generate a new Dilithium5 keypair.
   /// Returns {publicKey: Uint8List, secretKey: Uint8List}
   static DilithiumKeypair generateKeypair() {
-    debugPrint('🔑 [DilithiumService.generateKeypair] Generating keypair...');
+    losLog('🔑 [DilithiumService.generateKeypair] Generating keypair...');
     if (!_available) {
       throw StateError('Dilithium5 native library not available');
     }
@@ -229,7 +230,7 @@ class DilithiumService {
         throw StateError('Keypair generation failed: error $result');
       }
 
-      debugPrint(
+      losLog(
           '🔑 [DilithiumService.generateKeypair] Generated keypair (PK: $_pkBytes bytes, SK: $_skBytes bytes)');
       return DilithiumKeypair(
         publicKey: Uint8List.fromList(pkPtr.asTypedList(_pkBytes)),
@@ -248,7 +249,7 @@ class DilithiumService {
   /// Same seed always produces the same keypair, enabling wallet recovery
   /// from mnemonic alone. Uses domain-separated SHA-256 → ChaCha20 DRBG.
   static DilithiumKeypair generateKeypairFromSeed(List<int> seed) {
-    debugPrint(
+    losLog(
         '🔑 [DilithiumService.generateKeypairFromSeed] Generating from seed (${seed.length} bytes)...');
     if (!_available) {
       throw StateError('Dilithium5 native library not available');
@@ -276,7 +277,7 @@ class DilithiumService {
         throw StateError('Seeded keypair generation failed: error $result');
       }
 
-      debugPrint(
+      losLog(
           '🔑 [DilithiumService.generateKeypairFromSeed] Deterministic keypair generated (PK: $_pkBytes bytes, SK: $_skBytes bytes)');
       return DilithiumKeypair(
         publicKey: Uint8List.fromList(pkPtr.asTypedList(_pkBytes)),
@@ -296,7 +297,7 @@ class DilithiumService {
   /// Sign a message with a Dilithium5 secret key.
   /// Returns the signature as Uint8List.
   static Uint8List sign(Uint8List message, Uint8List secretKey) {
-    debugPrint(
+    losLog(
         '🔑 [DilithiumService.sign] Signing message (${message.length} bytes)...');
     if (!_available) {
       throw StateError('Dilithium5 native library not available');
@@ -322,7 +323,7 @@ class DilithiumService {
         throw StateError('Signing failed: error $sigLen');
       }
 
-      debugPrint('🔑 [DilithiumService.sign] Signed (sig: $sigLen bytes)');
+      losLog('🔑 [DilithiumService.sign] Signed (sig: $sigLen bytes)');
       return Uint8List.fromList(sigPtr.asTypedList(sigLen));
     } finally {
       // SECURITY FIX S3: Zero secret key memory before freeing to prevent leak
@@ -336,7 +337,7 @@ class DilithiumService {
   /// Verify a Dilithium5 signature.
   static bool verify(
       Uint8List message, Uint8List signature, Uint8List publicKey) {
-    debugPrint(
+    losLog(
         '🔑 [DilithiumService.verify] Verifying (msg: ${message.length} bytes, sig: ${signature.length} bytes)...');
     if (!_available) return false;
 
@@ -358,7 +359,7 @@ class DilithiumService {
         publicKey.length,
       );
       final verified = result == 1;
-      debugPrint('🔑 [DilithiumService.verify] Verify result: $verified');
+      losLog('🔑 [DilithiumService.verify] Verify result: $verified');
       return verified;
     } finally {
       calloc.free(msgPtr);
@@ -370,7 +371,7 @@ class DilithiumService {
   /// Derive LOS address from Dilithium5 public key.
   /// Returns a string like "LOSHjvLcaLZp..." (Base58Check format).
   static String publicKeyToAddress(Uint8List publicKey) {
-    debugPrint(
+    losLog(
         '🔑 [DilithiumService.publicKeyToAddress] Deriving address from PK (${publicKey.length} bytes)...');
     if (!_available) {
       throw StateError('Dilithium5 native library not available');
@@ -394,7 +395,7 @@ class DilithiumService {
 
       final bytes = addrPtr.asTypedList(addrLen);
       final address = String.fromCharCodes(bytes);
-      debugPrint(
+      losLog(
           '🔑 [DilithiumService.publicKeyToAddress] Address: ${address.substring(0, 8)}...${address.substring(address.length - 4)}');
       return address;
     } finally {
@@ -405,7 +406,7 @@ class DilithiumService {
 
   /// Validate a LOS address (checksum + format).
   static bool validateAddress(String address) {
-    debugPrint(
+    losLog(
         '🔑 [DilithiumService.validateAddress] Validating address: ${address.length > 12 ? '${address.substring(0, 8)}...${address.substring(address.length - 4)}' : address}');
     if (!_available) return false;
 
@@ -415,7 +416,7 @@ class DilithiumService {
     try {
       addrPtr.asTypedList(addrBytes.length).setAll(0, addrBytes);
       final valid = _losValidateAddress(addrPtr, addrBytes.length) == 1;
-      debugPrint('🔑 [DilithiumService.validateAddress] Result: $valid');
+      losLog('🔑 [DilithiumService.validateAddress] Result: $valid');
       return valid;
     } finally {
       calloc.free(addrPtr);
@@ -487,7 +488,7 @@ class DilithiumService {
     required int difficultyBits,
     int maxIterations = 50000000,
   }) {
-    debugPrint(
+    losLog(
         '⛏️ [DilithiumService.minePow] Mining PoW (difficulty: $difficultyBits bits, max: $maxIterations iterations)...');
     if (!_available) return null;
 
@@ -511,14 +512,14 @@ class DilithiumService {
       );
 
       if (result < 0) {
-        debugPrint('⚠️ Native PoW failed with error: $result');
+        losLog('⚠️ Native PoW failed with error: $result');
         return null;
       }
 
       final nonce = noncePtr.value;
       final hashHex = String.fromCharCodes(hashPtr.asTypedList(result));
 
-      debugPrint('⛏️ [DilithiumService.minePow] Found nonce: $nonce');
+      losLog('⛏️ [DilithiumService.minePow] Found nonce: $nonce');
       return {'work': nonce, 'hash': hashHex};
     } finally {
       calloc.free(bufPtr);

@@ -210,7 +210,9 @@ pub fn validate_genesis(config: &GenesisConfig) -> Result<(), String> {
         if let Some(dot_idx) = ts.find('.') {
             let integer_part = &ts[..dot_idx];
             let fractional_part = &ts[dot_idx + 1..];
-            integer_part == "21936236" && !fractional_part.is_empty() && fractional_part.chars().all(|c| c == '0')
+            integer_part == "21936236"
+                && !fractional_part.is_empty()
+                && fractional_part.chars().all(|c| c == '0')
         } else {
             ts == "21936236"
         }

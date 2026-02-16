@@ -1,7 +1,7 @@
+import '../utils/log.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
-import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/io_client.dart';
 import 'package:socks5_proxy/socks_client.dart';
@@ -166,12 +166,12 @@ class ApiService {
     // hidden service), the SOCKS port may change. Re-create our HTTP client
     // so requests don't go to a dead proxy port for 30-120s.
     _torService.onSocksPortChanged = () {
-      debugPrint(
+      losLog(
           '🔄 [ApiService] Tor SOCKS port changed — recreating HTTP client...');
       _clientReady = _reinitializeTorClient();
     };
 
-    debugPrint('🔗 LOS Validator ApiService initialized with baseUrl: $baseUrl '
+    losLog('🔗 LOS Validator ApiService initialized with baseUrl: $baseUrl '
         '(${_bootstrapUrls.length} bootstrap nodes available)');
   }
 
@@ -187,7 +187,7 @@ class ApiService {
     if (baseUrl == onionUrl) {
       _switchToNextNode();
     }
-    debugPrint('🔗 Excluded own onion from peer list: $onionUrl');
+    losLog('🔗 Excluded own onion from peer list: $onionUrl');
   }
 
   /// Set the local node URL when the bundled los-node is running.
@@ -198,14 +198,14 @@ class ApiService {
   /// for cross-verification; local is a fallback only.
   void setLocalNodeUrl(String url) {
     _localNodeUrl = url;
-    debugPrint('🔗 Local node URL set: $url (fallback enabled)');
+    losLog('🔗 Local node URL set: $url (fallback enabled)');
   }
 
   /// Clear the local node URL when the bundled los-node stops.
   void clearLocalNodeUrl() {
     _localNodeUrl = null;
     _usingLocalFallback = false;
-    debugPrint('🔗 Local node URL cleared');
+    losLog('🔗 Local node URL cleared');
   }
 
   /// Load all bootstrap URLs for the given environment.
@@ -221,7 +221,7 @@ class ApiService {
         .where((url) {
       // SECURITY: Mainnet requires .onion-only connections (Tor network)
       if (env == NetworkEnvironment.mainnet && !url.contains('.onion')) {
-        debugPrint('🚫 Rejected non-.onion URL for mainnet: $url');
+        losLog('🚫 Rejected non-.onion URL for mainnet: $url');
         return false;
       }
       return true;
@@ -239,7 +239,7 @@ class ApiService {
           .toList();
       if (newPeers.isNotEmpty) {
         _bootstrapUrls = [...newPeers, ..._bootstrapUrls];
-        debugPrint('🔗 PeerDiscovery: added ${newPeers.length} saved peer(s) '
+        losLog('🔗 PeerDiscovery: added ${newPeers.length} saved peer(s) '
             '(total: ${_bootstrapUrls.length} endpoints)');
       }
     }
@@ -282,16 +282,16 @@ class ApiService {
         _getHealth(baseUrl).recordSuccess(rtt);
         // Host responded — stay on it regardless of latency.
         // Slow is fine, dead is not.
-        debugPrint('🔌 [HealthCheck] OK (${rtt}ms) ✓');
+        losLog('🔌 [HealthCheck] OK (${rtt}ms) ✓');
       } else {
         // HTTP error (4xx/5xx) → host unhealthy but don't switch yet
         _getHealth(baseUrl).recordFailure();
         final failures = _getHealth(baseUrl).consecutiveFailures;
-        debugPrint('🔌 [HealthCheck] HTTP ${response.statusCode} '
+        losLog('🔌 [HealthCheck] HTTP ${response.statusCode} '
             '(failure $failures/3)');
         // Only switch after 3+ consecutive failures (Tor is unreliable)
         if (failures >= 3) {
-          debugPrint(
+          losLog(
               '🔌 [HealthCheck] 3 consecutive failures — switching node');
           _switchToNextNode();
         }
@@ -300,11 +300,11 @@ class ApiService {
       // Timeout or connection error → host may be DOWN
       _getHealth(baseUrl).recordFailure();
       final failures = _getHealth(baseUrl).consecutiveFailures;
-      debugPrint('🔌 [HealthCheck] UNREACHABLE '
+      losLog('🔌 [HealthCheck] UNREACHABLE '
           '(failure $failures/3)');
       // Only switch after 3+ consecutive failures
       if (failures >= 3) {
-        debugPrint('🔌 [HealthCheck] 3 consecutive failures — switching node');
+        losLog('🔌 [HealthCheck] 3 consecutive failures — switching node');
         _switchToNextNode();
       }
     }
@@ -315,7 +315,7 @@ class ApiService {
   /// NOT called automatically — we stick with the current working node.
   Future<void> probeAndSelectBestNode() async {
     if (_disposed || _bootstrapUrls.isEmpty) return;
-    debugPrint(
+    losLog(
         '📡 [Probe] Searching for best host across ${_bootstrapUrls.length} node(s)...');
 
     final results = <String, int>{};
@@ -329,7 +329,7 @@ class ApiService {
       if (url == _excludedOnionUrl) return false;
       final health = _nodeHealthMap[url];
       if (health != null && health.isInCooldown) {
-        debugPrint(
+        losLog(
             '📡 [Probe] $url — skipped (cooldown, ${health.consecutiveFailures} failures)');
         return false;
       }
@@ -351,21 +351,21 @@ class ApiService {
           if (response.statusCode >= 200 && response.statusCode < 300) {
             results[url] = sw.elapsedMilliseconds;
             _getHealth(url).recordSuccess(sw.elapsedMilliseconds);
-            debugPrint('📡 [Probe] $url — ${sw.elapsedMilliseconds}ms ✓');
+            losLog('📡 [Probe] $url — ${sw.elapsedMilliseconds}ms ✓');
           } else {
             _getHealth(url).recordFailure();
-            debugPrint('📡 [Probe] $url — HTTP ${response.statusCode} ✗');
+            losLog('📡 [Probe] $url — HTTP ${response.statusCode} ✗');
           }
         } catch (e) {
           _getHealth(url).recordFailure();
-          debugPrint('📡 [Probe] $url — unreachable ($e) ✗');
+          losLog('📡 [Probe] $url — unreachable ($e) ✗');
         }
       });
       await Future.wait(futures);
     }
 
     if (results.isEmpty) {
-      debugPrint(
+      losLog(
           '📡 [Probe] No responsive nodes found — keeping current: $baseUrl');
       return;
     }
@@ -382,11 +382,11 @@ class ApiService {
       baseUrl = bestUrl;
       _currentNodeIndex =
           _bootstrapUrls.indexOf(bestUrl).clamp(0, _bootstrapUrls.length - 1);
-      debugPrint(
+      losLog(
           '🏆 [Probe] Switched to $bestUrl (${bestLatency}ms) from $oldUrl');
       onNodeSwitched?.call(baseUrl);
     } else {
-      debugPrint(
+      losLog(
           '🏆 [Probe] Best node unchanged: $baseUrl (${bestLatency}ms) — '
           '${sorted.length}/${_bootstrapUrls.length} responsive');
     }
@@ -414,7 +414,7 @@ class ApiService {
       if (_getHealth(candidate).isInCooldown) continue;
       if (candidate != baseUrl) {
         baseUrl = candidate;
-        debugPrint(
+        losLog(
             '🔄 Failover: switched to node ${_currentNodeIndex + 1}/${_bootstrapUrls.length}: $baseUrl');
         onNodeSwitched?.call(baseUrl);
         return true;
@@ -422,7 +422,7 @@ class ApiService {
     } while (_currentNodeIndex != startIndex);
     // All nodes in cooldown — reset cooldowns and try round-robin
     if (_allNodesInCooldown()) {
-      debugPrint(
+      losLog(
           '⚠️ All nodes in cooldown — resetting cooldowns for fresh retry');
       for (final h in _nodeHealthMap.values) {
         h.consecutiveFailures = 0;
@@ -486,7 +486,7 @@ class ApiService {
         if (response.statusCode < 500) {
           if (!_usingLocalFallback) {
             _usingLocalFallback = true;
-            debugPrint('🏠 Using local node (instant) — '
+            losLog('🏠 Using local node (instant) — '
                 'Dashboard data from local node');
           }
           // Trigger initial discovery (once) so we learn about external peers
@@ -519,7 +519,7 @@ class ApiService {
         // Success via external peer — clear local fallback
         if (_usingLocalFallback) {
           _usingLocalFallback = false;
-          debugPrint('🌐 Restored external .onion connectivity');
+          losLog('🌐 Restored external .onion connectivity');
         }
 
         if (!_initialDiscoveryDone) {
@@ -563,7 +563,7 @@ class ApiService {
 
           if (_usingLocalFallback) {
             _usingLocalFallback = false;
-            debugPrint('🌐 Restored external .onion via failover');
+            losLog('🌐 Restored external .onion via failover');
           }
 
           if (!_initialDiscoveryDone) {
@@ -574,7 +574,7 @@ class ApiService {
           return response;
         } on Exception catch (e) {
           _getHealth(baseUrl).recordFailure();
-          debugPrint(
+          losLog(
               '⚠️ Failover node ${_currentNodeIndex + 1} failed for $endpoint: $e');
         }
       }
@@ -589,20 +589,20 @@ class ApiService {
   void _triggerTorRecovery() {
     if (_torRecoveryInProgress || _disposed) return;
     // Use a non-final field via closure
-    debugPrint('🔄 [ApiService] Triggering Tor SOCKS recovery...');
+    losLog('🔄 [ApiService] Triggering Tor SOCKS recovery...');
     _torRecoveryInProgress = true;
     Future(() async {
       try {
         final started = await _torService.start();
         if (started) {
-          debugPrint('✅ [ApiService] Tor recovered — recreating HTTP client');
+          losLog('✅ [ApiService] Tor recovered — recreating HTTP client');
           await _reinitializeTorClient();
         } else {
-          debugPrint(
+          losLog(
               '⚠️ [ApiService] Tor recovery failed — local fallback active');
         }
       } catch (e) {
-        debugPrint('❌ [ApiService] Tor recovery error: $e');
+        losLog('❌ [ApiService] Tor recovery error: $e');
       } finally {
         _torRecoveryInProgress = false;
       }
@@ -620,7 +620,7 @@ class ApiService {
     try {
       await discoverAndSavePeers();
     } catch (e) {
-      debugPrint('⚠️ Initial discovery failed (non-critical): $e');
+      losLog('⚠️ Initial discovery failed (non-critical): $e');
     }
     _startBackgroundTimers();
   }
@@ -640,7 +640,7 @@ class ApiService {
       if (!_disposed) _checkCurrentHostHealth();
     });
 
-    debugPrint('⏰ Background timers started: '
+    losLog('⏰ Background timers started: '
         'discovery every ${_rediscoveryInterval.inMinutes}m, '
         'current-host health check every ${_healthCheckInterval.inMinutes}m');
   }
@@ -652,10 +652,10 @@ class ApiService {
     if (_disposed) return;
     _getHealth(baseUrl).recordFailure();
     if (_getHealth(baseUrl).consecutiveFailures >= 3) {
-      debugPrint('🔌 Health degraded (3+ failures) — switching to next node');
+      losLog('🔌 Health degraded (3+ failures) — switching to next node');
       _switchToNextNode();
     } else {
-      debugPrint(
+      losLog(
           '🔌 Health degraded (${_getHealth(baseUrl).consecutiveFailures}/3) — staying on current node');
     }
   }
@@ -674,15 +674,15 @@ class ApiService {
     try {
       _client = await _createTorClient();
       if (_hasTor) {
-        debugPrint('✅ Tor SOCKS5 client ready (can reach .onion peers)');
+        losLog('✅ Tor SOCKS5 client ready (can reach .onion peers)');
       }
     } catch (e) {
-      debugPrint('⚠️ Tor init failed ($e) — falling back to direct HTTP');
+      losLog('⚠️ Tor init failed ($e) — falling back to direct HTTP');
       _client = http.Client();
       _hasTor = false;
     }
     if (!_hasTor && !baseUrl.contains('.onion')) {
-      debugPrint('✅ Direct HTTP client for $baseUrl (Tor unavailable)');
+      losLog('✅ Direct HTTP client for $baseUrl (Tor unavailable)');
     }
     // After client is ready, load saved peers into bootstrap list
     await _loadSavedPeers();
@@ -698,7 +698,7 @@ class ApiService {
     // AND sets _isRunning=true, which startWithHiddenService() depends on.
     final started = await _torService.start();
     if (!started) {
-      debugPrint('⚠️ Tor unavailable — no SOCKS5 proxy detected on any port. '
+      losLog('⚠️ Tor unavailable — no SOCKS5 proxy detected on any port. '
           'Falling back to direct HTTP (cannot reach .onion addresses).');
       _hasTor = false;
       return http.Client();
@@ -716,7 +716,7 @@ class ApiService {
     httpClient.idleTimeout = const Duration(seconds: 30);
 
     _hasTor = true;
-    debugPrint('✅ Tor SOCKS5 proxy configured (localhost:$socksPort)');
+    losLog('✅ Tor SOCKS5 proxy configured (localhost:$socksPort)');
     return IOClient(httpClient);
   }
 
@@ -726,11 +726,11 @@ class ApiService {
     try {
       _client = await _createTorClient();
       if (_hasTor) {
-        debugPrint('✅ [ApiService] HTTP client recreated on new SOCKS port '
+        losLog('✅ [ApiService] HTTP client recreated on new SOCKS port '
             '${_torService.activeSocksPort}');
       }
     } catch (e) {
-      debugPrint('❌ [ApiService] Failed to recreate Tor client: $e');
+      losLog('❌ [ApiService] Failed to recreate Tor client: $e');
     }
   }
 
@@ -748,13 +748,13 @@ class ApiService {
     baseUrl =
         _bootstrapUrls.isNotEmpty ? _bootstrapUrls.first : _getBaseUrl(newEnv);
     _clientReady = _initializeClient();
-    debugPrint('🔄 Switched to ${newEnv.name.toUpperCase()}: $baseUrl '
+    losLog('🔄 Switched to ${newEnv.name.toUpperCase()}: $baseUrl '
         '(${_bootstrapUrls.length} nodes)');
   }
 
   // Node Info
   Future<Map<String, dynamic>> getNodeInfo() async {
-    debugPrint('🌐 [ApiService.getNodeInfo] Fetching node info...');
+    losLog('🌐 [ApiService.getNodeInfo] Fetching node info...');
     try {
       final response = await _requestWithFailover(
         (url) => _client.get(Uri.parse('$url/node-info')),
@@ -762,13 +762,13 @@ class ApiService {
       );
       if (response.statusCode >= 200 && response.statusCode < 300) {
         final data = json.decode(response.body);
-        debugPrint(
+        losLog(
             '🌐 [ApiService.getNodeInfo] Success: block_height=${data['block_height']}');
         return data;
       }
       throw Exception('Failed to get node info: ${response.statusCode}');
     } catch (e) {
-      debugPrint('❌ getNodeInfo error: $e');
+      losLog('❌ getNodeInfo error: $e');
       rethrow;
     }
   }
@@ -781,25 +781,25 @@ class ApiService {
   Future<Map<String, dynamic>?> getNodeInfoFromUrl(String url) async {
     assert(!url.contains('.onion'),
         'getNodeInfoFromUrl is localhost-only. Use getNodeInfo() for .onion URLs.');
-    debugPrint('🌐 [ApiService.getNodeInfoFromUrl] url: $url');
+    losLog('🌐 [ApiService.getNodeInfoFromUrl] url: $url');
     try {
       final response = await http
           .get(Uri.parse('$url/node-info'))
           .timeout(const Duration(seconds: 5));
       if (response.statusCode >= 200 && response.statusCode < 300) {
         final data = json.decode(response.body);
-        debugPrint('🌐 [ApiService.getNodeInfoFromUrl] Success');
+        losLog('🌐 [ApiService.getNodeInfoFromUrl] Success');
         return data;
       }
     } catch (e) {
-      debugPrint('⚠️ getNodeInfoFromUrl($url) error: $e');
+      losLog('⚠️ getNodeInfoFromUrl($url) error: $e');
     }
     return null;
   }
 
   // Health Check
   Future<Map<String, dynamic>> getHealth() async {
-    debugPrint('🌐 [ApiService.getHealth] Fetching health...');
+    losLog('🌐 [ApiService.getHealth] Fetching health...');
     try {
       final response = await _requestWithFailover(
         (url) => _client.get(Uri.parse('$url/health')),
@@ -807,12 +807,12 @@ class ApiService {
       );
       if (response.statusCode >= 200 && response.statusCode < 300) {
         final data = json.decode(response.body);
-        debugPrint('🌐 [ApiService.getHealth] Success');
+        losLog('🌐 [ApiService.getHealth] Success');
         return data;
       }
       throw Exception('Failed to get health: ${response.statusCode}');
     } catch (e) {
-      debugPrint('❌ getHealth error: $e');
+      losLog('❌ getHealth error: $e');
       rethrow;
     }
   }
@@ -829,7 +829,7 @@ class ApiService {
   // Backend: GET /balance/:address → {balance, balance_los: string, balance_cil: u128-int}
   // Backend: GET /bal/:address     → {balance_los: string, balance_cil: u128-int}
   Future<Account> getBalance(String address) async {
-    debugPrint('🌐 [ApiService.getBalance] address: $address');
+    losLog('🌐 [ApiService.getBalance] address: $address');
     try {
       final response = await _requestWithFailover(
         (url) => _client.get(Uri.parse('$url/balance/$address')),
@@ -875,20 +875,20 @@ class ApiService {
           cilBalance: 0,
           history: [],
         );
-        debugPrint(
+        losLog(
             '🌐 [ApiService.getBalance] Success: balance=$balanceVoid CILD');
         return account;
       }
       throw Exception('Failed to get balance: ${response.statusCode}');
     } catch (e) {
-      debugPrint('❌ getBalance error: $e');
+      losLog('❌ getBalance error: $e');
       rethrow;
     }
   }
 
   // Get Account (with history)
   Future<Account> getAccount(String address) async {
-    debugPrint('🌐 [ApiService.getAccount] address: $address');
+    losLog('🌐 [ApiService.getAccount] address: $address');
     try {
       final response = await _requestWithFailover(
         (url) => _client.get(Uri.parse('$url/account/$address')),
@@ -896,19 +896,19 @@ class ApiService {
       );
       if (response.statusCode >= 200 && response.statusCode < 300) {
         final data = json.decode(response.body);
-        debugPrint('🌐 [ApiService.getAccount] Success');
+        losLog('🌐 [ApiService.getAccount] Success');
         return Account.fromJson(data);
       }
       throw Exception('Failed to get account: ${response.statusCode}');
     } catch (e) {
-      debugPrint('❌ getAccount error: $e');
+      losLog('❌ getAccount error: $e');
       rethrow;
     }
   }
 
   // Request Faucet
   Future<Map<String, dynamic>> requestFaucet(String address) async {
-    debugPrint('🌐 [ApiService.requestFaucet] address: $address');
+    losLog('🌐 [ApiService.requestFaucet] address: $address');
     try {
       final response = await _requestWithFailover(
         (url) => _client.post(
@@ -927,10 +927,10 @@ class ApiService {
         throw Exception(data['msg'] ?? 'Faucet request failed');
       }
 
-      debugPrint('🌐 [ApiService.requestFaucet] Success');
+      losLog('🌐 [ApiService.requestFaucet] Success');
       return data;
     } catch (e) {
-      debugPrint('❌ requestFaucet error: $e');
+      losLog('❌ requestFaucet error: $e');
       rethrow;
     }
   }
@@ -944,7 +944,7 @@ class ApiService {
     required String signature,
     required String publicKey,
   }) async {
-    debugPrint(
+    losLog(
         '🌐 [ApiService.sendTransaction] from: $from, to: $to, amount: $amount');
     try {
       final response = await _requestWithFailover(
@@ -969,11 +969,11 @@ class ApiService {
         throw Exception(data['msg'] ?? 'Transaction failed');
       }
 
-      debugPrint(
+      losLog(
           '🌐 [ApiService.sendTransaction] Success: txid=${data['txid'] ?? data['tx_id'] ?? 'N/A'}');
       return data;
     } catch (e) {
-      debugPrint('❌ sendTransaction error: $e');
+      losLog('❌ sendTransaction error: $e');
       rethrow;
     }
   }
@@ -1009,7 +1009,7 @@ class ApiService {
 
       return data;
     } catch (e) {
-      debugPrint('❌ submitBurn error: $e');
+      losLog('❌ submitBurn error: $e');
       rethrow;
     }
   }
@@ -1017,7 +1017,7 @@ class ApiService {
   // Get Validators
   // FIX C-01: Backend wraps in {"validators": [...]}, not bare array
   Future<List<ValidatorInfo>> getValidators() async {
-    debugPrint('🛡️ [ApiService.getValidators] Fetching validators...');
+    losLog('🛡️ [ApiService.getValidators] Fetching validators...');
     try {
       final response = await _requestWithFailover(
         (url) => _client.get(Uri.parse('$url/validators')),
@@ -1030,13 +1030,13 @@ class ApiService {
             ? decoded
             : (decoded['validators'] as List<dynamic>?) ?? [];
         final validators = data.map((v) => ValidatorInfo.fromJson(v)).toList();
-        debugPrint(
+        losLog(
             '🛡️ [ApiService.getValidators] Success: ${validators.length} validators');
         return validators;
       }
       throw Exception('Failed to get validators: ${response.statusCode}');
     } catch (e) {
-      debugPrint('❌ getValidators error: $e');
+      losLog('❌ getValidators error: $e');
       rethrow;
     }
   }
@@ -1044,23 +1044,23 @@ class ApiService {
   /// Check if an address is an active genesis bootstrap validator.
   /// Returns true if the address is found in /validators with is_genesis=true and is_active=true.
   Future<bool> isActiveGenesisValidator(String address) async {
-    debugPrint('🛡️ [ApiService.isActiveGenesisValidator] address: $address');
+    losLog('🛡️ [ApiService.isActiveGenesisValidator] address: $address');
     try {
       final validators = await getValidators();
       final result = validators.any(
         (v) => v.address == address && v.isGenesis && v.isActive,
       );
-      debugPrint('🛡️ [ApiService.isActiveGenesisValidator] Result: $result');
+      losLog('🛡️ [ApiService.isActiveGenesisValidator] Result: $result');
       return result;
     } catch (e) {
-      debugPrint('⚠️ isActiveGenesisValidator check failed: $e');
+      losLog('⚠️ isActiveGenesisValidator check failed: $e');
       return false;
     }
   }
 
   // Get Latest Block
   Future<BlockInfo> getLatestBlock() async {
-    debugPrint('🌐 [ApiService.getLatestBlock] Fetching latest block...');
+    losLog('🌐 [ApiService.getLatestBlock] Fetching latest block...');
     try {
       final response = await _requestWithFailover(
         (url) => _client.get(Uri.parse('$url/block')),
@@ -1068,20 +1068,20 @@ class ApiService {
       );
       if (response.statusCode >= 200 && response.statusCode < 300) {
         final data = json.decode(response.body);
-        debugPrint(
+        losLog(
             '🌐 [ApiService.getLatestBlock] Success: height=${data['height']}');
         return BlockInfo.fromJson(data);
       }
       throw Exception('Failed to get latest block: ${response.statusCode}');
     } catch (e) {
-      debugPrint('❌ getLatestBlock error: $e');
+      losLog('❌ getLatestBlock error: $e');
       rethrow;
     }
   }
 
   // Get Recent Blocks
   Future<List<BlockInfo>> getRecentBlocks() async {
-    debugPrint('🌐 [ApiService.getRecentBlocks] Fetching recent blocks...');
+    losLog('🌐 [ApiService.getRecentBlocks] Fetching recent blocks...');
     try {
       final response = await _requestWithFailover(
         (url) => _client.get(Uri.parse('$url/blocks/recent')),
@@ -1094,13 +1094,13 @@ class ApiService {
             ? decoded
             : (decoded['blocks'] as List<dynamic>?) ?? [];
         final blocks = data.map((b) => BlockInfo.fromJson(b)).toList();
-        debugPrint(
+        losLog(
             '🌐 [ApiService.getRecentBlocks] Success: ${blocks.length} blocks');
         return blocks;
       }
       throw Exception('Failed to get recent blocks: ${response.statusCode}');
     } catch (e) {
-      debugPrint('❌ getRecentBlocks error: $e');
+      losLog('❌ getRecentBlocks error: $e');
       rethrow;
     }
   }
@@ -1108,7 +1108,7 @@ class ApiService {
   // Get Peers
   // Backend returns {"peers": [{"address":..., "is_validator":..., ...}], "peer_count": N, ...}
   Future<List<String>> getPeers() async {
-    debugPrint('📡 [ApiService.getPeers] Fetching peers...');
+    losLog('📡 [ApiService.getPeers] Fetching peers...');
     try {
       final response = await _requestWithFailover(
         (url) => _client.get(Uri.parse('$url/peers')),
@@ -1124,7 +1124,7 @@ class ApiService {
                     p is Map ? (p['address'] ?? '').toString() : p.toString())
                 .where((s) => s.isNotEmpty)
                 .toList();
-            debugPrint(
+            losLog(
                 '📡 [ApiService.getPeers] Success: ${peers.length} peers');
             return peers;
           }
@@ -1137,7 +1137,7 @@ class ApiService {
       }
       throw Exception('Failed to get peers: ${response.statusCode}');
     } catch (e) {
-      debugPrint('❌ getPeers error: $e');
+      losLog('❌ getPeers error: $e');
       rethrow;
     }
   }
@@ -1152,7 +1152,7 @@ class ApiService {
     required int timestamp,
     String? onionAddress,
   }) async {
-    debugPrint('🛡️ [ApiService.registerValidator] address: $address');
+    losLog('🛡️ [ApiService.registerValidator] address: $address');
     try {
       final body = <String, dynamic>{
         'address': address,
@@ -1180,10 +1180,10 @@ class ApiService {
         throw Exception(data['msg'] ?? 'Validator registration failed');
       }
 
-      debugPrint('🛡️ [ApiService.registerValidator] Success');
+      losLog('🛡️ [ApiService.registerValidator] Success');
       return data;
     } catch (e) {
-      debugPrint('❌ registerValidator error: $e');
+      losLog('❌ registerValidator error: $e');
       rethrow;
     }
   }
@@ -1211,7 +1211,7 @@ class ApiService {
 
   /// Fetch validator reward pool status from GET /reward-info.
   Future<Map<String, dynamic>> getRewardInfo() async {
-    debugPrint('🌐 [ApiService.getRewardInfo] Fetching reward info...');
+    losLog('🌐 [ApiService.getRewardInfo] Fetching reward info...');
     try {
       final response = await _requestWithFailover(
         (url) => _client.get(Uri.parse('$url/reward-info')),
@@ -1219,12 +1219,12 @@ class ApiService {
       );
       if (response.statusCode >= 200 && response.statusCode < 300) {
         final data = json.decode(response.body);
-        debugPrint('🌐 [ApiService.getRewardInfo] Success');
+        losLog('🌐 [ApiService.getRewardInfo] Success');
         return data;
       }
       throw Exception('Failed to get reward info: ${response.statusCode}');
     } catch (e) {
-      debugPrint('❌ getRewardInfo error: $e');
+      losLog('❌ getRewardInfo error: $e');
       rethrow;
     }
   }
@@ -1258,12 +1258,12 @@ class ApiService {
               }
             }
           }
-          debugPrint('🌐 Discovery: ${endpoints.length} endpoint(s), '
+          losLog('🌐 Discovery: ${endpoints.length} endpoint(s), '
               'total URLs: ${_bootstrapUrls.length}');
         }
       }
     } catch (e) {
-      debugPrint('⚠️ Peer discovery failed (non-critical): $e');
+      losLog('⚠️ Peer discovery failed (non-critical): $e');
     }
   }
 
@@ -1284,7 +1284,7 @@ class ApiService {
 
   /// Release HTTP client resources and cancel background timers.
   void dispose() {
-    debugPrint('🌐 [ApiService.dispose] Disposed');
+    losLog('🌐 [ApiService.dispose] Disposed');
     _disposed = true;
     _rediscoveryTimer?.cancel();
     _healthCheckTimer?.cancel();

@@ -1,3 +1,4 @@
+import 'utils/log.dart';
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -20,8 +21,8 @@ void main() async {
 
     // Global Flutter error handler — log but don't crash
     FlutterError.onError = (details) {
-      debugPrint('⚠️ FlutterError: ${details.exceptionAsString()}');
-      debugPrint(
+      losLog('⚠️ FlutterError: ${details.exceptionAsString()}');
+      losLog(
           '   ${details.stack?.toString().split('\n').take(3).join('\n   ')}');
     };
 
@@ -30,7 +31,7 @@ void main() async {
 
     // Initialize Dilithium5 post-quantum crypto (loads native lib if available)
     await DilithiumService.initialize();
-    debugPrint(
+    losLog(
       DilithiumService.isAvailable
           ? '🔐 Dilithium5 ready (PK: ${DilithiumService.publicKeyBytes}B, SK: ${DilithiumService.secretKeyBytes}B)'
           : '⚠️  Dilithium5 not available — SHA256 fallback active',
@@ -44,8 +45,8 @@ void main() async {
   }, (error, stackTrace) {
     // Catches uncaught async exceptions from zones without error handlers
     // (e.g. socks5_proxy RangeError from non-SOCKS5 port responses)
-    debugPrint('⚠️ Uncaught async error: $error');
-    debugPrint('   ${stackTrace.toString().split('\n').take(3).join('\n   ')}');
+    losLog('⚠️ Uncaught async error: $error');
+    losLog('   ${stackTrace.toString().split('\n').take(3).join('\n   ')}');
   });
 }
 
@@ -141,18 +142,18 @@ class _AppRouterState extends State<_AppRouter> {
   }
 
   Future<void> _checkWallet() async {
-    debugPrint('🔄 [Validator] Checking wallet state...');
+    losLog('🔄 [Validator] Checking wallet state...');
     try {
       final walletService = context.read<WalletService>();
       final wallet = await walletService.getCurrentWallet();
       if (!mounted) return;
-      debugPrint('🔄 [Validator] Wallet found: ${wallet != null}');
+      losLog('🔄 [Validator] Wallet found: ${wallet != null}');
       setState(() {
         _hasWallet = wallet != null;
         _loading = false;
       });
     } catch (e) {
-      debugPrint('❌ [Validator] _checkWallet error: $e');
+      losLog('❌ [Validator] _checkWallet error: $e');
       if (!mounted) return;
       setState(() {
         _hasWallet = false;

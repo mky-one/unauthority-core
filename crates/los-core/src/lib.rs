@@ -329,7 +329,13 @@ impl Ledger {
         // 3. ACCOUNT ↔ PUBLIC KEY BINDING (prevents fund theft)
         // For Send and Change blocks, the signer MUST be the account owner.
         // Receive/Mint/Slash are system-created (signed by node/validator, not account owner).
-        if matches!(block.block_type, BlockType::Send | BlockType::Change | BlockType::ContractDeploy | BlockType::ContractCall) {
+        if matches!(
+            block.block_type,
+            BlockType::Send
+                | BlockType::Change
+                | BlockType::ContractDeploy
+                | BlockType::ContractCall
+        ) {
             let pk_bytes = hex::decode(&block.public_key)
                 .map_err(|e| format!("Authorization Error: Invalid public_key hex: {}", e))?;
             if pk_bytes.is_empty() {
@@ -353,13 +359,13 @@ impl Ledger {
         // MAINNET SECURITY: Debit block types require the account to already exist.
         // Only Mint and Receive may auto-create accounts (they credit funds).
         // Without this, Change/Slash blocks could create empty accounts (state bloat attack).
-        if !matches!(block.block_type, BlockType::Mint | BlockType::Receive) {
-            if !self.accounts.contains_key(&block.account) {
-                return Err(format!(
-                    "Account Error: {} does not exist in ledger. Only Mint/Receive can create accounts.",
-                    &block.account[..block.account.len().min(16)]
-                ));
-            }
+        if !matches!(block.block_type, BlockType::Mint | BlockType::Receive)
+            && !self.accounts.contains_key(&block.account)
+        {
+            return Err(format!(
+                "Account Error: {} does not exist in ledger. Only Mint/Receive can create accounts.",
+                &block.account[..block.account.len().min(16)]
+            ));
         }
 
         let mut state = self
@@ -443,8 +449,11 @@ impl Ledger {
                 }
 
                 // Only modify state after validation passes
-                state.balance += block.amount;
-                self.distribution.remaining_supply -= block.amount;
+                state.balance = state.balance.saturating_add(block.amount);
+                self.distribution.remaining_supply = self
+                    .distribution
+                    .remaining_supply
+                    .saturating_sub(block.amount);
 
                 let parts: Vec<&str> = block.link.split(':').collect();
                 if parts.len() >= 4 {
@@ -473,7 +482,7 @@ impl Ledger {
                 }
                 state.balance -= total_debit;
                 // P3-3: Track accumulated fees for validator redistribution
-                self.accumulated_fees_cil += block.fee;
+                self.accumulated_fees_cil = self.accumulated_fees_cil.saturating_add(block.fee);
             }
             BlockType::Receive => {
                 // SECURITY FIX #10: Validate that a matching Send block exists
@@ -516,7 +525,7 @@ impl Ledger {
                 }
 
                 // All validations passed — credit balance
-                state.balance += block.amount;
+                state.balance = state.balance.saturating_add(block.amount);
             }
             BlockType::Change => {
                 // SECURITY FIX #16: Reject no-op Change blocks (anti-spam)
@@ -553,11 +562,11 @@ impl Ledger {
                     .ok_or("Overflow: amount + fee exceeds u128")?;
                 if state.balance < total_debit {
                     return Err(
-                        "Insufficient Funds: balance < deploy fee + initial funding".to_string(),
+                        "Insufficient Funds: balance < deploy fee + initial funding".to_string()
                     );
                 }
                 state.balance -= total_debit;
-                self.accumulated_fees_cil += block.fee;
+                self.accumulated_fees_cil = self.accumulated_fees_cil.saturating_add(block.fee);
             }
             BlockType::ContractCall => {
                 // Contract call: caller pays gas fee, optionally sends CIL to contract
@@ -587,11 +596,11 @@ impl Ledger {
                     .ok_or("Overflow: amount + fee exceeds u128")?;
                 if state.balance < total_debit {
                     return Err(
-                        "Insufficient Funds: balance < call fee + value transfer".to_string(),
+                        "Insufficient Funds: balance < call fee + value transfer".to_string()
                     );
                 }
                 state.balance -= total_debit;
-                self.accumulated_fees_cil += block.fee;
+                self.accumulated_fees_cil = self.accumulated_fees_cil.saturating_add(block.fee);
             }
             BlockType::Slash => {
                 // Slash: penalty deduction for validator misbehavior

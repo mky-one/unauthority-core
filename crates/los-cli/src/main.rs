@@ -56,6 +56,12 @@ enum Commands {
         #[command(subcommand)]
         action: TxCommands,
     },
+
+    /// USP-01 Token operations
+    Token {
+        #[command(subcommand)]
+        action: TokenCommands,
+    },
 }
 
 #[derive(Subcommand)]
@@ -172,6 +178,44 @@ enum TxCommands {
     },
 }
 
+#[derive(Subcommand)]
+enum TokenCommands {
+    /// List all deployed USP-01 tokens
+    List,
+
+    /// Show USP-01 token metadata
+    Info {
+        /// Token contract address (LOSCon...)
+        address: String,
+    },
+
+    /// Query token balance for a holder
+    Balance {
+        /// Token contract address
+        #[arg(short, long)]
+        token: String,
+
+        /// Holder address
+        #[arg(long)]
+        holder: String,
+    },
+
+    /// Query token allowance
+    Allowance {
+        /// Token contract address
+        #[arg(short, long)]
+        token: String,
+
+        /// Owner address
+        #[arg(short, long)]
+        owner: String,
+
+        /// Spender address
+        #[arg(short, long)]
+        spender: String,
+    },
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let cli = Cli::parse();
@@ -201,6 +245,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
         Commands::Tx { action } => {
             commands::tx::handle(action, &cli.rpc, &config_dir).await?;
+        }
+        Commands::Token { action } => {
+            commands::token::handle(action, &cli.rpc).await?;
         }
     }
 

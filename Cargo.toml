@@ -15,6 +15,7 @@ members = [
 exclude = [
     "examples/contracts",
     "pqcrypto-internals-seeded",
+    "crates/los-contracts",
 ]
 
 # Integration tests package

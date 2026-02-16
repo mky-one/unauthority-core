@@ -35,16 +35,6 @@ name = "simple_storage"
 path = "simple_storage.rs"
 required-features = ["sdk"]
 
-[[bin]]
-name = "usp01_token"
-path = "usp01_token.rs"
-required-features = ["sdk"]
-
-[[bin]]
-name = "dex_amm_wasm"
-path = "dex_amm_wasm.rs"
-required-features = ["sdk"]
-
 [profile.release]
 opt-level = "z"      # Optimize for size
 lto = true           # Link-time optimization

@@ -43,7 +43,24 @@ impl TorConfig {
                     .trim_start_matches("socks5://")
                     .to_string()
             })
-            .and_then(|s| s.parse::<SocketAddr>().ok());
+            .and_then(|s| s.parse::<SocketAddr>().ok())
+            .or_else(|| {
+                // Auto-detect: try default Tor SOCKS5 proxy at 127.0.0.1:9050
+                let default_addr: SocketAddr = match "127.0.0.1:9050".parse() {
+                    Ok(a) => a,
+                    Err(_) => return None,
+                };
+                match std::net::TcpStream::connect_timeout(
+                    &std::net::SocketAddr::from(default_addr),
+                    std::time::Duration::from_millis(500),
+                ) {
+                    Ok(_) => {
+                        println!("🧅 Auto-detected Tor SOCKS5 proxy at 127.0.0.1:9050");
+                        Some(default_addr)
+                    }
+                    Err(_) => None,
+                }
+            });
 
         let onion_address = std::env::var("LOS_ONION_ADDRESS").ok();
 
@@ -267,9 +284,15 @@ mod tests {
         std::env::remove_var("LOS_P2P_PORT");
 
         let config = TorConfig::from_env();
-        assert!(!config.enabled);
+        // listen_port and onion_address are always deterministic
         assert_eq!(config.listen_port, 4001);
-        assert!(config.socks5_proxy.is_none());
         assert!(config.onion_address.is_none());
+        // socks5_proxy and enabled depend on whether Tor is running locally
+        // (auto-detection at 127.0.0.1:9050). Both states are valid.
+        if config.socks5_proxy.is_some() {
+            assert!(config.enabled);
+        } else {
+            assert!(!config.enabled);
+        }
     }
 }

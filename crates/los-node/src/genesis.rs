@@ -30,6 +30,12 @@ pub struct GenesisWallet {
     /// Tor hidden service address for this validator (peer discovery)
     #[serde(default)]
     pub onion_address: Option<String>,
+    /// REST API port for this validator (default: 3030)
+    #[serde(default)]
+    pub rest_port: Option<u16>,
+    /// P2P libp2p port for this validator (default: 4001)
+    #[serde(default)]
+    pub p2p_port: Option<u16>,
 }
 
 /// Top-level genesis config.

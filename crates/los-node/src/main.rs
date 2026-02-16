@@ -10,7 +10,7 @@ use los_core::oracle_consensus::OracleConsensus; // NEW: Oracle consensus
 use los_core::validator_rewards::ValidatorRewardPool;
 use los_core::{AccountState, Block, BlockType, Ledger, CIL_PER_LOS, MIN_VALIDATOR_STAKE_CIL};
 use los_network::{LosNode, NetworkEvent};
-use los_vm::{ContractCall, WasmEngine, token_registry};
+use los_vm::{token_registry, ContractCall, WasmEngine};
 use rate_limiter::{filters::rate_limit, RateLimiter};
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -1907,16 +1907,17 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
 
     // GET /tokens — List all deployed USP-01 tokens
     let engine_tokens = wasm_engine.clone();
-    let list_tokens_route = warp::path("tokens")
-        .and(with_state(engine_tokens))
-        .map(|engine: Arc<WasmEngine>| {
-            let tokens = token_registry::list_usp01_tokens(&engine);
-            api_json(serde_json::json!({
-                "status": "success",
-                "count": tokens.len(),
-                "tokens": tokens
-            }))
-        });
+    let list_tokens_route =
+        warp::path("tokens")
+            .and(with_state(engine_tokens))
+            .map(|engine: Arc<WasmEngine>| {
+                let tokens = token_registry::list_usp01_tokens(&engine);
+                api_json(serde_json::json!({
+                    "status": "success",
+                    "count": tokens.len(),
+                    "tokens": tokens
+                }))
+            });
 
     // GET /token/:address — Get USP-01 token metadata
     let engine_token_info = wasm_engine.clone();
@@ -1940,40 +1941,44 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
     let engine_token_bal = wasm_engine.clone();
     let token_balance_route = warp::path!("token" / String / "balance" / String)
         .and(with_state(engine_token_bal))
-        .map(|contract: String, holder: String, engine: Arc<WasmEngine>| {
-            match token_registry::query_token_balance(&engine, &contract, &holder) {
-                Ok(balance) => api_json(serde_json::json!({
-                    "status": "success",
-                    "contract": contract,
-                    "holder": holder,
-                    "balance": balance.to_string()
-                })),
-                Err(e) => api_json(serde_json::json!({
-                    "status": "error",
-                    "msg": e
-                })),
-            }
-        });
+        .map(
+            |contract: String, holder: String, engine: Arc<WasmEngine>| {
+                match token_registry::query_token_balance(&engine, &contract, &holder) {
+                    Ok(balance) => api_json(serde_json::json!({
+                        "status": "success",
+                        "contract": contract,
+                        "holder": holder,
+                        "balance": balance.to_string()
+                    })),
+                    Err(e) => api_json(serde_json::json!({
+                        "status": "error",
+                        "msg": e
+                    })),
+                }
+            },
+        );
 
     // GET /token/:address/allowance/:owner/:spender — Get token allowance
     let engine_token_allow = wasm_engine.clone();
     let token_allowance_route = warp::path!("token" / String / "allowance" / String / String)
         .and(with_state(engine_token_allow))
-        .map(|contract: String, owner: String, spender: String, engine: Arc<WasmEngine>| {
-            match token_registry::query_token_allowance(&engine, &contract, &owner, &spender) {
-                Ok(allowance) => api_json(serde_json::json!({
-                    "status": "success",
-                    "contract": contract,
-                    "owner": owner,
-                    "spender": spender,
-                    "allowance": allowance.to_string()
-                })),
-                Err(e) => api_json(serde_json::json!({
-                    "status": "error",
-                    "msg": e
-                })),
-            }
-        });
+        .map(
+            |contract: String, owner: String, spender: String, engine: Arc<WasmEngine>| {
+                match token_registry::query_token_allowance(&engine, &contract, &owner, &spender) {
+                    Ok(allowance) => api_json(serde_json::json!({
+                        "status": "success",
+                        "contract": contract,
+                        "owner": owner,
+                        "spender": spender,
+                        "allowance": allowance.to_string()
+                    })),
+                    Err(e) => api_json(serde_json::json!({
+                        "status": "error",
+                        "msg": e
+                    })),
+                }
+            },
+        );
 
     // 10. GET /metrics (Prometheus endpoint)
     let metrics_clone = metrics.clone();

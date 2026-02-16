@@ -304,7 +304,13 @@ class _AccountManagementScreenState extends State<AccountManagementScreen> {
             seed.fillRange(0, seed.length, 0);
           }
         } else {
-          // Ed25519 + BLAKE2b fallback — same derivation as WalletService
+          // SECURITY: Reject Ed25519 fallback on mainnet builds
+          if (WalletService.mainnetMode) {
+            throw Exception(
+                'MAINNET SECURITY: Dilithium5 native library required for account creation. '
+                'Ed25519 fallback is forbidden on mainnet.');
+          }
+          // Ed25519 + BLAKE2b fallback — testnet only
           final walletService = WalletService();
           address = await walletService.deriveAddressFromMnemonic(mnemonic);
         }

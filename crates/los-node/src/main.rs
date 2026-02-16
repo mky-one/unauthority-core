@@ -930,7 +930,7 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
                         // blk.fee is what's in the signed block (may be >= final_fee)
                         let actual_fee = blk.fee;
                         if let Some(sender_state) = l_guard.accounts.get_mut(&sender_addr) {
-                            let total_debit = amt + actual_fee;
+                            let total_debit = amt.saturating_add(actual_fee);
                             if sender_state.balance < total_debit {
                                 return api_json(serde_json::json!({
                                     "status": "error",
@@ -948,7 +948,7 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
                         // Insert block
                         l_guard.blocks.insert(hash.clone(), blk.clone());
                         // Accumulate fees
-                        l_guard.accumulated_fees_cil += actual_fee;
+                        l_guard.accumulated_fees_cil = l_guard.accumulated_fees_cil.saturating_add(actual_fee);
                     }
                     SAVE_DIRTY.store(true, Ordering::Relaxed);
                     let reason = if client_signed { "client-signed" } else { "functional testnet" };
@@ -1010,7 +1010,7 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
                             // because the node's public_key doesn't match the target's account address.
                             let recv_hash = recv_blk.calculate_hash();
                             if let Some(recv_acct) = l_guard.accounts.get_mut(&target) {
-                                recv_acct.balance += amt;
+                                recv_acct.balance = recv_acct.balance.saturating_add(amt);
                                 recv_acct.head = recv_hash.clone();
                                 recv_acct.block_count += 1;
                             }
@@ -4723,6 +4723,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // bootstrap_validators: Populated from genesis — used by /validators and /node-info
     // to avoid hardcoding testnet-specific addresses that would break mainnet.
     let mut bootstrap_validators: Vec<String> = Vec::new();
+    let mut genesis_ts_from_config: Option<u64> = None;
     {
         let genesis_path = if los_core::is_mainnet_build() {
             "genesis_config.json"
@@ -4781,6 +4782,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 bootstrap_validators.len()
                             );
                         }
+                        // Store genesis_timestamp for reward pool initialization
+                        // (avoids re-reading the file and eliminates stale fallback risk)
+                        genesis_ts_from_config = genesis_config.genesis_timestamp;
                         println!("✅ Genesis config validated (supply, network, addresses)");
                     }
                     match genesis::load_genesis_from_file(genesis_path) {
@@ -4918,16 +4922,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // ══════════════════════════════════════════════════════════════════════
     // VALIDATOR REWARD POOL — Initialize and register known validators
     // ══════════════════════════════════════════════════════════════════════
-    // Uses genesis_timestamp from genesis_config.json (mainnet) or hardcoded (testnet).
+    // Uses genesis_timestamp from validated GenesisConfig (mainnet) or system time (testnet).
     // Bootstrap validators are registered as is_genesis=true (excluded from rewards).
     // Pool is initialized from VALIDATOR_REWARD_POOL_CIL constant.
     let genesis_ts: u64 = if los_core::is_mainnet_build() {
-        // Re-parse genesis config for timestamp (lightweight — already validated above)
-        std::fs::read_to_string("genesis_config.json")
-            .ok()
-            .and_then(|json| serde_json::from_str::<serde_json::Value>(&json).ok())
-            .and_then(|v| v["genesis_timestamp"].as_u64())
-            .unwrap_or(1_770_580_908)
+        // Use timestamp stored during genesis validation above (no redundant file I/O)
+        genesis_ts_from_config.unwrap_or_else(|| {
+            eprintln!("❌ FATAL: genesis_timestamp missing after validation — this should never happen");
+            std::process::exit(1);
+        })
     } else {
         // Testnet: use current time as genesis to avoid epoch backlog.
         // This means rewards start fresh each time the node is restarted with a clean DB.
@@ -7847,7 +7850,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                                             // because the node's public_key doesn't match the target's account address.
                                                             let recv_hash = recv_blk.calculate_hash();
                                                             if let Some(recv_acct) = l.accounts.get_mut(&target) {
-                                                                recv_acct.balance += blk_to_finalize.amount;
+                                                                recv_acct.balance = recv_acct.balance.saturating_add(blk_to_finalize.amount);
                                                                 recv_acct.head = recv_hash.clone();
                                                                 recv_acct.block_count += 1;
                                                             }
@@ -8270,7 +8273,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                                 sender.block_count += 1;
                                             }
                                             // Track fees for validator redistribution
-                                            l.accumulated_fees_cil += send_blk.fee;
+                                            l.accumulated_fees_cil = l.accumulated_fees_cil.saturating_add(send_blk.fee);
                                             l.blocks.insert(send_hash.clone(), send_blk.clone());
 
                                             // Apply Receive: credit recipient
@@ -8280,7 +8283,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                                 });
                                             }
                                             if let Some(recipient) = l.accounts.get_mut(&recv_blk.account) {
-                                                recipient.balance += recv_blk.amount;
+                                                recipient.balance = recipient.balance.saturating_add(recv_blk.amount);
                                                 recipient.head = recv_hash.clone();
                                                 recipient.block_count += 1;
                                             }
@@ -8334,7 +8337,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                                 deployer.head = deploy_hash.clone();
                                                 deployer.block_count += 1;
                                             }
-                                            l.accumulated_fees_cil += deploy_blk.fee;
+                                            l.accumulated_fees_cil = l.accumulated_fees_cil.saturating_add(deploy_blk.fee);
                                             l.blocks.insert(deploy_hash, deploy_blk.clone());
                                             drop(l); // Release ledger lock before VM operations
 
@@ -8408,7 +8411,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                                 caller_acct.head = call_hash.clone();
                                                 caller_acct.block_count += 1;
                                             }
-                                            l.accumulated_fees_cil += call_blk.fee;
+                                            l.accumulated_fees_cil = l.accumulated_fees_cil.saturating_add(call_blk.fee);
                                             l.blocks.insert(call_hash, call_blk.clone());
                                             drop(l);
 

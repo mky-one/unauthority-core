@@ -443,8 +443,8 @@ impl Ledger {
                 }
 
                 // Only modify state after validation passes
-                state.balance += block.amount;
-                self.distribution.remaining_supply -= block.amount;
+                state.balance = state.balance.saturating_add(block.amount);
+                self.distribution.remaining_supply = self.distribution.remaining_supply.saturating_sub(block.amount);
 
                 let parts: Vec<&str> = block.link.split(':').collect();
                 if parts.len() >= 4 {
@@ -473,7 +473,7 @@ impl Ledger {
                 }
                 state.balance -= total_debit;
                 // P3-3: Track accumulated fees for validator redistribution
-                self.accumulated_fees_cil += block.fee;
+                self.accumulated_fees_cil = self.accumulated_fees_cil.saturating_add(block.fee);
             }
             BlockType::Receive => {
                 // SECURITY FIX #10: Validate that a matching Send block exists
@@ -516,7 +516,7 @@ impl Ledger {
                 }
 
                 // All validations passed — credit balance
-                state.balance += block.amount;
+                state.balance = state.balance.saturating_add(block.amount);
             }
             BlockType::Change => {
                 // SECURITY FIX #16: Reject no-op Change blocks (anti-spam)
@@ -557,7 +557,7 @@ impl Ledger {
                     );
                 }
                 state.balance -= total_debit;
-                self.accumulated_fees_cil += block.fee;
+                self.accumulated_fees_cil = self.accumulated_fees_cil.saturating_add(block.fee);
             }
             BlockType::ContractCall => {
                 // Contract call: caller pays gas fee, optionally sends CIL to contract
@@ -591,7 +591,7 @@ impl Ledger {
                     );
                 }
                 state.balance -= total_debit;
-                self.accumulated_fees_cil += block.fee;
+                self.accumulated_fees_cil = self.accumulated_fees_cil.saturating_add(block.fee);
             }
             BlockType::Slash => {
                 // Slash: penalty deduction for validator misbehavior

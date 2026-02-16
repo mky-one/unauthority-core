@@ -32,6 +32,8 @@ pub mod host;
 pub mod usp01;
 // Token Registry: node-level USP-01 discovery and query helpers
 pub mod token_registry;
+// DEX Registry: node-level DEX pool discovery and query helpers
+pub mod dex_registry;
 
 /// Unauthority Virtual Machine (UVM)
 /// Executes WebAssembly smart contracts with permissionless deployment

@@ -1,158 +1,501 @@
-# Tor Network Setup — Unauthority (LOS) v1.0.9
+# Tor Setup Guide — Unauthority (LOS) v1.0.9
 
-## Overview
+Complete guide to configuring Tor hidden services for Unauthority validators and clients.
 
-Unauthority runs **exclusively** on the Tor network. Both mainnet and testnet validators expose their services as `.onion` hidden services. No clearnet (DNS/IP) connectivity is used in production.
+---
 
-## Prerequisites
+## Table of Contents
 
-### Install Tor
+1. [Why Tor?](#why-tor)
+2. [Install Tor](#install-tor)
+3. [Hidden Service Configuration](#hidden-service-configuration)
+4. [Single Validator Setup](#single-validator-setup)
+5. [Multi-Validator Setup (Same Host)](#multi-validator-setup-same-host)
+6. [Verify Hidden Service](#verify-hidden-service)
+7. [Auto-Bootstrap (v1.0.9+)](#auto-bootstrap-v109)
+8. [Flutter App Tor Connectivity](#flutter-app-tor-connectivity)
+9. [Firewall Configuration](#firewall-configuration)
+10. [Performance Tuning](#performance-tuning)
+11. [Troubleshooting](#troubleshooting)
 
-**macOS:**
+---
+
+## Why Tor?
+
+Unauthority runs **exclusively** on Tor hidden services:
+
+- **No IP exposure** — validators cannot be DDoS'd by IP
+- **No DNS** — `.onion` addresses are cryptographically derived
+- **No clearnet dependency** — fully permissionless
+- **NAT traversal** — works behind any firewall/router
+- **Censorship resistant** — cannot be blocked by IP/domain
+
+Both Mainnet and Testnet run on the live Tor network. There is no `localhost`-only testing mode.
+
+---
+
+## Install Tor
+
+### Linux (Ubuntu/Debian)
+
+```bash
+sudo apt update
+sudo apt install tor -y
+sudo systemctl enable tor
+sudo systemctl start tor
+```
+
+### macOS
+
 ```bash
 brew install tor
 brew services start tor
 ```
 
-**Ubuntu/Debian:**
-```bash
-sudo apt install tor
-sudo systemctl enable tor
-sudo systemctl start tor
-```
+### Verify Installation
 
-**Verify Tor is running:**
 ```bash
+# Check Tor is running
+systemctl status tor        # Linux
+brew services info tor      # macOS
+
+# Verify SOCKS5 proxy is listening
+ss -tlnp | grep 9050       # Linux
+lsof -i :9050              # macOS
+
+# Test connectivity
 curl --socks5-hostname 127.0.0.1:9050 https://check.torproject.org/api/ip
 ```
 
+Expected output: `{"IsTor":true,"IP":"..."}` (an exit node IP).
+
+---
+
 ## Hidden Service Configuration
 
-### 1. Create a Hidden Service for Your Validator
+### How It Works
 
-Edit `/etc/tor/torrc` (Linux) or `/opt/homebrew/etc/tor/torrc` (macOS Homebrew):
+Tor hidden services work by:
+1. Tor generates a unique `.onion` address (public key derived)
+2. Tor opens a local socket listening on specified ports
+3. External users connect via `.onion` → Tor routes to your local port
+4. Your real IP is never exposed
+
+### Port Architecture
+
+Each validator needs **two** Tor-routed ports:
+
+| Service | Local Port | Virtual Port (.onion) | Protocol |
+|---|---|---|---|
+| REST API | 3030 | 3030 | HTTP/JSON |
+| P2P Gossip | 4030 | 4030 | HTTP/JSON |
+
+> **Note:** gRPC (port 23030) binds locally but is NOT routed through Tor by default. Add it if you need remote gRPC access.
+
+### Port Derivation Scheme
+
+For multi-validator setups, port numbers are derived from the `--port` flag:
+
+| Flag | REST Port | P2P Port | gRPC Port |
+|---|---|---|---|
+| `--port 3030` | 3030 | 4030 | 23030 |
+| `--port 3031` | 3031 | 4031 | 23031 |
+| `--port 3032` | 3032 | 4032 | 23032 |
+| `--port 3033` | 3033 | 4033 | 23033 |
+
+Formula: `P2P = REST + 1000`, `gRPC = REST + 20000`
+
+---
+
+## Single Validator Setup
+
+### 1. Generate Hidden Service
+
+Edit the Tor configuration:
+
+```bash
+sudo nano /etc/tor/torrc
+```
+
+Add at the bottom:
 
 ```
-# LOS Validator Hidden Service
-HiddenServiceDir /var/lib/tor/los-validator/
-HiddenServicePort 3030 127.0.0.1:3030    # REST API
-HiddenServicePort 4001 127.0.0.1:4001    # P2P gossip
-HiddenServicePort 23030 127.0.0.1:23030  # gRPC
+# --- LOS Validator ---
+HiddenServiceDir /var/lib/tor/los_validator/
+HiddenServicePort 3030 127.0.0.1:3030
+HiddenServicePort 4030 127.0.0.1:4030
 ```
 
 ### 2. Restart Tor
 
 ```bash
 sudo systemctl restart tor
-# or on macOS:
-brew services restart tor
 ```
 
 ### 3. Get Your .onion Address
 
 ```bash
-sudo cat /var/lib/tor/los-validator/hostname
-# Output: abc123def456xyz.onion
+sudo cat /var/lib/tor/los_validator/hostname
 ```
 
-### 4. Configure the Node
+Output: `abcdef1234567890abcdef1234567890abcdef1234567890abcdefgh.onion`
+
+### 4. Start the Validator
 
 ```bash
-export LOS_ONION_ADDRESS='abc123def456xyz.onion'
-export LOS_SOCKS5_PROXY='socks5h://127.0.0.1:9050'
+uat-node --port 3030 --data-dir /opt/los-nodes/v1 --node-id my-validator
 ```
 
-The node will:
-- Announce its `.onion` address to peers during handshake
-- Use the SOCKS5 proxy for all outbound connections to other `.onion` peers
-- Register the onion address when joining the validator set
+The node will auto-detect Tor SOCKS5 at `127.0.0.1:9050` and auto-bootstrap peers from genesis.
 
-## Multi-Validator Local Testnet with Tor
+---
 
-For testing, you can run multiple hidden services on one machine:
+## Multi-Validator Setup (Same Host)
+
+Running 4 validators on one machine (e.g., for testnet bootstrap):
+
+### Tor Configuration
+
+```bash
+sudo nano /etc/tor/torrc
+```
 
 ```
-# Validator 1
-HiddenServiceDir /var/lib/tor/los-v1/
+# --- Validator 1 ---
+HiddenServiceDir /var/lib/tor/los_v1/
 HiddenServicePort 3030 127.0.0.1:3030
-HiddenServicePort 4001 127.0.0.1:4001
+HiddenServicePort 4030 127.0.0.1:4030
 
-# Validator 2
-HiddenServiceDir /var/lib/tor/los-v2/
+# --- Validator 2 ---
+HiddenServiceDir /var/lib/tor/los_v2/
 HiddenServicePort 3031 127.0.0.1:3031
-HiddenServicePort 4002 127.0.0.1:4002
+HiddenServicePort 4031 127.0.0.1:4031
 
-# Validator 3
-HiddenServiceDir /var/lib/tor/los-v3/
+# --- Validator 3 ---
+HiddenServiceDir /var/lib/tor/los_v3/
 HiddenServicePort 3032 127.0.0.1:3032
-HiddenServicePort 4003 127.0.0.1:4003
+HiddenServicePort 4032 127.0.0.1:4032
 
-# Validator 4
-HiddenServiceDir /var/lib/tor/los-v4/
+# --- Validator 4 ---
+HiddenServiceDir /var/lib/tor/los_v4/
 HiddenServicePort 3033 127.0.0.1:3033
-HiddenServicePort 4004 127.0.0.1:4004
+HiddenServicePort 4033 127.0.0.1:4033
 ```
-
-## Peer Discovery
-
-### Bootstrap Nodes
-
-Set the initial peer list via environment variable:
 
 ```bash
-export LOS_BOOTSTRAP_NODES='abc123.onion:4001,def456.onion:4001,ghi789.onion:4001'
+sudo systemctl restart tor
 ```
 
-Format: comma-separated `address:port` pairs.
+### Get All .onion Addresses
 
-### Dynamic Discovery
+```bash
+for i in v1 v2 v3 v4; do
+  echo "$i: $(sudo cat /var/lib/tor/los_$i/hostname)"
+done
+```
 
-Once connected, nodes exchange peer tables automatically:
-1. The node sends `ID:address:supply:burned:timestamp` on connection
-2. Peers respond with their known peer lists
-3. The node maintains a dynamic peer table sorted by latency/uptime
+### Start All Validators
+
+```bash
+uat-node --port 3030 --data-dir /opt/los-nodes/v1 --node-id validator-1 &
+uat-node --port 3031 --data-dir /opt/los-nodes/v2 --node-id validator-2 &
+uat-node --port 3032 --data-dir /opt/los-nodes/v3 --node-id validator-3 &
+uat-node --port 3033 --data-dir /opt/los-nodes/v4 --node-id validator-4 &
+```
+
+### Systemd Services (Recommended)
+
+For production, use systemd. See [Validator Guide — Systemd](VALIDATOR_GUIDE.md#systemd-service-recommended).
+
+---
+
+## Verify Hidden Service
+
+### Test from Another Machine
+
+```bash
+# Install torsocks
+sudo apt install torsocks    # Linux
+brew install torsocks         # macOS
+
+# Test REST API
+torsocks curl http://YOUR_ONION.onion:3030/status
+
+# Test P2P port
+torsocks curl http://YOUR_ONION.onion:4030/
+```
+
+### Test Locally
+
+```bash
+# Via SOCKS5 proxy
+curl --socks5-hostname 127.0.0.1:9050 http://YOUR_ONION.onion:3030/status
+
+# Direct localhost (bypasses Tor)
+curl http://127.0.0.1:3030/status
+```
+
+### Expected Response
+
+```json
+{
+  "status": "ok",
+  "version": "1.0.9",
+  "network": "mainnet",
+  "accounts": 8,
+  "blocks": 0,
+  "supply": "21936236",
+  "peer_count": 4
+}
+```
+
+---
+
+## Auto-Bootstrap (v1.0.9+)
+
+As of v1.0.9, `uat-node` automatically bootstraps peer connections:
+
+### How It Works
+
+1. Node reads `genesis_config.json` (embedded in binary at compile-time)
+2. Extracts `.onion` addresses and ports from bootstrap validator entries
+3. Auto-detects Tor SOCKS5 proxy at `127.0.0.1:9050` (500ms timeout)
+4. Connects to all bootstrap peers via Tor
+5. Downloads updated peer table from connected peers
+
+### Manual Override
+
+You can override auto-bootstrap with environment variables:
+
+```bash
+# Custom peer list (overrides genesis bootstrap)
+export LOS_BOOTSTRAP_PEERS="abc123.onion:4030,def456.onion:4031"
+
+# Custom Tor SOCKS5 address
+export LOS_TOR_SOCKS="127.0.0.1:9150"  # e.g., Tor Browser port
+
+# Custom genesis file path
+export LOS_GENESIS_PATH="/path/to/custom/genesis_config.json"
+```
+
+### Environment Variables
+
+| Variable | Default | Description |
+|---|---|---|
+| `LOS_BOOTSTRAP_PEERS` | *(from genesis)* | Comma-separated `onion:port` list |
+| `LOS_TOR_SOCKS` | `127.0.0.1:9050` | Tor SOCKS5 proxy address |
+| `LOS_GENESIS_PATH` | *(embedded)* | Path to genesis config |
+| `LOS_NETWORK` | `mainnet` | Network: `mainnet` or `testnet` |
+| `LOS_DATA_DIR` | `./data` | Data directory |
+| `LOS_LOG_LEVEL` | `info` | Log level: `trace`, `debug`, `info`, `warn`, `error` |
+| `LOS_REST_PORT` | `3030` | REST API port (alternative to `--port`) |
+| `LOS_NODE_ID` | `node` | Node identifier |
+
+---
 
 ## Flutter App Tor Connectivity
 
-Both `flutter_wallet` and `flutter_validator` bundle Tor via `flutter_rust_bridge`:
+Flutter wallet and validator apps include a **bundled Tor client** — no system Tor required.
 
-1. **Fetch Peers:** Download the list of available `.onion` nodes
-2. **Latency Check:** Ping available peers through SOCKS5
-3. **Select Best Host:** Connect to the most stable external peer
+### Connection Flow
 
-**Important:** The Flutter validator app MUST connect to **external** peers, never its own local node. This ensures it verifies network consensus integrity from an outside perspective.
+1. App starts bundled Tor binary (platform-specific)
+2. Tor establishes SOCKS5 proxy on a random local port
+3. App fetches peer list from bootstrap `.onion` nodes
+4. Latency check: pings all discovered peers
+5. Selects most stable/fastest peer as primary connection
+6. All API calls routed through Tor SOCKS5 to `.onion` peer
+
+### Network Config (Flutter)
+
+Located at `flutter_wallet/assets/network_config.json` and `flutter_validator/assets/network_config.json`:
+
+```json
+{
+  "mainnet": {
+    "bootstrap_nodes": [
+      {
+        "onion": "f3zfmhvverdljhddhxvdnkibrajd2cbolrfq4z6a5y2ifprf2xh34nid.onion",
+        "rest_port": 3030,
+        "p2p_port": 4030
+      }
+    ]
+  }
+}
+```
+
+### Validator Dashboard Constraint
+
+The `flutter_validator` app **never** connects to its own local node for API data. It always connects to external peers to verify network consensus integrity. This prevents a compromised local node from displaying false data.
+
+---
+
+## Firewall Configuration
+
+Since Tor handles NAT traversal, firewall rules are minimal:
+
+### Required (Outbound)
+
+| Port | Direction | Purpose |
+|---|---|---|
+| 9050 | Loopback | Tor SOCKS5 proxy |
+| 9001 | Outbound | Tor relay connections (OR port) |
+| 443/80 | Outbound | Tor directory authorities |
+
+### Optional (Local Access)
+
+| Port | Direction | Purpose |
+|---|---|---|
+| 3030-3033 | Loopback | REST API (local only) |
+| 4030-4033 | Loopback | P2P gossip (local only) |
+| 23030-23033 | Loopback | gRPC (local only) |
+
+### Production Lockdown
+
+```bash
+# Allow loopback
+sudo ufw allow in on lo
+
+# Allow SSH (for server management)
+sudo ufw allow 22/tcp
+
+# Allow Tor outbound (already allowed by default)
+
+# Block everything else inbound
+sudo ufw default deny incoming
+sudo ufw default allow outgoing
+
+sudo ufw enable
+```
+
+> **Important:** Do NOT open ports 3030-4033 to the public internet. All external access goes through Tor.
+
+---
+
+## Performance Tuning
+
+### Tor Circuit Optimization
+
+Add to `/etc/tor/torrc`:
+
+```
+# Reduce circuit build timeout for faster connections
+CircuitBuildTimeout 30
+LearnCircuitBuildTimeout 0
+
+# Allow more simultaneous circuits
+MaxCircuitDirtiness 600
+
+# Increase SOCKS timeout for slow networks
+SocksTimeout 120
+```
+
+### System Limits (Linux)
+
+```bash
+# Increase file descriptors
+echo "* soft nofile 65535" >> /etc/security/limits.conf
+echo "* hard nofile 65535" >> /etc/security/limits.conf
+
+# Increase for systemd services
+# Add to [Service] section:
+LimitNOFILE=65535
+```
+
+### Expected Performance
+
+| Metric | Local | Over Tor |
+|---|---|---|
+| API response | <5ms | 500ms - 2s |
+| P2P gossip round-trip | <1ms | 1s - 3s |
+| Transaction finality | <100ms | <3s |
+| Block propagation | <10ms | 1s - 2s |
+
+---
 
 ## Troubleshooting
 
-### Tor Not Connecting
+### Tor Not Running
+
 ```bash
-# Check if Tor is running
-systemctl status tor
+# Check status
+systemctl status tor          # Linux
+brew services info tor        # macOS
 
-# Check SOCKS5 proxy
-curl --socks5-hostname 127.0.0.1:9050 http://check.torproject.org
+# Check logs
+journalctl -u tor -f          # Linux
+cat /usr/local/var/log/tor/log    # macOS (Homebrew)
 
-# Check hidden service directory permissions
-ls -la /var/lib/tor/los-validator/
+# Restart
+sudo systemctl restart tor    # Linux
+brew services restart tor     # macOS
 ```
 
-### Peer Connection Issues
-```bash
-# Test connectivity to a peer
-curl --socks5-hostname 127.0.0.1:9050 http://PEER_ONION_ADDRESS.onion:3030/health
+### Hidden Service Not Created
 
-# Check your node's peer list
-curl http://localhost:3030/peers
+```bash
+# Check directory permissions
+ls -la /var/lib/tor/
+
+# Tor must own the directory
+sudo chown -R debian-tor:debian-tor /var/lib/tor/los_validator/
+sudo chmod 700 /var/lib/tor/los_validator/
+
+# Verify torrc syntax
+tor --verify-config
 ```
 
-### Hidden Service Not Accessible
-- Ensure `HiddenServiceDir` has correct permissions (Tor user ownership)
-- Ensure port mappings match your `--port` configuration
-- Wait 30-60 seconds after restart for the hidden service to propagate
+### No Peers Connecting
 
-## Security Notes
+```bash
+# Check if node can reach Tor
+curl --socks5-hostname 127.0.0.1:9050 http://check.torproject.org/api/ip
 
-1. **Never expose REST API ports** to the public internet — Tor handles all external routing
-2. **Bind to localhost** by default (127.0.0.1) — set `LOS_BIND_ALL=1` only if needed behind a reverse proxy
-3. **Each validator gets a unique `.onion`** — this is its network identity
-4. **SOCKS5 proxy** routes all outbound traffic through Tor, preventing IP leaks
+# Check if bootstrap peers are reachable
+curl --socks5-hostname 127.0.0.1:9050 \
+  http://f3zfmhvverdljhddhxvdnkibrajd2cbolrfq4z6a5y2ifprf2xh34nid.onion:3030/status
+
+# Check node peer count
+curl http://127.0.0.1:3030/peers
+
+# Check node logs for connection errors
+journalctl -u los-node-v1 -f | grep -i "peer\|tor\|connect"
+```
+
+### SOCKS5 Connection Refused
+
+```bash
+# Default Tor port: 9050
+# Tor Browser port: 9150
+
+# Check which port Tor is using
+ss -tlnp | grep tor    # Linux
+lsof -i -P | grep tor  # macOS
+
+# Override if non-standard
+export LOS_TOR_SOCKS="127.0.0.1:9150"
+```
+
+### Slow Connections
+
+- Tor adds 500ms-2s latency per hop — this is expected
+- First connection after startup is slowest (circuit building)
+- Subsequent requests reuse circuits and are faster
+- If consistently >5s, check `CircuitBuildTimeout` in torrc
+- Consider running a Tor relay (not exit) for better circuit priority
+
+### .onion Address Changed After Restart
+
+The `.onion` address is derived from keys in `HiddenServiceDir`. If the directory was deleted or permissions changed, Tor generates new keys:
+
+```bash
+# Backup your hidden service keys
+sudo cp -r /var/lib/tor/los_validator/ /backup/tor_keys/
+
+# After restore, fix permissions
+sudo chown -R debian-tor:debian-tor /var/lib/tor/los_validator/
+sudo chmod 700 /var/lib/tor/los_validator/
+sudo systemctl restart tor
+```
+
+> **Critical:** If your `.onion` address changes, you must re-register with the network. Other nodes will not recognize the new address until updated.

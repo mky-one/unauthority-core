@@ -51,7 +51,7 @@ impl TorConfig {
                     Err(_) => return None,
                 };
                 match std::net::TcpStream::connect_timeout(
-                    &std::net::SocketAddr::from(default_addr),
+                    &default_addr,
                     std::time::Duration::from_millis(500),
                 ) {
                     Ok(_) => {

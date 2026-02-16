@@ -564,7 +564,16 @@ class WalletService {
   /// Derive address from mnemonic without persisting any keys.
   /// Used by AccountManagementScreen to create new sub-accounts
   /// without overwriting the primary wallet's SecureStorage keys.
+  ///
+  /// MAINNET: Ed25519 derivation is forbidden — Dilithium5 is required.
+  /// This method is testnet-only; mainnet callers must use DilithiumService directly.
   Future<String> deriveAddressFromMnemonic(String mnemonic) async {
+    // SECURITY: Block Ed25519 address derivation on mainnet builds
+    if (mainnetMode) {
+      throw Exception(
+          'MAINNET SECURITY: Ed25519 address derivation is forbidden on mainnet. '
+          'Use DilithiumService for all key operations.');
+    }
     losLog(
         '💰 [WalletService.deriveAddressFromMnemonic] Deriving address from mnemonic (${mnemonic.split(' ').length} words)...');
     final seed = bip39.mnemonicToSeed(mnemonic);

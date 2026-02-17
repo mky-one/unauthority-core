@@ -3,6 +3,8 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'package:http/http.dart' as http;
+import '../models/token.dart';
+import '../models/dex_pool.dart';
 import 'package:http/io_client.dart';
 import 'package:socks5_proxy/socks_client.dart';
 import '../models/account.dart';
@@ -1152,6 +1154,292 @@ class ApiService {
       throw Exception('Failed to get reward info: ${response.statusCode}');
     } catch (e) {
       losLog('❌ getRewardInfo error: $e');
+      rethrow;
+    }
+  }
+
+  // ====================================================================
+  // USP-01 TOKEN API
+  // ====================================================================
+
+  /// List all deployed USP-01 tokens
+  Future<List<Token>> getTokens() async {
+    losLog('🪙 [API] getTokens...');
+    try {
+      final response = await _requestWithFailover(
+        (url) => _client.get(Uri.parse('$url/tokens')),
+        '/tokens',
+      );
+      if (response.statusCode >= 200 && response.statusCode < 300) {
+        final data = json.decode(response.body);
+        final tokens = (data['tokens'] as List?)
+                ?.map((t) => Token.fromJson(t as Map<String, dynamic>))
+                .toList() ??
+            [];
+        losLog('🪙 [API] getTokens: ${tokens.length} tokens');
+        return tokens;
+      }
+      throw Exception('Failed to get tokens: ${response.statusCode}');
+    } catch (e) {
+      losLog('❌ getTokens error: $e');
+      rethrow;
+    }
+  }
+
+  /// Get USP-01 token metadata
+  Future<Token> getToken(String contractAddress) async {
+    losLog('🪙 [API] getToken: $contractAddress');
+    try {
+      final response = await _requestWithFailover(
+        (url) => _client.get(Uri.parse('$url/token/$contractAddress')),
+        '/token/$contractAddress',
+      );
+      if (response.statusCode >= 200 && response.statusCode < 300) {
+        final data = json.decode(response.body);
+        return Token.fromJson(data['token'] as Map<String, dynamic>);
+      }
+      throw Exception('Failed to get token: ${response.statusCode}');
+    } catch (e) {
+      losLog('❌ getToken error: $e');
+      rethrow;
+    }
+  }
+
+  /// Get USP-01 token balance for a holder
+  Future<TokenBalance> getTokenBalance(
+      String contractAddress, String holder) async {
+    losLog('🪙 [API] getTokenBalance: $contractAddress / $holder');
+    try {
+      final response = await _requestWithFailover(
+        (url) => _client
+            .get(Uri.parse('$url/token/$contractAddress/balance/$holder')),
+        '/token/$contractAddress/balance/$holder',
+      );
+      if (response.statusCode >= 200 && response.statusCode < 300) {
+        final data = json.decode(response.body);
+        return TokenBalance.fromJson(data as Map<String, dynamic>);
+      }
+      throw Exception('Failed to get token balance: ${response.statusCode}');
+    } catch (e) {
+      losLog('❌ getTokenBalance error: $e');
+      rethrow;
+    }
+  }
+
+  /// Get USP-01 token allowance
+  Future<TokenAllowance> getTokenAllowance(
+      String contractAddress, String owner, String spender) async {
+    losLog('🪙 [API] getTokenAllowance: $contractAddress / $owner → $spender');
+    try {
+      final response = await _requestWithFailover(
+        (url) => _client.get(Uri.parse(
+            '$url/token/$contractAddress/allowance/$owner/$spender')),
+        '/token/$contractAddress/allowance/$owner/$spender',
+      );
+      if (response.statusCode >= 200 && response.statusCode < 300) {
+        final data = json.decode(response.body);
+        return TokenAllowance.fromJson(data as Map<String, dynamic>);
+      }
+      throw Exception('Failed to get allowance: ${response.statusCode}');
+    } catch (e) {
+      losLog('❌ getTokenAllowance error: $e');
+      rethrow;
+    }
+  }
+
+  /// Call a smart contract function (USP-01 or DEX).
+  /// Used for: transfer, approve, burn, swap, create_pool, add/remove liquidity.
+  Future<Map<String, dynamic>> callContract({
+    required String contractAddress,
+    required String function,
+    required List<String> args,
+    String? caller,
+    int? gasLimit,
+    int? amountCil,
+    String? signature,
+    String? publicKey,
+    String? previous,
+    int? work,
+    int? timestamp,
+    int? fee,
+  }) async {
+    losLog('📝 [API] callContract: $contractAddress.$function(${args.join(", ")})');
+    try {
+      final body = <String, dynamic>{
+        'contract_address': contractAddress,
+        'function': function,
+        'args': args,
+      };
+      if (caller != null) body['caller'] = caller;
+      if (gasLimit != null) body['gas_limit'] = gasLimit;
+      if (amountCil != null) body['amount_cil'] = amountCil;
+      if (signature != null) body['signature'] = signature;
+      if (publicKey != null) body['public_key'] = publicKey;
+      if (previous != null) body['previous'] = previous;
+      if (work != null) body['work'] = work;
+      if (timestamp != null) body['timestamp'] = timestamp;
+      if (fee != null) body['fee'] = fee;
+
+      final response = await _requestWithFailover(
+        (url) => _client.post(
+          Uri.parse('$url/call-contract'),
+          headers: {'Content-Type': 'application/json'},
+          body: json.encode(body),
+        ),
+        '/call-contract',
+      );
+      final data = json.decode(response.body) as Map<String, dynamic>;
+      if (response.statusCode >= 400 || data['status'] == 'error') {
+        throw Exception(
+            data['msg'] ?? data['error'] ?? 'Contract call failed');
+      }
+      losLog('📝 [API] callContract SUCCESS');
+      return data;
+    } catch (e) {
+      losLog('❌ callContract error: $e');
+      rethrow;
+    }
+  }
+
+  /// Deploy a WASM smart contract
+  Future<Map<String, dynamic>> deployContract({
+    required String owner,
+    required String bytecode,
+    Map<String, dynamic>? initialState,
+    int? amountCil,
+    String? signature,
+    String? publicKey,
+    String? previous,
+    int? work,
+    int? timestamp,
+    int? fee,
+  }) async {
+    losLog('🚀 [API] deployContract: owner=$owner');
+    try {
+      final body = <String, dynamic>{
+        'owner': owner,
+        'bytecode': bytecode,
+      };
+      if (initialState != null) body['initial_state'] = initialState;
+      if (amountCil != null) body['amount_cil'] = amountCil;
+      if (signature != null) body['signature'] = signature;
+      if (publicKey != null) body['public_key'] = publicKey;
+      if (previous != null) body['previous'] = previous;
+      if (work != null) body['work'] = work;
+      if (timestamp != null) body['timestamp'] = timestamp;
+      if (fee != null) body['fee'] = fee;
+
+      final response = await _requestWithFailover(
+        (url) => _client.post(
+          Uri.parse('$url/deploy-contract'),
+          headers: {'Content-Type': 'application/json'},
+          body: json.encode(body),
+        ),
+        '/deploy-contract',
+      );
+      final data = json.decode(response.body) as Map<String, dynamic>;
+      if (response.statusCode >= 400 || data['status'] == 'error') {
+        throw Exception(
+            data['msg'] ?? data['error'] ?? 'Deploy failed');
+      }
+      losLog('🚀 [API] deployContract SUCCESS: ${data['contract_address']}');
+      return data;
+    } catch (e) {
+      losLog('❌ deployContract error: $e');
+      rethrow;
+    }
+  }
+
+  // ====================================================================
+  // DEX AMM API
+  // ====================================================================
+
+  /// List all DEX pools across all contracts
+  Future<List<DexPool>> getDexPools() async {
+    losLog('📊 [API] getDexPools...');
+    try {
+      final response = await _requestWithFailover(
+        (url) => _client.get(Uri.parse('$url/dex/pools')),
+        '/dex/pools',
+      );
+      if (response.statusCode >= 200 && response.statusCode < 300) {
+        final data = json.decode(response.body);
+        final pools = (data['pools'] as List?)
+                ?.map((p) => DexPool.fromJson(p as Map<String, dynamic>))
+                .toList() ??
+            [];
+        losLog('📊 [API] getDexPools: ${pools.length} pools');
+        return pools;
+      }
+      throw Exception('Failed to get DEX pools: ${response.statusCode}');
+    } catch (e) {
+      losLog('❌ getDexPools error: $e');
+      rethrow;
+    }
+  }
+
+  /// Get specific pool info
+  Future<DexPool> getDexPool(String contractAddress, String poolId) async {
+    losLog('📊 [API] getDexPool: $contractAddress/$poolId');
+    try {
+      final response = await _requestWithFailover(
+        (url) =>
+            _client.get(Uri.parse('$url/dex/pool/$contractAddress/$poolId')),
+        '/dex/pool/$contractAddress/$poolId',
+      );
+      if (response.statusCode >= 200 && response.statusCode < 300) {
+        final data = json.decode(response.body);
+        return DexPool.fromJson(
+          data['pool'] as Map<String, dynamic>,
+          contract: contractAddress,
+        );
+      }
+      throw Exception('Failed to get pool: ${response.statusCode}');
+    } catch (e) {
+      losLog('❌ getDexPool error: $e');
+      rethrow;
+    }
+  }
+
+  /// Get swap quote (estimated output, no execution)
+  Future<DexQuote> getDexQuote(String contractAddress, String poolId,
+      String tokenIn, String amountIn) async {
+    losLog(
+        '📊 [API] getDexQuote: $contractAddress/$poolId/$tokenIn/$amountIn');
+    try {
+      final response = await _requestWithFailover(
+        (url) => _client.get(Uri.parse(
+            '$url/dex/quote/$contractAddress/$poolId/$tokenIn/$amountIn')),
+        '/dex/quote/$contractAddress/$poolId/$tokenIn/$amountIn',
+      );
+      if (response.statusCode >= 200 && response.statusCode < 300) {
+        final data = json.decode(response.body);
+        return DexQuote.fromJson(data['quote'] as Map<String, dynamic>);
+      }
+      throw Exception('Failed to get quote: ${response.statusCode}');
+    } catch (e) {
+      losLog('❌ getDexQuote error: $e');
+      rethrow;
+    }
+  }
+
+  /// Get user's LP position in a pool
+  Future<LpPosition> getDexPosition(
+      String contractAddress, String poolId, String user) async {
+    losLog('📊 [API] getDexPosition: $contractAddress/$poolId/$user');
+    try {
+      final response = await _requestWithFailover(
+        (url) => _client.get(Uri.parse(
+            '$url/dex/position/$contractAddress/$poolId/$user')),
+        '/dex/position/$contractAddress/$poolId/$user',
+      );
+      if (response.statusCode >= 200 && response.statusCode < 300) {
+        final data = json.decode(response.body);
+        return LpPosition.fromJson(data as Map<String, dynamic>);
+      }
+      throw Exception('Failed to get position: ${response.statusCode}');
+    } catch (e) {
+      losLog('❌ getDexPosition error: $e');
       rethrow;
     }
   }

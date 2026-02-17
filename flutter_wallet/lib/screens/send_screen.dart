@@ -38,28 +38,25 @@ class _SendScreenState extends State<SendScreen> {
       // FIX C11-01: Backend expects LOS in `amount` field.
       // Support decimal amounts (e.g., 0.5 LOS) — BlockConstructionService
       // converts to CIL with full 10^11 precision.
-      final amountLosDouble = double.tryParse(_amountController.text.trim());
-      if (amountLosDouble == null || amountLosDouble <= 0) {
+      final amountStr = _amountController.text.trim();
+      final amountCil = BlockchainConstants.losStringToCil(amountStr);
+      if (amountCil <= 0) {
         throw Exception('Please enter a valid amount greater than 0');
-      }
-      if (amountLosDouble < 0.00000000001) {
-        throw Exception('Minimum send amount is 0.00000000001 LOS (1 CIL)');
       }
 
       // FIX H-06: Prevent sending to own address
       final toAddress = _toController.text.trim();
-      losLog('💸 [Send] To: $toAddress, Amount: $amountLosDouble LOS');
+      losLog('💸 [Send] To: $toAddress, Amount: $amountStr LOS');
       if (toAddress == wallet['address']) {
         throw Exception('Cannot send to your own address');
       }
 
-      // Balance validation: prevent sending more than available
-      // Compare in LOS to avoid unit mismatch
+      // Balance validation: compare CIL integers (no f64 precision loss)
       try {
         final account = await apiService.getBalance(wallet['address']!);
-        if (amountLosDouble > account.balanceLOS) {
+        if (amountCil > account.balance) {
           throw Exception(
-              'Insufficient balance: have ${BlockchainConstants.formatLos(account.balanceLOS)} LOS');
+              'Insufficient balance: have ${BlockchainConstants.formatCilAsLos(account.balance)} LOS');
         }
       } catch (e) {
         if (e.toString().contains('Insufficient balance')) rethrow;
@@ -82,7 +79,7 @@ class _SendScreenState extends State<SendScreen> {
         losLog('💸 [Send] Client-side signing with Dilithium5...');
         result = await blockService.sendTransaction(
           to: toAddress,
-          amountLosDouble: amountLosDouble,
+          amountLosStr: amountStr,
         );
       } else {
         // SECURITY FIX H-02: Refuse unsigned node-signed transactions on mainnet.
@@ -99,13 +96,12 @@ class _SendScreenState extends State<SendScreen> {
         losLog(
             '💸 [Send] No signing keys — node-signed (functional testnet)...');
         // FIX: Use amountCil for sub-LOS precision (0.5 LOS = 50_000_000_000 CIL).
-        // floor() alone truncates sub-LOS amounts to 0 which the backend rejects.
         final amountCilInt =
             BlockchainConstants.losStringToCil(_amountController.text.trim());
         result = await apiService.sendTransaction(
           from: wallet['address']!,
           to: toAddress,
-          amount: amountLosDouble.floor(),
+          amount: amountCil ~/ BlockchainConstants.cilPerLos,
           amountCil: amountCilInt,
         );
       }

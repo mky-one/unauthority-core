@@ -5,7 +5,6 @@ import 'package:intl/intl.dart';
 import '../services/wallet_service.dart';
 import '../services/api_service.dart';
 import '../models/account.dart';
-import '../constants/blockchain.dart';
 import 'transaction_detail_screen.dart';
 
 class HistoryScreen extends StatefulWidget {
@@ -236,7 +235,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
                                   ),
                                   const Spacer(),
                                   Text(
-                                    '${BlockchainConstants.formatLos(tx.amountLOS)} LOS',
+                                    '${tx.amountDisplay} LOS',
                                     style: TextStyle(
                                       fontWeight: FontWeight.bold,
                                       color: color,

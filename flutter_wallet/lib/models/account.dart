@@ -53,11 +53,12 @@ class Account {
     );
   }
 
-  /// Balance in LOS (1 LOS = 10^11 CIL)
-  double get balanceLOS => BlockchainConstants.cilToLos(balance);
+  /// Balance formatted as LOS display string (integer-only math).
+  String get balanceDisplay => BlockchainConstants.formatCilAsLos(balance);
 
-  /// CIL balance in LOS
-  double get cilBalanceLOS => BlockchainConstants.cilToLos(cilBalance);
+  /// CIL balance formatted as LOS display string.
+  String get cilBalanceDisplay =>
+      BlockchainConstants.formatCilAsLos(cilBalance);
 }
 
 class Transaction {
@@ -138,11 +139,11 @@ class Transaction {
     );
   }
 
-  /// Amount in LOS (1 LOS = 10^11 CIL)
-  double get amountLOS => BlockchainConstants.cilToLos(amount);
+  /// Amount formatted as LOS display string (integer-only math).
+  String get amountDisplay => BlockchainConstants.formatCilAsLos(amount);
 
-  /// Fee in LOS (1 LOS = 10^11 CIL)
-  double get feeLOS => BlockchainConstants.cilToLos(fee);
+  /// Fee formatted as LOS display string (integer-only math).
+  String get feeDisplay => BlockchainConstants.formatCilAsLos(fee);
 }
 
 class BlockInfo {
@@ -204,6 +205,7 @@ class ValidatorInfo {
     );
   }
 
-  /// Stake in LOS — backend already sends stake as LOS integer
-  double get stakeLOS => stake.toDouble();
+  /// Stake in LOS — backend already sends stake as LOS integer.
+  /// Returns display string without f64 conversion.
+  String get stakeDisplay => '$stake';
 }

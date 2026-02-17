@@ -7,7 +7,6 @@ import '../services/wallet_service.dart';
 import '../services/api_service.dart';
 import '../services/network_status_service.dart';
 import '../models/account.dart';
-import '../constants/blockchain.dart';
 import '../config/testnet_config.dart';
 import '../widgets/network_badge.dart';
 import '../widgets/network_status_bar.dart';
@@ -18,6 +17,8 @@ import 'receive_screen.dart';
 import 'history_screen.dart';
 import 'network_info_screen.dart';
 import 'explorer_screen.dart';
+import 'tokens_screen.dart';
+import 'dex_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -79,7 +80,7 @@ class _HomeScreenState extends State<HomeScreen> {
         _account = account;
         _error = null;
       });
-      losLog('🏠 [Home] Balance: ${account.balanceLOS} LOS');
+      losLog('🏠 [Home] Balance: ${account.balanceDisplay} LOS');
     } catch (e) {
       if (!mounted) return;
       setState(() => _error = e.toString());
@@ -204,7 +205,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                             fontSize: 14, color: Colors.grey)),
                                     const SizedBox(height: 8),
                                     Text(
-                                      '${BlockchainConstants.formatLos(_account?.balanceLOS ?? 0)} LOS',
+                                      '${_account?.balanceDisplay ?? '0.00'} LOS',
                                       style: const TextStyle(
                                           fontSize: 36,
                                           fontWeight: FontWeight.bold),
@@ -213,7 +214,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                         _account!.cilBalance > 0) ...[
                                       const SizedBox(height: 8),
                                       Text(
-                                        'CIL: ${BlockchainConstants.formatLos(_account!.cilBalanceLOS)} LOS',
+                                        'CIL: ${_account!.cilBalanceDisplay} LOS',
                                         style: const TextStyle(
                                             fontSize: 14, color: Colors.orange),
                                       ),
@@ -373,6 +374,48 @@ class _HomeScreenState extends State<HomeScreen> {
                               ],
                             ),
 
+                            const SizedBox(height: 12),
+
+                            // Action Buttons Row 4: TOKENS / DEX
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: OutlinedButton.icon(
+                                    onPressed: () {
+                                      Navigator.push(
+                                        context,
+                                        MaterialPageRoute(
+                                            builder: (_) =>
+                                                const TokensScreen()),
+                                      );
+                                    },
+                                    icon: const Icon(Icons.token),
+                                    label: const Text('TOKENS'),
+                                    style: OutlinedButton.styleFrom(
+                                      padding: const EdgeInsets.all(16),
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 16),
+                                Expanded(
+                                  child: OutlinedButton.icon(
+                                    onPressed: () {
+                                      Navigator.push(
+                                        context,
+                                        MaterialPageRoute(
+                                            builder: (_) => const DexScreen()),
+                                      );
+                                    },
+                                    icon: const Icon(Icons.swap_horiz),
+                                    label: const Text('DEX'),
+                                    style: OutlinedButton.styleFrom(
+                                      padding: const EdgeInsets.all(16),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+
                             const SizedBox(height: 16),
 
                             // Faucet is only available on testnet, hidden on mainnet
@@ -436,7 +479,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                               : Colors.green),
                                     ),
                                     title: Text(
-                                      '${BlockchainConstants.formatLos(tx.amountLOS)} LOS',
+                                      '${tx.amountDisplay} LOS',
                                       style: const TextStyle(
                                           fontWeight: FontWeight.bold),
                                     ),

@@ -961,13 +961,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
 /// Network badge widget — shows TESTNET (orange) or MAINNET (green)
 /// based on the build-time NETWORK dart-define flag.
 class _NetworkBadge extends StatelessWidget {
-  static const _isMainnet =
-      String.fromEnvironment('NETWORK', defaultValue: 'testnet') == 'mainnet';
-
   @override
   Widget build(BuildContext context) {
-    final label = _isMainnet ? 'MAINNET' : 'TESTNET';
-    final color = _isMainnet ? Colors.green : Colors.orange;
+    final apiService = context.read<ApiService>();
+    final isMainnet = apiService.environment == NetworkEnvironment.mainnet;
+    final label = isMainnet ? 'MAINNET' : 'TESTNET';
+    final color = isMainnet ? Colors.green : Colors.orange;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
       decoration: BoxDecoration(

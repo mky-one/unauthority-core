@@ -67,12 +67,10 @@ class _SetupWizardScreenState extends State<SetupWizardScreen> {
   Future<void> _proceedWithNetwork() async {
     final apiService = context.read<ApiService>();
 
-    // Apply selected network
+    // Apply selected network — ALWAYS sync config + save preference
     try {
-      if (apiService.environment != _selectedNetwork) {
-        apiService.switchEnvironment(_selectedNetwork);
-        await NetworkPreferenceService.save(_selectedNetwork);
-      }
+      apiService.switchEnvironment(_selectedNetwork);
+      await NetworkPreferenceService.save(_selectedNetwork);
     } catch (e) {
       if (!mounted) return;
       await _showErrorDialog(

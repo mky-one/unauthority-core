@@ -12,6 +12,7 @@ import 'tor_service.dart';
 import 'network_config.dart';
 import 'peer_discovery_service.dart';
 import 'wallet_service.dart';
+import '../config/testnet_config.dart';
 
 enum NetworkEnvironment { testnet, mainnet }
 
@@ -588,6 +589,12 @@ class ApiService {
     }
 
     environment = newEnv;
+    // Sync badge/UI config so NetworkBadge reflects the runtime choice
+    if (newEnv == NetworkEnvironment.mainnet) {
+      WalletConfig.useMainnet();
+    } else {
+      WalletConfig.useFunctionalTestnet();
+    }
     // SECURITY FIX M-06: Sync mainnet mode to WalletService so Ed25519
     // fallback crypto is refused on mainnet.
     WalletService.mainnetMode = (newEnv == NetworkEnvironment.mainnet);

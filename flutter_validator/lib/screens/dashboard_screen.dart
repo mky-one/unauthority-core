@@ -12,6 +12,7 @@ import '../constants/blockchain.dart';
 import '../widgets/network_status_bar.dart';
 import '../widgets/voting_power_card.dart';
 import '../widgets/uptime_card.dart';
+import '../widgets/network_tokens_card.dart';
 
 class DashboardScreen extends StatefulWidget {
   /// When embedded in NodeControlScreen's IndexedStack, hide appbar.
@@ -530,7 +531,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                             ],
                                           ),
                                           subtitle: Text(
-                                            'Stake: ${v.stakeLOS.toStringAsFixed(0)} LOS',
+                                            'Stake: ${v.stakeDisplay} LOS',
                                           ),
                                           trailing: Text(
                                             v.isActive ? 'ACTIVE' : 'INACTIVE',
@@ -720,6 +721,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                         myValidator ?? _validators.first);
                               }),
                             ],
+
+                            // Network Tokens & DEX Overview
+                            const SizedBox(height: 16),
+                            const NetworkTokensCard(),
                           ],
                         ),
                       ),

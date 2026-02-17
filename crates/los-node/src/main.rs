@@ -63,6 +63,7 @@ mod mempool; // NEW: Mempool for transaction management
 mod metrics; // NEW: Prometheus metrics module
 mod rate_limiter; // NEW: Rate limiter module
 mod testnet_config;
+mod tor_service; // Automatic Tor Hidden Service generation
 mod validator_api; // Validator key management (generate, import)
 mod validator_rewards; // Testnet configuration module (graduated levels)
                        // --- TAMBAHAN: HTTP API MODULE ---
@@ -5643,6 +5644,68 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         println!(
             "📡 P2P port auto-derived: {} (API {} + 1000)",
             p2p_port, api_port
+        );
+    }
+
+    // =========================================================================
+    // AUTOMATIC TOR HIDDEN SERVICE GENERATION
+    // =========================================================================
+    // Per spec: "los-node MUST automatically generate a unique Tor Hidden
+    // Service (.onion) upon startup."
+    //
+    // If LOS_ONION_ADDRESS is already set (manual setup), skip auto-generation.
+    // Otherwise, try to create one via the Tor control port protocol.
+    // The generated .onion key is persisted in data_dir for stable address
+    // across restarts.
+    if std::env::var("LOS_ONION_ADDRESS").is_err() {
+        let p2p_port: u16 = std::env::var("LOS_P2P_PORT")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(api_port + 1000);
+
+        let tor_config = tor_service::TorServiceConfig::from_env(
+            std::path::Path::new(&base_data_dir),
+            api_port,
+            p2p_port,
+        );
+
+        // Check if control port is reachable before attempting
+        if tor_service::is_control_port_available(&tor_config.control_addr).await {
+            match tor_service::ensure_hidden_service(&tor_config).await {
+                Ok(hs) => {
+                    // Set env var so TorConfig::from_env() picks it up in LosNode::start()
+                    std::env::set_var("LOS_ONION_ADDRESS", &hs.onion_address);
+                    println!(
+                        "🧅 Auto-generated Tor hidden service: {}",
+                        hs.onion_address
+                    );
+
+                    // Register in validator_endpoints for peer discovery
+                    if let Ok(mut endpoints) = validator_endpoints.lock() {
+                        endpoints.insert(hs.onion_address.clone(), my_address.clone());
+                    }
+                }
+                Err(e) => {
+                    eprintln!("⚠️ Tor auto-generation failed: {}", e);
+                    eprintln!(
+                        "   Node will continue without .onion address. \
+                         Set LOS_ONION_ADDRESS manually or configure Tor ControlPort."
+                    );
+                }
+            }
+        } else {
+            println!(
+                "🧅 Tor control port not available at {} — skipping auto-generation",
+                tor_config.control_addr
+            );
+            println!(
+                "   To enable: configure Tor with ControlPort 9051 + CookieAuthentication 1"
+            );
+        }
+    } else {
+        println!(
+            "🧅 Using manually configured onion address: {}",
+            std::env::var("LOS_ONION_ADDRESS").unwrap_or_default()
         );
     }
 

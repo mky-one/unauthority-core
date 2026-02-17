@@ -1072,7 +1072,7 @@ fn test_dex_liquidity_add_remove() {
     // withdraw_a / withdraw_b ≈ reserve_a / reserve_b = 1:4
     let ratio_check = withdraw_b * 10 / withdraw_a; // Should be ~40 (1:4 ratio × 10)
     assert!(
-        ratio_check >= 39 && ratio_check <= 41,
+        (39..=41).contains(&ratio_check),
         "Withdrawal ratio must maintain pool ratio (got {})",
         ratio_check
     );
@@ -1087,16 +1087,8 @@ fn test_dex_liquidity_add_remove() {
     let final_reserve_b = new_reserve_b - withdraw_b;
 
     // Due to integer rounding, may differ by up to 1 CIL per operation
-    let diff_a = if final_reserve_a > reserve_a {
-        final_reserve_a - reserve_a
-    } else {
-        reserve_a - final_reserve_a
-    };
-    let diff_b = if final_reserve_b > reserve_b {
-        final_reserve_b - reserve_b
-    } else {
-        reserve_b - final_reserve_b
-    };
+    let diff_a = final_reserve_a.abs_diff(reserve_a);
+    let diff_b = final_reserve_b.abs_diff(reserve_b);
 
     // Allow rounding error up to 1 LOS
     assert!(
@@ -1404,11 +1396,10 @@ fn test_gas_limits_and_errors() {
     println!("  Invalid WASM deployment: PASS");
 
     // ── Gas pricing constants ──
-    assert!(GAS_PRICE_CIL > 0, "Gas price must be positive");
-    assert!(
-        MIN_DEPLOY_FEE_CIL > MIN_CALL_FEE_CIL,
-        "Deploy fee > call fee"
-    );
+    const { assert!(GAS_PRICE_CIL > 0) };
+    const {
+        assert!(MIN_DEPLOY_FEE_CIL > MIN_CALL_FEE_CIL);
+    };
     assert_eq!(MIN_CALL_FEE_CIL, BASE_FEE_CIL, "Call fee = base tx fee");
     assert_eq!(DEFAULT_GAS_LIMIT, 1_000_000);
     println!("  Gas pricing constants: PASS\n");
@@ -1813,9 +1804,9 @@ fn test_dex_fee_edge_cases() {
     println!("  Max supply fee conservation: PASS");
 
     // ── Swap output with very unbalanced pool ──
-    let reserve_a: u128 = 1 * CIL_PER_LOS; // Tiny reserve
+    let reserve_a: u128 = CIL_PER_LOS; // Tiny reserve
     let reserve_b: u128 = 1_000_000 * CIL_PER_LOS; // Huge reserve
-    let swap_in: u128 = 1 * CIL_PER_LOS;
+    let swap_in: u128 = CIL_PER_LOS;
 
     let out = compute_output(swap_in, reserve_a, reserve_b);
     // With equal swap_in and reserve_a: out = swap_in * reserve_b / (reserve_a + swap_in)
@@ -2097,9 +2088,9 @@ fn test_dex_multi_pool_state() {
     let count: usize = vm_get_state(&engine, &dex, DEX_POOL_COUNT_KEY, creator)
         .parse()
         .unwrap();
-    for i in 0..count {
+    for (i, expected_pid) in pool_ids.iter().enumerate().take(count) {
         let listed_pid = vm_get_state(&engine, &dex, &format!("pool_list:{}", i), creator);
-        assert_eq!(listed_pid, pool_ids[i], "Pool list mismatch at index {}", i);
+        assert_eq!(listed_pid, *expected_pid, "Pool list mismatch at index {}", i);
     }
     println!("  Pool listing: PASS");
     println!("  Multi-pool management: PASS\n");

@@ -1,4 +1,4 @@
-# Tor Setup Guide — Unauthority (LOS) v1.0.9
+# Tor Setup Guide — Unauthority (LOS) v1.1.0
 
 Complete guide to configuring Tor hidden services for Unauthority validators and clients.
 
@@ -13,10 +13,11 @@ Complete guide to configuring Tor hidden services for Unauthority validators and
 5. [Multi-Validator Setup (Same Host)](#multi-validator-setup-same-host)
 6. [Verify Hidden Service](#verify-hidden-service)
 7. [Auto-Bootstrap (v1.0.9+)](#auto-bootstrap-v109)
-8. [Flutter App Tor Connectivity](#flutter-app-tor-connectivity)
-9. [Firewall Configuration](#firewall-configuration)
-10. [Performance Tuning](#performance-tuning)
-11. [Troubleshooting](#troubleshooting)
+8. [Automatic Hidden Service Generation (v1.1.0+)](#automatic-hidden-service-generation-v110)
+9. [Flutter App Tor Connectivity](#flutter-app-tor-connectivity)
+10. [Firewall Configuration](#firewall-configuration)
+11. [Performance Tuning](#performance-tuning)
+12. [Troubleshooting](#troubleshooting)
 
 ---
 
@@ -290,6 +291,113 @@ export LOS_GENESIS_PATH="/path/to/custom/genesis_config.json"
 | `LOS_LOG_LEVEL` | `info` | Log level: `trace`, `debug`, `info`, `warn`, `error` |
 | `LOS_REST_PORT` | `3030` | REST API port (alternative to `--port`) |
 | `LOS_NODE_ID` | `node` | Node identifier |
+
+---
+
+## Automatic Hidden Service Generation (v1.1.0+)
+
+As of v1.1.0, `uat-node` can **automatically generate** a unique Tor Hidden Service (`.onion` address) on startup — no manual `torrc` editing required.
+
+### Prerequisites
+
+Tor must be running with the **Control Port** enabled:
+
+```bash
+# Add to /etc/tor/torrc (Linux) or /usr/local/etc/tor/torrc (macOS Homebrew)
+ControlPort 9051
+CookieAuthentication 1
+```
+
+Then restart Tor:
+
+```bash
+sudo systemctl restart tor    # Linux
+brew services restart tor     # macOS
+```
+
+### How It Works
+
+1. Node checks if `LOS_ONION_ADDRESS` is already set (manual config)
+2. If not set, probes the Tor Control Port (default `127.0.0.1:9051`)
+3. Authenticates via **Cookie** (preferred), **Password**, or **Null** auth
+4. Sends `ADD_ONION` command to create an **ephemeral ED25519-V3** hidden service
+5. Maps the node's REST, P2P, and gRPC ports to the `.onion` address
+6. Persists the generated private key to `{data_dir}/tor_hidden_service_key`
+7. Sets `LOS_ONION_ADDRESS` for the running process
+8. Registers the `.onion` address with the network for peer discovery
+
+On subsequent startups, if the key file exists, the same `.onion` address is reused.
+
+### Graceful Fallback
+
+Auto-generation is **non-fatal**. If the Control Port is unavailable or authentication fails, the node logs a warning and continues normally. This means:
+
+- **Existing manual setups** (`torrc` + `LOS_ONION_ADDRESS`) continue to work unchanged
+- **Nodes without Tor Control Port** still function (but without auto `.onion`)
+- **No breaking changes** to current deployments
+
+### Environment Variables
+
+| Variable | Default | Description |
+|---|---|---|
+| `LOS_TOR_CONTROL` | `127.0.0.1:9051` | Tor Control Port address |
+| `LOS_TOR_COOKIE_PATH` | *(auto-detected)* | Path to Tor control auth cookie |
+| `LOS_TOR_CONTROL_PWD` | *(none)* | Tor control password (if using `HashedControlPassword`) |
+| `LOS_ONION_ADDRESS` | *(none)* | Skip auto-gen; use this `.onion` address directly |
+
+### Cookie Path Auto-Detection
+
+The node searches these paths in order:
+
+| OS | Path |
+|---|---|
+| macOS (Homebrew) | `/usr/local/var/lib/tor/control_auth_cookie` |
+| macOS (Homebrew) | `/opt/homebrew/var/lib/tor/control_auth_cookie` |
+| Linux (Debian/Ubuntu) | `/var/run/tor/control.authcookie` |
+| Linux (systemd) | `/run/tor/control.authcookie` |
+| Linux (var/lib) | `/var/lib/tor/control_auth_cookie` |
+
+If none are found, set `LOS_TOR_COOKIE_PATH` explicitly or use password authentication.
+
+### Key Persistence
+
+The generated ED25519-V3 private key is saved to:
+
+```
+{data_dir}/tor_hidden_service_key
+```
+
+This file has `0600` permissions (owner-only read/write). **Back up this file** — if lost, a new `.onion` address will be generated and you must re-register with the network.
+
+### Example: Zero-Config Validator
+
+With Tor Control Port enabled, starting a validator requires no `.onion` configuration:
+
+```bash
+# Tor handles everything automatically
+./uat-node --port 3030 --p2p-port 4030 --node-id v1 --data-dir ./data/v1
+
+# Output:
+# [INFO] Tor Control Port available at 127.0.0.1:9051
+# [INFO] Authenticated with Tor via cookie
+# [INFO] Generated Tor Hidden Service: abc123...xyz.onion
+# [INFO] Port mappings: 3030→3030, 4030→4030, 23030→23030
+# [INFO] Onion address registered for peer discovery
+```
+
+### Example: Password Authentication
+
+If cookie auth is not available:
+
+```bash
+# Generate hashed password for torrc
+tor --hash-password "my_secure_password"
+# Copy output to torrc: HashedControlPassword 16:...
+
+# Set password for the node
+export LOS_TOR_CONTROL_PWD="my_secure_password"
+./uat-node --port 3030 --p2p-port 4030 --node-id v1
+```
 
 ---
 

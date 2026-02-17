@@ -57,10 +57,12 @@ class Account {
     );
   }
 
-  /// Convert balance from CIL to LOS for display
-  /// 1 LOS = 100,000,000,000 CIL (10^11)
-  double get balanceLOS => BlockchainConstants.cilToLos(balance);
-  double get cilBalanceLOS => BlockchainConstants.cilToLos(cilBalance);
+  /// Balance formatted as LOS display string (integer-only math).
+  String get balanceDisplay => BlockchainConstants.formatCilAsLos(balance);
+
+  /// CIL balance formatted as LOS display string.
+  String get cilBalanceDisplay =>
+      BlockchainConstants.formatCilAsLos(cilBalance);
 }
 
 class Transaction {
@@ -132,8 +134,8 @@ class Transaction {
     return 0;
   }
 
-  /// Convert amount from CIL to LOS for display
-  double get amountLOS => BlockchainConstants.cilToLos(amount);
+  /// Convert amount from CIL to a display string
+  String get amountDisplay => BlockchainConstants.formatCilAsLos(amount);
 }
 
 class BlockInfo {
@@ -205,25 +207,35 @@ class ValidatorInfo {
 
   /// Backend already sends stake as integer LOS (balance / CIL_PER_LOS).
   /// FIX C-02: Do NOT divide again — value is already in LOS.
-  double get stakeLOS => stake.toDouble();
+  /// Returns display string without f64 conversion.
+  String get stakeDisplay => '$stake';
 
   /// Quadratic voting power: isqrt(stake in LOS)
   /// Matches backend: calculate_voting_power() using integer square root.
   /// NEVER use float sqrt — must match backend's isqrt exactly.
-  double get votingPower {
+  int get votingPowerInt {
     if (stake <= 0) return 0;
-    return BlockchainConstants.isqrt(stake).toDouble();
+    return BlockchainConstants.isqrt(stake);
   }
 
-  /// Get voting power percentage relative to all validators
-  double getVotingPowerPercentage(List<ValidatorInfo> allValidators) {
-    final totalPower = allValidators.fold(0.0, (sum, v) => sum + v.votingPower);
-    if (totalPower == 0) return 0;
-    return (votingPower / totalPower) * 100;
+  /// Voting power as display string.
+  String get votingPowerDisplay => votingPowerInt.toString();
+
+  /// Get voting power percentage relative to all validators.
+  /// Returns percentage string (e.g. "25.50").
+  /// Uses integer arithmetic for power calculation, f64 only for final % display.
+  String getVotingPowerPercentageStr(List<ValidatorInfo> allValidators) {
+    final totalPower =
+        allValidators.fold(0, (int sum, v) => sum + v.votingPowerInt);
+    if (totalPower == 0) return '0.00';
+    // Integer percentage with 2 decimal places: (power * 10000) ~/ total / 100
+    final bps = (votingPowerInt * 10000) ~/ totalPower;
+    return '${bps ~/ 100}.${(bps % 100).toString().padLeft(2, '0')}';
   }
 
-  /// Slashed amount in LOS for display
-  double get totalSlashedLos => BlockchainConstants.cilToLos(totalSlashed);
+  /// Slashed amount in LOS for display (integer-only).
+  String get totalSlashedDisplay =>
+      BlockchainConstants.formatCilAsLos(totalSlashed);
 
   /// Uptime status text
   String get uptimeStatus {

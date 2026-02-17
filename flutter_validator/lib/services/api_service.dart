@@ -6,6 +6,7 @@ import 'package:http/http.dart' as http;
 import 'package:http/io_client.dart';
 import 'package:socks5_proxy/socks_client.dart';
 import '../models/account.dart';
+import '../models/network_tokens.dart';
 import '../constants/blockchain.dart';
 import 'tor_service.dart';
 import 'network_config.dart';
@@ -291,8 +292,7 @@ class ApiService {
             '(failure $failures/3)');
         // Only switch after 3+ consecutive failures (Tor is unreliable)
         if (failures >= 3) {
-          losLog(
-              '🔌 [HealthCheck] 3 consecutive failures — switching node');
+          losLog('🔌 [HealthCheck] 3 consecutive failures — switching node');
           _switchToNextNode();
         }
       }
@@ -382,12 +382,10 @@ class ApiService {
       baseUrl = bestUrl;
       _currentNodeIndex =
           _bootstrapUrls.indexOf(bestUrl).clamp(0, _bootstrapUrls.length - 1);
-      losLog(
-          '🏆 [Probe] Switched to $bestUrl (${bestLatency}ms) from $oldUrl');
+      losLog('🏆 [Probe] Switched to $bestUrl (${bestLatency}ms) from $oldUrl');
       onNodeSwitched?.call(baseUrl);
     } else {
-      losLog(
-          '🏆 [Probe] Best node unchanged: $baseUrl (${bestLatency}ms) — '
+      losLog('🏆 [Probe] Best node unchanged: $baseUrl (${bestLatency}ms) — '
           '${sorted.length}/${_bootstrapUrls.length} responsive');
     }
   }
@@ -422,8 +420,7 @@ class ApiService {
     } while (_currentNodeIndex != startIndex);
     // All nodes in cooldown — reset cooldowns and try round-robin
     if (_allNodesInCooldown()) {
-      losLog(
-          '⚠️ All nodes in cooldown — resetting cooldowns for fresh retry');
+      losLog('⚠️ All nodes in cooldown — resetting cooldowns for fresh retry');
       for (final h in _nodeHealthMap.values) {
         h.consecutiveFailures = 0;
       }
@@ -598,8 +595,7 @@ class ApiService {
           losLog('✅ [ApiService] Tor recovered — recreating HTTP client');
           await _reinitializeTorClient();
         } else {
-          losLog(
-              '⚠️ [ApiService] Tor recovery failed — local fallback active');
+          losLog('⚠️ [ApiService] Tor recovery failed — local fallback active');
         }
       } catch (e) {
         losLog('❌ [ApiService] Tor recovery error: $e');
@@ -875,8 +871,7 @@ class ApiService {
           cilBalance: 0,
           history: [],
         );
-        losLog(
-            '🌐 [ApiService.getBalance] Success: balance=$balanceVoid CILD');
+        losLog('🌐 [ApiService.getBalance] Success: balance=$balanceVoid CILD');
         return account;
       }
       throw Exception('Failed to get balance: ${response.statusCode}');
@@ -1124,8 +1119,7 @@ class ApiService {
                     p is Map ? (p['address'] ?? '').toString() : p.toString())
                 .where((s) => s.isNotEmpty)
                 .toList();
-            losLog(
-                '📡 [ApiService.getPeers] Success: ${peers.length} peers');
+            losLog('📡 [ApiService.getPeers] Success: ${peers.length} peers');
             return peers;
           }
           // Legacy fallback: flat HashMap<String, String>
@@ -1280,6 +1274,60 @@ class ApiService {
       };
     }
     return summary;
+  }
+
+  // ─── USP-01 Token Read-Only (Validator Dashboard) ───────────────
+
+  /// Fetch all registered USP-01 tokens on the network.
+  Future<List<Token>> getTokens() async {
+    losLog('🪙 [API] getTokens...');
+    try {
+      final response = await _requestWithFailover(
+        (url) => _client.get(Uri.parse('$url/tokens')),
+        '/tokens',
+      );
+      if (response.statusCode >= 200 && response.statusCode < 300) {
+        final data = json.decode(response.body);
+        if (data is List) {
+          final tokens = data
+              .map((j) => Token.fromJson(j as Map<String, dynamic>))
+              .toList();
+          losLog('🪙 [API] getTokens: ${tokens.length} tokens');
+          return tokens;
+        }
+      }
+      return [];
+    } catch (e) {
+      losLog('❌ getTokens error: $e');
+      rethrow;
+    }
+  }
+
+  // ─── DEX Read-Only (Validator Dashboard) ────────────────────────
+
+  /// Fetch all DEX liquidity pools.
+  Future<List<DexPool>> getDexPools() async {
+    losLog('📊 [API] getDexPools...');
+    try {
+      final response = await _requestWithFailover(
+        (url) => _client.get(Uri.parse('$url/dex/pools')),
+        '/dex/pools',
+      );
+      if (response.statusCode >= 200 && response.statusCode < 300) {
+        final data = json.decode(response.body);
+        if (data is List) {
+          final pools = data
+              .map((j) => DexPool.fromJson(j as Map<String, dynamic>))
+              .toList();
+          losLog('📊 [API] getDexPools: ${pools.length} pools');
+          return pools;
+        }
+      }
+      return [];
+    } catch (e) {
+      losLog('❌ getDexPools error: $e');
+      rethrow;
+    }
   }
 
   /// Release HTTP client resources and cancel background timers.

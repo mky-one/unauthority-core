@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import '../models/account.dart';
-import '../constants/blockchain.dart';
 
 class TransactionDetailScreen extends StatelessWidget {
   final Transaction transaction;
@@ -138,7 +137,7 @@ class TransactionDetailScreen extends StatelessWidget {
                   ),
                   const SizedBox(height: 8),
                   Text(
-                    '${BlockchainConstants.formatLos(transaction.amountLOS)} LOS',
+                    '${transaction.amountDisplay} LOS',
                     style: const TextStyle(
                       fontSize: 32,
                       fontWeight: FontWeight.bold,
@@ -176,7 +175,7 @@ class TransactionDetailScreen extends StatelessWidget {
                 _DetailRow(
                   label: 'Amount',
                   value:
-                      '${BlockchainConstants.formatLos(transaction.amountLOS)} LOS',
+                      '${transaction.amountDisplay} LOS',
                   subtitle: '${_formatNumber(transaction.amount)} CIL',
                   icon: Icons.attach_money,
                 ),
@@ -186,7 +185,7 @@ class TransactionDetailScreen extends StatelessWidget {
                   _DetailRow(
                     label: 'Fee',
                     value:
-                        '${BlockchainConstants.formatLos(transaction.feeLOS)} LOS',
+                        '${transaction.feeDisplay} LOS',
                     subtitle: '${_formatNumber(transaction.fee)} CIL',
                     icon: Icons.local_gas_station,
                   ),

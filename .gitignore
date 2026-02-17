@@ -186,6 +186,9 @@ coverage/
 # Copilot AI instructions
 .github/copilot-instructions.md
 
+# Internal development docs (private, not for public consumption)
+dev_docs/
+
 # Internal development docs
 docs/internal/
 

@@ -43,7 +43,7 @@ Key differentiators:
 2. **Permissionless** — Anyone can run a validator with 1,000 LOS stake
 3. **Privacy** — All traffic routed through Tor; no KYC, no clearnet dependency
 4. **Determinism** — Integer-only math in all consensus-critical paths
-5. **Simplicity** — Single binary (`uat-node`), auto-bootstrap, minimal configuration
+5. **Simplicity** — Single binary (`los-node`), auto-bootstrap, minimal configuration
 
 ---
 

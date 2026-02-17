@@ -12,7 +12,7 @@ LEVEL="${1:-consensus}"
 BASE_DIR="$(cd "$(dirname "$0")" && pwd)"
 BINARY="$BASE_DIR/target/release/los-node"
 TOR_DIR="$HOME/.los-testnet-tor"
-TOR_SOCKS_PORT=9052
+TOR_SOCKS_PORT=${LOS_TOR_SOCKS_PORT:-9050}
 
 if [[ ! -f "$BINARY" ]]; then
     echo "❌ Binary not found. Build first: cargo build --release"

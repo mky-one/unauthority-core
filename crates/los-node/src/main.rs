@@ -1908,19 +1908,18 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
 
     // GET /tokens — List all deployed USP-01 tokens
     let engine_tokens = wasm_engine.clone();
-    let list_tokens_route =
-        warp::path("tokens")
-            .and(warp::path::end())
-            .and(warp::get())
-            .and(with_state(engine_tokens))
-            .map(|engine: Arc<WasmEngine>| {
-                let tokens = token_registry::list_usp01_tokens(&engine);
-                api_json(serde_json::json!({
-                    "status": "success",
-                    "count": tokens.len(),
-                    "tokens": tokens
-                }))
-            });
+    let list_tokens_route = warp::path("tokens")
+        .and(warp::path::end())
+        .and(warp::get())
+        .and(with_state(engine_tokens))
+        .map(|engine: Arc<WasmEngine>| {
+            let tokens = token_registry::list_usp01_tokens(&engine);
+            api_json(serde_json::json!({
+                "status": "success",
+                "count": tokens.len(),
+                "tokens": tokens
+            }))
+        });
 
     // GET /token/:address — Get USP-01 token metadata
     let engine_token_info = wasm_engine.clone();

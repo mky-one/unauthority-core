@@ -30,10 +30,10 @@ class BlockchainConstants {
   /// Used in address derivation: BLAKE2b → version+hash → checksum → Base58
   static const int addressVersionByte = 0x4A;
 
-  /// Convert CIL (smallest unit) to LOS (display unit) — double precision.
-  /// NOTE: f64 has ~15-16 significant digits. For total supply (~2.2e18 CIL)
-  /// the last 1-3 CIL digits may be rounded. Acceptable for UI display only.
-  /// For financial comparisons, always use CIL integers directly.
+  /// Convert CIL (smallest unit) to LOS (display unit).
+  /// DEPRECATED: Use cilToLosString() or formatCilAsLos() instead.
+  /// Kept only for backward compatibility — never use for financial logic.
+  @Deprecated('Use cilToLosString() or formatCilAsLos() for f64-free display')
   static double cilToLos(int cilAmount) {
     return cilAmount / cilPerLos.toDouble();
   }
@@ -92,34 +92,27 @@ class BlockchainConstants {
     return wholePart * cilPerLos + fracCil;
   }
 
-  /// Format LOS amount for display with appropriate precision.
-  /// Shows up to maxDecimals decimal places, trimming trailing zeros.
-  /// For sub-CIL amounts (< 0.00000000001 LOS), shows "~0.00".
-  static String formatLos(double losAmount, {int maxDecimals = 6}) {
-    if (losAmount == 0) return '0.00';
-
-    // Show up to maxDecimals places
-    final formatted = losAmount.toStringAsFixed(maxDecimals);
-
-    // Trim trailing zeros but keep at least 2 decimal places
-    final parts = formatted.split('.');
-    if (parts.length == 2) {
-      var decimals = parts[1];
-      while (decimals.length > 2 && decimals.endsWith('0')) {
-        decimals = decimals.substring(0, decimals.length - 1);
-      }
-      return '${parts[0]}.$decimals';
-    }
-    return formatted;
-  }
-
-  /// Format CIL amount directly for display as LOS.
-  /// Uses integer-only math for exact representation when possible.
+  /// Format CIL amount directly for display as LOS string.
+  /// 100% integer-only arithmetic — ZERO floating-point operations.
+  /// Shows up to [maxDecimals] places, trimming trailing zeros (min 2).
   static String formatCilAsLos(int cilAmount, {int maxDecimals = 6}) {
-    // For precise display, use cilToLosString (no f64 precision loss)
-    if (maxDecimals >= decimalPlaces) {
-      return cilToLosString(cilAmount);
+    if (cilAmount == 0) return '0.00';
+    final negative = cilAmount < 0;
+    final abs = negative ? -cilAmount : cilAmount;
+    final whole = abs ~/ cilPerLos;
+    final frac = abs % cilPerLos;
+    final sign = negative ? '-' : '';
+    if (frac == 0) return '$sign$whole.00';
+    // Full fractional part padded to decimalPlaces digits
+    var fracStr = frac.toString().padLeft(decimalPlaces, '0');
+    // Truncate to maxDecimals
+    if (maxDecimals < fracStr.length) {
+      fracStr = fracStr.substring(0, maxDecimals);
     }
-    return formatLos(cilToLos(cilAmount), maxDecimals: maxDecimals);
+    // Trim trailing zeros but keep at least 2 decimal places
+    while (fracStr.length > 2 && fracStr.endsWith('0')) {
+      fracStr = fracStr.substring(0, fracStr.length - 1);
+    }
+    return '$sign$whole.$fracStr';
   }
 }

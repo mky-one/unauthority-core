@@ -130,10 +130,10 @@ class BlockConstructionService {
   /// Returns the transaction result from the node.
   Future<Map<String, dynamic>> sendTransaction({
     required String to,
-    required double amountLosDouble,
+    required String amountLosStr,
   }) async {
     losLog(
-        '📦 [BlockConstruction.sendTransaction] from=pending, to=$to, amount=$amountLosDouble LOS');
+        '📦 [BlockConstruction.sendTransaction] from=pending, to=$to, amount=$amountLosStr LOS');
     // 0. Fetch protocol params from node (base_fee, pow_difficulty, chain_id)
     await _ensureProtocolParams();
     final powBits = _powDifficultyBits;
@@ -179,13 +179,11 @@ class BlockConstructionService {
     final previous = account.headBlock ?? '0';
 
     // 3. Convert amount to CIL using integer-only math (no f64 precision loss).
-    // FIX: amountLosDouble * cilPerLos can produce off-by-1 CIL errors on values
-    // like 0.3, 0.6, 0.7 due to IEEE 754. Convert via string → integer math.
     final amountCil = BigInt.from(
-        BlockchainConstants.losStringToCil(amountLosDouble.toString()));
+        BlockchainConstants.losStringToCil(amountLosStr));
     // Integer LOS for API backward compat — only included if > 0.
     // Sub-LOS amounts (e.g. 0.5 LOS) rely solely on amount_cil.
-    final amountLos = amountLosDouble.floor();
+    final amountLos = (amountCil ~/ BigInt.from(BlockchainConstants.cilPerLos)).toInt();
 
     // 4. Current timestamp
     final timestamp = DateTime.now().millisecondsSinceEpoch ~/ 1000;

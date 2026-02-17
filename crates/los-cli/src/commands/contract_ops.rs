@@ -155,6 +155,7 @@ pub async fn deploy_contract(
 /// Call a smart contract function (client-signed).
 ///
 /// Returns the full JSON response on success.
+#[allow(clippy::too_many_arguments)]
 pub async fn call_contract(
     wallet_name: &str,
     contract_address: &str,

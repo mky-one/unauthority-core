@@ -372,10 +372,15 @@ async fn test_zero_trust_sync() {
     let elapsed = start.elapsed();
     println!("  ✅ All 4 nodes have identical final state");
     println!("  📊 Sync time: {:?}", elapsed);
+
+    // In debug builds, Dilithium5 crypto is ~20x slower (unoptimized).
+    // Release: ~5s, Debug: ~100s. Use appropriate timeout per profile.
+    let max_secs = if cfg!(debug_assertions) { 180 } else { 60 };
     assert!(
-        elapsed < Duration::from_secs(60),
-        "Sync too slow: {:?}",
-        elapsed
+        elapsed < Duration::from_secs(max_secs),
+        "Sync too slow: {:?} (limit: {}s)",
+        elapsed,
+        max_secs
     );
 }
 

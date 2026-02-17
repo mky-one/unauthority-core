@@ -23,6 +23,8 @@ Unauthority is a post-quantum secure, block-lattice (DAG) blockchain with aBFT c
 | **Cryptography** | Dilithium5 (Post-Quantum) + SHA-3 |
 | **Network** | Tor Hidden Services (.onion) exclusively |
 | **Smart Contracts** | WASM via UVM (Unauthority Virtual Machine) |
+| **Token Standard** | USP-01 (Native Fungible + Wrapped Assets) |
+| **DEX** | Constant-Product AMM (x·y=k), MEV Resistant |
 
 ---
 
@@ -34,6 +36,9 @@ Unauthority is a post-quantum secure, block-lattice (DAG) blockchain with aBFT c
 - **Fair Distribution** — 96.5% public via Proof-of-Burn, only 3.5% dev allocation
 - **Anti-Whale** — Quadratic voting (`√Stake`) prevents stake centralization
 - **Integer Math Only** — Zero floating-point in consensus. Fully deterministic across all nodes
+- **USP-01 Token Standard** — Native fungible tokens + wrapped assets (wBTC, wETH) via WASM contracts
+- **DEX AMM** — Constant-product decentralized exchange with MEV protection and slippage checks
+- **Full CLI** — `los-cli` for wallet, transactions, validator ops, token management, and DEX trading
 
 ---
 
@@ -80,6 +85,7 @@ unauthority-core/
 │   ├── los-network/      # Tor transport, P2P encryption, fee scaling
 │   ├── los-crypto/       # Dilithium5 keygen, signing, verification
 │   ├── los-vm/           # WASM smart contract engine (UVM)
+│   ├── los-contracts/    # USP-01 token + DEX AMM (WASM, #![no_std])
 │   ├── los-cli/          # Command-line wallet & node management
 │   └── los-sdk/          # SDK for external integrations
 ├── flutter_wallet/       # Mobile/Desktop user wallet (Flutter + Rust via FRB)
@@ -210,7 +216,7 @@ cargo build --release
 # Build (mainnet — strict mode: no faucet, enforced signatures)
 cargo build --release -p los-node --features mainnet
 
-# Run all tests (208 tests)
+# Run all tests (309 tests across 10 crates + E2E)
 cargo test --release --workspace --all-features
 
 # Run clippy (zero warnings enforced)

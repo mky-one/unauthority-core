@@ -187,8 +187,23 @@ class ApiService {
   Future<void> _loadSavedPeers() async {
     final savedPeers = await PeerDiscoveryService.loadSavedPeers();
     if (savedPeers.isNotEmpty) {
+      // Collect hostnames already present in bootstrap list to prevent
+      // adding port-less duplicates (e.g. "http://x.onion" when
+      // "http://x.onion:3030" already exists from NetworkConfig).
+      final knownHostnames = _bootstrapUrls
+          .map((url) => Uri.tryParse(url)?.host ?? '')
+          .where((h) => h.isNotEmpty)
+          .toSet();
+
       final newPeers = savedPeers
-          .where((p) => !_bootstrapUrls.contains(p) && p != _excludedOnionUrl)
+          .where((p) {
+            if (p == _excludedOnionUrl) return false;
+            if (_bootstrapUrls.contains(p)) return false;
+            // Hostname dedup: skip if same .onion hostname already known
+            final host = Uri.tryParse(p)?.host ?? '';
+            if (host.isNotEmpty && knownHostnames.contains(host)) return false;
+            return true;
+          })
           .take(_maxSavedPeers)
           .toList();
       if (newPeers.isNotEmpty) {
@@ -537,6 +552,7 @@ class ApiService {
       losLog('✅ Direct HTTP client for $baseUrl (Tor unavailable)');
     }
     // After client is ready, load saved peers into bootstrap list
+    PeerDiscoveryService.setNetwork(environment.name);
     await _loadSavedPeers();
   }
 
@@ -1482,7 +1498,26 @@ class ApiService {
           for (final ep in endpoints) {
             final onion = ep['onion_address']?.toString() ?? '';
             if (onion.isNotEmpty && onion.endsWith('.onion')) {
-              final url = 'http://$onion';
+              // Extract bare hostname (strip any embedded port/scheme)
+              final hostname =
+                  onion.contains(':') ? onion.split(':').first : onion;
+
+              // DEDUP FIX: Check if this onion hostname already exists in
+              // _bootstrapUrls (which have correct ports from NetworkConfig).
+              // Prevents adding "http://x.onion" when "http://x.onion:3030"
+              // is already present — the root cause of port-less duplicates.
+              final alreadyKnown = _bootstrapUrls.any((existing) {
+                final uri = Uri.tryParse(existing);
+                return uri?.host == hostname;
+              });
+              if (alreadyKnown) continue;
+
+              // Build URL with rest_port if provided by the API
+              final restPort = ep['rest_port'] as int?;
+              final url = (restPort != null && restPort != 80)
+                  ? 'http://$hostname:$restPort'
+                  : 'http://$hostname';
+
               // Exclude own onion (validator self-connection prevention)
               if (url == _excludedOnionUrl) continue;
               if (!_bootstrapUrls.contains(url)) {

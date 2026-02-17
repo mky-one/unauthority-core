@@ -129,10 +129,12 @@ class _TokenSendScreenState extends State<TokenSendScreen> {
                   border: const OutlineInputBorder(),
                 ),
                 validator: (v) {
-                  if (v == null || v.trim().isEmpty)
+                  if (v == null || v.trim().isEmpty) {
                     return 'Address is required';
-                  if (!AddressValidator.isValidAddress(v.trim()))
+                  }
+                  if (!AddressValidator.isValidAddress(v.trim())) {
                     return 'Invalid LOS address';
+                  }
                   return null;
                 },
               ),
@@ -150,11 +152,13 @@ class _TokenSendScreenState extends State<TokenSendScreen> {
                   border: const OutlineInputBorder(),
                 ),
                 validator: (v) {
-                  if (v == null || v.trim().isEmpty)
+                  if (v == null || v.trim().isEmpty) {
                     return 'Amount is required';
+                  }
                   final n = int.tryParse(v.trim());
-                  if (n == null || n <= 0)
+                  if (n == null || n <= 0) {
                     return 'Enter a valid positive integer';
+                  }
                   return null;
                 },
               ),

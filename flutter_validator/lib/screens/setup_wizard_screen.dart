@@ -56,18 +56,17 @@ class _SetupWizardScreenState extends State<SetupWizardScreen> {
   }
 
   Future<void> _loadInitialNetwork() async {
-    final apiService = context.read<ApiService>();
-    // Restore persisted network choice
-    await NetworkPreferenceService.applyToServices(apiService);
+    // Load persisted network choice but ALWAYS show selection screen
+    final savedNetwork = await NetworkPreferenceService.load();
     if (!mounted) return;
     setState(() {
-      _selectedNetwork = apiService.environment;
+      _selectedNetwork = savedNetwork ?? NetworkEnvironment.mainnet;
     });
   }
 
   Future<void> _proceedWithNetwork() async {
     final apiService = context.read<ApiService>();
-    
+
     // Apply selected network
     try {
       if (apiService.environment != _selectedNetwork) {
@@ -124,7 +123,8 @@ class _SetupWizardScreenState extends State<SetupWizardScreen> {
               SizedBox(height: 8),
               Text('1. Read the documentation:\n   docs/VALIDATOR_GUIDE.md'),
               SizedBox(height: 8),
-              Text('2. Configure testnet host in:\n   flutter_validator/assets/network_config.json'),
+              Text(
+                  '2. Configure testnet host in:\n   flutter_validator/assets/network_config.json'),
               SizedBox(height: 8),
               Text('3. Or switch to Mainnet to use the live network.'),
             ],

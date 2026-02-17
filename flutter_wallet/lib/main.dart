@@ -98,22 +98,21 @@ class _SplashScreenState extends State<SplashScreen> {
   }
 
   Future<void> _initializeApp() async {
-    // Restore persisted network choice (testnet/mainnet)
-    final apiService = context.read<ApiService>();
-    await NetworkPreferenceService.applyToServices(apiService);
-    
+    // Load persisted network choice but ALWAYS show selection screen
+    final savedNetwork = await NetworkPreferenceService.load();
+
     if (!mounted) return;
-    
-    // Show network choice screen
+
+    // Show network choice screen with saved preference pre-selected
     setState(() {
-      _selectedNetwork = apiService.environment;
+      _selectedNetwork = savedNetwork ?? NetworkEnvironment.mainnet;
       _showNetworkChoice = true;
     });
   }
 
   Future<void> _proceedWithNetwork() async {
     setState(() => _showNetworkChoice = false);
-    
+
     final walletService = context.read<WalletService>();
     final apiService = context.read<ApiService>();
 
@@ -192,7 +191,8 @@ class _SplashScreenState extends State<SplashScreen> {
               SizedBox(height: 8),
               Text('1. Read the documentation:\n   docs/VALIDATOR_GUIDE.md'),
               SizedBox(height: 8),
-              Text('2. Configure testnet host in:\n   flutter_wallet/assets/network_config.json'),
+              Text(
+                  '2. Configure testnet host in:\n   flutter_wallet/assets/network_config.json'),
               SizedBox(height: 8),
               Text('3. Or switch to Mainnet to use the live network.'),
             ],
@@ -241,9 +241,8 @@ class _SplashScreenState extends State<SplashScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       body: Center(
-        child: _showNetworkChoice
-            ? _buildNetworkChoice()
-            : _buildLoadingScreen(),
+        child:
+            _showNetworkChoice ? _buildNetworkChoice() : _buildLoadingScreen(),
       ),
     );
   }

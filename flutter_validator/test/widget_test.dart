@@ -30,7 +30,9 @@ void main() {
     // New flow: step -1 shows network choice first
     // At least a Scaffold is present
     expect(find.byType(Scaffold), findsWidgets);
-  }, skip: true); // TODO: Fix timer cleanup - TorService creates pending timers in test env
+  },
+      skip:
+          true); // TODO: Fix timer cleanup - TorService creates pending timers in test env
 
   testWidgets('Dashboard shows loading indicator initially',
       (WidgetTester tester) async {

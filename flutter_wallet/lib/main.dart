@@ -88,18 +88,61 @@ class SplashScreen extends StatefulWidget {
 }
 
 class _SplashScreenState extends State<SplashScreen> {
+  bool _showNetworkChoice = false;
+  NetworkEnvironment _selectedNetwork = NetworkEnvironment.mainnet;
+
   @override
   void initState() {
     super.initState();
-    _checkWallet();
+    _initializeApp();
   }
 
-  Future<void> _checkWallet() async {
+  Future<void> _initializeApp() async {
+    // Restore persisted network choice (testnet/mainnet)
+    final apiService = context.read<ApiService>();
+    await NetworkPreferenceService.applyToServices(apiService);
+    
+    if (!mounted) return;
+    
+    // Show network choice screen
+    setState(() {
+      _selectedNetwork = apiService.environment;
+      _showNetworkChoice = true;
+    });
+  }
+
+  Future<void> _proceedWithNetwork() async {
+    setState(() => _showNetworkChoice = false);
+    
     final walletService = context.read<WalletService>();
     final apiService = context.read<ApiService>();
 
-    // Restore persisted network choice (testnet/mainnet)
-    await NetworkPreferenceService.applyToServices(apiService);
+    // Apply selected network
+    try {
+      if (apiService.environment != _selectedNetwork) {
+        apiService.switchEnvironment(_selectedNetwork);
+        await NetworkPreferenceService.save(_selectedNetwork);
+      }
+    } catch (e) {
+      // Network switch failed (e.g. no mainnet nodes yet)
+      if (!mounted) return;
+      await _showErrorDialog(
+        'Network Unavailable',
+        'Cannot switch to ${_selectedNetwork.name}. Please try again later.',
+      );
+      return;
+    }
+
+    // Test connection for testnet
+    if (_selectedNetwork == NetworkEnvironment.testnet) {
+      try {
+        await apiService.getHealth().timeout(const Duration(seconds: 10));
+      } catch (e) {
+        if (!mounted) return;
+        await _showTestnetErrorDialog();
+        return;
+      }
+    }
 
     // One-time migration: SharedPreferences → FlutterSecureStorage
     await walletService.migrateFromSharedPreferences();
@@ -123,39 +166,206 @@ class _SplashScreenState extends State<SplashScreen> {
     }
   }
 
+  Future<void> _showTestnetErrorDialog() async {
+    await showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => AlertDialog(
+        title: const Row(
+          children: [
+            Icon(Icons.warning, color: Colors.orange),
+            SizedBox(width: 8),
+            Text('Testnet Unavailable'),
+          ],
+        ),
+        content: const SingleChildScrollView(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                'No testnet nodes are currently online.',
+                style: TextStyle(fontWeight: FontWeight.bold),
+              ),
+              SizedBox(height: 16),
+              Text('To run your own testnet node:'),
+              SizedBox(height: 8),
+              Text('1. Read the documentation:\n   docs/VALIDATOR_GUIDE.md'),
+              SizedBox(height: 8),
+              Text('2. Configure testnet host in:\n   flutter_wallet/assets/network_config.json'),
+              SizedBox(height: 8),
+              Text('3. Or switch to Mainnet to use the live network.'),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () {
+              Navigator.of(context).pop();
+              setState(() {
+                _selectedNetwork = NetworkEnvironment.mainnet;
+                _showNetworkChoice = true;
+              });
+            },
+            child: const Text('Switch to Mainnet'),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.of(context).pop();
+              setState(() => _showNetworkChoice = true);
+            },
+            child: const Text('Retry'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _showErrorDialog(String title, String message) async {
+    await showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(title),
+        content: Text(message),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('OK'),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       body: Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(
-              Icons.account_balance_wallet,
-              size: 80,
-              color: Theme.of(context).colorScheme.primary,
-            ),
-            const SizedBox(height: 24),
-            const Text(
-              'LOS WALLET',
-              style: TextStyle(
-                fontSize: 32,
-                fontWeight: FontWeight.bold,
-                letterSpacing: 2,
-              ),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'Unauthority Blockchain',
-              style: TextStyle(
-                fontSize: 16,
-                color: Colors.grey[400],
-              ),
-            ),
-            const SizedBox(height: 48),
-            const CircularProgressIndicator(),
-          ],
+        child: _showNetworkChoice
+            ? _buildNetworkChoice()
+            : _buildLoadingScreen(),
+      ),
+    );
+  }
+
+  Widget _buildLoadingScreen() {
+    return Column(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        Icon(
+          Icons.account_balance_wallet,
+          size: 80,
+          color: Theme.of(context).colorScheme.primary,
         ),
+        const SizedBox(height: 24),
+        const Text(
+          'LOS WALLET',
+          style: TextStyle(
+            fontSize: 32,
+            fontWeight: FontWeight.bold,
+            letterSpacing: 2,
+          ),
+        ),
+        const SizedBox(height: 8),
+        Text(
+          'Unauthority Blockchain',
+          style: TextStyle(
+            fontSize: 16,
+            color: Colors.grey[400],
+          ),
+        ),
+        const SizedBox(height: 48),
+        const CircularProgressIndicator(),
+      ],
+    );
+  }
+
+  Widget _buildNetworkChoice() {
+    return Padding(
+      padding: const EdgeInsets.all(24.0),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(
+            Icons.account_balance_wallet,
+            size: 80,
+            color: Theme.of(context).colorScheme.primary,
+          ),
+          const SizedBox(height: 24),
+          const Text(
+            'LOS WALLET',
+            style: TextStyle(
+              fontSize: 32,
+              fontWeight: FontWeight.bold,
+              letterSpacing: 2,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Unauthority Blockchain',
+            style: TextStyle(
+              fontSize: 16,
+              color: Colors.grey[400],
+            ),
+          ),
+          const SizedBox(height: 48),
+          const Text(
+            'Select Network',
+            style: TextStyle(
+              fontSize: 20,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          const SizedBox(height: 24),
+          SegmentedButton<NetworkEnvironment>(
+            segments: const [
+              ButtonSegment(
+                value: NetworkEnvironment.mainnet,
+                label: Text('MAINNET'),
+                icon: Icon(Icons.lock),
+              ),
+              ButtonSegment(
+                value: NetworkEnvironment.testnet,
+                label: Text('TESTNET'),
+                icon: Icon(Icons.bug_report),
+              ),
+            ],
+            selected: {_selectedNetwork},
+            onSelectionChanged: (Set<NetworkEnvironment> selected) {
+              setState(() => _selectedNetwork = selected.first);
+            },
+            style: ButtonStyle(
+              backgroundColor: WidgetStateProperty.resolveWith((states) {
+                if (states.contains(WidgetState.selected)) {
+                  return _selectedNetwork == NetworkEnvironment.mainnet
+                      ? Colors.green.withValues(alpha: 0.3)
+                      : Colors.orange.withValues(alpha: 0.3);
+                }
+                return null;
+              }),
+            ),
+          ),
+          const SizedBox(height: 16),
+          Text(
+            _selectedNetwork == NetworkEnvironment.mainnet
+                ? 'Connected to live Mainnet (.onion via Tor)'
+                : 'Testnet for development and testing',
+            style: TextStyle(
+              fontSize: 12,
+              color: Colors.grey[400],
+            ),
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 48),
+          ElevatedButton.icon(
+            onPressed: _proceedWithNetwork,
+            icon: const Icon(Icons.arrow_forward),
+            label: const Text('Continue'),
+            style: ElevatedButton.styleFrom(
+              padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 16),
+            ),
+          ),
+        ],
       ),
     );
   }

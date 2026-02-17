@@ -1910,6 +1910,8 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
     let engine_tokens = wasm_engine.clone();
     let list_tokens_route =
         warp::path("tokens")
+            .and(warp::path::end())
+            .and(warp::get())
             .and(with_state(engine_tokens))
             .map(|engine: Arc<WasmEngine>| {
                 let tokens = token_registry::list_usp01_tokens(&engine);
@@ -1986,6 +1988,7 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
     // GET /dex/pools — List all DEX pools across all contracts
     let engine_dex_pools = wasm_engine.clone();
     let dex_list_pools_route = warp::path!("dex" / "pools")
+        .and(warp::get())
         .and(with_state(engine_dex_pools))
         .map(|engine: Arc<WasmEngine>| {
             let pools = dex_registry::list_all_dex_pools(&engine);
@@ -3239,7 +3242,7 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
                     "probation_epochs": los_core::REWARD_PROBATION_EPOCHS,
                     "halving_interval_epochs": los_core::REWARD_HALVING_INTERVAL_EPOCHS,
                     "distribution_model": "sqrt(stake)-weighted proportional",
-                    "genesis_excluded": !los_core::is_testnet_build(),
+                    "genesis_excluded": false,
                 }
             }))
         },
@@ -3399,7 +3402,7 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
                 }
             }
 
-            // 8. Register in RewardPool (non-genesis)
+            // 8. Register in RewardPool (non-genesis = registered via API)
             {
                 let mut rp_guard = safe_lock(&rp);
                 rp_guard.register_validator(&address, false, balance);
@@ -5188,7 +5191,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // VALIDATOR REWARD POOL — Initialize and register known validators
     // ══════════════════════════════════════════════════════════════════════
     // Uses genesis_timestamp from validated GenesisConfig (mainnet) or system time (testnet).
-    // Bootstrap validators are registered as is_genesis=true (excluded from rewards).
+    // Bootstrap validators are registered as is_genesis=true (eligible for rewards).
     // Pool is initialized from VALIDATOR_REWARD_POOL_CIL constant.
     let genesis_ts: u64 = if los_core::is_mainnet_build() {
         // Use timestamp stored during genesis validation above (no redundant file I/O)
@@ -5209,7 +5212,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut reward_pool_state = ValidatorRewardPool::new(genesis_ts);
 
     // Register all bootstrap validators as genesis
-    // (excluded from rewards on mainnet, included on testnet)
+    // (eligible for rewards — same rules as any validator)
     for addr in &bootstrap_validators {
         let stake = ledger_state
             .accounts
@@ -5675,10 +5678,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 Ok(hs) => {
                     // Set env var so TorConfig::from_env() picks it up in LosNode::start()
                     std::env::set_var("LOS_ONION_ADDRESS", &hs.onion_address);
-                    println!(
-                        "🧅 Auto-generated Tor hidden service: {}",
-                        hs.onion_address
-                    );
+                    println!("🧅 Auto-generated Tor hidden service: {}", hs.onion_address);
 
                     // Register in validator_endpoints for peer discovery
                     if let Ok(mut endpoints) = validator_endpoints.lock() {
@@ -5698,9 +5698,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 "🧅 Tor control port not available at {} — skipping auto-generation",
                 tor_config.control_addr
             );
-            println!(
-                "   To enable: configure Tor with ControlPort 9051 + CookieAuthentication 1"
-            );
+            println!("   To enable: configure Tor with ControlPort 9051 + CookieAuthentication 1");
         }
     } else {
         println!(

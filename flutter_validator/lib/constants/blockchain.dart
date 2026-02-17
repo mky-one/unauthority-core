@@ -23,14 +23,6 @@ class BlockchainConstants {
   /// LOS address prefix
   static const String addressPrefix = 'LOS';
 
-  /// Convert CIL (smallest unit) to LOS (display unit).
-  /// DEPRECATED: Use cilToLosString() or formatCilAsLos() instead.
-  /// Kept only for backward compatibility — never use for financial logic.
-  @Deprecated('Use cilToLosString() or formatCilAsLos() for f64-free display')
-  static double cilToLos(int cilAmount) {
-    return cilAmount / cilPerLos.toDouble();
-  }
-
   /// Convert CIL to LOS as an exact string using integer-only math.
   /// No floating-point precision loss — safe for all display contexts.
   /// Examples:

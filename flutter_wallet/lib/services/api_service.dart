@@ -12,6 +12,7 @@ import 'tor_service.dart';
 import 'network_config.dart';
 import 'peer_discovery_service.dart';
 import 'wallet_service.dart';
+import '../config/testnet_config.dart';
 
 enum NetworkEnvironment { testnet, mainnet }
 
@@ -67,12 +68,11 @@ class ApiService {
   /// Tor-specific probe timeout (Tor circuits need more time)
   static const Duration _torProbeTimeout = Duration(seconds: 30);
 
-  /// Max latency (ms) before current host is considered "slow" and triggers re-probe.
-  /// If a health check takes longer than this, the host is degraded.
-  static const int _slowThresholdMs = 15000;
-
   /// Max retry attempts across bootstrap nodes before giving up
   static const int _maxRetries = 4;
+
+  /// Max saved peers to prepend to bootstrap URLs (avoid 200+ dead .onion bloat)
+  static const int _maxSavedPeers = 10;
 
   /// Interval between periodic peer re-discovery runs
   static const Duration _rediscoveryInterval = Duration(minutes: 5);
@@ -183,11 +183,13 @@ class ApiService {
 
   /// Async initialization: load saved peers, prepend to bootstrap list,
   /// then run initial latency probes to select the best node.
+  /// Caps saved peers to _maxSavedPeers to avoid 200+ dead .onion bloat.
   Future<void> _loadSavedPeers() async {
     final savedPeers = await PeerDiscoveryService.loadSavedPeers();
     if (savedPeers.isNotEmpty) {
       final newPeers = savedPeers
           .where((p) => !_bootstrapUrls.contains(p) && p != _excludedOnionUrl)
+          .take(_maxSavedPeers)
           .toList();
       if (newPeers.isNotEmpty) {
         _bootstrapUrls = [...newPeers, ..._bootstrapUrls];
@@ -198,11 +200,16 @@ class ApiService {
   }
 
   String _getBaseUrl(NetworkEnvironment env) {
+    // Return first bootstrap URL if available, empty string if config not loaded yet.
+    // Avoids throwing StateError during lazy initialization in widget tests
+    // or when NetworkConfig.load() hasn't completed.
     switch (env) {
       case NetworkEnvironment.testnet:
-        return NetworkConfig.testnetUrl;
+        final nodes = NetworkConfig.testnetNodes;
+        return nodes.isNotEmpty ? nodes.first.restUrl : '';
       case NetworkEnvironment.mainnet:
-        return NetworkConfig.mainnetUrl;
+        final nodes = NetworkConfig.mainnetNodes;
+        return nodes.isNotEmpty ? nodes.first.restUrl : '';
     }
   }
 
@@ -213,11 +220,11 @@ class ApiService {
   /// Check ONLY the current host's health. Called periodically.
   ///
   /// Strategy: "Stick with what works."
-  /// - If current host responds OK and fast enough → do nothing.
-  /// - If current host is down/error/slow → trigger full probe to find replacement.
+  /// - If current host responds OK → do nothing (even if slow — Tor is slow).
+  /// - If current host fails 3+ times consecutively → switch to next node.
   ///
-  /// This avoids probing ALL nodes every few minutes (which wastes 30s+ per
-  /// dead Tor node and causes unnecessary host switching).
+  /// NEVER triggers full probe (probes ALL nodes, each 30s+ on Tor).
+  /// That was causing the non-stop "finding host" bug.
   Future<void> _checkCurrentHostHealth() async {
     if (_disposed || baseUrl.isEmpty) return;
 
@@ -232,38 +239,33 @@ class ApiService {
 
       if (response.statusCode >= 200 && response.statusCode < 300) {
         _getHealth(baseUrl).recordSuccess(rtt);
-
-        // Check if host is too slow (degraded)
-        if (rtt > _slowThresholdMs) {
-          losLog(
-              '🔌 [HealthCheck] Current host $baseUrl is SLOW (${rtt}ms > ${_slowThresholdMs}ms) '
-              '— searching for faster host...');
-          _triggerFullProbe();
-        } else {
-          losLog('🔌 [HealthCheck] Current host $baseUrl OK (${rtt}ms) ✓');
-        }
+        // Host responded OK — stay on it regardless of latency.
+        // Slow is fine over Tor, dead is not.
+        losLog('🔌 [HealthCheck] OK (${rtt}ms) ✓');
       } else {
-        // HTTP error (4xx/5xx) → host unhealthy
+        // HTTP error (4xx/5xx) → host unhealthy but don't switch yet
         _getHealth(baseUrl).recordFailure();
-        losLog(
-            '🔌 [HealthCheck] Current host $baseUrl returned HTTP ${response.statusCode} '
-            '— searching for new host...');
-        _triggerFullProbe();
+        final failures = _getHealth(baseUrl).consecutiveFailures;
+        losLog('🔌 [HealthCheck] HTTP ${response.statusCode} '
+            '(failure $failures/3)');
+        // Only switch after 3+ consecutive failures (Tor can be unreliable)
+        if (failures >= 3) {
+          losLog('🔌 [HealthCheck] 3 consecutive failures — switching node');
+          _switchToNextNode();
+        }
       }
     } catch (e) {
-      // Timeout or connection error → host is DOWN
+      // Timeout or connection error → host may be DOWN
       _getHealth(baseUrl).recordFailure();
-      losLog('🔌 [HealthCheck] Current host $baseUrl UNREACHABLE ($e) '
-          '— searching for new host...');
-      _triggerFullProbe();
+      final failures = _getHealth(baseUrl).consecutiveFailures;
+      losLog('🔌 [HealthCheck] UNREACHABLE '
+          '(failure $failures/3)');
+      // Only switch after 3+ consecutive failures
+      if (failures >= 3) {
+        losLog('🔌 [HealthCheck] 3 consecutive failures — switching node');
+        _switchToNextNode();
+      }
     }
-  }
-
-  /// Trigger a full probe of all nodes to find a replacement host.
-  /// Called only when current host is down/error/slow.
-  void _triggerFullProbe() {
-    if (_disposed) return;
-    Future.microtask(() => probeAndSelectBestNode());
   }
 
   /// Probe all known peers for latency, then select the fastest responsive one.
@@ -333,12 +335,10 @@ class ApiService {
       baseUrl = bestUrl;
       _currentNodeIndex =
           _bootstrapUrls.indexOf(bestUrl).clamp(0, _bootstrapUrls.length - 1);
-      losLog(
-          '🏆 [Probe] Switched to $bestUrl (${bestLatency}ms) from $oldUrl');
+      losLog('🏆 [Probe] Switched to $bestUrl (${bestLatency}ms) from $oldUrl');
       onNodeSwitched?.call(baseUrl);
     } else {
-      losLog(
-          '🏆 [Probe] Best node unchanged: $baseUrl (${bestLatency}ms) — '
+      losLog('🏆 [Probe] Best node unchanged: $baseUrl (${bestLatency}ms) — '
           '${sorted.length}/${_bootstrapUrls.length} responsive');
     }
   }
@@ -374,8 +374,7 @@ class ApiService {
     } while (_currentNodeIndex != startIndex);
     // All nodes in cooldown — reset cooldowns and try round-robin
     if (_allNodesInCooldown()) {
-      losLog(
-          '⚠️ All nodes in cooldown — resetting cooldowns for fresh retry');
+      losLog('⚠️ All nodes in cooldown — resetting cooldowns for fresh retry');
       for (final h in _nodeHealthMap.values) {
         h.consecutiveFailures = 0;
       }
@@ -452,8 +451,7 @@ class ApiService {
         final isLastAttempt = attempts >= maxAttempts - 1;
         losLog('⚠️ Node ${_currentNodeIndex + 1} failed for $endpoint: $e');
         if (isLastAttempt) {
-          losLog(
-              '❌ All ${attempts + 1} bootstrap nodes failed for $endpoint');
+          losLog('❌ All ${attempts + 1} bootstrap nodes failed for $endpoint');
           rethrow;
         }
         _switchToNextNode();
@@ -502,12 +500,18 @@ class ApiService {
   }
 
   /// Called by NetworkStatusService when health check detects degradation.
-  /// Triggers a full probe to find a better node.
+  /// Instead of probing all nodes, just try the NEXT one after 3+ failures.
+  /// Rule: don't waste time probing — just rotate once.
   void onHealthDegraded() {
     if (_disposed) return;
-    losLog('🔌 Health degraded — searching for new host...');
     _getHealth(baseUrl).recordFailure();
-    _triggerFullProbe();
+    if (_getHealth(baseUrl).consecutiveFailures >= 3) {
+      losLog('🔌 Health degraded (3+ failures) — switching to next node');
+      _switchToNextNode();
+    } else {
+      losLog(
+          '🔌 Health degraded (${_getHealth(baseUrl).consecutiveFailures}/3) — staying on current node');
+    }
   }
 
   /// Get appropriate timeout based on whether using Tor
@@ -585,6 +589,12 @@ class ApiService {
     }
 
     environment = newEnv;
+    // Sync badge/UI config so NetworkBadge reflects the runtime choice
+    if (newEnv == NetworkEnvironment.mainnet) {
+      WalletConfig.useMainnet();
+    } else {
+      WalletConfig.useFunctionalTestnet();
+    }
     // SECURITY FIX M-06: Sync mainnet mode to WalletService so Ed25519
     // fallback crypto is refused on mainnet.
     WalletService.mainnetMode = (newEnv == NetworkEnvironment.mainnet);
@@ -840,8 +850,7 @@ class ApiService {
     String? signature,
     String? publicKey,
   }) async {
-    losLog(
-        '🔥 [API] submitBurn -> $baseUrl/burn  coin=$coinType txid=$txid');
+    losLog('🔥 [API] submitBurn -> $baseUrl/burn  coin=$coinType txid=$txid');
     try {
       final body = <String, dynamic>{
         'coin_type': coinType,
@@ -1107,8 +1116,7 @@ class ApiService {
       );
       if (response.statusCode >= 200 && response.statusCode < 300) {
         final data = json.decode(response.body);
-        losLog(
-            '🌐 [ApiService.search] SUCCESS count=${data['count'] ?? 0}');
+        losLog('🌐 [ApiService.search] SUCCESS count=${data['count'] ?? 0}');
         return data;
       }
       throw Exception('Failed to search: ${response.statusCode}');
@@ -1232,8 +1240,8 @@ class ApiService {
     losLog('🪙 [API] getTokenAllowance: $contractAddress / $owner → $spender');
     try {
       final response = await _requestWithFailover(
-        (url) => _client.get(Uri.parse(
-            '$url/token/$contractAddress/allowance/$owner/$spender')),
+        (url) => _client.get(
+            Uri.parse('$url/token/$contractAddress/allowance/$owner/$spender')),
         '/token/$contractAddress/allowance/$owner/$spender',
       );
       if (response.statusCode >= 200 && response.statusCode < 300) {
@@ -1263,7 +1271,8 @@ class ApiService {
     int? timestamp,
     int? fee,
   }) async {
-    losLog('📝 [API] callContract: $contractAddress.$function(${args.join(", ")})');
+    losLog(
+        '📝 [API] callContract: $contractAddress.$function(${args.join(", ")})');
     try {
       final body = <String, dynamic>{
         'contract_address': contractAddress,
@@ -1290,8 +1299,7 @@ class ApiService {
       );
       final data = json.decode(response.body) as Map<String, dynamic>;
       if (response.statusCode >= 400 || data['status'] == 'error') {
-        throw Exception(
-            data['msg'] ?? data['error'] ?? 'Contract call failed');
+        throw Exception(data['msg'] ?? data['error'] ?? 'Contract call failed');
       }
       losLog('📝 [API] callContract SUCCESS');
       return data;
@@ -1339,8 +1347,7 @@ class ApiService {
       );
       final data = json.decode(response.body) as Map<String, dynamic>;
       if (response.statusCode >= 400 || data['status'] == 'error') {
-        throw Exception(
-            data['msg'] ?? data['error'] ?? 'Deploy failed');
+        throw Exception(data['msg'] ?? data['error'] ?? 'Deploy failed');
       }
       losLog('🚀 [API] deployContract SUCCESS: ${data['contract_address']}');
       return data;
@@ -1404,8 +1411,7 @@ class ApiService {
   /// Get swap quote (estimated output, no execution)
   Future<DexQuote> getDexQuote(String contractAddress, String poolId,
       String tokenIn, String amountIn) async {
-    losLog(
-        '📊 [API] getDexQuote: $contractAddress/$poolId/$tokenIn/$amountIn');
+    losLog('📊 [API] getDexQuote: $contractAddress/$poolId/$tokenIn/$amountIn');
     try {
       final response = await _requestWithFailover(
         (url) => _client.get(Uri.parse(
@@ -1429,8 +1435,8 @@ class ApiService {
     losLog('📊 [API] getDexPosition: $contractAddress/$poolId/$user');
     try {
       final response = await _requestWithFailover(
-        (url) => _client.get(Uri.parse(
-            '$url/dex/position/$contractAddress/$poolId/$user')),
+        (url) => _client
+            .get(Uri.parse('$url/dex/position/$contractAddress/$poolId/$user')),
         '/dex/position/$contractAddress/$poolId/$user',
       );
       if (response.statusCode >= 200 && response.statusCode < 300) {

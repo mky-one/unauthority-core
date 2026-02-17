@@ -30,14 +30,6 @@ class BlockchainConstants {
   /// Used in address derivation: BLAKE2b → version+hash → checksum → Base58
   static const int addressVersionByte = 0x4A;
 
-  /// Convert CIL (smallest unit) to LOS (display unit).
-  /// DEPRECATED: Use cilToLosString() or formatCilAsLos() instead.
-  /// Kept only for backward compatibility — never use for financial logic.
-  @Deprecated('Use cilToLosString() or formatCilAsLos() for f64-free display')
-  static double cilToLos(int cilAmount) {
-    return cilAmount / cilPerLos.toDouble();
-  }
-
   /// Convert CIL to LOS as an exact string using integer-only math.
   /// No floating-point precision loss — safe for all display contexts.
   /// Examples:

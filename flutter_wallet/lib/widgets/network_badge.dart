@@ -107,7 +107,8 @@ class NetworkWarningBanner extends StatelessWidget {
 }
 
 /// Network Settings Screen
-/// Allows switching between testnet levels (development only)
+/// Advanced network settings — testnet level switching.
+/// Mainnet/Testnet toggle is in the main Settings screen (SegmentedButton).
 class NetworkSettingsScreen extends StatelessWidget {
   const NetworkSettingsScreen({super.key});
 
@@ -115,7 +116,7 @@ class NetworkSettingsScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Network Settings'),
+        title: const Text('Advanced Network Settings'),
         backgroundColor: const Color.fromARGB(255, 0, 123, 254),
         foregroundColor: Colors.white,
       ),
@@ -132,6 +133,15 @@ class NetworkSettingsScreen extends StatelessWidget {
               ),
             ),
           ),
+          const Padding(
+            padding: EdgeInsets.symmetric(horizontal: 16.0),
+            child: Text(
+              'These settings only affect Testnet mode.\n'
+              'Switch between Testnet/Mainnet in the main Settings screen.',
+              style: TextStyle(fontSize: 12, color: Colors.grey),
+            ),
+          ),
+          const SizedBox(height: 8),
           ListTile(
             leading: const Icon(Icons.science, color: Colors.blue),
             title: const Text('Level 1: Functional Testing'),
@@ -140,7 +150,9 @@ class NetworkSettingsScreen extends StatelessWidget {
                 WalletConfig.current.testnetLevel == TestnetLevel.functional
                     ? const Icon(Icons.check_circle, color: Colors.green)
                     : null,
+            enabled: WalletConfig.current.network == NetworkType.testnet,
             onTap: () {
+              if (WalletConfig.current.network != NetworkType.testnet) return;
               WalletConfig.useFunctionalTestnet();
               ScaffoldMessenger.of(context).showSnackBar(
                 const SnackBar(content: Text('Switched to Functional Testnet')),
@@ -156,36 +168,13 @@ class NetworkSettingsScreen extends StatelessWidget {
                 WalletConfig.current.testnetLevel == TestnetLevel.consensus
                     ? const Icon(Icons.check_circle, color: Colors.green)
                     : null,
+            enabled: WalletConfig.current.network == NetworkType.testnet,
             onTap: () {
+              if (WalletConfig.current.network != NetworkType.testnet) return;
               WalletConfig.useConsensusTestnet();
               ScaffoldMessenger.of(context).showSnackBar(
                 const SnackBar(content: Text('Switched to Consensus Testnet')),
               );
-              Navigator.pop(context);
-            },
-          ),
-          const Divider(),
-          const Padding(
-            padding: EdgeInsets.all(16.0),
-            child: Text(
-              'PRODUCTION',
-              style: TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.bold,
-                color: Colors.grey,
-              ),
-            ),
-          ),
-          ListTile(
-            leading: const Icon(Icons.rocket_launch, color: Colors.green),
-            title: const Text('Mainnet'),
-            subtitle: const Text('Production network (Coming soon)'),
-            trailing: WalletConfig.current.network == NetworkType.mainnet
-                ? const Icon(Icons.check_circle, color: Colors.green)
-                : null,
-            enabled: true,
-            onTap: () {
-              WalletConfig.useMainnet();
               Navigator.pop(context);
             },
           ),
@@ -198,7 +187,7 @@ class NetworkSettingsScreen extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'ℹ️ About Testnet Levels',
+                      'About Testnet Levels',
                       style: TextStyle(fontWeight: FontWeight.bold),
                     ),
                     SizedBox(height: 8),

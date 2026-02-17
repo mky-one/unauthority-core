@@ -5,7 +5,6 @@
 // Rate:        5,000 LOS/epoch (30 days), halving every 48 epochs (4 yrs)
 // Weight:      √stake — consistent with anti-whale system
 // Eligibility: 1000 LOS min stake, 95% uptime, 30-day probation passed
-// Exclusion:   Genesis bootstrap validators do NOT earn rewards
 // Lifespan:    Pool lasts ~16-20 years (asymptotic halving)
 // ─────────────────────────────────────────────────────────────────
 
@@ -29,9 +28,9 @@ pub struct ValidatorRewardState {
     pub expected_heartbeats: u64,
     /// Cumulative rewards received (CIL units)
     pub cumulative_rewards_cil: u128,
-    /// Whether this is a genesis bootstrap validator
-    /// On mainnet: genesis validators are EXCLUDED from rewards (they are infrastructure).
-    /// On testnet: genesis validators participate normally (same rules as any validator).
+    /// Whether this is a genesis bootstrap validator.
+    /// Genesis validators are eligible for rewards like all other validators —
+    /// they secure the network from day one.
     pub is_genesis: bool,
     /// Current stake snapshot (CIL) — updated each epoch from ledger
     pub stake_cil: u128,
@@ -74,18 +73,14 @@ impl ValidatorRewardState {
     }
 
     /// Returns true if this validator is eligible for rewards this epoch.
-    /// Requirements (identical on testnet AND mainnet — no shortcuts):
-    /// 1. NOT a genesis bootstrap validator on mainnet (they are infrastructure, not profit)
-    ///    On testnet: genesis validators ARE eligible (same rules as everyone)
-    /// 2. Past probation period: must have completed at least 1 full epoch
-    /// 3. Meets minimum uptime (95%)
-    /// 4. Meets minimum stake (1000 LOS)
+    /// Requirements (identical for ALL validators — genesis and non-genesis):
+    /// 1. Past probation period: must have completed at least 1 full epoch
+    /// 2. Meets minimum uptime (95%)
+    /// 3. Meets minimum stake (1000 LOS)
+    ///
+    /// Genesis bootstrap validators ARE eligible for rewards — they secure
+    /// the network from day one and deserve the same compensation as any validator.
     pub fn is_eligible(&self, current_epoch: u64) -> bool {
-        // Genesis bootstrap validators never earn rewards on mainnet.
-        // On testnet they participate like any other validator.
-        if self.is_genesis && !crate::is_testnet_build() {
-            return false;
-        }
         // Probation: must complete at least 1 full epoch before earning rewards.
         // A validator joining at epoch N is eligible starting at epoch N + PROBATION_EPOCHS.
         // This applies to ALL validators equally — genesis and non-genesis.
@@ -521,9 +516,8 @@ mod tests {
 
     #[test]
     fn test_genesis_validators_excluded_mainnet() {
-        // This test validates the genesis exclusion rule.
-        // On testnet: genesis validators are eligible (same rules as any validator).
-        // On mainnet: genesis validators are excluded from rewards.
+        // Genesis validators are now eligible for rewards on BOTH testnet and mainnet.
+        // They secure the network from genesis and deserve the same compensation.
         let mut pool = ValidatorRewardPool::new(GENESIS_TS);
         let genesis_addr = "LOSgenesis1";
         let normal_addr = "LOSnormal1";
@@ -541,13 +535,8 @@ mod tests {
         }
 
         let genesis_state = pool.validators.get(genesis_addr).unwrap();
-        if crate::is_testnet_build() {
-            // Testnet: genesis validators participate like everyone else
-            assert!(genesis_state.is_eligible(pool.current_epoch));
-        } else {
-            // Mainnet: genesis validators are infrastructure, excluded
-            assert!(!genesis_state.is_eligible(pool.current_epoch));
-        }
+        // Genesis validators are eligible (both testnet and mainnet)
+        assert!(genesis_state.is_eligible(pool.current_epoch));
 
         let normal_state = pool.validators.get(normal_addr).unwrap();
         assert!(normal_state.is_eligible(pool.current_epoch));
@@ -565,14 +554,12 @@ mod tests {
             v.heartbeats_current_epoch = v.expected_heartbeats;
         }
 
-        // Epoch 0: in probation, NOT eligible (even on testnet)
+        // Epoch 0: in probation, NOT eligible
         assert!(!pool.validators.get(genesis_addr).unwrap().is_eligible(0));
 
-        // Epoch 1: past probation, eligible (on testnet)
+        // Epoch 1: past probation, eligible
         pool.current_epoch = 1;
-        if crate::is_testnet_build() {
-            assert!(pool.validators.get(genesis_addr).unwrap().is_eligible(1));
-        }
+        assert!(pool.validators.get(genesis_addr).unwrap().is_eligible(1));
     }
 
     #[test]
@@ -717,7 +704,7 @@ mod tests {
     fn test_no_eligible_validators_preserves_pool() {
         let mut pool = ValidatorRewardPool::new(GENESIS_TS);
 
-        // Only genesis validators
+        // Only genesis validators — now eligible like everyone else
         pool.register_validator("LOSgenesis_v1", true, 1000 * CIL_PER_LOS);
         pool.current_epoch = 5;
         pool.set_expected_heartbeats(60);
@@ -725,17 +712,10 @@ mod tests {
             v.heartbeats_current_epoch = v.expected_heartbeats;
         }
 
-        let initial_remaining = pool.remaining_cil;
         let rewards = pool.distribute_epoch_rewards();
 
-        if crate::is_testnet_build() {
-            // Testnet: genesis validators participate normally
-            assert_eq!(rewards.len(), 1);
-        } else {
-            // Mainnet: genesis excluded → no eligible → no rewards
-            assert!(rewards.is_empty());
-            assert_eq!(pool.remaining_cil, initial_remaining);
-        }
+        // Genesis validators now earn rewards (eligible after probation with sufficient uptime)
+        assert_eq!(rewards.len(), 1);
         assert_eq!(pool.current_epoch, 6); // Epoch still advances
     }
 

@@ -366,7 +366,7 @@ class _SetupWizardScreenState extends State<SetupWizardScreen> {
       // No localhost/127.0.0.1 — Tor onion routing is mandatory.
       await NetworkConfig.load();
       const networkMode =
-          String.fromEnvironment('NETWORK', defaultValue: 'testnet');
+          String.fromEnvironment('NETWORK', defaultValue: 'mainnet');
       final nodes = networkMode == 'mainnet'
           ? NetworkConfig.mainnetNodes
           : NetworkConfig.testnetNodes;

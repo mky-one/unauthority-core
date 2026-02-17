@@ -31,7 +31,7 @@ class BlockConstructionService {
   static const int chainIdMainnet = 1;
 
   /// Current chain ID — configurable at runtime.
-  /// Defaults to testnet (2). Set to 1 for mainnet via constructor or setter.
+  /// Defaults to mainnet (1). Override with setChainId() for testnet.
   int chainId;
 
   /// PoW difficulty: fetched from /node-info (fallback 16 if cached)
@@ -63,7 +63,7 @@ class BlockConstructionService {
   BlockConstructionService({
     required ApiService api,
     required WalletService wallet,
-    this.chainId = chainIdTestnet,
+    this.chainId = chainIdMainnet,
   })  : _api = api,
         _wallet = wallet;
 

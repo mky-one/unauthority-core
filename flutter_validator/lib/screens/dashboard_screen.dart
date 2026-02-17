@@ -768,9 +768,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
       final details = _rewardInfo!['validators']['details'] as List<dynamic>;
       for (final v in details) {
         if (v['address'] == _myAddress) {
-          if (v['is_genesis'] == true) {
-            myRewardStatus = 'Genesis (excluded)';
-          } else if (v['eligible'] == true) {
+          if (v['eligible'] == true) {
             myRewardStatus = 'Eligible ✓';
           } else {
             final uptime = (v['uptime_pct'] as num?)?.toInt() ?? 0;

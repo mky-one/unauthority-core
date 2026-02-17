@@ -57,7 +57,7 @@ pub const fn is_mainnet_build() -> bool {
 // Pool: 500,000 LOS from public allocation.
 // Rate: 5,000 LOS/epoch (30 days), halving every 4 years (48 epochs).
 // Distribution: √stake-weighted proportional among eligible validators.
-// Genesis bootstrap validators are EXCLUDED from rewards.
+// ALL validators (including genesis bootstrap) are eligible for rewards.
 // Pool asymptotically approaches ~480,000 LOS total distributed.
 // ─────────────────────────────────────────────────────────────────
 

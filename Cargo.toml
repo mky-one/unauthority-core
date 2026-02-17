@@ -35,6 +35,11 @@ name = "e2e_los_mainnet"
 path = "tests/e2e_los_mainnet.rs"
 harness = true
 
+[[test]]
+name = "e2e_usp01_dex"
+path = "tests/e2e_usp01_dex.rs"
+harness = true
+
 [[bin]]
 name = "test-register-validator"
 path = "tests/test_register_validator.rs"
@@ -44,9 +49,11 @@ los-core = { path = "crates/los-core" }
 los-crypto = { path = "crates/los-crypto" }
 los-consensus = { path = "crates/los-consensus" }
 los-network = { path = "crates/los-network" }
+los-vm = { path = "crates/los-vm" }
 tokio = { version = "1", features = ["full"] }
 serde_json = "1.0"
 hex = "0.4"
+blake3 = "1"
 
 [patch.crates-io]
 pqcrypto-internals = { path = "pqcrypto-internals-seeded" }

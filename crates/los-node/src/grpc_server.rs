@@ -241,7 +241,7 @@ impl LosNode for LosGrpcService {
             amount: block.amount.min(u64::MAX as u128) as u64,
             balance: account_balance, // Account balance, not block balance
             signature: block.signature.clone(),
-            timestamp: block.timestamp,     // Use actual block timestamp
+            timestamp: block.timestamp, // Use actual block timestamp
             representative: if matches!(block.block_type, los_core::BlockType::Change) {
                 block.link.clone() // Change blocks store representative in link
             } else {

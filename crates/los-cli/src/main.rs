@@ -644,13 +644,17 @@ mod tests {
     #[test]
     fn test_cli_wallet_export() {
         let cli = Cli::try_parse_from([
-            "los-cli", "wallet", "export", "mywallet", "--output", "/tmp/w.json",
+            "los-cli",
+            "wallet",
+            "export",
+            "mywallet",
+            "--output",
+            "/tmp/w.json",
         ]);
         assert!(cli.is_ok());
         match cli.unwrap().command {
             Commands::Wallet {
-                action:
-                    WalletCommands::Export { name, output },
+                action: WalletCommands::Export { name, output },
             } => {
                 assert_eq!(name, "mywallet");
                 assert_eq!(output, PathBuf::from("/tmp/w.json"));
@@ -662,7 +666,12 @@ mod tests {
     #[test]
     fn test_cli_wallet_import() {
         let cli = Cli::try_parse_from([
-            "los-cli", "wallet", "import", "/tmp/w.json", "--name", "imported",
+            "los-cli",
+            "wallet",
+            "import",
+            "/tmp/w.json",
+            "--name",
+            "imported",
         ]);
         assert!(cli.is_ok());
         match cli.unwrap().command {
@@ -862,7 +871,8 @@ mod tests {
     #[test]
     fn test_cli_missing_required_args() {
         // tx send without --to should fail
-        let result = Cli::try_parse_from(["los-cli", "tx", "send", "--amount", "50", "--from", "w"]);
+        let result =
+            Cli::try_parse_from(["los-cli", "tx", "send", "--amount", "50", "--from", "w"]);
         assert!(result.is_err());
     }
 
@@ -915,7 +925,10 @@ mod tests {
 
         // With a random nonce of 0, this is likely invalid (but not guaranteed)
         // The important test is that verify_pow uses MIN_POW_DIFFICULTY_BITS
-        assert_eq!(MIN_POW_DIFFICULTY_BITS, 16, "PoW difficulty should be 16 bits");
+        assert_eq!(
+            MIN_POW_DIFFICULTY_BITS, 16,
+            "PoW difficulty should be 16 bits"
+        );
     }
 
     // ── Address Validation ──────────────────────────────────────
@@ -986,7 +999,10 @@ mod tests {
     fn test_los_to_cil_conversion_no_overflow() {
         let amount_los: u128 = 21_936_236; // Total supply
         let amount_cil = amount_los.checked_mul(CIL_PER_LOS);
-        assert!(amount_cil.is_some(), "Total supply in CIL must not overflow u128");
+        assert!(
+            amount_cil.is_some(),
+            "Total supply in CIL must not overflow u128"
+        );
         assert_eq!(amount_cil.unwrap(), 2_193_623_600_000_000_000);
     }
 

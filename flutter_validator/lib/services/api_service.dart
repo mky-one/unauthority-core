@@ -247,11 +247,16 @@ class ApiService {
   }
 
   String _getBaseUrl(NetworkEnvironment env) {
+    // Return first bootstrap URL if available, empty string if config not loaded yet.
+    // Avoids throwing StateError during lazy initialization in widget tests
+    // or when NetworkConfig.load() hasn't completed.
     switch (env) {
       case NetworkEnvironment.testnet:
-        return NetworkConfig.testnetUrl;
+        final nodes = NetworkConfig.testnetNodes;
+        return nodes.isNotEmpty ? nodes.first.restUrl : '';
       case NetworkEnvironment.mainnet:
-        return NetworkConfig.mainnetUrl;
+        final nodes = NetworkConfig.mainnetNodes;
+        return nodes.isNotEmpty ? nodes.first.restUrl : '';
     }
   }
 
@@ -732,6 +737,17 @@ class ApiService {
 
   // Switch network environment
   void switchEnvironment(NetworkEnvironment newEnv) {
+    _loadBootstrapUrls(newEnv);
+
+    // Mainnet guard: refuse switch if no mainnet nodes are configured
+    if (newEnv == NetworkEnvironment.mainnet && _bootstrapUrls.isEmpty) {
+      losLog('🚫 Cannot switch to mainnet: no bootstrap nodes configured');
+      _loadBootstrapUrls(NetworkEnvironment.testnet);
+      throw StateError(
+        'Mainnet has not launched yet. No bootstrap nodes available.',
+      );
+    }
+
     environment = newEnv;
     // SECURITY FIX F2: Sync mainnet mode to WalletService so Ed25519
     // fallback crypto is refused on mainnet.
@@ -740,7 +756,6 @@ class ApiService {
     _initialDiscoveryDone = false;
     _rediscoveryTimer?.cancel();
     _healthCheckTimer?.cancel();
-    _loadBootstrapUrls(newEnv);
     baseUrl =
         _bootstrapUrls.isNotEmpty ? _bootstrapUrls.first : _getBaseUrl(newEnv);
     _clientReady = _initializeClient();

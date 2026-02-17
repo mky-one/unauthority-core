@@ -202,7 +202,8 @@ fn isqrt(n: u128) -> u128 {
         return 0;
     }
     let mut x = n;
-    let mut y = (x + 1) / 2;
+    // Use n/2 + 1 instead of (n+1)/2 to avoid overflow when n = u128::MAX
+    let mut y = n / 2 + 1;
     while y < x {
         x = y;
         y = (x + n / x) / 2;

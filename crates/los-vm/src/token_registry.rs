@@ -248,7 +248,7 @@ mod tests {
         assert_eq!(info.name, "Test Token");
         assert_eq!(info.symbol, "TST");
         assert_eq!(info.decimals, 8);
-        assert_eq!(info.total_supply, 1_000_000_00000000);
+        assert_eq!(info.total_supply, 100_000_000_000_000);
         assert!(!info.is_wrapped);
         assert_eq!(info.owner, "LOSWalice000000000000000000000000000000");
     }

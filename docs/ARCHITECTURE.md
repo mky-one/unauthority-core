@@ -31,6 +31,10 @@ Unauthority is a block-lattice (DAG) blockchain where each account maintains its
 │  │ los-core │ │los-consen│ │los-crypto│ │  los-vm    │      │
 │  │          │ │   sus    │ │          │ │            │      │
 │  └──────────┘ └──────────┘ └──────────┘ └────────────┘      │
+│                                          ┌────────────┐      │
+│                                          │los-contracts│     │
+│                                          │(USP-01/DEX)│      │
+│                                          └────────────┘      │
 └──────────────────────────────────────────────────────────────┘
                           │
               ┌───────────▼───────────┐
@@ -53,6 +57,8 @@ los-node (main binary, ~9000 lines)
 ├── los-crypto       (Dilithium5, SHA-3, ~800 lines)
 ├── los-vm           (WASM smart contracts, ~1200 lines)
 │   └── los-core
+├── los-contracts    (USP-01 token, DEX AMM — WASM #![no_std], ~1500 lines)
+│   └── los-sdk
 ├── los-cli          (CLI wallet, ~500 lines)
 │   ├── los-core
 │   └── los-crypto
@@ -152,7 +158,42 @@ WASM Virtual Machine for smart contracts (Unauthority Virtual Machine — UVM).
 | Module | Purpose |
 |---|---|
 | `lib.rs` | WASM runtime, contract deployment, execution, state management |
+| `host.rs` | 16 host functions injected into WASM: state, events, transfers, crypto |
 | `oracle_connector.rs` | Oracle price feed interface for smart contracts |
+
+**Execution pipeline:**
+1. **Hosted WASM** (Cranelift + deterministic gas metering via `wasmer-middlewares`)
+2. Legacy WASM (backward compatibility, no host imports)
+3. Mock dispatch (testnet only, `#[cfg(not(feature = "mainnet"))]`)
+
+**Contract addressing:** Deterministic via `blake3(owner + ":" + nonce + ":" + block_number)` → `LOSCon` + first 32 hex chars.
+
+### los-contracts
+
+Production `#![no_std]` WASM smart contracts using `los-sdk`. Compiled to WebAssembly for deployment on the UVM.
+
+| Module | Purpose |
+|---|---|
+| `usp01_token.rs` | USP-01 Native Fungible Token Standard (ERC-20 equivalent) |
+| `dex_amm.rs` | Constant-product AMM (x·y=k) Decentralized Exchange |
+
+**USP-01 Token Standard:**
+- 11 entry points: `init`, `transfer`, `approve`, `transfer_from`, `burn`, `balance_of`, `allowance_of`, `total_supply`, `token_info`, `wrap_mint`, `wrap_burn`
+- All values stored as decimal strings in contract state (`bal:{addr}`, `allow:{owner}:{spender}`)
+- Supports native tokens AND wrapped assets (wBTC, wETH) via bridge operator model
+- Events: `USP01:Init`, `USP01:Transfer`, `USP01:Approval`, `USP01:Burn`, `USP01:WrapMint`, `USP01:WrapBurn`
+
+**DEX AMM:**
+- 9 entry points: `init`, `create_pool`, `add_liquidity`, `remove_liquidity`, `swap`, `get_pool`, `quote`, `get_position`, `list_pools`
+- Constant-product formula with 0.3% default fee (30 bps, configurable per pool)
+- MEV protection via deadline parameter and slippage checks
+- LP tokens minted proportionally: `isqrt(amount_a × amount_b) - MINIMUM_LIQUIDITY`
+- 100% integer math (`u128`), zero floating-point
+
+**Key design decisions:**
+- Both contracts use `los-sdk` host functions exclusively — no `std` dependency
+- State stored as `BTreeMap<String, String>` in the VM, persisted to sled DB
+- Fully checked arithmetic with descriptive error messages (no panics)
 
 ### los-cli
 

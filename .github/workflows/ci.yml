@@ -53,7 +53,7 @@ jobs:
         run: cargo test --release --workspace --all-features --verbose --exclude los-vm --exclude unauthority-integration-tests
 
       - name: Run E2E tests (serial — Dilithium5 CPU-intensive)
-        run: cargo test --release --all-features --test e2e_los_mainnet --test integration_test -- --test-threads=1
+        run: cargo test --release --all-features --test e2e_los_mainnet --test e2e_usp01_dex --test integration_test -- --test-threads=1
 
       - name: Run doc tests
         run: cargo test --doc --workspace
@@ -181,7 +181,6 @@ jobs:
   vm-test:
     name: VM Tests (WASM)
     runs-on: ubuntu-latest
-    continue-on-error: true
     steps:
       - name: Checkout code
         uses: actions/checkout@v4

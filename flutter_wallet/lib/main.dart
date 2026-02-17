@@ -116,12 +116,10 @@ class _SplashScreenState extends State<SplashScreen> {
     final walletService = context.read<WalletService>();
     final apiService = context.read<ApiService>();
 
-    // Apply selected network
+    // Apply selected network — ALWAYS sync WalletConfig + save preference
     try {
-      if (apiService.environment != _selectedNetwork) {
-        apiService.switchEnvironment(_selectedNetwork);
-        await NetworkPreferenceService.save(_selectedNetwork);
-      }
+      apiService.switchEnvironment(_selectedNetwork);
+      await NetworkPreferenceService.save(_selectedNetwork);
     } catch (e) {
       // Network switch failed (e.g. no mainnet nodes yet)
       if (!mounted) return;

@@ -144,7 +144,7 @@ Output: `abcdef1234567890abcdef1234567890abcdef1234567890abcdefgh.onion`
 ### 4. Start the Validator
 
 ```bash
-uat-node --port 3030 --data-dir /opt/los-nodes/v1 --node-id my-validator
+los-node --port 3030 --data-dir /opt/los-nodes/v1 --node-id my-validator
 ```
 
 The node will auto-detect Tor SOCKS5 at `127.0.0.1:9050` and auto-bootstrap peers from genesis.
@@ -198,10 +198,10 @@ done
 ### Start All Validators
 
 ```bash
-uat-node --port 3030 --data-dir /opt/los-nodes/v1 --node-id validator-1 &
-uat-node --port 3031 --data-dir /opt/los-nodes/v2 --node-id validator-2 &
-uat-node --port 3032 --data-dir /opt/los-nodes/v3 --node-id validator-3 &
-uat-node --port 3033 --data-dir /opt/los-nodes/v4 --node-id validator-4 &
+los-node --port 3030 --data-dir /opt/los-nodes/v1 --node-id validator-1 &
+los-node --port 3031 --data-dir /opt/los-nodes/v2 --node-id validator-2 &
+los-node --port 3032 --data-dir /opt/los-nodes/v3 --node-id validator-3 &
+los-node --port 3033 --data-dir /opt/los-nodes/v4 --node-id validator-4 &
 ```
 
 ### Systemd Services (Recommended)
@@ -254,7 +254,7 @@ curl http://127.0.0.1:3030/status
 
 ## Auto-Bootstrap (v1.0.9+)
 
-As of v1.0.9, `uat-node` automatically bootstraps peer connections:
+As of v1.0.9, `los-node` automatically bootstraps peer connections:
 
 ### How It Works
 
@@ -296,7 +296,7 @@ export LOS_GENESIS_PATH="/path/to/custom/genesis_config.json"
 
 ## Automatic Hidden Service Generation (v1.1.0+)
 
-As of v1.1.0, `uat-node` can **automatically generate** a unique Tor Hidden Service (`.onion` address) on startup — no manual `torrc` editing required.
+As of v1.1.0, `los-node` can **automatically generate** a unique Tor Hidden Service (`.onion` address) on startup — no manual `torrc` editing required.
 
 ### Prerequisites
 
@@ -375,7 +375,7 @@ With Tor Control Port enabled, starting a validator requires no `.onion` configu
 
 ```bash
 # Tor handles everything automatically
-./uat-node --port 3030 --p2p-port 4030 --node-id v1 --data-dir ./data/v1
+./los-node --port 3030 --p2p-port 4030 --node-id v1 --data-dir ./data/v1
 
 # Output:
 # [INFO] Tor Control Port available at 127.0.0.1:9051
@@ -396,7 +396,7 @@ tor --hash-password "my_secure_password"
 
 # Set password for the node
 export LOS_TOR_CONTROL_PWD="my_secure_password"
-./uat-node --port 3030 --p2p-port 4030 --node-id v1
+./los-node --port 3030 --p2p-port 4030 --node-id v1
 ```
 
 ---

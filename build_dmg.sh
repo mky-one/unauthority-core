@@ -10,14 +10,14 @@ build_validator() {
   echo "=== Building Validator DMG ==="
   cd "$ROOT/flutter_validator"
 
-  VERSION="1.0.10-testnet"
+  VERSION="1.0.9"
   APP="build/macos/Build/Products/Release/LOS Validator Node.app"
   FRAMEWORKS="$APP/Contents/Frameworks"
 
   # Ensure native lib + los-node are bundled
   mkdir -p "$FRAMEWORKS"
   cp native/los_crypto_ffi/target/release/liblos_crypto_ffi.dylib "$FRAMEWORKS/"
-  cp "$ROOT/target/release/uat-node" "$APP/Contents/MacOS/los-node"
+  cp "$ROOT/target/release/los-node" "$APP/Contents/MacOS/los-node"
   chmod +x "$APP/Contents/MacOS/los-node"
 
   # Create DMG
@@ -46,7 +46,7 @@ build_wallet() {
   echo "=== Building Wallet DMG ==="
   cd "$ROOT/flutter_wallet"
 
-  VERSION="1.0.8-testnet"
+  VERSION="1.0.9"
   APP="build/macos/Build/Products/Release/LOS Wallet.app"
   FRAMEWORKS="$APP/Contents/Frameworks"
 

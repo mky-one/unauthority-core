@@ -679,14 +679,8 @@ mod tests {
         let initial_remaining = pool.remaining_cil;
         let rewards = pool.distribute_epoch_rewards();
 
-        // On testnet: all 3 eligible (genesis participates normally, past probation)
-        // On mainnet: only 2 non-genesis validators eligible
-        if crate::is_testnet_build() {
-            assert_eq!(rewards.len(), 3);
-        } else {
-            assert_eq!(rewards.len(), 2);
-            assert!(!rewards.iter().any(|(addr, _)| addr == "LOSgenesis_v1"));
-        }
+        // All 3 validators eligible (including genesis, past probation epoch)
+        assert_eq!(rewards.len(), 3);
 
         let total_rewarded: u128 = rewards.iter().map(|(_, r)| r).sum();
         assert!(total_rewarded > 0);
@@ -789,13 +783,8 @@ mod tests {
 
         let summary = pool.pool_summary();
         assert_eq!(summary.total_validators, 2);
-        if crate::is_testnet_build() {
-            // Testnet: both eligible (genesis participates normally, past probation)
-            assert_eq!(summary.eligible_validators, 2);
-        } else {
-            // Mainnet: genesis excluded
-            assert_eq!(summary.eligible_validators, 1);
-        }
+        // Both eligible (including genesis, past probation epoch)
+        assert_eq!(summary.eligible_validators, 2);
         assert_eq!(summary.current_epoch, 2);
         assert_eq!(summary.epoch_reward_rate_cil, 5_000 * CIL_PER_LOS);
     }

@@ -16,11 +16,21 @@ import 'package:shared_preferences/shared_preferences.dart';
 /// This is the LOS equivalent of Bitcoin's "peers.dat" — once you've
 /// connected to the network once, you can find it again without bootstrap.
 class PeerDiscoveryService {
-  static const String _storageKey = 'los_discovered_peers_v1';
+  /// Network-aware storage key prevents testnet peers leaking into mainnet.
+  /// Call [setNetwork] before any load/save to select the correct bucket.
+  static String _network = 'mainnet';
+  static String get _storageKey => 'los_discovered_peers_${_network}_v1';
   static const int _maxSavedPeers = 200;
 
+  /// Set the active network ('mainnet' or 'testnet').
+  /// Must be called once during ApiService init, before loadSavedPeers().
+  static void setNetwork(String network) {
+    _network = network;
+    losLog('🔑 PeerDiscovery: storage bucket set to "$_storageKey"');
+  }
+
   /// Load previously discovered validator endpoints from local storage.
-  /// Returns a list of onion URLs: ["http://xyz.onion", ...]
+  /// Returns a list of onion URLs with port: ["http://xyz.onion:3030", ...]
   static Future<List<String>> loadSavedPeers() async {
     try {
       final prefs = await SharedPreferences.getInstance();
@@ -35,12 +45,18 @@ class PeerDiscoveryService {
               (p['onion_address'] as String).endsWith('.onion'))
           .map((p) {
         final onion = p['onion_address'] as String;
-        // Build REST URL from onion address
-        return onion.contains('://') ? onion : 'http://$onion';
+        final restPort = p['rest_port'] as int?;
+        // Build REST URL with port if available
+        if (onion.contains('://')) return onion;
+        if (restPort != null && restPort != 80) {
+          return 'http://$onion:$restPort';
+        }
+        return 'http://$onion';
       }).toList();
 
       losLog(
-          '📚 PeerDiscovery: loaded ${peers.length} saved peer(s) from storage');
+          '📚 PeerDiscovery: loaded ${peers.length} saved peer(s) from storage'
+          ' (key: $_storageKey)');
       return peers;
     } catch (e) {
       losLog('⚠️ PeerDiscovery: failed to load saved peers: $e');
@@ -77,6 +93,7 @@ class PeerDiscoveryService {
             'address': p['address'],
             'onion_address': onion,
             'stake_los': p['stake_los'] ?? 0,
+            if (p['rest_port'] != null) 'rest_port': p['rest_port'],
             'last_seen': DateTime.now().millisecondsSinceEpoch,
           };
         }

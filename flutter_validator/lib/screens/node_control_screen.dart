@@ -926,15 +926,14 @@ class _NodeControlScreenState extends State<NodeControlScreen>
   }
 }
 
-/// Network badge widget — shows TESTNET (orange) or MAINNET (green)
+/// Network badge widget — reads from ApiService so it updates on runtime switch
 class _NetworkBadge extends StatelessWidget {
-  static const _isMainnet =
-      String.fromEnvironment('NETWORK', defaultValue: 'testnet') == 'mainnet';
-
   @override
   Widget build(BuildContext context) {
-    final label = _isMainnet ? 'MAINNET' : 'TESTNET';
-    final color = _isMainnet ? Colors.green : Colors.orange;
+    final apiService = context.read<ApiService>();
+    final isMainnet = apiService.environment == NetworkEnvironment.mainnet;
+    final label = isMainnet ? 'MAINNET' : 'TESTNET';
+    final color = isMainnet ? Colors.green : Colors.orange;
     return Container(
       margin: const EdgeInsets.only(right: 8),
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),

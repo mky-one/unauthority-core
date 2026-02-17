@@ -2090,7 +2090,11 @@ fn test_dex_multi_pool_state() {
         .unwrap();
     for (i, expected_pid) in pool_ids.iter().enumerate().take(count) {
         let listed_pid = vm_get_state(&engine, &dex, &format!("pool_list:{}", i), creator);
-        assert_eq!(listed_pid, *expected_pid, "Pool list mismatch at index {}", i);
+        assert_eq!(
+            listed_pid, *expected_pid,
+            "Pool list mismatch at index {}",
+            i
+        );
     }
     println!("  Pool listing: PASS");
     println!("  Multi-pool management: PASS\n");

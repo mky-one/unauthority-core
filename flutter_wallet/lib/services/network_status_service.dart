@@ -30,7 +30,9 @@ class NetworkStatusService extends ChangeNotifier {
   int _consecutiveHealthFailures = 0;
 
   /// Threshold: after this many consecutive failures, trigger proactive failover.
-  static const int _failoverThreshold = 2;
+  /// Set to 5 (same as validator) — Tor connections are inherently unreliable,
+  /// so a low threshold causes excessive node switching.
+  static const int _failoverThreshold = 5;
 
   Timer? _statusCheckTimer;
 

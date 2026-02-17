@@ -5,11 +5,16 @@
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:flutter_validator/main.dart';
 import 'package:flutter_validator/services/wallet_service.dart';
 
 void main() {
+  setUp(() {
+    SharedPreferences.setMockInitialValues({});
+  });
+
   testWidgets('App can mount and render', (WidgetTester tester) async {
     // Build the app and trigger initial frame
     await tester.pumpWidget(MyApp(walletService: WalletService()));

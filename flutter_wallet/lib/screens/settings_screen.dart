@@ -3,8 +3,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../constants/blockchain.dart';
+import '../config/testnet_config.dart';
 import '../services/wallet_service.dart';
 import '../services/api_service.dart';
+import '../services/network_preference_service.dart';
 import '../widgets/network_badge.dart';
 import 'wallet_setup_screen.dart';
 
@@ -89,8 +91,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   Future<void> _confirmLogout() async {
-    losLog(
-        '⚙️ [SettingsScreen._confirmLogout] Showing logout confirmation...');
+    losLog('⚙️ [SettingsScreen._confirmLogout] Showing logout confirmation...');
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
@@ -132,6 +133,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final apiService = context.read<ApiService>();
     try {
       apiService.switchEnvironment(network);
+
+      // Sync WalletConfig so badge, faucet visibility, and security
+      // guards all reflect the new network immediately.
+      if (network == NetworkEnvironment.mainnet) {
+        WalletConfig.useMainnet();
+      } else {
+        WalletConfig.useConsensusTestnet();
+      }
+
+      // Persist so choice survives app restarts
+      NetworkPreferenceService.save(network);
+
       setState(() => _currentNetwork = network);
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -195,7 +208,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   Text(
                     _currentNetwork == NetworkEnvironment.testnet
                         ? 'Connected to Testnet (.onion via Tor)'
-                        : 'Mainnet coming soon',
+                        : 'Connected to Mainnet (.onion via Tor)',
                     style: const TextStyle(fontSize: 12, color: Colors.grey),
                   ),
                   const SizedBox(height: 12),
@@ -372,7 +385,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 style: TextStyle(fontWeight: FontWeight.bold),
               ),
               Text('• Testnet: Online (.onion)'),
-              Text('• Mainnet: Coming soon'),
+              Text('• Mainnet: Online (.onion)'),
             ],
           ),
         ),

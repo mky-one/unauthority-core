@@ -11,6 +11,7 @@ import 'services/tor_service.dart';
 import 'services/network_config.dart';
 import 'services/dilithium_service.dart';
 import 'services/network_status_service.dart';
+import 'services/network_preference_service.dart';
 
 void main() async {
   // Catch unhandled async exceptions (e.g. from SOCKS5 proxy failures)
@@ -95,6 +96,10 @@ class _SplashScreenState extends State<SplashScreen> {
 
   Future<void> _checkWallet() async {
     final walletService = context.read<WalletService>();
+    final apiService = context.read<ApiService>();
+
+    // Restore persisted network choice (testnet/mainnet)
+    await NetworkPreferenceService.applyToServices(apiService);
 
     // One-time migration: SharedPreferences → FlutterSecureStorage
     await walletService.migrateFromSharedPreferences();

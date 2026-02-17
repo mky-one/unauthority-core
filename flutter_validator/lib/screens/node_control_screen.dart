@@ -10,6 +10,7 @@ import '../services/network_config.dart';
 import '../services/network_status_service.dart';
 import '../services/node_process_service.dart';
 import '../services/tor_service.dart';
+import '../services/network_preference_service.dart';
 import '../constants/blockchain.dart';
 import '../widgets/network_status_bar.dart';
 import '../main.dart';
@@ -32,12 +33,24 @@ class _NodeControlScreenState extends State<NodeControlScreen>
   bool _showLogs = false;
   bool _isMonitorMode = false; // Genesis bootstrap validator → dashboard only
   bool _isStartingNode = false; // Debounce: prevent double-click race
+  NetworkEnvironment _currentNetwork = NetworkEnvironment.testnet;
 
   @override
   void initState() {
     super.initState();
     _tabController = TabController(length: 3, vsync: this);
     _loadWalletInfo();
+    _loadNetworkState();
+  }
+
+  Future<void> _loadNetworkState() async {
+    final apiService = context.read<ApiService>();
+    // Apply persisted network preference (testnet/mainnet) from SharedPreferences
+    await NetworkPreferenceService.applyToServices(apiService);
+    if (!mounted) return;
+    setState(() {
+      _currentNetwork = apiService.environment;
+    });
   }
 
   Future<void> _loadWalletInfo() async {
@@ -140,6 +153,31 @@ class _NodeControlScreenState extends State<NodeControlScreen>
           '💰 [NodeControlScreen._refreshBalance] Balance: ${account.balance} CIL');
     } catch (e) {
       losLog('Balance refresh error: $e');
+    }
+  }
+
+  void _switchNetwork(NetworkEnvironment network) {
+    losLog(
+        '⚙️ [NodeControlScreen._switchNetwork] Switching from ${_currentNetwork.name} to ${network.name}');
+    final apiService = context.read<ApiService>();
+    try {
+      apiService.switchEnvironment(network);
+      // Persist so choice survives app restarts
+      NetworkPreferenceService.save(network);
+      setState(() => _currentNetwork = network);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Switched to ${network.name.toUpperCase()}'),
+          backgroundColor: Colors.green,
+        ),
+      );
+    } on StateError catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(e.message),
+          backgroundColor: Colors.red,
+        ),
+      );
     }
   }
 
@@ -643,12 +681,61 @@ class _NodeControlScreenState extends State<NodeControlScreen>
   // ================================================================
 
   Widget _buildSettingsTab() {
+    final nodeService = context.read<NodeProcessService>();
+    final isNodeRunning = nodeService.isRunning;
+
     return SingleChildScrollView(
       padding: const EdgeInsets.all(16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           _buildWalletCard(),
+          const SizedBox(height: 16),
+          // Network Switcher
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Network',
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                  ),
+                  const SizedBox(height: 12),
+                  SegmentedButton<NetworkEnvironment>(
+                    segments: const [
+                      ButtonSegment(
+                        value: NetworkEnvironment.testnet,
+                        label: Text('TESTNET'),
+                        icon: Icon(Icons.science),
+                      ),
+                      ButtonSegment(
+                        value: NetworkEnvironment.mainnet,
+                        label: Text('MAINNET'),
+                        icon: Icon(Icons.rocket_launch),
+                      ),
+                    ],
+                    selected: {_currentNetwork},
+                    onSelectionChanged: isNodeRunning && !_isMonitorMode
+                        ? null // Disable switching while node is running
+                        : (Set<NetworkEnvironment> selected) {
+                            _switchNetwork(selected.first);
+                          },
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    isNodeRunning && !_isMonitorMode
+                        ? 'Stop the node before switching networks'
+                        : _currentNetwork == NetworkEnvironment.testnet
+                            ? 'Connected to Testnet (.onion via Tor)'
+                            : 'Connected to Mainnet (.onion via Tor)',
+                    style: const TextStyle(fontSize: 12, color: Colors.grey),
+                  ),
+                ],
+              ),
+            ),
+          ),
           const SizedBox(height: 16),
           _buildNetworkInfoCard(),
           const SizedBox(height: 16),
@@ -926,15 +1013,14 @@ class _NodeControlScreenState extends State<NodeControlScreen>
   }
 }
 
-/// Network badge widget — shows TESTNET (orange) or MAINNET (green)
+/// Network badge widget — reads from ApiService so it updates on runtime switch
 class _NetworkBadge extends StatelessWidget {
-  static const _isMainnet =
-      String.fromEnvironment('NETWORK', defaultValue: 'testnet') == 'mainnet';
-
   @override
   Widget build(BuildContext context) {
-    final label = _isMainnet ? 'MAINNET' : 'TESTNET';
-    final color = _isMainnet ? Colors.green : Colors.orange;
+    final apiService = context.read<ApiService>();
+    final isMainnet = apiService.environment == NetworkEnvironment.mainnet;
+    final label = isMainnet ? 'MAINNET' : 'TESTNET';
+    final color = isMainnet ? Colors.green : Colors.orange;
     return Container(
       margin: const EdgeInsets.only(right: 8),
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),

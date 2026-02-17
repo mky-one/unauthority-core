@@ -1,10 +1,15 @@
 name: CI/CD Pipeline
 
+# ── CI TEMPORARILY DISABLED ──────────────────────────────────────
+# Reason: Avoiding duplicate/long-running CI during active development.
+# To re-enable: restore the original `on:` triggers below.
+# Original triggers (restore when ready):
+#   push:
+#     branches: [ main, develop, mky-* ]
+#   pull_request:
+#     branches: [ main, develop ]
 on:
-  push:
-    branches: [ main, develop, mky-* ]
-  pull_request:
-    branches: [ main, develop ]
+  workflow_dispatch:
 
 env:
   CARGO_TERM_COLOR: always

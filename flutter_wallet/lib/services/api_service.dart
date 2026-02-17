@@ -128,9 +128,9 @@ class ApiService {
   /// local onion address for API consumption").
   String? _excludedOnionUrl;
 
-  /// Build-time flag: --dart-define=NETWORK=mainnet
+  /// Build-time flag: --dart-define=NETWORK=testnet to override
   static const _networkMode =
-      String.fromEnvironment('NETWORK', defaultValue: 'testnet');
+      String.fromEnvironment('NETWORK', defaultValue: 'mainnet');
   static NetworkEnvironment get _defaultEnvironment => _networkMode == 'mainnet'
       ? NetworkEnvironment.mainnet
       : NetworkEnvironment.testnet;

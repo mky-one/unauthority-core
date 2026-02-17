@@ -557,7 +557,7 @@ class _NodeControlScreenState extends State<NodeControlScreen>
       // MAINNET PARITY: ALWAYS use .onion P2P addresses.
       // No localhost/127.0.0.1 — Tor onion routing is mandatory.
       const networkMode =
-          String.fromEnvironment('NETWORK', defaultValue: 'testnet');
+          String.fromEnvironment('NETWORK', defaultValue: 'mainnet');
       final activeNodes = networkMode == 'mainnet'
           ? NetworkConfig.mainnetNodes
           : NetworkConfig.testnetNodes;
@@ -575,7 +575,7 @@ class _NodeControlScreenState extends State<NodeControlScreen>
       // MAINNET PARITY: Without SOCKS5, los-node cannot reach any peer.
       if (!torService.isRunning) {
         const isMainnet =
-            String.fromEnvironment('NETWORK', defaultValue: 'testnet') ==
+            String.fromEnvironment('NETWORK', defaultValue: 'mainnet') ==
                 'mainnet';
         if (isMainnet) {
           // MAINNET SAFETY (M-6): Refuse to start without Tor

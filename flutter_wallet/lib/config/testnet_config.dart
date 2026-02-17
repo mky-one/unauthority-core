@@ -128,9 +128,9 @@ class WalletTestnetConfig {
 
 /// Global wallet configuration
 class WalletConfig {
-  /// Build-time flag: --dart-define=NETWORK=mainnet
+  /// Build-time flag: --dart-define=NETWORK=testnet to override
   static const _networkMode =
-      String.fromEnvironment('NETWORK', defaultValue: 'testnet');
+      String.fromEnvironment('NETWORK', defaultValue: 'mainnet');
   static WalletTestnetConfig _current = _networkMode == 'mainnet'
       ? WalletTestnetConfig.mainnet()
       : WalletTestnetConfig.functionalTestnet();
@@ -157,7 +157,7 @@ class WalletConfig {
   /// Detect from environment variable (if set)
   static void detectFromEnvironment() {
     final networkMode =
-        const String.fromEnvironment('NETWORK', defaultValue: 'testnet');
+        const String.fromEnvironment('NETWORK', defaultValue: 'mainnet');
     if (networkMode == 'mainnet') {
       useMainnet();
       return;

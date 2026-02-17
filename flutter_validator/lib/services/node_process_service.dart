@@ -354,12 +354,17 @@ class NodeProcessService extends ChangeNotifier {
       await Directory(_dataDir!).create(recursive: true);
 
       // 3. Build environment variables
-      // testnetLevel controls security posture:
+      // On mainnet builds, LOS_TESTNET_LEVEL is omitted entirely — los-node
+      // forces production mode when compiled with --features mainnet.
+      // On testnet builds, testnetLevel controls security posture:
       //   'functional' = Level 1 (no consensus, no sig check — dev only)
       //   'consensus'  = Level 2 (real aBFT, real signatures — default)
       //   'production' = Level 3 (identical to mainnet — full security)
+      const isMainnetBuild =
+          String.fromEnvironment('NETWORK', defaultValue: 'mainnet') ==
+              'mainnet';
       final env = <String, String>{
-        'LOS_TESTNET_LEVEL': testnetLevel,
+        if (!isMainnetBuild) 'LOS_TESTNET_LEVEL': testnetLevel,
       };
       // SECURITY FIX S-01: Seed phrase is NO LONGER passed via environment variable.
       // It is now sent via stdin pipe (see below) to prevent exposure via

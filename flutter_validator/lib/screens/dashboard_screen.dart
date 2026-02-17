@@ -274,7 +274,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                           children: [
                             // Network Warning Banner (testnet only)
                             if (const String.fromEnvironment('NETWORK',
-                                    defaultValue: 'testnet') !=
+                                    defaultValue: 'mainnet') !=
                                 'mainnet')
                               Container(
                                 width: double.infinity,

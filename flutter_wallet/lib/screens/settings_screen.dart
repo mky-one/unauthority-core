@@ -3,11 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../constants/blockchain.dart';
-import '../config/testnet_config.dart';
 import '../services/wallet_service.dart';
-import '../services/api_service.dart';
-import '../services/network_preference_service.dart';
-import '../widgets/network_badge.dart';
 import 'wallet_setup_screen.dart';
 
 class SettingsScreen extends StatefulWidget {
@@ -20,13 +16,6 @@ class SettingsScreen extends StatefulWidget {
 class _SettingsScreenState extends State<SettingsScreen> {
   bool _showSeedPhrase = false;
   String? _seedPhrase;
-  NetworkEnvironment _currentNetwork = NetworkEnvironment.testnet;
-
-  @override
-  void initState() {
-    super.initState();
-    _loadNetworkState();
-  }
 
   /// SECURITY FIX M-02: Clear seed phrase reference on widget disposal.
   /// Removes the Dart String reference so GC can collect sooner.
@@ -37,19 +26,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _seedPhrase = null;
     _showSeedPhrase = false;
     super.dispose();
-  }
-
-  /// FIX H-02: Only load network state on init; seed phrase is loaded
-  /// lazily when user explicitly taps the reveal button.
-  Future<void> _loadNetworkState() async {
-    final apiService = context.read<ApiService>();
-    if (mounted) {
-      setState(() {
-        _currentNetwork = apiService.environment;
-      });
-      losLog(
-          '⚙️ [SettingsScreen._loadNetworkState] Current network: ${apiService.environment.name}');
-    }
   }
 
   /// FIX H-02: Lazy-load seed phrase only when user taps reveal.
@@ -127,43 +103,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
     }
   }
 
-  void _switchNetwork(NetworkEnvironment network) {
-    losLog(
-        '⚙️ [SettingsScreen._switchNetwork] Switching from ${_currentNetwork.name} to ${network.name}');
-    final apiService = context.read<ApiService>();
-    try {
-      apiService.switchEnvironment(network);
-
-      // Sync WalletConfig so badge, faucet visibility, and security
-      // guards all reflect the new network immediately.
-      if (network == NetworkEnvironment.mainnet) {
-        WalletConfig.useMainnet();
-      } else {
-        WalletConfig.useConsensusTestnet();
-      }
-
-      // Persist so choice survives app restarts
-      NetworkPreferenceService.save(network);
-
-      setState(() => _currentNetwork = network);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            'Switched to ${network.name.toUpperCase()}',
-          ),
-          backgroundColor: Colors.green,
-        ),
-      );
-    } on StateError catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(e.message),
-          backgroundColor: Colors.red,
-        ),
-      );
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -173,65 +112,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
       ),
       body: ListView(
         children: [
-          // Network Switcher
-          Card(
-            margin: const EdgeInsets.all(16),
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    'Network',
-                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                  ),
-                  const SizedBox(height: 12),
-                  SegmentedButton<NetworkEnvironment>(
-                    segments: const [
-                      ButtonSegment(
-                        value: NetworkEnvironment.testnet,
-                        label: Text('TESTNET'),
-                        icon: Icon(Icons.science),
-                      ),
-                      ButtonSegment(
-                        value: NetworkEnvironment.mainnet,
-                        label: Text('MAINNET'),
-                        icon: Icon(Icons.rocket_launch),
-                      ),
-                    ],
-                    selected: {_currentNetwork},
-                    onSelectionChanged: (Set<NetworkEnvironment> selected) {
-                      _switchNetwork(selected.first);
-                    },
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    _currentNetwork == NetworkEnvironment.testnet
-                        ? 'Connected to Testnet (.onion via Tor)'
-                        : 'Connected to Mainnet (.onion via Tor)',
-                    style: const TextStyle(fontSize: 12, color: Colors.grey),
-                  ),
-                  const SizedBox(height: 12),
-                  TextButton.icon(
-                    onPressed: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => const NetworkSettingsScreen(),
-                        ),
-                      );
-                    },
-                    icon: const Icon(Icons.tune, size: 16),
-                    label: const Text('Advanced Network Settings'),
-                    style: TextButton.styleFrom(
-                      padding: EdgeInsets.zero,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-
           // Backup Seed Phrase
           Card(
             margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),

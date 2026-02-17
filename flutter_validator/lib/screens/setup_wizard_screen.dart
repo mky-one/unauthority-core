@@ -7,6 +7,7 @@ import '../services/api_service.dart';
 import '../services/node_process_service.dart';
 import '../services/tor_service.dart';
 import '../services/network_config.dart';
+import '../services/network_preference_service.dart';
 import '../constants/blockchain.dart';
 
 /// Validator Setup Wizard - 3-step flow:
@@ -25,8 +26,9 @@ class SetupWizardScreen extends StatefulWidget {
 enum _ImportMethod { seedPhrase, privateKey, walletAddress }
 
 class _SetupWizardScreenState extends State<SetupWizardScreen> {
-  int _currentStep = 0; // 0=import, 1=confirm, 2=launching
+  int _currentStep = -1; // -1=network choice, 0=import, 1=confirm, 2=launching
   _ImportMethod _importMethod = _ImportMethod.seedPhrase;
+  NetworkEnvironment _selectedNetwork = NetworkEnvironment.mainnet;
 
   final _seedController = TextEditingController();
   final _privateKeyController = TextEditingController();
@@ -46,6 +48,122 @@ class _SetupWizardScreenState extends State<SetupWizardScreen> {
 
   /// Minimum validator stake in CIL (1000 LOS * cilPerLos)
   static final int _minStakeCil = 1000 * BlockchainConstants.cilPerLos;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadInitialNetwork();
+  }
+
+  Future<void> _loadInitialNetwork() async {
+    final apiService = context.read<ApiService>();
+    // Restore persisted network choice
+    await NetworkPreferenceService.applyToServices(apiService);
+    if (!mounted) return;
+    setState(() {
+      _selectedNetwork = apiService.environment;
+    });
+  }
+
+  Future<void> _proceedWithNetwork() async {
+    final apiService = context.read<ApiService>();
+    
+    // Apply selected network
+    try {
+      if (apiService.environment != _selectedNetwork) {
+        apiService.switchEnvironment(_selectedNetwork);
+        await NetworkPreferenceService.save(_selectedNetwork);
+      }
+    } catch (e) {
+      if (!mounted) return;
+      await _showErrorDialog(
+        'Network Unavailable',
+        'Cannot switch to ${_selectedNetwork.name}. Please try again later.',
+      );
+      return;
+    }
+
+    // Test connection for testnet
+    if (_selectedNetwork == NetworkEnvironment.testnet) {
+      try {
+        await apiService.getHealth().timeout(const Duration(seconds: 10));
+      } catch (e) {
+        if (!mounted) return;
+        await _showTestnetErrorDialog();
+        return;
+      }
+    }
+
+    // Proceed to import step
+    setState(() => _currentStep = 0);
+  }
+
+  Future<void> _showTestnetErrorDialog() async {
+    await showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => AlertDialog(
+        title: const Row(
+          children: [
+            Icon(Icons.warning, color: Colors.orange),
+            SizedBox(width: 8),
+            Text('Testnet Unavailable'),
+          ],
+        ),
+        content: const SingleChildScrollView(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                'No testnet nodes are currently online.',
+                style: TextStyle(fontWeight: FontWeight.bold),
+              ),
+              SizedBox(height: 16),
+              Text('To run your own testnet node:'),
+              SizedBox(height: 8),
+              Text('1. Read the documentation:\n   docs/VALIDATOR_GUIDE.md'),
+              SizedBox(height: 8),
+              Text('2. Configure testnet host in:\n   flutter_validator/assets/network_config.json'),
+              SizedBox(height: 8),
+              Text('3. Or switch to Mainnet to use the live network.'),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () {
+              Navigator.of(context).pop();
+              setState(() {
+                _selectedNetwork = NetworkEnvironment.mainnet;
+              });
+            },
+            child: const Text('Switch to Mainnet'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Retry'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _showErrorDialog(String title, String message) async {
+    await showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(title),
+        content: Text(message),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('OK'),
+          ),
+        ],
+      ),
+    );
+  }
 
   @override
   void dispose() {
@@ -398,11 +516,102 @@ class _SetupWizardScreenState extends State<SetupWizardScreen> {
         child: Padding(
           padding: const EdgeInsets.all(24.0),
           child: switch (_currentStep) {
+            -1 => _buildNetworkChoiceStep(),
             0 => _buildImportStep(),
             1 => _buildConfirmationStep(),
             2 => _buildLaunchingStep(),
-            _ => _buildImportStep(),
+            _ => _buildNetworkChoiceStep(),
           },
+        ),
+      ),
+    );
+  }
+
+  Widget _buildNetworkChoiceStep() {
+    return Center(
+      child: SingleChildScrollView(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Icon(Icons.dns, size: 80, color: ValidatorColors.accent),
+            const SizedBox(height: 24),
+            const Text(
+              'LOS VALIDATOR',
+              style: TextStyle(
+                fontSize: 32,
+                fontWeight: FontWeight.bold,
+                letterSpacing: 3,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Unauthority Node Dashboard',
+              style: TextStyle(
+                fontSize: 16,
+                color: Colors.grey[400],
+              ),
+            ),
+            const SizedBox(height: 48),
+            const Text(
+              'Select Network',
+              style: TextStyle(
+                fontSize: 20,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            const SizedBox(height: 24),
+            SegmentedButton<NetworkEnvironment>(
+              segments: const [
+                ButtonSegment(
+                  value: NetworkEnvironment.mainnet,
+                  label: Text('MAINNET'),
+                  icon: Icon(Icons.lock),
+                ),
+                ButtonSegment(
+                  value: NetworkEnvironment.testnet,
+                  label: Text('TESTNET'),
+                  icon: Icon(Icons.bug_report),
+                ),
+              ],
+              selected: {_selectedNetwork},
+              onSelectionChanged: (Set<NetworkEnvironment> selected) {
+                setState(() => _selectedNetwork = selected.first);
+              },
+              style: ButtonStyle(
+                backgroundColor: WidgetStateProperty.resolveWith((states) {
+                  if (states.contains(WidgetState.selected)) {
+                    return _selectedNetwork == NetworkEnvironment.mainnet
+                        ? Colors.green.withValues(alpha: 0.3)
+                        : Colors.orange.withValues(alpha: 0.3);
+                  }
+                  return null;
+                }),
+              ),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              _selectedNetwork == NetworkEnvironment.mainnet
+                  ? 'Connected to live Mainnet (.onion via Tor)'
+                  : 'Testnet for development and testing',
+              style: TextStyle(
+                fontSize: 12,
+                color: Colors.grey[400],
+              ),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 48),
+            ElevatedButton.icon(
+              onPressed: _proceedWithNetwork,
+              icon: const Icon(Icons.arrow_forward),
+              label: const Text('Continue'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: ValidatorColors.accent,
+                foregroundColor: Colors.white,
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 32, vertical: 16),
+              ),
+            ),
+          ],
         ),
       ),
     );

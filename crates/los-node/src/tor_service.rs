@@ -91,8 +91,8 @@ impl TorServiceConfig {
     ///   - LOS_TOR_COOKIE_PATH = path to Tor cookie file
     ///   - LOS_TOR_CONTROL_PWD = control port password
     pub fn from_env(data_dir: &Path, api_port: u16, p2p_port: u16) -> Self {
-        let control_addr = std::env::var("LOS_TOR_CONTROL")
-            .unwrap_or_else(|_| "127.0.0.1:9051".to_string());
+        let control_addr =
+            std::env::var("LOS_TOR_CONTROL").unwrap_or_else(|_| "127.0.0.1:9051".to_string());
 
         let cookie_path = std::env::var("LOS_TOR_COOKIE_PATH")
             .ok()
@@ -269,9 +269,11 @@ pub async fn ensure_hidden_service(
 
     let command = format!("ADD_ONION {} {}{}", key_spec, flags, port_args);
 
-    let response = send_command(&mut reader, &mut writer, &command).await.map_err(|e| {
-        TorServiceError::OnionCreationFailed(format!("ADD_ONION command failed: {}", e))
-    })?;
+    let response = send_command(&mut reader, &mut writer, &command)
+        .await
+        .map_err(|e| {
+            TorServiceError::OnionCreationFailed(format!("ADD_ONION command failed: {}", e))
+        })?;
 
     // 5. Parse response
     let mut onion_address = String::new();
@@ -286,9 +288,10 @@ pub async fn ensure_hidden_service(
     }
 
     if onion_address.is_empty() {
-        return Err(TorServiceError::OnionCreationFailed(
-            format!("No ServiceID in response: {:?}", response),
-        ));
+        return Err(TorServiceError::OnionCreationFailed(format!(
+            "No ServiceID in response: {:?}",
+            response
+        )));
     }
 
     // 6. Persist key for stable .onion across restarts
@@ -361,10 +364,7 @@ async fn authenticate(
                         return Ok(());
                     }
                     Ok(lines) => {
-                        eprintln!(
-                            "⚠️ Cookie auth failed (trying alternatives): {:?}",
-                            lines
-                        );
+                        eprintln!("⚠️ Cookie auth failed (trying alternatives): {:?}", lines);
                     }
                     Err(e) => {
                         eprintln!("⚠️ Cookie auth error (trying alternatives): {}", e);
@@ -382,12 +382,7 @@ async fn authenticate(
 
     // Try password auth
     if let Some(password) = &config.control_password {
-        let resp = send_command(
-            reader,
-            writer,
-            &format!("AUTHENTICATE \"{}\"", password),
-        )
-        .await;
+        let resp = send_command(reader, writer, &format!("AUTHENTICATE \"{}\"", password)).await;
         match resp {
             Ok(lines) if lines.iter().any(|l| l.starts_with("250 ")) => {
                 return Ok(());
@@ -423,11 +418,7 @@ async fn authenticate(
 /// Does NOT authenticate — just checks reachability.
 pub async fn is_control_port_available(addr: &str) -> bool {
     matches!(
-        tokio::time::timeout(
-            std::time::Duration::from_secs(1),
-            TcpStream::connect(addr),
-        )
-        .await,
+        tokio::time::timeout(std::time::Duration::from_secs(1), TcpStream::connect(addr),).await,
         Ok(Ok(_))
     )
 }
@@ -506,8 +497,7 @@ mod tests {
         std::env::remove_var("LOS_TOR_COOKIE_PATH");
         std::env::remove_var("LOS_TOR_CONTROL_PWD");
 
-        let config =
-            TorServiceConfig::from_env(Path::new("/tmp/los-test"), 3030, 4030);
+        let config = TorServiceConfig::from_env(Path::new("/tmp/los-test"), 3030, 4030);
         assert_eq!(config.control_addr, "127.0.0.1:9051");
         assert_eq!(config.port_mappings, vec![(3030, 3030), (4030, 4030)]);
         assert!(config.control_password.is_none());
@@ -518,13 +508,9 @@ mod tests {
         std::env::set_var("LOS_TOR_CONTROL", "127.0.0.1:9151");
         std::env::set_var("LOS_TOR_CONTROL_PWD", "mypassword");
 
-        let config =
-            TorServiceConfig::from_env(Path::new("/tmp/los-data"), 3031, 4031);
+        let config = TorServiceConfig::from_env(Path::new("/tmp/los-data"), 3031, 4031);
         assert_eq!(config.control_addr, "127.0.0.1:9151");
-        assert_eq!(
-            config.control_password.as_deref(),
-            Some("mypassword")
-        );
+        assert_eq!(config.control_password.as_deref(), Some("mypassword"));
         assert_eq!(config.port_mappings, vec![(3031, 3031), (4031, 4031)]);
 
         // Clean up

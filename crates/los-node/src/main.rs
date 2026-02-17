@@ -5675,10 +5675,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 Ok(hs) => {
                     // Set env var so TorConfig::from_env() picks it up in LosNode::start()
                     std::env::set_var("LOS_ONION_ADDRESS", &hs.onion_address);
-                    println!(
-                        "🧅 Auto-generated Tor hidden service: {}",
-                        hs.onion_address
-                    );
+                    println!("🧅 Auto-generated Tor hidden service: {}", hs.onion_address);
 
                     // Register in validator_endpoints for peer discovery
                     if let Ok(mut endpoints) = validator_endpoints.lock() {
@@ -5698,9 +5695,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 "🧅 Tor control port not available at {} — skipping auto-generation",
                 tor_config.control_addr
             );
-            println!(
-                "   To enable: configure Tor with ControlPort 9051 + CookieAuthentication 1"
-            );
+            println!("   To enable: configure Tor with ControlPort 9051 + CookieAuthentication 1");
         }
     } else {
         println!(

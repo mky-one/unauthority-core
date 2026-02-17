@@ -1,5 +1,5 @@
 # Multi-stage build for Unauthority (LOS) validator node
-FROM rust:1.75-slim AS builder
+FROM rust:1.86-slim AS builder
 
 RUN apt-get update && apt-get install -y \
     pkg-config \

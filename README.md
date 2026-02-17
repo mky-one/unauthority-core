@@ -199,16 +199,6 @@ Full documentation with request/response examples: [API Reference](docs/API_REFE
 | [Whitepaper](docs/WHITEPAPER.md) | Technical whitepaper: design, consensus, economics |
 | [Architecture](docs/ARCHITECTURE.md) | System design, crate map, data flow diagrams |
 
-### For Developers
-| Document | Description |
-|---|---|
-| [Developer Guide](dev_docs/DEVELOPER_GUIDE.md) | Build, test, contribute, CI pipeline |
-| [Crate Reference](dev_docs/CRATE_REFERENCE.md) | Every module in every crate, documented |
-| [Consensus Deep Dive](dev_docs/CONSENSUS.md) | aBFT rounds, voting, finalization internals |
-| [Smart Contracts](dev_docs/SMART_CONTRACTS.md) | UVM, USP-01 token standard, WASM contracts |
-| [Gossip Protocol](dev_docs/GOSSIP_PROTOCOL.md) | P2P message formats, signing, broadcast flow |
-| [Genesis Configuration](dev_docs/GENESIS.md) | Genesis format, allocation, tooling |
-
 ---
 
 ## Build & Test

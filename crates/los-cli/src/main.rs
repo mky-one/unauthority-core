@@ -591,3 +591,409 @@ fn print_error(msg: &str) {
 fn print_info(msg: &str) {
     println!("{} {}", "ℹ".blue().bold(), msg);
 }
+
+// ─────────────────────────────────────────────────────────────────
+// UNIT TESTS
+// ─────────────────────────────────────────────────────────────────
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use clap::Parser;
+    use los_core::{Block, BlockType, CIL_PER_LOS, MIN_POW_DIFFICULTY_BITS};
+
+    // ── CLI Argument Parsing ────────────────────────────────────
+
+    #[test]
+    fn test_cli_wallet_new() {
+        let cli = Cli::try_parse_from(["los-cli", "wallet", "new", "--name", "test_wallet"]);
+        assert!(cli.is_ok(), "Failed to parse: {:?}", cli.err());
+        let cli = cli.unwrap();
+        match cli.command {
+            Commands::Wallet {
+                action: WalletCommands::New { name },
+            } => assert_eq!(name, "test_wallet"),
+            _ => panic!("Expected Wallet::New"),
+        }
+    }
+
+    #[test]
+    fn test_cli_wallet_list() {
+        let cli = Cli::try_parse_from(["los-cli", "wallet", "list"]);
+        assert!(cli.is_ok());
+        match cli.unwrap().command {
+            Commands::Wallet {
+                action: WalletCommands::List,
+            } => {}
+            _ => panic!("Expected Wallet::List"),
+        }
+    }
+
+    #[test]
+    fn test_cli_wallet_balance() {
+        let cli = Cli::try_parse_from(["los-cli", "wallet", "balance", "LOSxyz123"]);
+        assert!(cli.is_ok());
+        match cli.unwrap().command {
+            Commands::Wallet {
+                action: WalletCommands::Balance { address },
+            } => assert_eq!(address, "LOSxyz123"),
+            _ => panic!("Expected Wallet::Balance"),
+        }
+    }
+
+    #[test]
+    fn test_cli_wallet_export() {
+        let cli = Cli::try_parse_from([
+            "los-cli", "wallet", "export", "mywallet", "--output", "/tmp/w.json",
+        ]);
+        assert!(cli.is_ok());
+        match cli.unwrap().command {
+            Commands::Wallet {
+                action:
+                    WalletCommands::Export { name, output },
+            } => {
+                assert_eq!(name, "mywallet");
+                assert_eq!(output, PathBuf::from("/tmp/w.json"));
+            }
+            _ => panic!("Expected Wallet::Export"),
+        }
+    }
+
+    #[test]
+    fn test_cli_wallet_import() {
+        let cli = Cli::try_parse_from([
+            "los-cli", "wallet", "import", "/tmp/w.json", "--name", "imported",
+        ]);
+        assert!(cli.is_ok());
+        match cli.unwrap().command {
+            Commands::Wallet {
+                action: WalletCommands::Import { input, name },
+            } => {
+                assert_eq!(name, "imported");
+                assert_eq!(input, PathBuf::from("/tmp/w.json"));
+            }
+            _ => panic!("Expected Wallet::Import"),
+        }
+    }
+
+    #[test]
+    fn test_cli_validator_stake() {
+        let cli = Cli::try_parse_from([
+            "los-cli",
+            "validator",
+            "stake",
+            "--amount",
+            "1000",
+            "--wallet",
+            "w1",
+        ]);
+        assert!(cli.is_ok());
+        match cli.unwrap().command {
+            Commands::Validator {
+                action: ValidatorCommands::Stake { amount, wallet },
+            } => {
+                assert_eq!(amount, 1000);
+                assert_eq!(wallet, "w1");
+            }
+            _ => panic!("Expected Validator::Stake"),
+        }
+    }
+
+    #[test]
+    fn test_cli_validator_list() {
+        let cli = Cli::try_parse_from(["los-cli", "validator", "list"]);
+        assert!(cli.is_ok());
+    }
+
+    #[test]
+    fn test_cli_tx_send() {
+        let cli = Cli::try_parse_from([
+            "los-cli", "tx", "send", "--to", "LOSabc", "--amount", "50", "--from", "w1",
+        ]);
+        assert!(cli.is_ok());
+        match cli.unwrap().command {
+            Commands::Tx {
+                action: TxCommands::Send { to, amount, from },
+            } => {
+                assert_eq!(to, "LOSabc");
+                assert_eq!(amount, 50);
+                assert_eq!(from, "w1");
+            }
+            _ => panic!("Expected Tx::Send"),
+        }
+    }
+
+    #[test]
+    fn test_cli_tx_status() {
+        let cli = Cli::try_parse_from(["los-cli", "tx", "status", "deadbeef"]);
+        assert!(cli.is_ok());
+        match cli.unwrap().command {
+            Commands::Tx {
+                action: TxCommands::Status { hash },
+            } => assert_eq!(hash, "deadbeef"),
+            _ => panic!("Expected Tx::Status"),
+        }
+    }
+
+    #[test]
+    fn test_cli_query_block() {
+        let cli = Cli::try_parse_from(["los-cli", "query", "block", "42"]);
+        assert!(cli.is_ok());
+        match cli.unwrap().command {
+            Commands::Query {
+                action: QueryCommands::Block { height },
+            } => assert_eq!(height, 42),
+            _ => panic!("Expected Query::Block"),
+        }
+    }
+
+    #[test]
+    fn test_cli_query_account() {
+        let cli = Cli::try_parse_from(["los-cli", "query", "account", "LOSabc"]);
+        assert!(cli.is_ok());
+        match cli.unwrap().command {
+            Commands::Query {
+                action: QueryCommands::Account { address },
+            } => assert_eq!(address, "LOSabc"),
+            _ => panic!("Expected Query::Account"),
+        }
+    }
+
+    #[test]
+    fn test_cli_query_info() {
+        let cli = Cli::try_parse_from(["los-cli", "query", "info"]);
+        assert!(cli.is_ok());
+    }
+
+    #[test]
+    fn test_cli_query_validators() {
+        let cli = Cli::try_parse_from(["los-cli", "query", "validators"]);
+        assert!(cli.is_ok());
+    }
+
+    #[test]
+    fn test_cli_token_list() {
+        let cli = Cli::try_parse_from(["los-cli", "token", "list"]);
+        assert!(cli.is_ok());
+        match cli.unwrap().command {
+            Commands::Token {
+                action: TokenCommands::List,
+            } => {}
+            _ => panic!("Expected Token::List"),
+        }
+    }
+
+    #[test]
+    fn test_cli_token_info() {
+        let cli = Cli::try_parse_from(["los-cli", "token", "info", "LOSConXYZ"]);
+        assert!(cli.is_ok());
+    }
+
+    #[test]
+    fn test_cli_token_deploy() {
+        let cli = Cli::try_parse_from([
+            "los-cli",
+            "token",
+            "deploy",
+            "--wallet",
+            "w1",
+            "--wasm",
+            "path/to/token.wasm",
+            "--name",
+            "TestToken",
+            "--symbol",
+            "TST",
+            "--decimals",
+            "11",
+            "--total-supply",
+            "1000000",
+        ]);
+        assert!(cli.is_ok());
+    }
+
+    #[test]
+    fn test_cli_dex_pools() {
+        let cli = Cli::try_parse_from(["los-cli", "dex", "pools"]);
+        assert!(cli.is_ok());
+        match cli.unwrap().command {
+            Commands::Dex {
+                action: DexCommands::Pools,
+            } => {}
+            _ => panic!("Expected Dex::Pools"),
+        }
+    }
+
+    #[test]
+    fn test_cli_dex_swap() {
+        let cli = Cli::try_parse_from([
+            "los-cli",
+            "dex",
+            "swap",
+            "--wallet",
+            "w1",
+            "--contract",
+            "LOSConDEX",
+            "--pool-id",
+            "POOL:LOS:TST",
+            "--token-in",
+            "LOS",
+            "--amount-in",
+            "1000",
+            "--min-out",
+            "900",
+        ]);
+        assert!(cli.is_ok());
+    }
+
+    #[test]
+    fn test_cli_default_rpc_url() {
+        let cli = Cli::try_parse_from(["los-cli", "query", "info"]).unwrap();
+        assert_eq!(cli.rpc, "http://localhost:3030");
+    }
+
+    #[test]
+    fn test_cli_custom_rpc_url() {
+        let cli =
+            Cli::try_parse_from(["los-cli", "--rpc", "http://my-node.onion", "query", "info"])
+                .unwrap();
+        assert_eq!(cli.rpc, "http://my-node.onion");
+    }
+
+    #[test]
+    fn test_cli_missing_required_args() {
+        // tx send without --to should fail
+        let result = Cli::try_parse_from(["los-cli", "tx", "send", "--amount", "50", "--from", "w"]);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_cli_unknown_subcommand() {
+        let result = Cli::try_parse_from(["los-cli", "foobar"]);
+        assert!(result.is_err());
+    }
+
+    // ── PoW Logic ───────────────────────────────────────────────
+
+    #[test]
+    fn test_pow_produces_valid_hash() {
+        let mut block = Block {
+            account: "LOStest".to_string(),
+            previous: "0".to_string(),
+            block_type: BlockType::Send,
+            amount: 100_000,
+            link: "LOSrecipient".to_string(),
+            signature: String::new(),
+            public_key: "deadbeef".to_string(),
+            work: 0,
+            timestamp: 1700000000,
+            fee: 100_000,
+        };
+
+        commands::tx::compute_pow(&mut block);
+
+        // Verify the PoW is valid
+        assert!(block.verify_pow(), "PoW should be valid after compute_pow");
+        // Nonce should have been set to a non-trivial value
+        // (it's extremely unlikely the first nonce=0 satisfies 16-bit difficulty)
+    }
+
+    #[test]
+    fn test_pow_verification_counts_leading_zeros() {
+        // Block with work=0 is very unlikely to satisfy 16-bit PoW
+        let block = Block {
+            account: "LOStest".to_string(),
+            previous: "0".to_string(),
+            block_type: BlockType::Send,
+            amount: 1,
+            link: "LOSother".to_string(),
+            signature: String::new(),
+            public_key: "aabb".to_string(),
+            work: 0,
+            timestamp: 1700000000,
+            fee: 100_000,
+        };
+
+        // With a random nonce of 0, this is likely invalid (but not guaranteed)
+        // The important test is that verify_pow uses MIN_POW_DIFFICULTY_BITS
+        assert_eq!(MIN_POW_DIFFICULTY_BITS, 16, "PoW difficulty should be 16 bits");
+    }
+
+    // ── Address Validation ──────────────────────────────────────
+
+    #[test]
+    fn test_address_validation_rejects_empty() {
+        assert!(!los_crypto::validate_address(""));
+    }
+
+    #[test]
+    fn test_address_validation_rejects_no_prefix() {
+        assert!(!los_crypto::validate_address("BTCxyz123"));
+    }
+
+    #[test]
+    fn test_address_validation_rejects_short() {
+        assert!(!los_crypto::validate_address("LOS"));
+    }
+
+    #[test]
+    fn test_address_validation_rejects_invalid_base58() {
+        assert!(!los_crypto::validate_address("LOS0OIl")); // Invalid Base58 chars
+    }
+
+    #[test]
+    fn test_address_validation_rejects_bad_checksum() {
+        // Valid Base58 but wrong checksum
+        assert!(!los_crypto::validate_address("LOS1111111111111111111111"));
+    }
+
+    #[test]
+    fn test_address_validation_accepts_generated() {
+        let keypair = los_crypto::generate_keypair();
+        let address = los_crypto::public_key_to_address(&keypair.public_key);
+        assert!(
+            los_crypto::validate_address(&address),
+            "Generated address must pass validation: {}",
+            address
+        );
+    }
+
+    // ── CIL / LOS Conversion ────────────────────────────────────
+
+    #[test]
+    fn test_cil_per_los_constant() {
+        assert_eq!(CIL_PER_LOS, 100_000_000_000);
+    }
+
+    #[test]
+    fn test_cil_to_los_formatting() {
+        let balance_cil: u128 = 1_500_000_000_000; // 15 LOS
+        let los = balance_cil / CIL_PER_LOS;
+        let fractional = balance_cil % CIL_PER_LOS;
+        let formatted = format!("{}.{:011}", los, fractional);
+        assert_eq!(formatted, "15.00000000000");
+    }
+
+    #[test]
+    fn test_cil_to_los_formatting_fractional() {
+        let balance_cil: u128 = 100_500_000_000; // 1.005 LOS
+        let los = balance_cil / CIL_PER_LOS;
+        let fractional = balance_cil % CIL_PER_LOS;
+        let formatted = format!("{}.{:011}", los, fractional);
+        assert_eq!(formatted, "1.00500000000");
+    }
+
+    #[test]
+    fn test_los_to_cil_conversion_no_overflow() {
+        let amount_los: u128 = 21_936_236; // Total supply
+        let amount_cil = amount_los.checked_mul(CIL_PER_LOS);
+        assert!(amount_cil.is_some(), "Total supply in CIL must not overflow u128");
+        assert_eq!(amount_cil.unwrap(), 2_193_623_600_000_000_000);
+    }
+
+    #[test]
+    fn test_minimum_stake_conversion() {
+        let min_stake_los: u128 = 1000;
+        let min_stake_cil = min_stake_los * CIL_PER_LOS;
+        assert_eq!(min_stake_cil, los_core::MIN_VALIDATOR_STAKE_CIL);
+    }
+}

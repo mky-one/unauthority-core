@@ -19,7 +19,7 @@ pub async fn handle(
 }
 
 /// Compute PoW nonce for anti-spam (16 leading zero bits)
-fn compute_pow(block: &mut Block) {
+pub(crate) fn compute_pow(block: &mut Block) {
     let mut nonce: u64 = 0;
     loop {
         block.work = nonce;

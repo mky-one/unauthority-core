@@ -490,6 +490,8 @@ pub extern "C" fn __los_dealloc(ptr: *mut u8, size: u32) {
 mod tests {
     // Note: Host functions are not available on native targets.
     // These tests verify SDK type-level and logic correctness only.
+    use alloc::vec;
+    use alloc::vec::Vec;
 
     #[test]
     fn test_u128_split_reconstruct() {
@@ -527,5 +529,155 @@ mod tests {
         arr.copy_from_slice(&bytes);
         let back = u64::from_le_bytes(arr);
         assert_eq!(back, val);
+    }
+
+    // ── u128 split/reconstruct edge cases ──────────────────────
+
+    #[test]
+    fn test_u128_split_zero() {
+        let amount: u128 = 0;
+        let lo = (amount & 0xFFFF_FFFF_FFFF_FFFF) as u64;
+        let hi = (amount >> 64) as u64;
+        assert_eq!(lo, 0);
+        assert_eq!(hi, 0);
+        let reconstructed = ((hi as u128) << 64) | (lo as u128);
+        assert_eq!(reconstructed, 0);
+    }
+
+    #[test]
+    fn test_u128_split_only_lo() {
+        // Value fits entirely in lower 64 bits
+        let amount: u128 = u64::MAX as u128;
+        let lo = (amount & 0xFFFF_FFFF_FFFF_FFFF) as u64;
+        let hi = (amount >> 64) as u64;
+        assert_eq!(lo, u64::MAX);
+        assert_eq!(hi, 0);
+    }
+
+    #[test]
+    fn test_u128_split_only_hi() {
+        // Value has only upper 64 bits set
+        let amount: u128 = (1u128) << 64;
+        let lo = (amount & 0xFFFF_FFFF_FFFF_FFFF) as u64;
+        let hi = (amount >> 64) as u64;
+        assert_eq!(lo, 0);
+        assert_eq!(hi, 1);
+        let reconstructed = ((hi as u128) << 64) | (lo as u128);
+        assert_eq!(reconstructed, amount);
+    }
+
+    #[test]
+    fn test_u128_split_los_total_supply() {
+        // Total supply: 21,936,236 LOS × 10^11 = 2,193,623,600,000,000,000 CIL
+        let total_supply_cil: u128 = 2_193_623_600_000_000_000;
+        let lo = (total_supply_cil & 0xFFFF_FFFF_FFFF_FFFF) as u64;
+        let hi = (total_supply_cil >> 64) as u64;
+        // Total supply fits in 64 bits (< 2^64)
+        assert_eq!(hi, 0);
+        assert_eq!(lo, 2_193_623_600_000_000_000);
+        let reconstructed = ((hi as u128) << 64) | (lo as u128);
+        assert_eq!(reconstructed, total_supply_cil);
+    }
+
+    // ── Transfer amount encoding ────────────────────────────────
+
+    #[test]
+    fn test_transfer_amount_i64_encoding() {
+        // Verify the i64 cast pattern used in transfer()
+        let amount: u128 = 100_000_000_000; // 1 LOS in CIL
+        let lo = (amount & 0xFFFF_FFFF_FFFF_FFFF) as u64 as i64;
+        let hi = (amount >> 64) as u64 as i64;
+        // Reconstruct
+        let back_lo = lo as u64 as u128;
+        let back_hi = hi as u64 as u128;
+        assert_eq!((back_hi << 64) | back_lo, amount);
+    }
+
+    #[test]
+    fn test_transfer_amount_large_i64_encoding() {
+        // Test with amount that requires both lo and hi parts
+        let amount: u128 = u128::MAX;
+        let lo = (amount & 0xFFFF_FFFF_FFFF_FFFF) as u64 as i64;
+        let hi = (amount >> 64) as u64 as i64;
+        // Reconstruct through the same cast chain
+        let back_lo = lo as u64 as u128;
+        let back_hi = hi as u64 as u128;
+        assert_eq!((back_hi << 64) | back_lo, amount);
+    }
+
+    // ── LE bytes roundtrips for state storage ───────────────────
+
+    #[test]
+    fn test_u128_le_bytes_zero() {
+        let val: u128 = 0;
+        let bytes = val.to_le_bytes();
+        assert_eq!(u128::from_le_bytes(bytes), 0);
+    }
+
+    #[test]
+    fn test_u128_le_bytes_max() {
+        let val: u128 = u128::MAX;
+        let bytes = val.to_le_bytes();
+        assert_eq!(u128::from_le_bytes(bytes), u128::MAX);
+    }
+
+    #[test]
+    fn test_u64_le_bytes_max() {
+        let val: u64 = u64::MAX;
+        let bytes = val.to_le_bytes();
+        assert_eq!(u64::from_le_bytes(bytes), u64::MAX);
+    }
+
+    #[test]
+    fn test_u128_le_bytes_partial_decode() {
+        // Simulate state::get_u128 when data is too short (should return 0)
+        let short_bytes: Vec<u8> = vec![1, 2, 3]; // < 16 bytes
+        let result = if short_bytes.len() >= 16 {
+            let mut arr = [0u8; 16];
+            arr.copy_from_slice(&short_bytes[..16]);
+            u128::from_le_bytes(arr)
+        } else {
+            0 // Fallback per SDK contract
+        };
+        assert_eq!(result, 0);
+    }
+
+    #[test]
+    fn test_u64_le_bytes_partial_decode() {
+        // Simulate state::get_u64 when data is too short
+        let short_bytes: Vec<u8> = vec![1, 2]; // < 8 bytes
+        let result = if short_bytes.len() >= 8 {
+            let mut arr = [0u8; 8];
+            arr.copy_from_slice(&short_bytes[..8]);
+            u64::from_le_bytes(arr)
+        } else {
+            0
+        };
+        assert_eq!(result, 0);
+    }
+
+    // ── Layout validation (alloc/dealloc) ───────────────────────
+
+    #[test]
+    fn test_layout_from_size_align() {
+        // Verify the Layout creation pattern used in __los_alloc
+        let layout = core::alloc::Layout::from_size_align(1024, 1);
+        assert!(layout.is_ok());
+        let layout = layout.unwrap();
+        assert_eq!(layout.size(), 1024);
+        assert_eq!(layout.align(), 1);
+    }
+
+    #[test]
+    fn test_layout_zero_size() {
+        let layout = core::alloc::Layout::from_size_align(0, 1);
+        assert!(layout.is_ok()); // Zero-size layouts are valid
+    }
+
+    #[test]
+    fn test_layout_invalid_alignment() {
+        // Alignment must be a power of two
+        let layout = core::alloc::Layout::from_size_align(1024, 3);
+        assert!(layout.is_err());
     }
 }

@@ -14,16 +14,16 @@ class VotingPowerCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final votingPowerPercentage = validatorInfo.getVotingPowerPercentage(
+    final votingPowerPctStr = validatorInfo.getVotingPowerPercentageStr(
       allValidators,
     );
     final totalNetworkStake = allValidators.fold(
-      0.0,
-      (sum, v) => sum + v.stakeLOS,
+      0,
+      (int sum, v) => sum + v.stake,
     );
     final totalVotingPower = allValidators.fold(
-      0.0,
-      (sum, v) => sum + v.votingPower,
+      0,
+      (int sum, v) => sum + v.votingPowerInt,
     );
 
     return Card(
@@ -75,7 +75,7 @@ class VotingPowerCard extends StatelessWidget {
               child: Column(
                 children: [
                   Text(
-                    validatorInfo.votingPower.toStringAsFixed(2),
+                    validatorInfo.votingPowerDisplay,
                     style: TextStyle(
                       fontSize: 48,
                       fontWeight: FontWeight.bold,
@@ -89,7 +89,7 @@ class VotingPowerCard extends StatelessWidget {
                   ),
                   const SizedBox(height: 4),
                   Text(
-                    '${votingPowerPercentage.toStringAsFixed(2)}% of Network',
+                    '$votingPowerPctStr% of Network',
                     style: TextStyle(
                       fontSize: 12,
                       color: Colors.purple.shade400,
@@ -153,7 +153,7 @@ class VotingPowerCard extends StatelessWidget {
                     icon: Icons.account_balance_wallet,
                     iconColor: Colors.green.shade400,
                     label: 'Your Stake',
-                    value: '${validatorInfo.stakeLOS.toStringAsFixed(2)} LOS',
+                    value: '${validatorInfo.stakeDisplay} LOS',
                   ),
                 ),
                 const SizedBox(width: 12),
@@ -163,7 +163,7 @@ class VotingPowerCard extends StatelessWidget {
                     icon: Icons.group,
                     iconColor: Colors.blue.shade400,
                     label: 'Network Stake',
-                    value: '${totalNetworkStake.toStringAsFixed(0)} LOS',
+                    value: '$totalNetworkStake LOS',
                   ),
                 ),
               ],
@@ -179,7 +179,7 @@ class VotingPowerCard extends StatelessWidget {
                     icon: Icons.ballot,
                     iconColor: Colors.purple.shade400,
                     label: 'Your Power',
-                    value: validatorInfo.votingPower.toStringAsFixed(2),
+                    value: validatorInfo.votingPowerDisplay,
                   ),
                 ),
                 const SizedBox(width: 12),
@@ -189,7 +189,7 @@ class VotingPowerCard extends StatelessWidget {
                     icon: Icons.poll,
                     iconColor: Colors.orange.shade400,
                     label: 'Total Power',
-                    value: totalVotingPower.toStringAsFixed(0),
+                    value: '$totalVotingPower',
                   ),
                 ),
               ],
@@ -209,7 +209,7 @@ class VotingPowerCard extends StatelessWidget {
                       style: TextStyle(fontSize: 12, color: Colors.grey),
                     ),
                     Text(
-                      '${votingPowerPercentage.toStringAsFixed(2)}%',
+                      '$votingPowerPctStr%',
                       style: const TextStyle(
                         fontSize: 12,
                         fontWeight: FontWeight.bold,
@@ -221,7 +221,12 @@ class VotingPowerCard extends StatelessWidget {
                 ClipRRect(
                   borderRadius: BorderRadius.circular(4),
                   child: LinearProgressIndicator(
-                    value: math.min(votingPowerPercentage / 100, 1.0),
+                    // For progress bar we need a 0.0-1.0 double — this is UI rendering, not financial logic
+                    value: totalVotingPower > 0
+                        ? math.min(
+                            validatorInfo.votingPowerInt / totalVotingPower,
+                            1.0)
+                        : 0.0,
                     minHeight: 8,
                     backgroundColor: Colors.grey.shade800,
                     valueColor: AlwaysStoppedAnimation<Color>(

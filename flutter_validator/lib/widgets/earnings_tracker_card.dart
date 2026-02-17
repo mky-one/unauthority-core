@@ -37,7 +37,7 @@ class EarningsTrackerCard extends StatelessWidget {
                     borderRadius: BorderRadius.circular(12),
                   ),
                   child: Text(
-                    '${earnings.revenueSharePercentage.toStringAsFixed(2)}% Network Share',
+                    '${earnings.revenueShareDisplay} Network Share',
                     style: const TextStyle(
                       color: Colors.green,
                       fontWeight: FontWeight.bold,
@@ -63,7 +63,7 @@ class EarningsTrackerCard extends StatelessWidget {
                   ),
                   const SizedBox(height: 8),
                   Text(
-                    '${NumberFormat('#,##0.000000').format(earnings.totalEarningsLOS)} LOS',
+                    '${earnings.totalEarningsDisplay} LOS',
                     style: const TextStyle(
                       fontSize: 32,
                       fontWeight: FontWeight.bold,
@@ -86,7 +86,7 @@ class EarningsTrackerCard extends StatelessWidget {
                 Expanded(
                   child: _buildTimeCard(
                     '24 Hours',
-                    earnings.last24HoursLOS,
+                    earnings.last24HoursDisplay,
                     Icons.today,
                   ),
                 ),
@@ -94,7 +94,7 @@ class EarningsTrackerCard extends StatelessWidget {
                 Expanded(
                   child: _buildTimeCard(
                     '7 Days',
-                    earnings.last7DaysLOS,
+                    earnings.last7DaysDisplay,
                     Icons.date_range,
                   ),
                 ),
@@ -102,7 +102,7 @@ class EarningsTrackerCard extends StatelessWidget {
                 Expanded(
                   child: _buildTimeCard(
                     '30 Days',
-                    earnings.last30DaysLOS,
+                    earnings.last30DaysDisplay,
                     Icons.calendar_month,
                   ),
                 ),
@@ -126,7 +126,7 @@ class EarningsTrackerCard extends StatelessWidget {
     );
   }
 
-  Widget _buildTimeCard(String label, double amount, IconData icon) {
+  Widget _buildTimeCard(String label, String amountStr, IconData icon) {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -141,7 +141,7 @@ class EarningsTrackerCard extends StatelessWidget {
           Text(label, style: const TextStyle(fontSize: 12, color: Colors.grey)),
           const SizedBox(height: 4),
           Text(
-            '+${amount.toStringAsFixed(3)}',
+            '+$amountStr',
             style: TextStyle(
               fontSize: 16,
               fontWeight: FontWeight.bold,

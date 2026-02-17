@@ -37,6 +37,9 @@ All errors return:
 - [Network Endpoints](#network-endpoints)
 - [Utility Endpoints](#utility-endpoints)
 - [gRPC API](#grpc-api)
+- [USP-01 Token Endpoints](#usp-01-token-endpoints)
+- [DEX AMM Endpoints](#dex-amm-endpoints)
+- [CLI Reference](#cli-reference)
 - [Rate Limits](#rate-limits)
 
 ---
@@ -642,6 +645,368 @@ Protocol definition: [`los.proto`](../los.proto)
 | `GetBlockHeight` | Current block height |
 
 **gRPC port:** Always REST port + 20,000 (default: `23030`).
+
+---
+
+## USP-01 Token Endpoints
+
+The **USP-01 Token Standard** is deployed as WASM contracts on the UVM. These operations go through the generic `/deploy-contract` and `/call-contract` endpoints, but with specific function signatures documented here.
+
+### Deploy a USP-01 Token
+
+Use `POST /deploy-contract` with a compiled USP-01 WASM binary, then call `init`.
+
+**Init Call:**
+```json
+{
+  "contract_id": "LOSConXXXX...",
+  "function": "init",
+  "args": ["My Token", "MTK", "11", "1000000", "0", "", "0", ""],
+  "caller": "LOSX7dSt...",
+  "signature": "hex...",
+  "public_key": "hex..."
+}
+```
+
+| Arg | Field | Type | Description |
+|---|---|---|---|
+| 0 | `name` | String | Token name (1-64 chars) |
+| 1 | `symbol` | String | Token symbol (1-8 chars) |
+| 2 | `decimals` | u8 | Decimal places (0-18) |
+| 3 | `total_supply` | u128 string | Initial supply assigned to deployer |
+| 4 | `is_wrapped` | "0"/"1" | Whether this is a wrapped asset |
+| 5 | `wrapped_origin` | String | Source chain identifier (e.g. "ETH") |
+| 6 | `max_supply` | u128 string | Max supply cap ("0" = no cap) |
+| 7 | `bridge_operator` | address | Address authorized for wrap_mint |
+
+### `transfer`
+
+Transfer tokens from caller to recipient.
+
+```json
+{ "function": "transfer", "args": ["LOSRecipient...", "1000"] }
+```
+
+### `approve`
+
+Set spending allowance for a spender. Set amount to "0" to revoke.
+
+```json
+{ "function": "approve", "args": ["LOSSpender...", "5000"] }
+```
+
+### `transfer_from`
+
+Transfer tokens using a pre-approved allowance.
+
+```json
+{ "function": "transfer_from", "args": ["LOSOwner...", "LOSRecipient...", "1000"] }
+```
+
+### `burn`
+
+Permanently destroy tokens from caller's balance. Reduces total supply.
+
+```json
+{ "function": "burn", "args": ["500"] }
+```
+
+### `balance_of` (Read-only)
+
+```json
+{ "function": "balance_of", "args": ["LOSHolder..."] }
+```
+
+**Response:**
+```json
+{ "account": "LOSHolder...", "balance": "1000" }
+```
+
+### `allowance_of` (Read-only)
+
+```json
+{ "function": "allowance_of", "args": ["LOSOwner...", "LOSSpender..."] }
+```
+
+**Response:**
+```json
+{ "owner": "LOSOwner...", "spender": "LOSSpender...", "allowance": "5000" }
+```
+
+### `total_supply` (Read-only)
+
+```json
+{ "function": "total_supply", "args": [] }
+```
+
+**Response:**
+```json
+{ "total_supply": "1000000" }
+```
+
+### `token_info` (Read-only)
+
+Returns full token metadata.
+
+**Response:**
+```json
+{
+  "name": "My Token",
+  "symbol": "MTK",
+  "decimals": 11,
+  "total_supply": "1000000",
+  "is_wrapped": false,
+  "wrapped_origin": "",
+  "max_supply": "0",
+  "bridge_operator": "",
+  "owner": "LOSX7dSt...",
+  "contract": "LOSConXXXX...",
+  "standard": "USP-01"
+}
+```
+
+### `wrap_mint` (Bridge Operator Only)
+
+Mint wrapped tokens upon cross-chain deposit verification.
+
+```json
+{ "function": "wrap_mint", "args": ["LOSRecipient...", "1000", "0xTxProof..."] }
+```
+
+### `wrap_burn`
+
+Burn wrapped tokens for redemption on the source chain.
+
+```json
+{ "function": "wrap_burn", "args": ["500", "0xDestinationAddress..."] }
+```
+
+**Events emitted:** `USP01:Init`, `USP01:Transfer`, `USP01:Approval`, `USP01:Burn`, `USP01:WrapMint`, `USP01:WrapBurn`.
+
+---
+
+## DEX AMM Endpoints
+
+The **DEX AMM** is a constant-product (x·y=k) automated market maker deployed as a WASM contract. All operations go through `/deploy-contract` and `/call-contract`.
+
+**Constants:** 0.3% fee (30 bps), minimum liquidity 1,000, max fee 1,000 bps.
+
+### `init`
+
+Initialize the DEX contract.
+
+```json
+{ "function": "init", "args": [] }
+```
+
+### `create_pool`
+
+Create a new liquidity pool with initial reserves.
+
+```json
+{
+  "function": "create_pool",
+  "args": ["LOSConTokenA...", "LOSConTokenB...", "1000000", "500000", "30"]
+}
+```
+
+| Arg | Field | Type | Description |
+|---|---|---|---|
+| 0 | `token_a` | address/"LOS" | First token (use "LOS" for native) |
+| 1 | `token_b` | address/"LOS" | Second token |
+| 2 | `amount_a` | u128 string | Initial reserve for token A |
+| 3 | `amount_b` | u128 string | Initial reserve for token B |
+| 4 | `fee_bps` | u128 string | Fee in basis points (optional, default 30) |
+
+**LP minted:** `isqrt(amount_a × amount_b) - 1000` (minimum liquidity locked).
+
+### `add_liquidity`
+
+Add proportional liquidity to an existing pool.
+
+```json
+{ "function": "add_liquidity", "args": ["0", "100000", "50000", "900"] }
+```
+
+| Arg | Field | Description |
+|---|---|---|
+| 0 | `pool_id` | Pool identifier |
+| 1 | `amount_a` | Token A deposit |
+| 2 | `amount_b` | Token B deposit |
+| 3 | `min_lp_tokens` | Slippage protection: minimum LP tokens to accept |
+
+### `remove_liquidity`
+
+Withdraw proportional reserves by burning LP tokens.
+
+```json
+{ "function": "remove_liquidity", "args": ["0", "500", "40000", "20000"] }
+```
+
+| Arg | Field | Description |
+|---|---|---|
+| 0 | `pool_id` | Pool identifier |
+| 1 | `lp_amount` | LP tokens to burn |
+| 2 | `min_amount_a` | Slippage protection: minimum token A out |
+| 3 | `min_amount_b` | Slippage protection: minimum token B out |
+
+### `swap`
+
+Execute a token swap with MEV protection.
+
+```json
+{ "function": "swap", "args": ["0", "LOSConTokenA...", "10000", "4800", "1771280000"] }
+```
+
+| Arg | Field | Description |
+|---|---|---|
+| 0 | `pool_id` | Pool identifier |
+| 1 | `token_in` | Address of token being sold |
+| 2 | `amount_in` | Amount to swap |
+| 3 | `min_amount_out` | Slippage protection: minimum output |
+| 4 | `deadline` | Unix timestamp deadline (MEV protection) |
+
+**Formula:** `amount_out = (amount_after_fee × reserve_out) / (reserve_in + amount_after_fee)`
+
+### `get_pool` (Read-only)
+
+```json
+{ "function": "get_pool", "args": ["0"] }
+```
+
+**Response:**
+```json
+{
+  "pool_id": "0",
+  "token_a": "LOSConTokenA...",
+  "token_b": "LOSConTokenB...",
+  "reserve_a": "1000000",
+  "reserve_b": "500000",
+  "total_lp": "706106",
+  "fee_bps": "30",
+  "creator": "LOSX7dSt...",
+  "last_trade": "1771277598",
+  "spot_price_scaled": "2000000000000"
+}
+```
+
+### `quote` (Read-only)
+
+Get expected swap output without executing.
+
+```json
+{ "function": "quote", "args": ["0", "LOSConTokenA...", "10000"] }
+```
+
+**Response:**
+```json
+{
+  "amount_out": "4950",
+  "fee": "30",
+  "price_impact_bps": "100",
+  "spot_price_scaled": "2000000000000"
+}
+```
+
+### `get_position` (Read-only)
+
+Get caller's LP position in a pool.
+
+```json
+{ "function": "get_position", "args": ["0"] }
+```
+
+**Response:**
+```json
+{
+  "lp_shares": "10000",
+  "total_lp": "706106",
+  "amount_a": "14158",
+  "amount_b": "7079",
+  "share_pct_bps": "141"
+}
+```
+
+### `list_pools` (Read-only)
+
+List all pools in the DEX.
+
+```json
+{ "function": "list_pools", "args": [] }
+```
+
+**Events emitted:** `DexInit`, `PoolCreated`, `LiquidityAdded`, `LiquidityRemoved`, `Swap`.
+
+---
+
+## CLI Reference
+
+The `los-cli` binary provides command-line access to all node functionality.
+
+**Global flags:** `--rpc <URL>` (default: `http://localhost:3030`), `--config-dir <DIR>` (default: `~/.los`)
+
+### `los-cli wallet` — Wallet Management
+
+| Command | Description |
+|---|---|
+| `wallet new --name <NAME>` | Create new Dilithium5 wallet |
+| `wallet list` | List all wallets |
+| `wallet balance <ADDRESS>` | Show wallet balance |
+| `wallet export <NAME> --output <PATH>` | Export encrypted wallet |
+| `wallet import <PATH> --name <NAME>` | Import wallet |
+
+### `los-cli tx` — Transaction Operations
+
+| Command | Description |
+|---|---|
+| `tx send --to <ADDR> --amount <LOS> --from <WALLET>` | Send LOS to address |
+| `tx status <HASH>` | Query transaction status |
+
+### `los-cli query` — Blockchain Queries
+
+| Command | Description |
+|---|---|
+| `query block <HEIGHT>` | Get block by height |
+| `query account <ADDRESS>` | Get account state |
+| `query info` | Network information |
+| `query validators` | Get validator set |
+
+### `los-cli validator` — Validator Operations
+
+| Command | Description |
+|---|---|
+| `validator stake --amount <LOS> --wallet <NAME>` | Stake tokens (min 1,000 LOS) |
+| `validator unstake --wallet <NAME>` | Unstake tokens |
+| `validator status <ADDRESS>` | Show validator status |
+| `validator list` | List active validators |
+
+### `los-cli token` — USP-01 Token Operations
+
+| Command | Description |
+|---|---|
+| `token deploy --wallet <W> --wasm <PATH> --name <N> --symbol <S> --decimals <D> --total-supply <AMT>` | Deploy USP-01 token |
+| `token list` | List all deployed tokens |
+| `token info <ADDRESS>` | Show token metadata |
+| `token balance --token <ADDR> --holder <ADDR>` | Query token balance |
+| `token allowance --token <T> --owner <O> --spender <S>` | Query allowance |
+| `token transfer --wallet <W> --token <T> --to <ADDR> --amount <AMT>` | Transfer tokens |
+| `token approve --wallet <W> --token <T> --spender <ADDR> --amount <AMT>` | Approve spender |
+| `token burn --wallet <W> --token <T> --amount <AMT>` | Burn tokens |
+| `token mint --wallet <W> --token <T> --to <ADDR> --amount <AMT>` | Distribute tokens (owner transfer) |
+
+### `los-cli dex` — DEX Operations
+
+| Command | Description |
+|---|---|
+| `dex deploy --wallet <W> --wasm <PATH>` | Deploy DEX AMM contract |
+| `dex pools` | List all DEX pools |
+| `dex pool --contract <C> --pool-id <ID>` | Show pool info |
+| `dex quote --contract <C> --pool-id <ID> --token-in <T> --amount-in <AMT>` | Get swap quote |
+| `dex position --contract <C> --pool-id <ID> --user <ADDR>` | Get LP position |
+| `dex create-pool --wallet <W> --contract <C> --token-a <A> --token-b <B> --amount-a <A> --amount-b <B>` | Create liquidity pool |
+| `dex add-liquidity --wallet <W> --contract <C> --pool-id <ID> --amount-a <A> --amount-b <B> --min-lp <MIN>` | Add liquidity |
+| `dex remove-liquidity --wallet <W> --contract <C> --pool-id <ID> --lp-amount <LP> --min-a <A> --min-b <B>` | Remove liquidity |
+| `dex swap --wallet <W> --contract <C> --pool-id <ID> --token-in <T> --amount-in <A> --min-out <MIN>` | Execute swap |
 
 ---
 

@@ -1251,6 +1251,7 @@ fn test_blockchain_contract_blocks() {
 
     // Now create the deploy block chained from the mint
     deploy_block.previous = mint_hash.clone();
+    deploy_block.timestamp = now_secs(); // Ensure monotonic timestamp
     mine_and_sign(&mut deploy_block, &node.secret_key);
     let deploy_hash_2 = deploy_block.calculate_hash();
     let deploy_result = ledger.process_block(&deploy_block);
@@ -1262,6 +1263,7 @@ fn test_blockchain_contract_blocks() {
 
     // Chain the call block from the deploy
     call_block.previous = deploy_hash_2.clone();
+    call_block.timestamp = now_secs(); // Ensure monotonic timestamp
     mine_and_sign(&mut call_block, &node.secret_key);
     let call_result = ledger.process_block(&call_block);
     assert!(

@@ -242,7 +242,11 @@ impl LosNode for LosGrpcService {
             balance: account_balance, // Account balance, not block balance
             signature: block.signature.clone(),
             timestamp: block.timestamp,     // Use actual block timestamp
-            representative: "".to_string(), // Not implemented yet
+            representative: if matches!(block.block_type, los_core::BlockType::Change) {
+                block.link.clone() // Change blocks store representative in link
+            } else {
+                String::new()
+            },
         };
 
         println!(

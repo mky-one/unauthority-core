@@ -1,14 +1,12 @@
 name: CI/CD Pipeline
 
-# ── CI TEMPORARILY DISABLED ──────────────────────────────────────
-# Reason: Avoiding duplicate/long-running CI during active development.
-# To re-enable: restore the original `on:` triggers below.
-# Original triggers (restore when ready):
-#   push:
-#     branches: [ main, develop, mky-* ]
-#   pull_request:
-#     branches: [ main, develop ]
+# Triggers: push to main, release tags, manual dispatch
 on:
+  push:
+    branches: [ main ]
+    tags:
+      - 'v*'
+      - 'release-*'
   workflow_dispatch:
 
 env:

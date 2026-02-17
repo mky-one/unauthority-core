@@ -4,6 +4,10 @@ version: '3.8'
 # SECURITY: genesis_config.json has been stripped of private_key/seed_phrase.
 # If you regenerate genesis, re-strip secrets before deployment.
 #
+# IMPORTANT: Set LOS_SEED_PHRASE_V1..V4 in your environment or .env file
+# to maintain consistent validator identities across container restarts.
+# Without seed phrases, each restart generates a random keypair.
+#
 # Ports per container:
 #   REST API:  --port (3030, 3031, 3032, 3033)
 #   gRPC:      REST + 20000 (23030, 23031, 23032, 23033)
@@ -32,6 +36,7 @@ services:
       - LOS_NODE_ID=validator-1
       - LOS_TESTNET_LEVEL=consensus
       - LOS_BIND_ALL=1
+      - LOS_SEED_PHRASE=${LOS_SEED_PHRASE_V1}
       - LOS_BOOTSTRAP_NODES=/ip4/172.20.0.12/tcp/4001,/ip4/172.20.0.13/tcp/4001,/ip4/172.20.0.14/tcp/4001
     command: ["./los-node", "--port", "3030", "--data-dir", "/data"]
     restart: unless-stopped
@@ -59,6 +64,7 @@ services:
       - LOS_NODE_ID=validator-2
       - LOS_TESTNET_LEVEL=consensus
       - LOS_BIND_ALL=1
+      - LOS_SEED_PHRASE=${LOS_SEED_PHRASE_V2}
       - LOS_BOOTSTRAP_NODES=/ip4/172.20.0.11/tcp/4001,/ip4/172.20.0.13/tcp/4001,/ip4/172.20.0.14/tcp/4001
     command: ["./los-node", "--port", "3030", "--data-dir", "/data"]
     restart: unless-stopped
@@ -83,6 +89,7 @@ services:
       - LOS_NODE_ID=validator-3
       - LOS_TESTNET_LEVEL=consensus
       - LOS_BIND_ALL=1
+      - LOS_SEED_PHRASE=${LOS_SEED_PHRASE_V3}
       - LOS_BOOTSTRAP_NODES=/ip4/172.20.0.11/tcp/4001,/ip4/172.20.0.12/tcp/4001,/ip4/172.20.0.14/tcp/4001
     command: ["./los-node", "--port", "3030", "--data-dir", "/data"]
     restart: unless-stopped
@@ -107,6 +114,7 @@ services:
       - LOS_NODE_ID=validator-4
       - LOS_TESTNET_LEVEL=consensus
       - LOS_BIND_ALL=1
+      - LOS_SEED_PHRASE=${LOS_SEED_PHRASE_V4}
       - LOS_BOOTSTRAP_NODES=/ip4/172.20.0.11/tcp/4001,/ip4/172.20.0.12/tcp/4001,/ip4/172.20.0.13/tcp/4001
     command: ["./los-node", "--port", "3030", "--data-dir", "/data"]
     restart: unless-stopped

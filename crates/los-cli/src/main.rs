@@ -900,7 +900,7 @@ mod tests {
     #[test]
     fn test_pow_verification_counts_leading_zeros() {
         // Block with work=0 is very unlikely to satisfy 16-bit PoW
-        let block = Block {
+        let _block = Block {
             account: "LOStest".to_string(),
             previous: "0".to_string(),
             block_type: BlockType::Send,

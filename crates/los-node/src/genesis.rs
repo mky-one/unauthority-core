@@ -1,4 +1,9 @@
-// Genesis module for initializing the blockchain
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// UNAUTHORITY (LOS) - GENESIS MODULE
+//
+// Initializes the blockchain from genesis_config.json.
+// Loads bootstrap validator stakes and dev treasury allocations.
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 #![allow(dead_code)]
 
 use crate::{AccountState, CIL_PER_LOS};

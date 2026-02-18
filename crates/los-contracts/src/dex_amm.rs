@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: Apache-2.0
 //! # DEX AMM Contract (WASM)
 //!
 //! Deployable `#![no_std]` WASM smart contract implementing a Constant Product

@@ -1,5 +1,3 @@
-use los_consensus::voting::calculate_voting_power;
-use los_core::{Ledger, CIL_PER_LOS, MIN_VALIDATOR_STAKE_CIL};
 /// Unauthority gRPC Server Implementation
 ///
 /// Provides 8 core gRPC services for external integration:
@@ -11,6 +9,9 @@ use los_core::{Ledger, CIL_PER_LOS, MIN_VALIDATOR_STAKE_CIL};
 /// 6. GetNodeInfo - Get node/oracle/supply info
 /// 7. GetValidators - List all active validators
 /// 8. GetBlockHeight - Get current blockchain height
+
+use los_consensus::voting::calculate_voting_power;
+use los_core::{Ledger, CIL_PER_LOS, MIN_VALIDATOR_STAKE_CIL};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use tokio::sync::mpsc;

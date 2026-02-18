@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: Apache-2.0
 //! # USP-01 Token Registry
 //!
 //! Node-level helpers for discovering, querying, and indexing USP-01 tokens

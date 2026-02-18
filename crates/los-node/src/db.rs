@@ -1,5 +1,9 @@
-// Database Module - sled Embedded Database
-// Provides ACID-compliant atomic operations for blockchain state
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// UNAUTHORITY (LOS) - DATABASE MODULE
+//
+// sled embedded database for persistent blockchain state.
+// Provides ACID-compliant atomic operations for blocks, accounts, and metadata.
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 use los_core::{AccountState, Block, Ledger};
 use sled::{Db, Tree};

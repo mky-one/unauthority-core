@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: Apache-2.0
 //! # USP-01 Token Contract
 //!
 //! Deployable WASM smart contract implementing the USP-01 Fungible Token Standard

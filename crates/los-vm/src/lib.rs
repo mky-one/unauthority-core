@@ -1,3 +1,13 @@
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// UNAUTHORITY (LOS) - VIRTUAL MACHINE (UVM)
+//
+// WASM-based smart contract execution engine.
+// - Wasmer runtime with Cranelift compiler
+// - Gas metering via Metering middleware
+// - Sandboxed execution with resource limits
+// - Host functions for state access, transfers, and events
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::sync::atomic::{AtomicUsize, Ordering as AtomicOrdering};

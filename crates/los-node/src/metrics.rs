@@ -1,5 +1,9 @@
-// UNAUTHORITY METRICS MODULE
-// Prometheus-compatible metrics for production monitoring
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// UNAUTHORITY (LOS) - METRICS MODULE
+//
+// Prometheus-compatible metrics for production monitoring.
+// Exposes counters, gauges, and histograms via /metrics endpoint.
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 use prometheus::{
     Counter, Encoder, Gauge, Histogram, HistogramOpts, IntCounter, IntGauge, Opts, Registry,

@@ -1,4 +1,4 @@
-# Tor Setup Guide — Unauthority (LOS) v1.1.0
+# Tor Setup Guide — Unauthority (LOS) v1.0.9
 
 Complete guide to configuring Tor hidden services for Unauthority validators and clients.
 
@@ -13,7 +13,7 @@ Complete guide to configuring Tor hidden services for Unauthority validators and
 5. [Multi-Validator Setup (Same Host)](#multi-validator-setup-same-host)
 6. [Verify Hidden Service](#verify-hidden-service)
 7. [Auto-Bootstrap (v1.0.9+)](#auto-bootstrap-v109)
-8. [Automatic Hidden Service Generation (v1.1.0+)](#automatic-hidden-service-generation-v110)
+8. [Automatic Hidden Service Generation (v1.0.9+)](#automatic-hidden-service-generation-v109)
 9. [Flutter App Tor Connectivity](#flutter-app-tor-connectivity)
 10. [Firewall Configuration](#firewall-configuration)
 11. [Performance Tuning](#performance-tuning)
@@ -220,7 +220,7 @@ sudo apt install torsocks    # Linux
 brew install torsocks         # macOS
 
 # Test REST API
-torsocks curl http://YOUR_ONION.onion:3030/status
+torsocks curl http://YOUR_ONION.onion:3030/health
 
 # Test P2P port
 torsocks curl http://YOUR_ONION.onion:4030/
@@ -230,10 +230,10 @@ torsocks curl http://YOUR_ONION.onion:4030/
 
 ```bash
 # Via SOCKS5 proxy
-curl --socks5-hostname 127.0.0.1:9050 http://YOUR_ONION.onion:3030/status
+curl --socks5-hostname 127.0.0.1:9050 http://YOUR_ONION.onion:3030/health
 
 # Direct localhost (bypasses Tor)
-curl http://127.0.0.1:3030/status
+curl http://127.0.0.1:3030/health
 ```
 
 ### Expected Response
@@ -270,10 +270,10 @@ You can override auto-bootstrap with environment variables:
 
 ```bash
 # Custom peer list (overrides genesis bootstrap)
-export LOS_BOOTSTRAP_PEERS="abc123.onion:4030,def456.onion:4031"
+export LOS_BOOTSTRAP_NODES="abc123.onion:4030,def456.onion:4031"
 
 # Custom Tor SOCKS5 address
-export LOS_TOR_SOCKS="127.0.0.1:9150"  # e.g., Tor Browser port
+export LOS_SOCKS5_PROXY="socks5h://127.0.0.1:9150"  # e.g., Tor Browser port
 
 # Custom genesis file path
 export LOS_GENESIS_PATH="/path/to/custom/genesis_config.json"
@@ -283,8 +283,8 @@ export LOS_GENESIS_PATH="/path/to/custom/genesis_config.json"
 
 | Variable | Default | Description |
 |---|---|---|
-| `LOS_BOOTSTRAP_PEERS` | *(from genesis)* | Comma-separated `onion:port` list |
-| `LOS_TOR_SOCKS` | `127.0.0.1:9050` | Tor SOCKS5 proxy address |
+| `LOS_BOOTSTRAP_NODES` | *(from genesis)* | Comma-separated `onion:port` list |
+| `LOS_SOCKS5_PROXY` | `127.0.0.1:9050` | Tor SOCKS5 proxy address |
 | `LOS_GENESIS_PATH` | *(embedded)* | Path to genesis config |
 | `LOS_NETWORK` | `mainnet` | Network: `mainnet` or `testnet` |
 | `LOS_DATA_DIR` | `./data` | Data directory |
@@ -294,9 +294,9 @@ export LOS_GENESIS_PATH="/path/to/custom/genesis_config.json"
 
 ---
 
-## Automatic Hidden Service Generation (v1.1.0+)
+## Automatic Hidden Service Generation (v1.0.9+)
 
-As of v1.1.0, `los-node` can **automatically generate** a unique Tor Hidden Service (`.onion` address) on startup — no manual `torrc` editing required.
+As of v1.0.9, `los-node` can **automatically generate** a unique Tor Hidden Service (`.onion` address) on startup — no manual `torrc` editing required.
 
 ### Prerequisites
 
@@ -561,7 +561,7 @@ curl --socks5-hostname 127.0.0.1:9050 http://check.torproject.org/api/ip
 
 # Check if bootstrap peers are reachable
 curl --socks5-hostname 127.0.0.1:9050 \
-  http://f3zfmhvverdljhddhxvdnkibrajd2cbolrfq4z6a5y2ifprf2xh34nid.onion:3030/status
+  http://f3zfmhvverdljhddhxvdnkibrajd2cbolrfq4z6a5y2ifprf2xh34nid.onion:3030/health
 
 # Check node peer count
 curl http://127.0.0.1:3030/peers
@@ -581,7 +581,7 @@ ss -tlnp | grep tor    # Linux
 lsof -i -P | grep tor  # macOS
 
 # Override if non-standard
-export LOS_TOR_SOCKS="127.0.0.1:9150"
+export LOS_SOCKS5_PROXY="socks5h://127.0.0.1:9150"
 ```
 
 ### Slow Connections

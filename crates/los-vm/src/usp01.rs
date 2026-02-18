@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: Apache-2.0
 //! # USP-01: Unauthority Standard for Permissionless Tokens
 //!
 //! Native Fungible Token Standard for the Unauthority (LOS) blockchain.

@@ -2,6 +2,8 @@
 
 **Lattice Of Sovereignty: A Post-Quantum, Privacy-First Block-Lattice Blockchain**
 
+*Last updated: June 2025*
+
 ---
 
 ## Table of Contents
@@ -159,7 +161,7 @@ If the leader fails (timeout after 5,000ms), a **view change** is triggered:
 |---|---|
 | **Total Supply** | 21,936,236 LOS (Fixed, non-inflationary) |
 | **Atomic Unit** | CIL (1 LOS = 10^11 CIL) |
-| **Dev Treasury** | 773,823 LOS (~3.5%) |
+| **Dev Treasury** | 777,823 LOS (~3.5%) |
 | **Public Allocation** | 21,158,413 LOS (~96.5%) |
 | **Reward Pool** | 500,000 LOS (from Dev Treasury, non-inflationary) |
 
@@ -172,7 +174,7 @@ If the leader fails (timeout after 5,000ms), a **view change** is triggered:
 | Dev Treasury 3 | 50,000 | Community grants |
 | Dev Treasury 4 | 50,000 | Emergency fund |
 | Bootstrap Validators | 4,000 | 4 validators × 1,000 LOS stake |
-| **Total** | **773,823** | |
+| **Total** | **777,823** | |
 
 ### Public Supply Distribution
 
@@ -537,8 +539,8 @@ The Unauthority Virtual Machine (UVM) executes WASM smart contracts:
 
 ```
 Rust source → cargo build --target wasm32-unknown-unknown → .wasm
-    → Deploy via /contract/deploy
-    → Execute via /contract/execute
+    → Deploy via /deploy-contract
+    → Execute via /call-contract
     → State stored in contract-specific key-value store
 ```
 

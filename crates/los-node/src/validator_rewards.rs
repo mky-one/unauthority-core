@@ -1,5 +1,9 @@
-// Validator rewards calculation module
-// Distributes transaction fees to validators who finalize blocks
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// UNAUTHORITY (LOS) - PER-BLOCK VALIDATOR REWARDS
+//
+// Distributes transaction fees to validators who finalize blocks.
+// Each validator's share = block_fee / validator_count.
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 /// Calculate validator reward from a finalized Send block's fee.
 /// Validators who participate in consensus for a block share its fee.

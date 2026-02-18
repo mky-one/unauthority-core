@@ -1,3 +1,13 @@
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// UNAUTHORITY (LOS) - CRYPTOGRAPHY MODULE
+//
+// Post-quantum cryptography using Dilithium5 (NIST PQC standard).
+// - Key generation (random and deterministic from BIP39 seed)
+// - Message signing and verification
+// - LOS address derivation (Base58Check with BLAKE2b-160)
+// - Private key encryption via age (scrypt-based)
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
 use age::{Decryptor, Encryptor};
 use digest::Digest;
 use pqcrypto_dilithium::dilithium5::{
@@ -61,7 +71,7 @@ pub struct EncryptedKey {
     pub public_key: Vec<u8>,
 }
 
-/// Generate pasangan kunci Post-Quantum baru (Dilithium5)
+/// Generate a new Post-Quantum key pair (Dilithium5)
 pub fn generate_keypair() -> KeyPair {
     let (pk, sk) = keypair();
     KeyPair {
@@ -140,7 +150,7 @@ pub fn keypair_from_secret(secret_bytes: &[u8]) -> Result<KeyPair, CryptoError> 
     }
 }
 
-/// Menandatangani pesan
+/// Sign a message using a Dilithium5 secret key
 pub fn sign_message(message: &[u8], secret_key_bytes: &[u8]) -> Result<Vec<u8>, CryptoError> {
     let sk =
         DilithiumSecretKey::from_bytes(secret_key_bytes).map_err(|_| CryptoError::InvalidKey)?;

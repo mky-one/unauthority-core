@@ -6,6 +6,15 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [1.0.11] — 2026-02-18
+
+### Fixed
+
+- **Validator release: `los-node` now built with `--features mainnet`** — Previously bundled testnet binary (CHAIN_ID=2) in mainnet installer. All 3 platforms (macOS, Linux, Windows) now correctly build mainnet binary (CHAIN_ID=1).
+- **Windows branding: UAT → LOS** — `Runner.rc` metadata corrected from "UAT Wallet" to "LOS Wallet" and "UAT Validator Node" to "LOS Validator Node" (affects Windows Task Manager & Properties dialog).
+
+---
+
 ## [1.0.10] — 2026-02-18
 
 ### Changed
@@ -164,6 +173,7 @@ Pre-mainnet testing release deployed on the live Tor network.
 
 ---
 
+[1.0.11]: https://github.com/mky-one/unauthority-core/releases/tag/v1.0.11
 [1.0.10]: https://github.com/mky-one/unauthority-core/releases/tag/v1.0.10
 [1.0.9]: https://github.com/mky-one/unauthority-core/releases/tag/v1.0.9
 [1.0.8]: https://github.com/mky-one/unauthority-core/releases/tag/v1.0.8

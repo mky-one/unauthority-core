@@ -5,7 +5,7 @@
 [![CI](https://github.com/mky-one/unauthority-core/actions/workflows/ci.yml/badge.svg)](https://github.com/mky-one/unauthority-core/actions)
 [![Rust](https://img.shields.io/badge/rust-2024--edition-orange)]()
 [![License](https://img.shields.io/badge/license-AGPL--3.0-blue)](LICENSE)
-[![Version](https://img.shields.io/badge/version-1.0.10-blue)]()
+[![Version](https://img.shields.io/badge/version-1.0.11-blue)]()
 
 ---
 

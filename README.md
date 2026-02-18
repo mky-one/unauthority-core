@@ -199,7 +199,8 @@ Full documentation with request/response examples: [API Reference](docs/API_REFE
 ### For Users & Node Operators
 | Document | Description |
 |---|---|
-| [Validator Guide](docs/VALIDATOR_GUIDE.md) | Complete setup: build, Tor, systemd, monitoring, rewards |
+| [Validator Guide (CLI)](docs/VALIDATOR_GUIDE.md) | Complete setup: build, Tor, systemd, monitoring, rewards |
+| [Validator Guide (Flutter)](docs/FLUTTER_VALIDATOR_GUIDE.md) | Step-by-step tutorial for the desktop validator app |
 | [API Reference](docs/API_REFERENCE.md) | All 35+ REST & gRPC endpoints with examples |
 | [Tor Setup](docs/TOR_SETUP.md) | Tor hidden service configuration & troubleshooting |
 | [Whitepaper](docs/WHITEPAPER.md) | Technical whitepaper: design, consensus, economics |

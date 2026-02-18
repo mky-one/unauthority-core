@@ -8,6 +8,13 @@ ROOT="$(cd "$(dirname "$0")" && pwd)"
 # ═══════════════════════════════════
 build_validator() {
   echo "=== Building Validator DMG ==="
+
+  # Build los-node with mainnet feature flag (CHAIN_ID=1)
+  echo "--- Building los-node (mainnet) ---"
+  cd "$ROOT"
+  cargo build --release -p los-node --features mainnet
+  echo "✅ los-node mainnet binary ready"
+
   cd "$ROOT/flutter_validator"
 
   VERSION="1.0.12"
@@ -25,7 +32,7 @@ build_validator() {
   mkdir -p release/dmg_staging
   cp -R "$APP" release/dmg_staging/
   ln -s /Applications release/dmg_staging/Applications
-  echo "LOS Validator Dashboard - Testnet Release" > release/dmg_staging/README.txt
+  echo "LOS Validator Dashboard - Mainnet Release v${VERSION}" > release/dmg_staging/README.txt
 
   rm -f "release/LOS-Validator-${VERSION}-macos.dmg"
   hdiutil create \
@@ -59,7 +66,7 @@ build_wallet() {
   mkdir -p release/dmg_staging
   cp -R "$APP" release/dmg_staging/
   ln -s /Applications release/dmg_staging/Applications
-  echo "LOS Wallet - Testnet Release" > release/dmg_staging/README.txt
+  echo "LOS Wallet - Mainnet Release v${VERSION}" > release/dmg_staging/README.txt
 
   rm -f "release/LOS-Wallet-${VERSION}-macos.dmg"
   hdiutil create \

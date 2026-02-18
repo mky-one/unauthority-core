@@ -4721,11 +4721,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut data_dir_override: Option<String> = None;
     let mut node_id_override: Option<String> = None;
     let mut json_log = false; // Machine-readable logs for Flutter
+    let mut mainnet_flag = false; // Runtime --mainnet flag
 
     {
         let mut i = 1;
         while i < args.len() {
             match args[i].as_str() {
+                "--mainnet" => {
+                    mainnet_flag = true;
+                }
                 "--port" => {
                     if let Some(v) = args.get(i + 1) {
                         api_port = v.parse().unwrap_or(3030);
@@ -4774,6 +4778,27 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
             i += 1;
         }
+    }
+
+    // ── MAINNET / TESTNET SAFETY GATE ──────────────────────────────────
+    // Prevent accidental mismatches between binary build and runtime flag.
+    if mainnet_flag && !los_core::is_mainnet_build() {
+        eprintln!("❌ FATAL: --mainnet flag passed but binary was NOT compiled with --features mainnet");
+        eprintln!("   Rebuild with: cargo build --release -p los-node --features mainnet");
+        std::process::exit(1);
+    }
+    if los_core::is_mainnet_build() && !mainnet_flag {
+        eprintln!("❌ FATAL: Binary was compiled for MAINNET but --mainnet flag is missing");
+        eprintln!("   Run with: los-node --mainnet --port <PORT> ...");
+        eprintln!("   This safety check prevents accidental mainnet deployment.");
+        std::process::exit(1);
+    }
+    if los_core::is_mainnet_build() {
+        println!("═══════════════════════════════════════════════════════");
+        println!("  🔒 UNAUTHORITY MAINNET (Chain ID: {})              ", los_core::CHAIN_ID);
+        println!("  All security enforced: consensus, signatures, PoW  ");
+        println!("  Faucet: DISABLED | Anti-Whale: ENABLED             ");
+        println!("═══════════════════════════════════════════════════════");
     }
 
     // When launched from Flutter (--json-log), stdout is a pipe (fully buffered).

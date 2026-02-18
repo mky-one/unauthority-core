@@ -63,8 +63,8 @@ jobs:
       - name: Install protobuf compiler
         run: brew install protobuf
 
-      - name: Build los-node binary
-        run: cargo build --release -p los-node
+      - name: Build los-node binary (mainnet)
+        run: cargo build --release -p los-node --features mainnet
 
       - name: Flutter pub get
         working-directory: flutter_validator
@@ -173,8 +173,8 @@ jobs:
           cargo build --release
           cargo test --release -- --nocapture
 
-      - name: Build los-node binary
-        run: cargo build --release -p los-node
+      - name: Build los-node binary (mainnet)
+        run: cargo build --release -p los-node --features mainnet
 
       - name: Flutter pub get
         working-directory: flutter_validator
@@ -271,8 +271,8 @@ jobs:
       - name: Install protobuf compiler
         run: choco install protoc -y
 
-      - name: Build los-node binary
-        run: cargo build --release -p los-node
+      - name: Build los-node binary (mainnet)
+        run: cargo build --release -p los-node --features mainnet
 
       - name: Flutter pub get
         working-directory: flutter_validator

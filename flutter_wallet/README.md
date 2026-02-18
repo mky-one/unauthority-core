@@ -2,7 +2,7 @@
 
 Desktop wallet for the **Unauthority (LOS)** blockchain. Send, receive, and burn-to-mint LOS tokens with post-quantum security.
 
-[![Version](https://img.shields.io/badge/version-1.0.10-blue)]()
+[![Version](https://img.shields.io/badge/version-1.0.11-blue)]()
 [![License](https://img.shields.io/badge/license-AGPL--3.0-blue)](../LICENSE)
 
 ---

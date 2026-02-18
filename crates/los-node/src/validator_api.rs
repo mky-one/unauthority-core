@@ -2,7 +2,6 @@
 ///
 /// REST endpoints for generating, importing, and registering validator keys.
 /// Used by the Flutter Validator Dashboard and CLI.
-
 use serde::{Deserialize, Serialize};
 use warp::reply::Json;
 use warp::Filter;

@@ -1,4 +1,4 @@
-name: "Release Flutter Wallet (Testnet)"
+name: "Release Flutter Wallet (Mainnet)"
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # Builds LOS Wallet for macOS, Linux & Windows — creates GitHub Release
@@ -12,14 +12,14 @@ on:
       - 'flutter_wallet/**'
       - '.github/workflows/release-flutter-wallet.yml'
     tags:
-      - 'wallet-v*-testnet'
-      - 'wallet-v*-testnet.*'
+      - 'wallet-v*-mainnet'
+      - 'wallet-v*-mainnet.*'
   workflow_dispatch:
     inputs:
       version:
-        description: 'Version (e.g., 1.0.0-testnet)'
+        description: 'Version (e.g., 1.0.0-mainnet)'
         required: true
-        default: '1.0.0-testnet'
+        default: '1.0.0-mainnet'
 
 env:
   FLUTTER_VERSION: '3.38.4'
@@ -84,7 +84,7 @@ jobs:
           VERSION="${GITHUB_REF_NAME#wallet-v}"
           [ -z "$VERSION" ] && VERSION="${{ github.event.inputs.version }}"
           # For push-to-main (no tag), use default version
-          if [ "$VERSION" = "$GITHUB_REF_NAME" ]; then VERSION="${{ github.event.inputs.version || '1.0.0-testnet' }}"; fi
+          if [ "$VERSION" = "$GITHUB_REF_NAME" ]; then VERSION="${{ github.event.inputs.version || '1.0.0-mainnet' }}"; fi
           
           mkdir -p release/dmg_staging
           cp -R "build/macos/Build/Products/Release/LOS Wallet.app" release/dmg_staging/
@@ -92,7 +92,7 @@ jobs:
           
           cat > release/dmg_staging/README.txt << 'EOF'
           ╔══════════════════════════════════════════════════════════════╗
-          ║            LOS WALLET - TESTNET RELEASE                    ║
+          ║            LOS WALLET - MAINNET RELEASE                    ║
           ║            Unauthority Blockchain                          ║
           ╚══════════════════════════════════════════════════════════════╝
           
@@ -176,7 +176,7 @@ jobs:
         run: |
           VERSION="${GITHUB_REF_NAME#wallet-v}"
           [ -z "$VERSION" ] && VERSION="${{ github.event.inputs.version }}"
-          if [ "$VERSION" = "$GITHUB_REF_NAME" ]; then VERSION="${{ github.event.inputs.version || '1.0.0-testnet' }}"; fi
+          if [ "$VERSION" = "$GITHUB_REF_NAME" ]; then VERSION="${{ github.event.inputs.version || '1.0.0-mainnet' }}"; fi
           
           BUNDLE="build/linux/x64/release/bundle"
           
@@ -195,7 +195,7 @@ jobs:
           # Create README
           cat > "$BUNDLE/README.txt" << 'EOF'
           ═══════════════════════════════════════════════════════════════
-            LOS WALLET - TESTNET RELEASE (Linux)
+            LOS WALLET - MAINNET RELEASE (Linux)
             Unauthority Blockchain
           ═══════════════════════════════════════════════════════════════
           
@@ -268,7 +268,7 @@ jobs:
         shell: pwsh
         run: |
           $version = "$env:GITHUB_REF_NAME" -replace '^wallet-v',''
-          if (-not $version -or $version -eq $env:GITHUB_REF_NAME) { $version = "${{ github.event.inputs.version || '1.0.0-testnet' }}" }
+          if (-not $version -or $version -eq $env:GITHUB_REF_NAME) { $version = "${{ github.event.inputs.version || '1.0.0-mainnet' }}" }
           
           $bundle = "build\windows\x64\runner\Release"
           
@@ -278,7 +278,7 @@ jobs:
           # Create README
           @"
           ═══════════════════════════════════════════════════════════════
-            LOS WALLET - TESTNET RELEASE (Windows)
+            LOS WALLET - MAINNET RELEASE (Windows)
             Unauthority Blockchain
           ═══════════════════════════════════════════════════════════════
           
@@ -330,7 +330,7 @@ jobs:
             VERSION="${TAG#wallet-v}"
           else
             # Push to main (no tag) — use default version
-            VERSION="1.0.0-testnet"
+            VERSION="1.0.0-mainnet"
             TAG="wallet-v${VERSION}"
           fi
           echo "version=$VERSION" >> $GITHUB_OUTPUT
@@ -349,14 +349,14 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.version.outputs.tag }}
-          name: "LOS Wallet ${{ steps.version.outputs.version }} (Testnet)"
+          name: "LOS Wallet ${{ steps.version.outputs.version }} (Mainnet)"
           draft: false
-          prerelease: true
+          prerelease: false
           generate_release_notes: true
           body: |
-            # 🔐 LOS Wallet — Testnet Release `${{ steps.version.outputs.version }}`
+            # 🔐 LOS Wallet — Mainnet Release `${{ steps.version.outputs.version }}`
 
-            **Post-Quantum Secure** wallet for the Unauthority blockchain testnet.
+            **Post-Quantum Secure** wallet for the Unauthority blockchain mainnet.
 
             ## 📥 Downloads
 
@@ -382,12 +382,12 @@ jobs:
             2. The app auto-configures:
                - Downloads/connects Tor (no manual install)
                - Generates quantum-secure Dilithium5 wallet
-               - Connects to testnet via `.onion`
+               - Connects to mainnet via `.onion`
             3. **macOS users:** If Gatekeeper blocks → right-click → Open
 
             ## ⚠️ Notes
 
-            - This is a **testnet** release — tokens have no real value
+            - This is the **mainnet** release — this is a live production release
             - All traffic routed through **Tor** automatically
             - Wallet keys are **quantum-resistant** (CRYSTALS-Dilithium5)
 

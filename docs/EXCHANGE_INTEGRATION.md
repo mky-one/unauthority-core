@@ -1,8 +1,8 @@
-# Exchange Integration Guide — Unauthority (LOS) v1.0.9
+# Exchange Integration Guide — Unauthority (LOS) v1.0.10
 
 Complete RPC documentation for cryptocurrency exchanges, custodians, and payment processors integrating LOS.
 
-*Last updated: June 2025*
+*Last updated: February 2026*
 
 ---
 
@@ -460,7 +460,7 @@ GET /health
 ```json
 {
   "status": "healthy",
-  "version": "1.0.9",
+  "version": "1.0.10",
   "timestamp": 1771277598,
   "uptime_seconds": 86400,
   "chain": {
@@ -485,7 +485,7 @@ GET /node-info
 ```json
 {
   "status": "ok",
-  "version": "1.0.9",
+  "version": "1.0.10",
   "network": "mainnet",
   "node_id": "validator-1",
   "chain_id": "los-mainnet",

@@ -4,7 +4,7 @@
 
 [![CI](https://github.com/mky-one/unauthority-core/actions/workflows/ci.yml/badge.svg)](https://github.com/mky-one/unauthority-core/actions)
 [![Rust](https://img.shields.io/badge/rust-2024--edition-orange)]()
-[![License](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
+[![License](https://img.shields.io/badge/license-AGPL--3.0-blue)](LICENSE)
 [![Version](https://img.shields.io/badge/version-1.0.9-blue)]()
 
 ---
@@ -205,11 +205,13 @@ Full documentation with request/response examples: [API Reference](docs/API_REFE
 | [Whitepaper](docs/WHITEPAPER.md) | Technical whitepaper: design, consensus, economics |
 | [Architecture](docs/ARCHITECTURE.md) | System design, crate map, data flow diagrams |
 | [Exchange Integration](docs/EXCHANGE_INTEGRATION.md) | RPC documentation for exchanges & integrators |
+| [Smart Contracts](docs/SMART_CONTRACTS.md) | Write, compile, and deploy WASM contracts on UVM |
 
 ### For Developers
 | Document | Description |
 |---|---|
 | [Contributing](CONTRIBUTING.md) | Contribution guidelines, code standards, PR process |
+| [Code of Conduct](CODE_OF_CONDUCT.md) | Community standards (Contributor Covenant) |
 | [Security Policy](SECURITY.md) | Responsible disclosure and security contacts |
 | [Changelog](CHANGELOG.md) | Version history and release notes |
 
@@ -240,4 +242,4 @@ cargo test --release -p los-crypto
 
 ## License
 
-Apache-2.0 — See [LICENSE](LICENSE)
+AGPL-3.0 — See [LICENSE](LICENSE)

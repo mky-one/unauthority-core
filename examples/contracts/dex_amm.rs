@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: AGPL-3.0-only
 //! # DEX AMM (Automated Market Maker) for Unauthority
 //!
 //! Permissionless decentralized exchange using the Constant Product formula (x·y=k).

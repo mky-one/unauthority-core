@@ -266,4 +266,4 @@ If you discover a security vulnerability, **DO NOT** open a public issue. See [S
 
 ## License
 
-By contributing, you agree that your contributions will be licensed under the [Apache-2.0 License](LICENSE).
+By contributing, you agree that your contributions will be licensed under the [AGPL-3.0 License](LICENSE).

@@ -3,7 +3,7 @@
 Desktop wallet for the **Unauthority (LOS)** blockchain. Send, receive, and burn-to-mint LOS tokens with post-quantum security.
 
 [![Version](https://img.shields.io/badge/version-1.0.9-blue)]()
-[![License](https://img.shields.io/badge/license-Apache--2.0-blue)](../LICENSE)
+[![License](https://img.shields.io/badge/license-AGPL--3.0-blue)](../LICENSE)
 
 ---
 
@@ -119,4 +119,4 @@ flutter_wallet/
 
 ## License
 
-Apache-2.0 — See [LICENSE](../LICENSE)
+AGPL-3.0 — See [LICENSE](../LICENSE)

@@ -13,11 +13,14 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 - **License changed from Apache-2.0 to AGPL-3.0** — Prevents proprietary forks and closes the network services loophole. All validators running modified code must publish their source. Aligned with blockchain industry standard (Uniswap v3, Aave v3, Lido).
 - All SPDX headers updated to `AGPL-3.0-only`.
 - All README badges, CONTRIBUTING.md, and SECURITY.md updated.
+- **Release workflows converted from Testnet to Mainnet** — Both Flutter Wallet and Validator release pipelines now build with mainnet tags and production release settings.
 
 ### Added
 
 - **Smart Contract Developer Guide** (`docs/SMART_CONTRACTS.md`) — Complete guide for writing, compiling, deploying, and interacting with WASM contracts on UVM. Includes SDK reference, USP-01 token standard, DEX AMM, security guidelines, and gas limits.
 - **Code of Conduct** (`CODE_OF_CONDUCT.md`) — Contributor Covenant v2.1.
+- **Linux desktop entries** — XDG `.desktop` files and icon install rules for both Flutter Wallet and Validator on Linux.
+- **App launcher icons** — LOS hexagon logo applied to macOS, Windows, Linux, and Web for both Flutter apps.
 
 ---
 
@@ -161,6 +164,7 @@ Pre-mainnet testing release deployed on the live Tor network.
 
 ---
 
+[1.0.10]: https://github.com/mky-one/unauthority-core/releases/tag/v1.0.10
 [1.0.9]: https://github.com/mky-one/unauthority-core/releases/tag/v1.0.9
 [1.0.8]: https://github.com/mky-one/unauthority-core/releases/tag/v1.0.8
 [1.0.7]: https://github.com/mky-one/unauthority-core/releases/tag/v1.0.7

@@ -1,8 +1,8 @@
-# Technical Whitepaper — Unauthority (LOS) v1.0.9
+# Technical Whitepaper — Unauthority (LOS) v1.0.10
 
 **Lattice Of Sovereignty: A Post-Quantum, Privacy-First Block-Lattice Blockchain**
 
-*Last updated: June 2025*
+*Last updated: February 2026*
 
 ---
 

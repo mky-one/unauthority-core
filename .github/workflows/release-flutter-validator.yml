@@ -1,4 +1,4 @@
-name: "Release Flutter Validator (Testnet)"
+name: "Release Flutter Validator (Mainnet)"
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # Builds LOS Validator Dashboard for macOS, Linux & Windows — creates GitHub Release
@@ -12,14 +12,14 @@ on:
       - 'flutter_validator/**'
       - '.github/workflows/release-flutter-validator.yml'
     tags:
-      - 'validator-v*-testnet'
-      - 'validator-v*-testnet.*'
+      - 'validator-v*-mainnet'
+      - 'validator-v*-mainnet.*'
   workflow_dispatch:
     inputs:
       version:
-        description: 'Version (e.g., 1.0.0-testnet)'
+        description: 'Version (e.g., 1.0.0-mainnet)'
         required: true
-        default: '1.0.0-testnet'
+        default: '1.0.0-mainnet'
 
 env:
   FLUTTER_VERSION: '3.38.4'
@@ -93,7 +93,7 @@ jobs:
         run: |
           VERSION="${GITHUB_REF_NAME#validator-v}"
           [ -z "$VERSION" ] && VERSION="${{ github.event.inputs.version }}"
-          if [ "$VERSION" = "$GITHUB_REF_NAME" ]; then VERSION="${{ github.event.inputs.version || '1.0.0-testnet' }}"; fi
+          if [ "$VERSION" = "$GITHUB_REF_NAME" ]; then VERSION="${{ github.event.inputs.version || '1.0.0-mainnet' }}"; fi
 
           mkdir -p release/dmg_staging
           cp -R "build/macos/Build/Products/Release/LOS Validator Node.app" release/dmg_staging/
@@ -101,7 +101,7 @@ jobs:
 
           cat > release/dmg_staging/README.txt << 'EOF'
           ╔══════════════════════════════════════════════════════════════╗
-          ║         LOS VALIDATOR DASHBOARD - TESTNET RELEASE          ║
+          ║         LOS VALIDATOR DASHBOARD - MAINNET RELEASE          ║
           ║                Unauthority Blockchain                      ║
           ╚══════════════════════════════════════════════════════════════╝
 
@@ -189,7 +189,7 @@ jobs:
         run: |
           VERSION="${GITHUB_REF_NAME#validator-v}"
           [ -z "$VERSION" ] && VERSION="${{ github.event.inputs.version }}"
-          if [ "$VERSION" = "$GITHUB_REF_NAME" ]; then VERSION="${{ github.event.inputs.version || '1.0.0-testnet' }}"; fi
+          if [ "$VERSION" = "$GITHUB_REF_NAME" ]; then VERSION="${{ github.event.inputs.version || '1.0.0-mainnet' }}"; fi
 
           BUNDLE="build/linux/x64/release/bundle"
 
@@ -208,7 +208,7 @@ jobs:
 
           cat > "$BUNDLE/README.txt" << 'EOF'
           ═══════════════════════════════════════════════════════════════
-            LOS VALIDATOR DASHBOARD - TESTNET RELEASE (Linux)
+            LOS VALIDATOR DASHBOARD - MAINNET RELEASE (Linux)
             Unauthority Blockchain
           ═══════════════════════════════════════════════════════════════
 
@@ -287,7 +287,7 @@ jobs:
         shell: pwsh
         run: |
           $version = "$env:GITHUB_REF_NAME" -replace '^validator-v',''
-          if (-not $version -or $version -eq $env:GITHUB_REF_NAME) { $version = "${{ github.event.inputs.version || '1.0.0-testnet' }}" }
+          if (-not $version -or $version -eq $env:GITHUB_REF_NAME) { $version = "${{ github.event.inputs.version || '1.0.0-mainnet' }}" }
 
           $bundle = "build\windows\x64\runner\Release"
 
@@ -297,7 +297,7 @@ jobs:
 
           @"
           ═══════════════════════════════════════════════════════════════
-            LOS VALIDATOR DASHBOARD - TESTNET RELEASE (Windows)
+            LOS VALIDATOR DASHBOARD - MAINNET RELEASE (Windows)
             Unauthority Blockchain
           ═══════════════════════════════════════════════════════════════
 
@@ -349,7 +349,7 @@ jobs:
             VERSION="${TAG#validator-v}"
           else
             # Push to main (no tag) — use default version
-            VERSION="1.0.0-testnet"
+            VERSION="1.0.0-mainnet"
             TAG="validator-v${VERSION}"
           fi
           echo "version=$VERSION" >> $GITHUB_OUTPUT
@@ -368,14 +368,14 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.version.outputs.tag }}
-          name: "LOS Validator ${{ steps.version.outputs.version }} (Testnet)"
+          name: "LOS Validator ${{ steps.version.outputs.version }} (Mainnet)"
           draft: false
-          prerelease: true
+          prerelease: false
           generate_release_notes: true
           body: |
-            # 🖥️ LOS Validator Dashboard — Testnet Release `${{ steps.version.outputs.version }}`
+            # 🖥️ LOS Validator Dashboard — Mainnet Release `${{ steps.version.outputs.version }}`
 
-            **Post-Quantum Secure** validator monitoring dashboard for the Unauthority blockchain testnet.
+            **Post-Quantum Secure** validator monitoring dashboard for the Unauthority blockchain mainnet.
 
             ## 📥 Downloads
 
@@ -400,11 +400,11 @@ jobs:
             1. Install & open the validator dashboard
             2. Import existing keys or generate new ones
             3. Click **START NODE** — the bundled los-node starts automatically
-            4. Dashboard connects via Tor to the testnet peers
+            4. Dashboard connects via Tor to the mainnet peers
 
             ## ⚠️ Notes
 
-            - This is a **testnet** release — tokens have no real value
+            - This is a **mainnet** release — this is a live production release
             - The los-node binary is bundled — no Rust toolchain or compilation needed
             - Minimum 1,000 LOS stake for validator participation
 

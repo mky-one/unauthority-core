@@ -59,9 +59,9 @@ Go to **[GitHub Releases](https://github.com/mky-one/unauthority-core/releases)*
 
 | Platform | File |
 |---|---|
-| macOS | `UAT-Validator-vX.X.X-macOS.dmg` |
-| Windows | `UAT-Validator-vX.X.X-Windows-x64.zip` |
-| Linux | `UAT-Validator-vX.X.X-Linux-x64.tar.gz` |
+| macOS | `LOS-Validator-*-macos.dmg` |
+| Windows | `LOS-Validator-*-windows-x64.zip` |
+| Linux | `LOS-Validator-*-linux-x64.tar.gz` |
 
 ### Step 2: Install
 
@@ -82,7 +82,7 @@ Go to **[GitHub Releases](https://github.com/mky-one/unauthority-core/releases)*
 **Linux:**
 1. Extract the `.tar.gz`:
    ```
-   tar xzf UAT-Validator-*.tar.gz
+   tar xzf LOS-Validator-*.tar.gz
    ```
 2. Make files executable:
    ```

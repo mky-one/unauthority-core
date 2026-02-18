@@ -2,7 +2,7 @@
 
 Desktop wallet for the **Unauthority (LOS)** blockchain. Send, receive, and burn-to-mint LOS tokens with post-quantum security.
 
-[![Version](https://img.shields.io/badge/version-1.0.12-blue)]()
+[![Version](https://img.shields.io/badge/version-1.0.13-blue)]()
 [![License](https://img.shields.io/badge/license-AGPL--3.0-blue)](../LICENSE)
 
 ---
@@ -29,9 +29,9 @@ Pre-built releases for macOS, Windows, and Linux:
 
 | Platform | File |
 |----------|------|
-| macOS | `UAT-Wallet-v1.0.x-macOS.dmg` |
-| Windows | `UAT-Wallet-v1.0.x-Windows-x64.zip` |
-| Linux | `UAT-Wallet-v1.0.x-Linux-x64.tar.gz` |
+| macOS | `LOS-Wallet-*-macos.dmg` |
+| Windows | `LOS-Wallet-*-windows-x64.zip` |
+| Linux | `LOS-Wallet-*-linux-x64.tar.gz` |
 
 ### Platform Notes
 

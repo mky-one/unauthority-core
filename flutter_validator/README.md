@@ -2,7 +2,7 @@
 
 Validator node dashboard for **Unauthority (LOS)** blockchain. Track node status, manage keys, and monitor consensus participation.
 
-[![Version](https://img.shields.io/badge/version-1.0.12-blue)]()
+[![Version](https://img.shields.io/badge/version-1.0.13-blue)]()
 [![License](https://img.shields.io/badge/license-AGPL--3.0-blue)](../LICENSE)
 
 ---
@@ -28,9 +28,9 @@ Pre-built releases for macOS, Windows, and Linux:
 
 | Platform | File |
 |----------|------|
-| macOS | `UAT-Validator-v1.0.x-macOS.dmg` |
-| Windows | `UAT-Validator-v1.0.x-Windows-x64.zip` |
-| Linux | `UAT-Validator-v1.0.x-Linux-x64.tar.gz` |
+| macOS | `LOS-Validator-*-macos.dmg` |
+| Windows | `LOS-Validator-*-windows-x64.zip` |
+| Linux | `LOS-Validator-*-linux-x64.tar.gz` |
 
 ### Platform Notes
 

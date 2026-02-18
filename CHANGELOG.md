@@ -6,6 +6,22 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [1.0.13] — 2026-02-19
+
+### Fixed
+
+- **Oracle burn verification: HTTPS fallback** — `verify_btc_burn_tx` (mempool.space) and `verify_eth_burn_tx` (blockcypher) now retry with direct HTTPS when Tor SOCKS5 proxy fails. Many clearnet APIs block Tor exit nodes. BTC and ETH burns both use identical 2-attempt strategy: Tor first → direct fallback.
+- **Rustfmt CI compliance** — All oracle fallback code reformatted to pass `cargo fmt --check` in CI pipeline.
+- **Flutter Validator `--mainnet` flag** — `NodeProcessService` now passes `--mainnet` CLI flag to `los-node` binary when `NETWORK=mainnet`, matching the safety gate compile-time check.
+- **`build_dmg.sh` mainnet build** — Local macOS DMG builder now compiles `los-node` with `--features mainnet` before bundling.
+
+### Changed
+
+- **Download naming: UAT → LOS** — All release artifacts renamed from `UAT-Wallet-*` / `UAT-Validator-*` to `LOS-Wallet-*` / `LOS-Validator-*` across all documentation and workflows.
+- **Version bumped to 1.0.13** across all docs, configs, badges, Cargo.toml, and pubspec.yaml.
+
+---
+
 ## [1.0.12] — 2026-02-19
 
 ### Security Hardening (11 Fixes)
@@ -199,6 +215,7 @@ Pre-mainnet testing release deployed on the live Tor network.
 
 ---
 
+[1.0.13]: https://github.com/mky-one/unauthority-core/releases/tag/v1.0.13
 [1.0.12]: https://github.com/mky-one/unauthority-core/releases/tag/v1.0.12
 [1.0.11]: https://github.com/mky-one/unauthority-core/releases/tag/v1.0.11
 [1.0.10]: https://github.com/mky-one/unauthority-core/releases/tag/v1.0.10

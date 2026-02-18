@@ -411,6 +411,8 @@ class NodeProcessService extends ChangeNotifier {
 
       // 4. Build CLI args
       final args = <String>[
+        if (isMainnetBuild)
+          '--mainnet', // Safety gate: must match compile-time feature
         '--port',
         port.toString(),
         '--data-dir',

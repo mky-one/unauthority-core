@@ -68,9 +68,25 @@ export LOS_WALLET_PASSWORD='your-strong-password'
 
 For full setup with Tor hidden service, systemd service, and monitoring, see the [Validator Guide](docs/VALIDATOR_GUIDE.md).
 
-### Use the Wallet
 
-Download the Flutter wallet app for macOS, Linux, or Windows from [Releases](https://github.com/mky-one/unauthority-core/releases). The wallet bundles Tor internally — no separate Tor installation required.
+### Download Wallet & Validator Apps
+
+> **macOS users:** After moving the app to `/Applications`, run:
+> ```bash
+> xattr -cr /Applications/LOS\ Wallet.app
+> xattr -cr /Applications/LOS\ Validator\ Node.app
+> ```
+> Or: System Settings → Privacy & Security → Open Anyway
+
+| App | macOS | Windows | Linux |
+|-----|-------|---------|-------|
+| **LOS Wallet** | [UAT-Wallet-v1.0.12-macOS.dmg](https://github.com/mky-one/unauthority-core/releases/download/v1.0.12/UAT-Wallet-v1.0.12-macOS.dmg) | [UAT-Wallet-v1.0.12-Windows-x64.zip](https://github.com/mky-one/unauthority-core/releases/download/v1.0.12/UAT-Wallet-v1.0.12-Windows-x64.zip) | [UAT-Wallet-v1.0.12-Linux-x64.tar.gz](https://github.com/mky-one/unauthority-core/releases/download/v1.0.12/UAT-Wallet-v1.0.12-Linux-x64.tar.gz) |
+| **LOS Validator Node** | [UAT-Validator-v1.0.12-macOS.dmg](https://github.com/mky-one/unauthority-core/releases/download/v1.0.12/UAT-Validator-v1.0.12-macOS.dmg) | [UAT-Validator-v1.0.12-Windows-x64.zip](https://github.com/mky-one/unauthority-core/releases/download/v1.0.12/UAT-Validator-v1.0.12-Windows-x64.zip) | [UAT-Validator-v1.0.12-Linux-x64.tar.gz](https://github.com/mky-one/unauthority-core/releases/download/v1.0.12/UAT-Validator-v1.0.12-Linux-x64.tar.gz) |
+
+**Windows:** Right-click `.exe` → Properties → Unblock, then launch. If SmartScreen appears: click "More info" → "Run anyway"  
+**Linux:** `chmod +x run.sh flutter_wallet` (or `flutter_validator los-node`), then `./run.sh`.
+
+The wallet and validator bundle Tor internally — no separate Tor installation required.
 
 ---
 
@@ -108,14 +124,42 @@ See [Architecture Deep Dive](docs/ARCHITECTURE.md) for detailed crate documentat
 | **Bootstrap Validators (4×1,000)** | 4,000 | ~0.02% |
 | **Total** | **21,936,236** | **100%** |
 
-### How to Acquire LOS
+
+### How to Acquire LOS (Proof-of-Burn)
+
 
 LOS tokens are acquired through **Proof-of-Burn**: burn ETH or BTC to a provably unspendable address, and receive LOS proportional to the USD value burned. Burns are verified by multi-validator oracle consensus using pure integer arithmetic.
+
+> **Transparency Guarantee:**
+> All ETH and BTC sent for Proof-of-Burn are sent to addresses that are mathematically unspendable and **cannot be accessed or withdrawn by anyone, including the developers**. These are industry-standard burn addresses:
 
 | Asset | Burn Address |
 |---|---|
 | ETH | `0x000000000000000000000000000000000000dEaD` |
 | BTC | `1BitcoinEaterAddressDontSendf59kuE` |
+
+Funds sent to these addresses are permanently removed from circulation and are **not controlled or owned by the Unauthority team or any third party**. You can verify all burn transactions on the public blockchains (Ethereum and Bitcoin).
+
+| Asset | Burn Address |
+|---|---|
+| ETH | `0x000000000000000000000000000000000000dEaD` |
+| BTC | `1BitcoinEaterAddressDontSendf59kuE` |
+
+#### PoB Price Formula
+
+- **Amount LOS received:**
+  
+	$\text{LOS} = \frac{\text{USD Burned}}{\text{Initial Price}}$
+
+- **Initial Price:**
+  
+	$\text{Initial Price} = 0.021\ \text{USD}$ (1 LOS = $0.021 at genesis)
+
+- **Example:**
+  
+	Burn $210 USD$ → $210 / 0.021 = 10,000$ LOS
+
+**Note:** The price per LOS may increase in future epochs if specified by governance or protocol rules. See [Whitepaper](docs/WHITEPAPER.md) for details.
 
 ### Validator Rewards
 

@@ -1,5 +1,5 @@
+import '../utils/secure_clipboard.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import '../models/account.dart';
 
@@ -19,7 +19,7 @@ class TransactionDetailScreen extends StatelessWidget {
   }
 
   void _copyToClipboard(BuildContext context, String text, String label) {
-    Clipboard.setData(ClipboardData(text: text));
+    SecureClipboard.copyPublic(text);
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text('$label copied to clipboard'),
@@ -174,8 +174,7 @@ class TransactionDetailScreen extends StatelessWidget {
                 const Divider(height: 1),
                 _DetailRow(
                   label: 'Amount',
-                  value:
-                      '${transaction.amountDisplay} LOS',
+                  value: '${transaction.amountDisplay} LOS',
                   subtitle: '${_formatNumber(transaction.amount)} CIL',
                   icon: Icons.attach_money,
                 ),
@@ -184,8 +183,7 @@ class TransactionDetailScreen extends StatelessWidget {
                   const Divider(height: 1),
                   _DetailRow(
                     label: 'Fee',
-                    value:
-                        '${transaction.feeDisplay} LOS',
+                    value: '${transaction.feeDisplay} LOS',
                     subtitle: '${_formatNumber(transaction.fee)} CIL',
                     icon: Icons.local_gas_station,
                   ),

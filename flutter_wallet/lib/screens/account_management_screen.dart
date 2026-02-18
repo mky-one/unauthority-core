@@ -1,6 +1,6 @@
 import '../utils/log.dart';
+import '../utils/secure_clipboard.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:bip39/bip39.dart' as bip39;
 import 'package:provider/provider.dart';
 import '../models/account_profile.dart';
@@ -401,11 +401,7 @@ class _AccountManagementScreenState extends State<AccountManagementScreen> {
         actions: [
           ElevatedButton.icon(
             onPressed: () {
-              Clipboard.setData(ClipboardData(text: seedPhrase));
-              // FIX M-01: Auto-clear clipboard after 30s for security
-              Future.delayed(const Duration(seconds: 30), () {
-                Clipboard.setData(const ClipboardData(text: ''));
-              });
+              SecureClipboard.copy(seedPhrase);
               ScaffoldMessenger.of(context).showSnackBar(
                 const SnackBar(
                     content: Text('Seed phrase copied (auto-clears in 30s)')),
@@ -634,7 +630,7 @@ class _AccountManagementScreenState extends State<AccountManagementScreen> {
               leading: const Icon(Icons.copy),
               title: const Text('Copy address'),
               onTap: () {
-                Clipboard.setData(ClipboardData(text: account.address));
+                SecureClipboard.copyPublic(account.address);
                 Navigator.pop(context);
                 ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(content: Text('Address copied')),

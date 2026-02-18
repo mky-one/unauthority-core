@@ -1,6 +1,6 @@
 import '../utils/log.dart';
+import '../utils/secure_clipboard.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../services/wallet_service.dart';
 import '../utils/address_validator.dart';
@@ -69,12 +69,7 @@ class _WalletSetupScreenState extends State<WalletSetupScreen> {
                       foregroundColor: Colors.orangeAccent,
                     ),
                     onPressed: () {
-                      Clipboard.setData(
-                          ClipboardData(text: wallet['mnemonic']!));
-                      // SECURITY FIX M-6: Auto-clear clipboard after 30 seconds
-                      Future.delayed(const Duration(seconds: 30), () {
-                        Clipboard.setData(const ClipboardData(text: ''));
-                      });
+                      SecureClipboard.copy(wallet['mnemonic']!);
                       ScaffoldMessenger.of(context).showSnackBar(
                         const SnackBar(
                           content:

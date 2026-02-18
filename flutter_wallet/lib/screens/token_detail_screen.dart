@@ -4,7 +4,7 @@
 library;
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
+import '../utils/secure_clipboard.dart';
 import 'package:provider/provider.dart';
 import '../services/api_service.dart';
 import '../services/wallet_service.dart';
@@ -177,8 +177,7 @@ class _TokenDetailScreenState extends State<TokenDetailScreen> {
                     label: 'Contract',
                     value: token.shortAddress,
                     onTap: () {
-                      Clipboard.setData(
-                          ClipboardData(text: token.contractAddress));
+                      SecureClipboard.copyPublic(token.contractAddress);
                       ScaffoldMessenger.of(context).showSnackBar(
                         const SnackBar(
                             content: Text('Contract address copied')),

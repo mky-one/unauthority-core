@@ -1,6 +1,6 @@
 import '../utils/log.dart';
+import '../utils/secure_clipboard.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import 'package:provider/provider.dart';
 import '../services/wallet_service.dart';
@@ -47,7 +47,7 @@ class _ReceiveScreenState extends State<ReceiveScreen> {
 
   void _copyAddress() {
     if (_address != null) {
-      Clipboard.setData(ClipboardData(text: _address!));
+      SecureClipboard.copyPublic(_address!);
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Address copied to clipboard'),

@@ -1,4 +1,5 @@
 import '../utils/log.dart';
+import 'dart:convert';
 import 'dart:ffi';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
@@ -228,6 +229,8 @@ class DilithiumService {
     }
 
     // Try multiple locations in order of priority
+    // SECURITY FIX K-01: In release builds, only search bundled app locations.
+    // Development paths are restricted to debug mode to prevent library hijacking.
     final sep = Platform.pathSeparator;
     final execDir = Platform.resolvedExecutable.replaceAll(
       RegExp(r'[/\\][^/\\]+$'),
@@ -240,15 +243,21 @@ class DilithiumService {
       '$execDir${sep}lib$sep$libName',
       // 3. Windows/Linux: next to executable
       '$execDir$sep$libName',
-      // 4. Development: relative to flutter_wallet/
-      'native${sep}los_crypto_ffi${sep}target${sep}release$sep$libName',
-      // 5. Development: from workspace root
-      '${Directory.current.path}${sep}native${sep}los_crypto_ffi${sep}target${sep}release$sep$libName',
-      // 6. macOS Runner copy
-      '${Directory.current.path}${sep}macos${sep}Runner$sep$libName',
-      // 7. System library path (fallback)
-      libName,
     ];
+
+    // Development paths — only in debug/profile builds
+    if (kDebugMode) {
+      searchPaths.addAll([
+        // 4. Development: relative to flutter_wallet/
+        'native${sep}los_crypto_ffi${sep}target${sep}release$sep$libName',
+        // 5. Development: from workspace root
+        '${Directory.current.path}${sep}native${sep}los_crypto_ffi${sep}target${sep}release$sep$libName',
+        // 6. macOS Runner copy
+        '${Directory.current.path}${sep}macos${sep}Runner$sep$libName',
+        // 7. System library path (fallback)
+        libName,
+      ]);
+    }
 
     for (final path in searchPaths) {
       try {
@@ -377,8 +386,7 @@ class DilithiumService {
       }
 
       final sig = Uint8List.fromList(sigPtr.asTypedList(sigLen));
-      losLog(
-          '🔑 [DilithiumService.sign] Signed (sig: ${sig.length} bytes)');
+      losLog('🔑 [DilithiumService.sign] Signed (sig: ${sig.length} bytes)');
       return sig;
     } finally {
       // SECURITY FIX S3: Zero secret key memory before freeing to prevent leak
@@ -551,6 +559,11 @@ class DilithiumKeypair {
   /// Public key as hex string
   String get publicKeyHex => DilithiumService.bytesToHex(publicKey);
 
-  /// Secret key as hex string
-  String get secretKeyHex => DilithiumService.bytesToHex(secretKey);
+  /// SECURITY FIX A-02: secretKeyHex removed — creating a 9728-char immutable
+  /// Dart String that cannot be wiped from memory is a security risk.
+  /// Use secretKeyBase64 for storage (shorter, same security), or pass
+  /// the Uint8List directly to avoid creating any extra copies.
+  String get secretKeyBase64 {
+    return base64Encode(secretKey);
+  }
 }

@@ -1,4 +1,4 @@
-# Technical Whitepaper — Unauthority (LOS) v1.0.11
+# Technical Whitepaper — Unauthority (LOS) v1.0.12
 
 **Lattice Of Sovereignty: A Post-Quantum, Privacy-First Block-Lattice Blockchain**
 

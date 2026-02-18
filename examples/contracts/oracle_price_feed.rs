@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: AGPL-3.0-only
 //! # Oracle Price Feed Consumer Contract
 //! 
 //! Smart contract demonstrating integration with LOS's decentralized oracle system.

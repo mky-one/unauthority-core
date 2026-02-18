@@ -6,6 +6,21 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [1.0.10] — 2026-02-18
+
+### Changed
+
+- **License changed from Apache-2.0 to AGPL-3.0** — Prevents proprietary forks and closes the network services loophole. All validators running modified code must publish their source. Aligned with blockchain industry standard (Uniswap v3, Aave v3, Lido).
+- All SPDX headers updated to `AGPL-3.0-only`.
+- All README badges, CONTRIBUTING.md, and SECURITY.md updated.
+
+### Added
+
+- **Smart Contract Developer Guide** (`docs/SMART_CONTRACTS.md`) — Complete guide for writing, compiling, deploying, and interacting with WASM contracts on UVM. Includes SDK reference, USP-01 token standard, DEX AMM, security guidelines, and gas limits.
+- **Code of Conduct** (`CODE_OF_CONDUCT.md`) — Contributor Covenant v2.1.
+
+---
+
 ## [1.0.9] — 2025-06-17
 
 ### Mainnet Launch

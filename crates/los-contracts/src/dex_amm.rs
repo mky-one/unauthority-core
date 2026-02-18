@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: Apache-2.0
+// SPDX-License-Identifier: AGPL-3.0-only
 //! # DEX AMM Contract (WASM)
 //!
 //! Deployable `#![no_std]` WASM smart contract implementing a Constant Product

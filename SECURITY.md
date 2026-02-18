@@ -76,4 +76,4 @@ There is currently no formal bug bounty program. Critical vulnerability reporter
 
 ## License
 
-Apache-2.0 — See [LICENSE](LICENSE)
+AGPL-3.0 — See [LICENSE](LICENSE)

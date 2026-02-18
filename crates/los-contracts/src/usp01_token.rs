@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: Apache-2.0
+// SPDX-License-Identifier: AGPL-3.0-only
 //! # USP-01 Token Contract
 //!
 //! Deployable WASM smart contract implementing the USP-01 Fungible Token Standard

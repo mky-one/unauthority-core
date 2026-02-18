@@ -3,7 +3,7 @@
 Validator node dashboard for **Unauthority (LOS)** blockchain. Track node status, manage keys, and monitor consensus participation.
 
 [![Version](https://img.shields.io/badge/version-1.0.9-blue)]()
-[![License](https://img.shields.io/badge/license-Apache--2.0-blue)](../LICENSE)
+[![License](https://img.shields.io/badge/license-AGPL--3.0-blue)](../LICENSE)
 
 ---
 
@@ -125,6 +125,4 @@ flutter_validator/
 
 ## License
 
-Apache-2.0 — See [LICENSE](../LICENSE)
-
-MIT
+AGPL-3.0 — See [LICENSE](../LICENSE)

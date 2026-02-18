@@ -1565,7 +1565,13 @@ pub async fn start_api_server(cfg: ApiServerConfig) {
                     "threshold": threshold
                 }))
             } else {
-                api_json(serde_json::json!({"status":"error","msg":"Invalid TXID or Oracle data failed"}))
+                let coin = req.coin_type.to_lowercase();
+                println!("❌ Burn verification FAILED for {} TXID: {} — Oracle returned None", coin.to_uppercase(), &clean_txid[..clean_txid.len().min(16)]);
+                println!("   ↳ Possible causes: TX not yet confirmed on-chain, burn address mismatch, or API unreachable");
+                api_json(serde_json::json!({
+                    "status": "error",
+                    "msg": format!("Oracle verification failed for {} TXID. This can happen if: (1) TX is not yet confirmed on the {} blockchain, (2) TX does not send to the official burn address, or (3) the oracle API is currently unreachable. Please wait for blockchain confirmation and try again.", coin.to_uppercase(), coin.to_uppercase())
+                }))
             }
         });
 
@@ -4239,39 +4245,66 @@ async fn verify_eth_burn_tx(txid: &str) -> Option<u128> {
     let url = format!("https://api.blockcypher.com/v1/eth/main/txs/{}", clean_txid);
     // SECURITY: Route through SOCKS5 proxy (Tor) to prevent IP leak
     let proxy_url = std::env::var("LOS_SOCKS5_PROXY").unwrap_or_default();
-    let mut builder = reqwest::Client::builder().timeout(Duration::from_secs(10));
+    let mut builder = reqwest::Client::builder().timeout(Duration::from_secs(30));
     if !proxy_url.is_empty() {
         if let Ok(proxy) = reqwest::Proxy::all(&proxy_url) {
             builder = builder.proxy(proxy);
+            println!("🌐 Oracle ETH: Using SOCKS5 proxy for blockcypher");
         }
+    } else {
+        println!("⚠️ Oracle ETH: No SOCKS5 proxy set (LOS_SOCKS5_PROXY). Connecting directly.");
     }
-    let client = builder.build().ok()?;
-    println!("🌐 Oracle ETH: Verifying TXID {}...", clean_txid);
-    if let Ok(resp) = client.get(url).send().await {
-        if let Ok(json) = resp.json::<Value>().await {
-            if let Some(outputs) = json["outputs"].as_array() {
-                let target = BURN_ADDRESS_ETH.to_lowercase().replace("0x", "");
-                for out in outputs {
-                    if let Some(addrs) = out["addresses"].as_array() {
-                        for a in addrs {
-                            if a.as_str().unwrap_or("").to_lowercase() == target {
-                                // BlockCypher returns value in wei (integer)
-                                // MAINNET SAFETY: NO f64 — use u64 then string parse for large values
-                                // f64 loses precision above 2^53 (~9 ETH in wei)
-                                let wei =
-                                    out["value"].as_u64().map(|v| v as u128).unwrap_or_else(|| {
-                                        // Fallback: parse as string → u128 (exact, no float rounding)
-                                        out["value"]
-                                            .as_str()
-                                            .and_then(|s| s.parse::<u128>().ok())
-                                            .unwrap_or(0)
-                                    });
-                                return Some(wei);
+    let client = match builder.build() {
+        Ok(c) => c,
+        Err(e) => {
+            println!("❌ Oracle ETH: Failed to build HTTP client: {}", e);
+            return None;
+        }
+    };
+    println!("🌐 Oracle ETH: Verifying TXID {} via blockcypher...", clean_txid);
+    match client.get(&url).send().await {
+        Ok(resp) => {
+            let status = resp.status();
+            println!("🌐 Oracle ETH: blockcypher responded with HTTP {}", status);
+            match resp.json::<Value>().await {
+                Ok(json) => {
+                    if let Some(outputs) = json["outputs"].as_array() {
+                        let target = BURN_ADDRESS_ETH.to_lowercase().replace("0x", "");
+                        println!("🌐 Oracle ETH: TX has {} outputs, checking for burn address...", outputs.len());
+                        for (i, out) in outputs.iter().enumerate() {
+                            if let Some(addrs) = out["addresses"].as_array() {
+                                for a in addrs {
+                                    if a.as_str().unwrap_or("").to_lowercase() == target {
+                                        // BlockCypher returns value in wei (integer)
+                                        // MAINNET SAFETY: NO f64 — use u64 then string parse for large values
+                                        // f64 loses precision above 2^53 (~9 ETH in wei)
+                                        let wei =
+                                            out["value"].as_u64().map(|v| v as u128).unwrap_or_else(|| {
+                                                // Fallback: parse as string → u128 (exact, no float rounding)
+                                                out["value"]
+                                                    .as_str()
+                                                    .and_then(|s| s.parse::<u128>().ok())
+                                                    .unwrap_or(0)
+                                            });
+                                        println!("✅ Oracle ETH: Found burn output #{}: {} wei to {}", i, wei, BURN_ADDRESS_ETH);
+                                        return Some(wei);
+                                    }
+                                }
                             }
                         }
+                        println!("❌ Oracle ETH: No output found to burn address {}", BURN_ADDRESS_ETH);
+                    } else {
+                        println!("❌ Oracle ETH: No 'outputs' field in TX data. Error: {:?}", json.get("error"));
                     }
                 }
+                Err(e) => {
+                    println!("❌ Oracle ETH: Failed to parse JSON: {}", e);
+                }
             }
+        }
+        Err(e) => {
+            println!("❌ Oracle ETH: HTTP request failed: {}", e);
+            println!("   ↳ Possible causes: TX not yet broadcast, Tor proxy down, or blockcypher unreachable");
         }
     }
     None
@@ -4300,35 +4333,74 @@ async fn verify_btc_burn_tx(txid: &str) -> Option<u128> {
     let proxy_url = std::env::var("LOS_SOCKS5_PROXY").unwrap_or_default();
     let mut builder = reqwest::Client::builder()
         .user_agent("Mozilla/5.0")
-        .timeout(Duration::from_secs(10));
+        .timeout(Duration::from_secs(30));
     if !proxy_url.is_empty() {
         if let Ok(proxy) = reqwest::Proxy::all(&proxy_url) {
             builder = builder.proxy(proxy);
+            println!("🌐 Oracle BTC: Using SOCKS5 proxy for mempool.space");
         }
+    } else {
+        println!("⚠️ Oracle BTC: No SOCKS5 proxy set (LOS_SOCKS5_PROXY). Connecting directly.");
     }
-    let client = builder.build().ok()?;
-    println!("🌐 Oracle BTC: Verifying TXID {}...", txid);
-    if let Ok(resp) = client.get(url).send().await {
-        if let Ok(body) = resp.text().await {
-            if let Ok(json) = serde_json::from_str::<Value>(&body) {
-                if let Some(vout) = json["vout"].as_array() {
-                    for out in vout.iter() {
-                        if out.to_string().contains(BURN_ADDRESS_BTC) {
-                            // mempool.space returns value in satoshi (integer)
-                            // MAINNET SAFETY: NO f64 — deterministic integer parsing only
-                            let satoshi =
-                                out["value"].as_u64().map(|v| v as u128).unwrap_or_else(|| {
-                                    // Fallback: parse as string → u128 (exact, no float rounding)
-                                    out["value"]
-                                        .as_str()
-                                        .and_then(|s| s.parse::<u128>().ok())
-                                        .unwrap_or(0)
-                                });
-                            return Some(satoshi);
+    let client = match builder.build() {
+        Ok(c) => c,
+        Err(e) => {
+            println!("❌ Oracle BTC: Failed to build HTTP client: {}", e);
+            return None;
+        }
+    };
+    println!("🌐 Oracle BTC: Verifying TXID {} via mempool.space...", txid);
+    match client.get(&url).send().await {
+        Ok(resp) => {
+            let status = resp.status();
+            println!("🌐 Oracle BTC: mempool.space responded with HTTP {}", status);
+            if !status.is_success() {
+                if let Ok(body) = resp.text().await {
+                    println!("❌ Oracle BTC: Error body: {}", &body[..body.len().min(200)]);
+                }
+                return None;
+            }
+            match resp.text().await {
+                Ok(body) => {
+                    match serde_json::from_str::<Value>(&body) {
+                        Ok(json) => {
+                            if let Some(vout) = json["vout"].as_array() {
+                                println!("🌐 Oracle BTC: TX has {} outputs, checking for burn address...", vout.len());
+                                for (i, out) in vout.iter().enumerate() {
+                                    let out_str = out.to_string();
+                                    if out_str.contains(BURN_ADDRESS_BTC) {
+                                        // mempool.space returns value in satoshi (integer)
+                                        // MAINNET SAFETY: NO f64 — deterministic integer parsing only
+                                        let satoshi =
+                                            out["value"].as_u64().map(|v| v as u128).unwrap_or_else(|| {
+                                                // Fallback: parse as string → u128 (exact, no float rounding)
+                                                out["value"]
+                                                    .as_str()
+                                                    .and_then(|s| s.parse::<u128>().ok())
+                                                    .unwrap_or(0)
+                                            });
+                                        println!("✅ Oracle BTC: Found burn output #{}: {} satoshi to {}", i, satoshi, BURN_ADDRESS_BTC);
+                                        return Some(satoshi);
+                                    }
+                                }
+                                println!("❌ Oracle BTC: No output found to burn address {}. Outputs: {}", BURN_ADDRESS_BTC, &body[..body.len().min(500)]);
+                            } else {
+                                println!("❌ Oracle BTC: No 'vout' field in TX data. Status field: {:?}", json.get("status"));
+                            }
+                        }
+                        Err(e) => {
+                            println!("❌ Oracle BTC: Failed to parse JSON: {}. Body: {}", e, &body[..body.len().min(200)]);
                         }
                     }
                 }
+                Err(e) => {
+                    println!("❌ Oracle BTC: Failed to read response body: {}", e);
+                }
             }
+        }
+        Err(e) => {
+            println!("❌ Oracle BTC: HTTP request failed: {} (URL: {})", e, url);
+            println!("   ↳ Possible causes: TX not yet broadcast, Tor proxy down, or mempool.space unreachable");
         }
     }
     None

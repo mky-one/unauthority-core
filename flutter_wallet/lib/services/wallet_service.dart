@@ -403,12 +403,25 @@ class WalletService {
     final cryptoMode = wallet['crypto_mode'] ?? 'sha256';
 
     if (cryptoMode == 'dilithium5' && DilithiumService.isAvailable) {
-      final skHex = await _secureStorage.read(key: _secretKeyKey);
-      if (skHex == null) {
+      final skStored = await _secureStorage.read(key: _secretKeyKey);
+      if (skStored == null) {
         throw Exception('Secret key not found in secure storage');
       }
 
-      final secretKey = DilithiumService.hexToBytes(skHex);
+      // FIX: Secret key is stored as Base64 (see DilithiumKeypair.secretKeyBase64),
+      // NOT hex. Decode accordingly. Detect format by checking for Base64 padding
+      // or non-hex characters.
+      Uint8List secretKey;
+      if (skStored.contains('+') ||
+          skStored.contains('/') ||
+          skStored.endsWith('=') ||
+          RegExp(r'[^0-9a-fA-F]').hasMatch(skStored)) {
+        // Base64-encoded secret key (current storage format)
+        secretKey = Uint8List.fromList(base64Decode(skStored));
+      } else {
+        // Legacy hex-encoded secret key (backward compatibility)
+        secretKey = DilithiumService.hexToBytes(skStored);
+      }
       final message = Uint8List.fromList(utf8.encode(txData));
       try {
         final signature = DilithiumService.sign(message, secretKey);

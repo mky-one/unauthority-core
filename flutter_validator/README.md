@@ -116,7 +116,8 @@ flutter_validator/
 
 ## Related Documentation
 
-- [Validator Guide](../docs/VALIDATOR_GUIDE.md) — Full technical validator setup guide
+- [**Flutter Validator Tutorial**](../docs/FLUTTER_VALIDATOR_GUIDE.md) — Step-by-step guide for this app
+- [Validator Guide (CLI)](../docs/VALIDATOR_GUIDE.md) — Terminal-based setup for servers/VPS
 - [API Reference](../docs/API_REFERENCE.md) — REST API endpoint documentation
 - [Tor Setup](../docs/TOR_SETUP.md) — Tor hidden service configuration
 - [Architecture](../docs/ARCHITECTURE.md) — System design overview

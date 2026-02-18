@@ -6,6 +6,32 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [1.0.12] — 2026-02-19
+
+### Security Hardening (11 Fixes)
+
+#### HIGH
+- **A-01: Seed phrase no longer cached in memory** — `NodeProcessService` no longer stores `_seedPhrase` as a class field. Re-reads from `FlutterSecureStorage` on demand only when needed.
+- **F-01: macOS App Sandbox enabled for wallet** — `Release.entitlements` now enforces sandbox with scoped entitlements (`network.client`, `files.user-selected.read-write`, `keychain-access-groups`). Validator remains unsandboxed (requires child process spawn).
+
+#### MEDIUM
+- **A-02: Secret key hex exposure reduced** — Removed `secretKeyHex` getter (9,728-char hex string) from `DilithiumKeypair`. Replaced with `secretKeyBase64` (6,488 chars). Both wallet and validator updated.
+- **A-03: Seed phrase reveal requires confirmation** — Added security confirmation dialog before showing mnemonic in Settings. User must explicitly press "REVEAL SEED PHRASE" to proceed.
+- **B-01: Tor download integrity verification** — SHA-256 hash verification added after downloading Tor Expert Bundle. Deletes file on hash mismatch. Applied to both wallet and validator `TorService`.
+- **F-02+K-01: Native library path restriction** — `DilithiumService` only searches bundled app paths (Frameworks, lib, exe-dir) in release builds. Development paths (native/target, workspace root, PATH) only available in debug mode.
+
+#### LOW
+- **G-01: Dependency version sync** — Wallet `pubspec.yaml` dependencies synced to validator's higher versions (`http`, `shared_preferences`, `intl`, `crypto`, `provider`).
+- **E-01: Base58Check checksum verification** — Full pure-Dart implementation added to `AddressValidator`. Decodes Base58, verifies SHA-256d checksum (first 4 bytes). Rejects addresses with invalid checksums.
+- **J-02: Binary discovery restriction** — `NodeProcessService._findNodeBinary()` restricted to bundled paths in release mode. Cargo build and PATH search only available in debug mode, preventing PATH hijacking.
+- **F-03: Screenshot/recording warning** — Red warning banner displayed inside seed phrase reveal container alerting users about screen capture risks.
+- **I-01: Auto-clearing clipboard** — New `SecureClipboard` utility auto-clears clipboard after 30s (sensitive data) or 60s (addresses). Applied to all 10 screens with copy functionality.
+
+### Changed
+- Version bumped to 1.0.12 across all docs, badges, and configs.
+
+---
+
 ## [1.0.11] — 2026-02-18
 
 ### Fixed
@@ -173,6 +199,7 @@ Pre-mainnet testing release deployed on the live Tor network.
 
 ---
 
+[1.0.12]: https://github.com/mky-one/unauthority-core/releases/tag/v1.0.12
 [1.0.11]: https://github.com/mky-one/unauthority-core/releases/tag/v1.0.11
 [1.0.10]: https://github.com/mky-one/unauthority-core/releases/tag/v1.0.10
 [1.0.9]: https://github.com/mky-one/unauthority-core/releases/tag/v1.0.9

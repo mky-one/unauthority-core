@@ -1,6 +1,6 @@
 import '../utils/log.dart';
+import '../utils/secure_clipboard.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../constants/blockchain.dart';
 import '../services/wallet_service.dart';
@@ -30,14 +30,53 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   /// FIX H-02: Lazy-load seed phrase only when user taps reveal.
   /// Prevents keeping mnemonic in widget state longer than necessary.
+  /// SECURITY FIX A-03: Require user confirmation before revealing seed phrase.
+  /// This prevents shoulder-surfing and casual access on unlocked devices.
   Future<void> _revealSeedPhrase() async {
     losLog(
         '⚙️ [SettingsScreen._revealSeedPhrase] Toggling seed phrase visibility...');
     if (_seedPhrase != null) {
-      // Already loaded — just toggle visibility
+      // Already loaded — just toggle visibility (hide)
       setState(() => _showSeedPhrase = !_showSeedPhrase);
       return;
     }
+
+    // SECURITY FIX A-03: Gate behind explicit user confirmation
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Row(
+          children: [
+            Icon(Icons.warning_amber_rounded, color: Colors.orange, size: 28),
+            SizedBox(width: 8),
+            Text('Security Warning'),
+          ],
+        ),
+        content: const Text(
+          'Your seed phrase gives FULL ACCESS to your wallet and all funds.\n\n'
+          '• Never share it with anyone\n'
+          '• Never enter it on websites\n'
+          '• Make sure no one is watching your screen\n\n'
+          'Are you sure you want to reveal it?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('CANCEL'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.orange,
+            ),
+            child: const Text('REVEAL SEED PHRASE'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true || !mounted) return;
+
     final walletService = context.read<WalletService>();
     final wallet = await walletService.getCurrentWallet(includeMnemonic: true);
     if (wallet != null && mounted) {
@@ -51,11 +90,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   void _copySeedPhrase() {
     if (_seedPhrase != null) {
-      Clipboard.setData(ClipboardData(text: _seedPhrase!));
-      // FIX M-01: Auto-clear clipboard after 30 seconds for security
-      Future.delayed(const Duration(seconds: 30), () {
-        Clipboard.setData(const ClipboardData(text: ''));
-      });
+      // SECURITY FIX I-01: Use SecureClipboard with auto-clear (30s default)
+      SecureClipboard.copy(_seedPhrase!);
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Seed phrase copied to clipboard (auto-clears in 30s)'),
@@ -153,6 +189,31 @@ class _SettingsScreenState extends State<SettingsScreen> {
                               ),
                             ),
                           ],
+                        ),
+                        // SECURITY FIX F-03: Screenshot/screen-recording warning
+                        const SizedBox(height: 8),
+                        Container(
+                          padding: const EdgeInsets.all(8),
+                          decoration: BoxDecoration(
+                            color: const Color(0x1AF44336), // red at 10%
+                            borderRadius: BorderRadius.circular(4),
+                            border: Border.all(
+                                color: Colors.red.withValues(alpha: 0.5)),
+                          ),
+                          child: const Row(
+                            children: [
+                              Icon(Icons.screen_lock_portrait,
+                                  color: Colors.red, size: 16),
+                              SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  'Disable screen recording & screenshots before viewing.',
+                                  style: TextStyle(
+                                      color: Colors.red, fontSize: 12),
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
                         const SizedBox(height: 12),
                         SelectableText(

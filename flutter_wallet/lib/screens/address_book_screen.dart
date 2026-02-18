@@ -1,6 +1,6 @@
 import '../utils/log.dart';
+import '../utils/secure_clipboard.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import '../models/address_book_entry.dart';
 import '../services/address_book_service.dart';
 import '../utils/address_validator.dart';
@@ -319,8 +319,7 @@ class _AddressBookScreenState extends State<AddressBookScreen> {
 
     if (confirmed == true) {
       try {
-        losLog(
-            '📒 [AddressBookScreen._deleteEntry] Deleting ${entry.name}...');
+        losLog('📒 [AddressBookScreen._deleteEntry] Deleting ${entry.name}...');
         await _addressBookService.deleteEntry(entry.id);
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -329,8 +328,7 @@ class _AddressBookScreenState extends State<AddressBookScreen> {
               backgroundColor: Colors.green,
             ),
           );
-          losLog(
-              '📒 [AddressBookScreen._deleteEntry] Deleted ${entry.name}');
+          losLog('📒 [AddressBookScreen._deleteEntry] Deleted ${entry.name}');
           _loadEntries();
         }
       } catch (e) {
@@ -347,7 +345,7 @@ class _AddressBookScreenState extends State<AddressBookScreen> {
   }
 
   void _copyAddress(String address) {
-    Clipboard.setData(ClipboardData(text: address));
+    SecureClipboard.copyPublic(address);
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
         content: Text('Address copied to clipboard'),

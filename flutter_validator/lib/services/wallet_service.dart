@@ -168,7 +168,7 @@ class WalletService {
         );
         await _secureStorage.write(
           key: _secretKeyKey,
-          value: keypair.secretKeyHex,
+          value: keypair.secretKeyBase64,
         );
 
         // Non-sensitive → SharedPreferences
@@ -255,7 +255,7 @@ class WalletService {
         );
         await _secureStorage.write(
           key: _secretKeyKey,
-          value: keypair.secretKeyHex,
+          value: keypair.secretKeyBase64,
         );
 
         // Non-sensitive → SharedPreferences
@@ -377,7 +377,7 @@ class WalletService {
         await _secureStorage.write(
             key: _publicKeyKey, value: keypair.publicKeyHex);
         await _secureStorage.write(
-            key: _secretKeyKey, value: keypair.secretKeyHex);
+            key: _secretKeyKey, value: keypair.secretKeyBase64);
         keypair.secretKey.fillRange(0, keypair.secretKey.length, 0);
       }
     } else {

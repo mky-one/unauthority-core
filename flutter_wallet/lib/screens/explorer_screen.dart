@@ -1,6 +1,6 @@
 import '../utils/log.dart';
+import '../utils/secure_clipboard.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
 import '../services/api_service.dart';
@@ -279,8 +279,8 @@ class _ExplorerScreenState extends State<ExplorerScreen> {
               trailing: IconButton(
                 icon: const Icon(Icons.copy, size: 18),
                 onPressed: () {
-                  Clipboard.setData(
-                      ClipboardData(text: result['address']?.toString() ?? ''));
+                  SecureClipboard.copyPublic(
+                      result['address']?.toString() ?? '');
                   ScaffoldMessenger.of(context).showSnackBar(
                     const SnackBar(content: Text('Address copied')),
                   );
@@ -322,7 +322,7 @@ class _ExplorerScreenState extends State<ExplorerScreen> {
           if (copyable)
             GestureDetector(
               onTap: () {
-                Clipboard.setData(ClipboardData(text: value));
+                SecureClipboard.copyPublic(value);
                 ScaffoldMessenger.of(context).showSnackBar(
                   SnackBar(content: Text('$label copied')),
                 );

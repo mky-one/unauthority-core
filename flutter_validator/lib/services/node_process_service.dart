@@ -3,6 +3,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as path;
 
@@ -30,7 +31,11 @@ class NodeProcessService extends ChangeNotifier {
   NodeStatus _status = NodeStatus.stopped;
   String? _nodeAddress; // Node's LOSX... address
   String? _onionAddress; // .onion hidden service address
-  String? _seedPhrase; // Mnemonic for LOS_SEED_PHRASE env
+  // SECURITY FIX A-01: Seed phrase is NO LONGER cached in memory.
+  // It is re-read from FlutterSecureStorage on demand (auto-restart).
+  // This prevents the mnemonic from lingering in process memory.
+  static const _secureStorage = FlutterSecureStorage();
+  static const _seedStorageKey = 'v_seed_phrase';
   String? _bootstrapNodes; // Saved for auto-restart
   int? _p2pPort; // Saved for auto-restart
   String? _torSocks5; // Saved for auto-restart
@@ -368,9 +373,13 @@ class NodeProcessService extends ChangeNotifier {
       };
       // SECURITY FIX S-01: Seed phrase is NO LONGER passed via environment variable.
       // It is now sent via stdin pipe (see below) to prevent exposure via
-      // /proc/[pid]/environ on Linux. We only save it for auto-restart.
-      if (seedPhrase != null && seedPhrase.isNotEmpty) {
-        _seedPhrase = seedPhrase; // Save for auto-restart
+      // /proc/[pid]/environ on Linux.
+      // SECURITY FIX A-01: Seed phrase is NOT cached as a field anymore.
+      // For auto-restart, it is re-read from FlutterSecureStorage.
+      String? effectiveSeed = seedPhrase;
+      if (effectiveSeed == null || effectiveSeed.isEmpty) {
+        // Re-read from secure storage for auto-restart scenarios
+        effectiveSeed = await _secureStorage.read(key: _seedStorageKey);
       }
       if (onionAddress != null) {
         env['LOS_ONION_ADDRESS'] = onionAddress;
@@ -427,12 +436,13 @@ class NodeProcessService extends ChangeNotifier {
       // This avoids exposing secrets in /proc/[pid]/environ on Linux.
       // Empty lines are sent for missing values (Rust side skips empty lines).
       {
-        final effectiveSeedPhrase = _seedPhrase ?? '';
+        final stdinSeed = effectiveSeed ?? '';
         final effectivePassword = hasWalletPassword ? walletPassword : '';
         _process!.stdin.writeln(effectivePassword);
-        _process!.stdin.writeln(effectiveSeedPhrase);
+        _process!.stdin.writeln(stdinSeed);
         await _process!.stdin.flush();
         await _process!.stdin.close();
+        // SECURITY FIX A-01: Do not retain seed reference after passing to stdin
       }
 
       // 6. Monitor stdout for JSON events + human-readable logs
@@ -534,12 +544,14 @@ class NodeProcessService extends ChangeNotifier {
   }) async {
     await stop();
     await Future.delayed(const Duration(seconds: 2));
+    // SECURITY FIX A-01: Seed phrase is re-read from SecureStorage,
+    // not cached as a field. Pass null to let start() re-read it.
     return start(
       port: _apiPort,
       onionAddress: onionAddress ?? _onionAddress,
       bootstrapNodes: bootstrapNodes ?? _bootstrapNodes,
       walletPassword: walletPassword,
-      seedPhrase: _seedPhrase,
+      seedPhrase: null, // Re-read from SecureStorage inside start()
       p2pPort: p2pPort ?? _p2pPort,
       torSocks5: torSocks5 ?? _torSocks5,
     );
@@ -678,10 +690,12 @@ class NodeProcessService extends ChangeNotifier {
           // Kill any zombie processes before restart to release DB lock
           await _killOrphanedNode(_apiPort);
           _lastFatalError = null; // Reset for next attempt
+          // SECURITY FIX A-01: Pass null seedPhrase — start() will
+          // re-read from SecureStorage on demand.
           start(
               port: _apiPort,
               onionAddress: _onionAddress,
-              seedPhrase: _seedPhrase,
+              seedPhrase: null,
               bootstrapNodes: _bootstrapNodes,
               p2pPort: _p2pPort,
               torSocks5: _torSocks5);
@@ -711,10 +725,12 @@ class NodeProcessService extends ChangeNotifier {
   // ════════════════════════════════════════════════════════════════════════
 
   /// Find los-node binary — checks bundled location, cargo build output, PATH
+  /// SECURITY FIX J-02: In release builds, restrict discovery to bundled
+  /// locations only. Dev paths (cargo build, PATH) only in debug mode.
   Future<String?> _findNodeBinary() async {
     final binaryName = Platform.isWindows ? 'los-node.exe' : 'los-node';
 
-    // 1. Check bundled in app (for distribution)
+    // 1. Check bundled in app (for distribution) — always searched
     final execDir = path.dirname(Platform.resolvedExecutable);
     final bundledPaths = [
       path.join(execDir, binaryName), // Linux/Windows: same dir as executable
@@ -730,7 +746,17 @@ class NodeProcessService extends ChangeNotifier {
       }
     }
 
-    // 2. Check cargo build output (development mode)
+    // SECURITY FIX J-02: Only search development paths in debug mode.
+    // In release builds, an attacker could place a malicious binary in
+    // PATH or cargo output directory to hijack the validator.
+    if (!kDebugMode) {
+      losLog(
+          '⚠️ los-node binary not found in bundled locations (release mode)');
+      losLog('   Release builds only search bundled app paths for security.');
+      return null;
+    }
+
+    // 2. Check cargo build output (development mode only)
     final workDir = await _getWorkingDir();
     final cargoPaths = [
       path.join(workDir, 'target', 'release', binaryName),
@@ -743,7 +769,7 @@ class NodeProcessService extends ChangeNotifier {
       }
     }
 
-    // 3. Check PATH
+    // 3. Check PATH (development mode only)
     try {
       final cmd = Platform.isWindows ? 'where' : 'which';
       final result = await Process.run(cmd, [binaryName]);

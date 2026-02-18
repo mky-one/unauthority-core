@@ -1,6 +1,6 @@
 import '../utils/log.dart';
+import '../utils/secure_clipboard.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../services/wallet_service.dart';
 import '../services/api_service.dart';
@@ -152,7 +152,7 @@ class _SendScreenState extends State<SendScreen> {
                 icon: const Icon(Icons.copy, size: 18),
                 label: const Text('Copy TX Hash'),
                 onPressed: () {
-                  Clipboard.setData(ClipboardData(text: txHash));
+                  SecureClipboard.copyPublic(txHash);
                   ScaffoldMessenger.of(ctx).showSnackBar(
                     const SnackBar(
                       content: Text('TX Hash copied to clipboard'),

@@ -2,6 +2,11 @@
 
 Validator node dashboard for **Unauthority (LOS)** blockchain. Track node status, manage keys, and monitor consensus participation.
 
+[![Version](https://img.shields.io/badge/version-1.0.9-blue)]()
+[![License](https://img.shields.io/badge/license-Apache--2.0-blue)](../LICENSE)
+
+---
+
 ## Features
 
 - **Live Dashboard** — real-time validator stats, uptime, and peer connections
@@ -13,27 +18,34 @@ Validator node dashboard for **Unauthority (LOS)** blockchain. Track node status
 - **Built-in Tor** — auto-downloads Tor Expert Bundle (no Tor Browser needed)
 - **CRYSTALS-Dilithium5** — post-quantum digital signatures via native Rust FFI
 
+---
+
 ## Download
 
 Pre-built releases for macOS, Windows, and Linux:
 
-**[Download from GitHub Releases](https://github.com/monkey-one/unauthority-core/releases/tag/validator-v1.0.10-testnet)**
+**[Download from GitHub Releases](https://github.com/mky-one/unauthority-core/releases)**
 
 | Platform | File |
 |----------|------|
-| macOS | `LOS-Validator-1.0.10-testnet-macos.dmg` |
-| Windows | `LOS-Validator-1.0.10-testnet-windows-x64.zip` |
-| Linux | `LOS-Validator-1.0.10-testnet-linux-x64.tar.gz` |
+| macOS | `UAT-Validator-v1.0.x-macOS.dmg` |
+| Windows | `UAT-Validator-v1.0.x-Windows-x64.zip` |
+| Linux | `UAT-Validator-v1.0.x-Linux-x64.tar.gz` |
+
+### Platform Notes
 
 > **macOS:** Remove quarantine: `xattr -cr /Applications/LOS\ Validator\ Node.app` (required for unsigned apps)  
 > Or: System Settings → Privacy & Security → Open Anyway
 >
 > **Windows:** Right-click both `flutter_validator.exe` and `los-node.exe` → Properties → Unblock, then launch. If SmartScreen appears: click "More info" → "Run anyway"  
+>
 > **Linux:** Make executable: `chmod +x run.sh flutter_validator los-node`, then run via `./run.sh` (sets `LD_LIBRARY_PATH` for native library).
 >
 > **First Launch:** The dashboard auto-downloads Tor Expert Bundle (~20MB, 1-2 min).
 >
 > **Bundled Binary:** The validator includes `los-node` (full validator binary) — no separate installation needed. Click "START NODE" in the dashboard to launch.
+
+---
 
 ## Build from Source
 
@@ -59,21 +71,7 @@ flutter build linux --release    # Linux
 flutter build windows --release  # Windows
 ```
 
-## Connect to a Node
-
-The dashboard **auto-connects** to testnet peers via Tor (no configuration needed). When you click "START NODE", the bundled `los-node` binary launches automatically.
-
-### Manual Configuration (Optional)
-
-To connect to a remote node instead of the bundled binary:
-
-1. Open the app → **Settings**
-2. Enter your node endpoint:
-   - Local node: `http://localhost:3030`
-   - Remote testnet peer: `http://<peer-onion-address>:3030`
-3. Click **Test Connection** → **Save**
-
-**See also:** [Testnet Quick Start Guide](../TESTNET_QUICKSTART.md)
+---
 
 ## Running a Validator
 
@@ -86,9 +84,17 @@ The dashboard includes a bundled `los-node` binary — no separate installation 
 4. Register as a validator (requires **1,000 LOS** minimum stake)
 5. Monitor consensus participation in the dashboard
 
-**See also:**
-- [Testnet Quick Start Guide](../TESTNET_QUICKSTART.md)
-- [Validator Guide (Technical)](../docs/VALIDATOR_GUIDE.md)
+### Connecting to a Remote Node
+
+To connect to a remote node instead of the bundled binary:
+
+1. Open the app → **Settings**
+2. Enter your node endpoint (e.g., `http://<peer-onion-address>:3030`)
+3. Click **Test Connection** → **Save**
+
+> **Note:** The validator dashboard always connects to **external peers** for API data — it never uses its own local node endpoint. This prevents a compromised local node from displaying false information.
+
+---
 
 ## Project Structure
 
@@ -99,13 +105,26 @@ flutter_validator/
 │   ├── constants/             # API URLs, theme colors
 │   ├── models/                # Data models
 │   ├── screens/               # Dashboard, settings, etc.
-│   ├── services/              # API, wallet, Dilithium5, Tor services
+│   ├── services/              # API, wallet, Dilithium5, Tor, peer discovery
 │   └── widgets/               # Reusable UI components
 ├── native/
 │   └── los_crypto_ffi/        # Rust FFI crate for Dilithium5
-└── test/                      # Widget tests
+└── test/                      # Widget & unit tests
 ```
 
+---
+
+## Related Documentation
+
+- [Validator Guide](../docs/VALIDATOR_GUIDE.md) — Full technical validator setup guide
+- [API Reference](../docs/API_REFERENCE.md) — REST API endpoint documentation
+- [Tor Setup](../docs/TOR_SETUP.md) — Tor hidden service configuration
+- [Architecture](../docs/ARCHITECTURE.md) — System design overview
+
+---
+
 ## License
+
+Apache-2.0 — See [LICENSE](../LICENSE)
 
 MIT

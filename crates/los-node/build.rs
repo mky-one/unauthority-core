@@ -1,8 +1,8 @@
-// Build script untuk compile protobuf definitions
-// Runs automatically saat `cargo build`
+// Build script for compiling protobuf definitions
+// Runs automatically during `cargo build`
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // Compile los.proto ke Rust code
+    // Compile los.proto to Rust code
     tonic_build::configure()
         .build_server(true) // Generate server code
         .build_client(true) // Generate client code (for testing)

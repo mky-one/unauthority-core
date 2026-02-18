@@ -1,7 +1,10 @@
-// Rate Limiter Module - DDoS Protection
-// Implements Token Bucket Algorithm dengan IP-based tracking
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// UNAUTHORITY (LOS) - RATE LIMITER (DDoS Protection)
+//
+// Token Bucket Algorithm with IP-based tracking.
 // MAINNET SAFETY: Uses integer math (millitokens) instead of f64
 // for deterministic behavior across platforms.
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 use std::collections::HashMap;
 use std::net::IpAddr;

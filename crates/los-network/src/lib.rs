@@ -1,3 +1,13 @@
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// UNAUTHORITY (LOS) - NETWORK MODULE
+//
+// Peer-to-peer networking layer using libp2p with Tor Hidden Service support.
+// - Gossipsub for block/transaction propagation
+// - mDNS for local development peer discovery
+// - Noise Protocol for encrypted communications
+// - Tor SOCKS5 proxy for .onion peer connectivity
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
 use libp2p::{
     futures::StreamExt,
     gossipsub, mdns, noise,

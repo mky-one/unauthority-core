@@ -1,3 +1,11 @@
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// UNAUTHORITY (LOS) - CORE MODULE
+//
+// Blockchain primitives: Block, Ledger, AccountState, and transaction logic.
+// Defines the block-lattice DAG structure with Send/Receive/Mint/Slash types.
+// All financial arithmetic uses u128 CIL units (no floating-point).
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
 use serde::{Deserialize, Serialize};
 use sha3::{Digest, Keccak256};
 use std::collections::{BTreeMap, BTreeSet};
@@ -205,7 +213,7 @@ impl Block {
             return false;
         }
 
-        // Verify terhadap signing_hash (content hash tanpa signature)
+        // Verify against signing_hash (content hash without signature)
         let msg_hash = self.signing_hash();
         let sig_bytes = hex::decode(&self.signature).unwrap_or_default();
         let pk_bytes = hex::decode(&self.public_key).unwrap_or_default();
@@ -350,7 +358,7 @@ impl Ledger {
             }
         }
 
-        // Block ID = calculate_hash() yang mencakup signature
+        // Block ID = calculate_hash() which includes the signature
         let block_hash = block.calculate_hash();
         if self.blocks.contains_key(&block_hash) {
             return Ok(ProcessResult::Duplicate(block_hash));

@@ -211,11 +211,13 @@ curl -X POST http://localhost:3030/register-validator \
 
 The signature must be a Dilithium5 signature over the registration payload. The registration is gossiped to all peers and takes effect immediately.
 
-### Via CLI (Coming Soon)
+### Via CLI
 
 ```bash
 los-cli validator register --endpoint your-onion.onion:3030
 ```
+
+> **Note:** The CLI reads your wallet keypair from the data directory and signs the registration payload automatically.
 
 ### Check Your Registration
 
@@ -229,7 +231,16 @@ curl http://localhost:3030/validators | python3 -m json.tool
 
 For production deployments, run the node as a systemd service:
 
-### Step 1: Create Service File
+### Step 1: Create Dedicated User
+
+For security, run the validator as a dedicated non-root user:
+
+```bash
+sudo useradd -r -m -d /opt/los-node -s /usr/sbin/nologin los
+sudo chown -R los:los /opt/los-node
+```
+
+### Step 2: Create Service File
 
 ```bash
 sudo tee /etc/systemd/system/los-node.service << 'EOF'
@@ -241,7 +252,8 @@ Requires=tor.service
 
 [Service]
 Type=simple
-User=root
+User=los
+Group=los
 WorkingDirectory=/opt/unauthority-core
 Environment=LOS_WALLET_PASSWORD=your-strong-password
 Environment=LOS_NODE_ID=my-validator
@@ -255,7 +267,7 @@ WantedBy=multi-user.target
 EOF
 ```
 
-### Step 2: Copy Binary & Enable Service
+### Step 3: Copy Binary & Enable Service
 
 ```bash
 # Copy binary to system path
@@ -269,7 +281,7 @@ sudo systemctl enable --now los-node
 sudo systemctl status los-node
 ```
 
-### Step 3: View Logs
+### Step 4: View Logs
 
 ```bash
 # Follow logs in real-time
@@ -357,10 +369,10 @@ Validators are held accountable for misbehavior:
 
 | Offense | Detection | Penalty |
 |---|---|---|
-| **Double-signing** | Conflicting block signatures | Stake reduction |
-| **Fake burn TXID** | Multi-validator verification | Stake reduction + blacklist |
+| **Double-signing** | Conflicting block signatures | 100% stake slashed, permanent ban |
+| **Fake burn TXID** | Multi-validator verification | 100% stake slashed, permanent ban |
 | **Oracle manipulation** | Outlier detection (>20% from median) | Penalty + exclusion |
-| **Extended downtime** | Uptime tracking (>5% downtime) | Reward ineligibility |
+| **Extended downtime** | Uptime tracking (<95% over observation window) | 1% of stake slashed |
 
 ### Check Slashing Status
 

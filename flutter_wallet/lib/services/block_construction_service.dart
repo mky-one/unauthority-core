@@ -179,11 +179,12 @@ class BlockConstructionService {
     final previous = account.headBlock ?? '0';
 
     // 3. Convert amount to CIL using integer-only math (no f64 precision loss).
-    final amountCil = BigInt.from(
-        BlockchainConstants.losStringToCil(amountLosStr));
+    final amountCil =
+        BigInt.from(BlockchainConstants.losStringToCil(amountLosStr));
     // Integer LOS for API backward compat — only included if > 0.
     // Sub-LOS amounts (e.g. 0.5 LOS) rely solely on amount_cil.
-    final amountLos = (amountCil ~/ BigInt.from(BlockchainConstants.cilPerLos)).toInt();
+    final amountLos =
+        (amountCil ~/ BigInt.from(BlockchainConstants.cilPerLos)).toInt();
 
     // 4. Current timestamp
     final timestamp = DateTime.now().millisecondsSinceEpoch ~/ 1000;

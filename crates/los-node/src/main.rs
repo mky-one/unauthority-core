@@ -1,3 +1,11 @@
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// UNAUTHORITY (LOS) - VALIDATOR NODE
+//
+// Main entry point for the uat-node binary.
+// Runs the full validator: REST API, gRPC, P2P gossip, Tor hidden service,
+// consensus engine, reward distribution, and state persistence.
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
 #![recursion_limit = "512"]
 
 use base64::Engine as _;

@@ -1,11 +1,11 @@
-// Transaction Mempool for LOS Node
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// UNAUTHORITY (LOS) - TRANSACTION MEMPOOL
 //
-// Manages pending transactions before they are included in blocks.
-// Features:
+// Manages pending transactions before inclusion in blocks.
 // - Priority queue based on fees and stake
-// - Anti-spam protection
-// - Transaction expiration
-// - Duplicate detection
+// - Anti-spam protection with duplicate detection
+// - Automatic transaction expiration
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 use los_core::Block;
 use serde::{Deserialize, Serialize};

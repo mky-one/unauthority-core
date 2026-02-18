@@ -2,12 +2,16 @@
 
 Desktop wallet for the **Unauthority (LOS)** blockchain. Send, receive, and burn-to-mint LOS tokens with post-quantum security.
 
+[![Version](https://img.shields.io/badge/version-1.0.9-blue)]()
+[![License](https://img.shields.io/badge/license-Apache--2.0-blue)](../LICENSE)
+
+---
+
 ## Features
 
 - **Create / Import Wallet** — generate new keys or recover from 24-word BIP39 seed phrase
 - **Send & Receive LOS** — instant transactions with < 3 second finality
 - **Proof-of-Burn** — burn BTC/ETH to mint LOS tokens
-- **Faucet** — claim 100 testnet LOS (1 hour cooldown)
 - **Address Book** — save frequently used addresses
 - **Transaction History** — view all past transactions
 - **QR Code** — share your address via QR
@@ -15,25 +19,32 @@ Desktop wallet for the **Unauthority (LOS)** blockchain. Send, receive, and burn
 - **CRYSTALS-Dilithium5** — post-quantum digital signatures via native Rust FFI
 - **Multi-Platform** — macOS (Intel + Apple Silicon), Linux, Windows
 
+---
+
 ## Download
 
 Pre-built releases for macOS, Windows, and Linux:
 
-**[Download from GitHub Releases](https://github.com/monkey-one/unauthority-core/releases/tag/wallet-v1.0.8-testnet)**
+**[Download from GitHub Releases](https://github.com/mky-one/unauthority-core/releases)**
 
 | Platform | File |
 |----------|------|
-| macOS | `LOS-Wallet-1.0.8-testnet-macos.dmg` |
-| Windows | `LOS-Wallet-1.0.8-testnet-windows-x64.zip` |
-| Linux | `LOS-Wallet-1.0.8-testnet-linux-x64.tar.gz` |
+| macOS | `UAT-Wallet-v1.0.x-macOS.dmg` |
+| Windows | `UAT-Wallet-v1.0.x-Windows-x64.zip` |
+| Linux | `UAT-Wallet-v1.0.x-Linux-x64.tar.gz` |
+
+### Platform Notes
 
 > **macOS:** Remove quarantine: `xattr -cr /Applications/LOS\ Wallet.app` (required for unsigned apps)  
 > Or: System Settings → Privacy & Security → Open Anyway
 >
 > **Windows:** Right-click `flutter_wallet.exe` → Properties → Unblock, then launch. If SmartScreen appears: click "More info" → "Run anyway"  
+>
 > **Linux:** Make executable: `chmod +x run.sh flutter_wallet`, then run via `./run.sh` (sets `LD_LIBRARY_PATH` for native library).
 >
 > **First Launch:** The wallet auto-downloads Tor Expert Bundle (~20MB, 1-2 min).
+
+---
 
 ## Build from Source
 
@@ -61,9 +72,11 @@ flutter build windows --release  # Windows
 
 The native library (`liblos_crypto_ffi.dylib` / `.so` / `.dll`) must be placed alongside the built app. See the GitHub Actions workflow for platform-specific bundling steps.
 
-## Connect to Testnet
+---
 
-The wallet **auto-connects** to testnet peers via Tor (no configuration needed). Tor downloads automatically on first launch.
+## Connecting to the Network
+
+The wallet **auto-connects** to mainnet peers via Tor on first launch. No manual configuration is required — Tor downloads automatically.
 
 ### Manual Configuration (Optional)
 
@@ -73,9 +86,7 @@ If auto-discovery fails:
 2. Enter a peer endpoint manually (e.g., `http://<peer-onion-address>:3030`)
 3. Click **Test Connection** → **Save & Reconnect**
 
-For local development, use `http://localhost:3030` instead.
-
-**See also:** [Testnet Quick Start Guide](../TESTNET_QUICKSTART.md)
+---
 
 ## Project Structure
 
@@ -86,14 +97,26 @@ flutter_wallet/
 │   ├── constants/             # API URLs, theme colors
 │   ├── models/                # Data models
 │   ├── screens/               # UI screens (dashboard, send, burn, etc.)
-│   ├── services/              # API, wallet, Dilithium5, Tor services
+│   ├── services/              # API, wallet, Dilithium5, Tor, peer discovery
+│   ├── utils/                 # Formatting helpers
 │   └── widgets/               # Reusable UI components
 ├── native/
 │   └── los_crypto_ffi/        # Rust FFI crate for Dilithium5
-├── assets/                    # Icons, images
-└── test/                      # Widget tests
+├── assets/                    # Icons, images, network config
+└── test/                      # Widget & unit tests
 ```
+
+---
+
+## Related Documentation
+
+- [Validator Guide](../docs/VALIDATOR_GUIDE.md) — Run a validator node
+- [API Reference](../docs/API_REFERENCE.md) — REST API endpoint documentation
+- [Tor Setup](../docs/TOR_SETUP.md) — Tor hidden service configuration
+- [Architecture](../docs/ARCHITECTURE.md) — System design overview
+
+---
 
 ## License
 
-MIT
+Apache-2.0 — See [LICENSE](../LICENSE)

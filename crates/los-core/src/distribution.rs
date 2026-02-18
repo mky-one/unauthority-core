@@ -1,6 +1,14 @@
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// UNAUTHORITY (LOS) - TOKEN DISTRIBUTION STATE
+//
+// Tracks remaining public supply and total burned value.
+// Public allocation: 21,158,413 LOS (total supply minus dev treasury).
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
 use crate::CIL_PER_LOS;
 use serde::{Deserialize, Serialize};
 
+/// Maximum public supply cap: 21,158,413 LOS in CIL
 pub const PUBLIC_SUPPLY_CAP: u128 = 21_158_413 * CIL_PER_LOS;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
